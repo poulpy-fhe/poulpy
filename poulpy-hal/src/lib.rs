@@ -32,7 +32,7 @@
 //! - [`layouts::CnvPVecL`], [`layouts::CnvPVecR`] -- prepared left/right operands for bivariate convolution.
 //! - [`layouts::ScratchArena`], [`layouts::ScratchOwned`] -- aligned scratch memory for temporary workspace.
 //!
-//! All layout types are generic over a data container `D` (owned `Vec<u8>`, borrowed
+//! All layout types are generic over a data container `D` (owned [`AlignedBuf`], borrowed
 //! `&[u8]` / `&mut [u8]`), enabling zero-copy views and arena-style allocation via
 //! [`layouts::ScratchArena`], and over a word type `W` naming the byte-layout
 //! convention of their coefficient domain (see [`layouts::ZnxWord`],
@@ -69,8 +69,8 @@
 //!
 //! All [`oep`] extension points are `unsafe` to implement. Implementors must uphold the
 //! contract documented in [`doc::backend_safety`], covering memory domains,
-//! alignment, scratch lifetime, synchronization, aliasing, and numerical
-//! exactness.
+//! alignment, scratch lifetime, synchronization, aliasing, and the numerical
+//! contract.
 //!
 //! ## Non-Goals
 //!
@@ -97,6 +97,9 @@
 /// dispatched to a backend via the [`oep`] extension points.
 pub mod api;
 
+mod aligned;
+pub use aligned::{AlignedBuf, AlignedVec};
+
 /// Criterion-based benchmark harnesses, generic over any backend.
 /// Blanket implementations connecting [`api`] traits to [`oep`] traits on
 /// [`layouts::Module`].
@@ -111,7 +114,7 @@ pub mod execution;
 /// Backend-agnostic data layout types for polynomials, vectors, matrices,
 /// and prepared (DFT-domain) representations.
 ///
-/// All types are generic over a data container `D` (`Vec<u8>`, `&[u8]`,
+/// All types are generic over a data container `D` (`AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`) enabling owned, borrowed, and scratch-backed usage.
 pub mod layouts;
 
@@ -137,7 +140,7 @@ pub mod doc {
     /// Safety contract that all [`crate::oep`] trait implementations must uphold.
     ///
     /// Covers memory domains, alignment, scratch lifetime, synchronization,
-    /// aliasing, and numerical exactness requirements.
+    /// aliasing, and the numerical contract.
     #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/backend_safety_contract.md"))]
     pub mod backend_safety {
         pub const _PLACEHOLDER: () = ();
@@ -153,7 +156,7 @@ pub const GALOISGENERATOR: u64 = 5;
 /// Default memory alignment in bytes for all allocated buffers.
 ///
 /// Set to 64 bytes to match the cache-line size of modern x86 processors
-/// and the alignment required by AVX-512 instructions.
+/// and the widest vector alignment a backend's loads require.
 pub const DEFAULTALIGN: usize = 64;
 
 fn is_aligned_custom<T>(ptr: *const T, align: usize) -> bool {
@@ -174,7 +177,7 @@ pub fn is_aligned<T>(ptr: *const T) -> bool {
 pub fn assert_alignment<T>(ptr: *const T) {
     assert!(
         is_aligned(ptr),
-        "invalid alignment: ensure passed bytes have been allocated with [alloc_aligned_u8] or [alloc_aligned]"
+        "invalid alignment: ensure passed bytes have been allocated with [alloc_aligned]"
     )
 }
 
@@ -240,7 +243,7 @@ pub fn cast_mut<T, V>(data: &mut [T]) -> &mut [V] {
 /// transparent huge pages. Overridable via `POULPY_HUGEPAGE_MIN_BYTES`.
 const HUGEPAGE_ADVISE_THRESHOLD: usize = 2 * 1024 * 1024;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(miri)))]
 fn hugepage_min_bytes() -> usize {
     use once_cell::sync::Lazy;
     static THRESH: Lazy<usize> = Lazy::new(|| {
@@ -255,7 +258,7 @@ fn hugepage_min_bytes() -> usize {
 /// `madvise(MADV_HUGEPAGE)` on a freshly-allocated range. Skipped if the
 /// pointer is not page-aligned (non-mmap'd heap arenas) or the size is
 /// below the threshold. Failure is silently ignored — advisory only.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(miri)))]
 fn advise_hugepage(ptr: *mut u8, size: usize) {
     if size < hugepage_min_bytes() {
         return;
@@ -275,88 +278,37 @@ fn advise_hugepage(ptr: *mut u8, size: usize) {
     let _ = unsafe { libc::madvise(ptr.cast(), len, libc::MADV_HUGEPAGE) };
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", not(miri))))]
 #[inline(always)]
 fn advise_hugepage(_ptr: *mut u8, _size: usize) {}
 
-/// Allocates a block of bytes with a custom alignment.
-/// Alignment must be a power of two and size a multiple of the alignment.
-/// Allocated memory is initialized to zero.
+/// Allocates zero-initialized storage of `size` elements of `T` with a custom
+/// alignment.
 ///
-/// Large allocations are advised for transparent huge pages via
-/// [`advise_hugepage`] on Linux before the zero-fill.
-///
-/// # Known issue (CRITICAL-2)
-/// The returned `Vec<u8>` was allocated with custom alignment via `std::alloc::alloc`,
-/// but `Vec::drop` will call `std::alloc::dealloc` with `align_of::<u8>() = 1`.
-/// This is technically UB per the `GlobalAlloc` contract (mismatched layout).
-/// In practice it works on all major allocators (glibc, jemalloc, mimalloc) because
-/// they ignore the alignment parameter during deallocation. A proper fix requires
-/// replacing `Vec<u8>` with a custom `AlignedBuf` type that tracks the layout.
-fn alloc_aligned_custom_u8(size: usize, align: usize) -> Vec<u8> {
-    assert!(align.is_power_of_two(), "Alignment must be a power of two but is {align}");
-    assert_eq!(
-        (size * size_of::<u8>()) % align,
-        0,
-        "size={size} must be a multiple of align={align}"
-    );
-    unsafe {
-        let layout: std::alloc::Layout = std::alloc::Layout::from_size_align(size, align).expect("Invalid alignment");
-        let ptr: *mut u8 = std::alloc::alloc(layout);
-        if ptr.is_null() {
-            panic!("Memory allocation failed");
-        }
-        assert!(
-            is_aligned_custom(ptr, align),
-            "Memory allocation at {ptr:p} is not aligned to {align} bytes"
-        );
-        // Advise before write_bytes so the zero-fill faults materialise
-        // 2 MB pages directly rather than relying on khugepaged promotion.
-        advise_hugepage(ptr, size);
-        std::ptr::write_bytes(ptr, 0, size);
-        Vec::from_raw_parts(ptr, size, size)
-    }
-}
-
-/// Allocates a zero-initialized `Vec<T>` with custom alignment.
-///
-/// The total byte size (`size * size_of::<T>()`) must be a multiple of `align`,
-/// and `align` must be a power of two.
+/// `align` must be a power of two and `size * size_of::<T>()` a multiple of
+/// it. Large allocations are advised for transparent huge pages on Linux
+/// before the zero-fill. The buffer frees itself with this same layout.
 ///
 /// # Panics
 ///
 /// - If `T` is zero-sized.
 /// - If `align` is not a power of two.
+/// - If `align` is below the alignment of `T`.
 /// - If `size * size_of::<T>()` is not a multiple of `align`.
-pub fn alloc_aligned_custom<T>(size: usize, align: usize) -> Vec<T> {
-    assert!(size_of::<T>() > 0, "alloc_aligned_custom: zero-sized types are not supported");
-    assert!(align.is_power_of_two(), "Alignment must be a power of two but is {align}");
-
-    assert_eq!(
-        (size * size_of::<T>()) % align,
-        0,
-        "size*size_of::<T>()={} must be a multiple of align={align}",
-        size * size_of::<T>(),
-    );
-
-    let mut vec_u8: Vec<u8> = alloc_aligned_custom_u8(size_of::<T>() * size, align);
-    let ptr: *mut T = vec_u8.as_mut_ptr() as *mut T;
-    let len: usize = vec_u8.len() / size_of::<T>();
-    let cap: usize = vec_u8.capacity() / size_of::<T>();
-    std::mem::forget(vec_u8);
-    unsafe { Vec::from_raw_parts(ptr, len, cap) }
+pub fn alloc_aligned_custom<T: Copy + bytemuck::Zeroable>(size: usize, align: usize) -> AlignedVec<T> {
+    AlignedVec::zeroed(size, align)
 }
 
-/// Allocates a zero-initialized `Vec<T>` aligned to [`DEFAULTALIGN`] bytes.
+/// Allocates zero-initialized storage of `T` aligned to [`DEFAULTALIGN`] bytes.
 ///
 /// The allocation is padded so that the total byte size is a multiple of
-/// [`DEFAULTALIGN`]. This is the primary allocation entry point for all
-/// layout types in the crate.
+/// [`DEFAULTALIGN`], so the returned length can exceed `size`. This is the
+/// primary allocation entry point for all layout types in the crate.
 ///
 /// # Panics
 ///
 /// Panics if `T` is zero-sized.
-pub fn alloc_aligned<T>(size: usize) -> Vec<T> {
+pub fn alloc_aligned<T: Copy + bytemuck::Zeroable>(size: usize) -> AlignedVec<T> {
     alloc_aligned_custom::<T>(
         (size * size_of::<T>()).next_multiple_of(DEFAULTALIGN) / size_of::<T>(),
         DEFAULTALIGN,

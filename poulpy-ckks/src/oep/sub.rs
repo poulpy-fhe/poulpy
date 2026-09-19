@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::sub::CKKSSubDefault;
+use crate::reference::sub::CKKSSubReference;
 
 use poulpy_core::{GLWENormalize, GLWEShift, GLWESub, layouts::GLWE};
 use poulpy_hal::{
@@ -9,24 +9,24 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    default::plaintext::CKKSPlaintextDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, UnnormalizedCKKSCiphertext, ciphertext::UnnormalizedCKKSCiphertextRefMut},
     oep::carry_verb::ckks_carry_verb_oep,
+    reference::plaintext::CKKSPlaintextReference,
 };
 
 ckks_carry_verb_oep! {
     verb: sub,
     doc_verb: "subtraction",
     impl_trait: CKKSSubImpl,
-    default_trait: CKKSSubDefault,
+    default_trait: CKKSSubReference,
     glwe_bound: GLWESub,
     pt_vec_bounds: [VecZnxLshSub, VecZnxRshSub],
 }
 
 #[macro_export]
-macro_rules! impl_ckks_sub_defaults {
+macro_rules! impl_ckks_sub_reference {
     ($be:ty) => {
-        impl $crate::default::sub::CKKSSubDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::sub::CKKSSubReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_sub_defaults;
+pub use crate::impl_ckks_sub_reference;

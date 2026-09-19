@@ -78,7 +78,7 @@ pub use znx_base::*;
 
 use std::ptr::NonNull;
 
-use crate::oep::HalModuleImpl;
+use crate::{AlignedBuf, oep::HalModuleImpl};
 
 /// Base trait alias for all data containers.
 ///
@@ -163,11 +163,14 @@ where
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {
+    // Storage/normalization only; this backend does not perform products.
+    const MAX_BASE2K: usize = 62;
+
     type TaskExecutor = crate::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = ();
@@ -182,23 +185,15 @@ impl Backend for HostBytesBackend {
     }
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut out = crate::alloc_aligned::<u8>(bytes.len());
-        out.copy_from_slice(bytes);
-        out
+        AlignedBuf::from(bytes)
     }
 
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        if crate::is_aligned(bytes.as_ptr()) {
-            bytes
-        } else {
-            let mut out = crate::alloc_aligned::<u8>(bytes.len());
-            out.copy_from_slice(&bytes);
-            out
-        }
+        AlignedBuf::from(bytes)
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
 
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
@@ -224,13 +219,25 @@ impl Backend for HostBytesBackend {
     }
 
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(
+            buf.len() >= dst.len(),
+            "backend view length {} is smaller than destination host slice length {}",
+            buf.len(),
+            dst.len()
+        );
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
 
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(
+            buf.len() >= src.len(),
+            "backend view length {} is smaller than source host slice length {}",
+            buf.len(),
+            src.len()
+        );
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
 
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -399,6 +406,30 @@ impl CopyFromHost for Vec<u8> {
     }
 }
 
+impl CopyToHost for AlignedBuf {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_to_host(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self);
+    }
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
+}
+
+impl CopyFromHost for AlignedBuf {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_from_host(&mut self, src: &[u8]) {
+        self.copy_from_slice(src);
+    }
+    fn as_host_bytes_mut(&mut self) -> Option<&mut [u8]> {
+        Some(self)
+    }
+}
+
 impl CopyToHost for &[u8] {
     fn len_bytes(&self) -> usize {
         <[u8]>::len(self)
@@ -487,7 +518,8 @@ macro_rules! impl_backend_from {
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
-            const DFT_IS_EXACT: bool = <$from as poulpy_hal::layouts::Backend>::DFT_IS_EXACT;
+            const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
+            const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
@@ -612,7 +644,7 @@ macro_rules! impl_backend_from {
             // Sizing must be forwarded explicitly: these are defaulted trait
             // methods, so without forwarding the delegate would silently get
             // the word-derived defaults instead of the source backend's
-            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // overrides (e.g. a backend's packed `bytes_of_vmp_pmat`), breaking
             // the layout compatibility asserted by the markers below.
             const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
 
@@ -661,4 +693,44 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
+}
+
+#[cfg(test)]
+mod host_transfer_tests {
+    use super::*;
+
+    /// `from_bytes` always copies into aligned storage, padding the length up
+    /// to the allocation granularity and zeroing the tail.
+    #[test]
+    fn from_bytes_pads_and_zeroes() {
+        let input = vec![1u8; 100];
+        let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
+        assert_eq!(buf.len(), 128, "input is copied into a padded buffer");
+        assert_eq!(&buf[..100], &input[..]);
+        assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
+    }
+
+    /// `from_host_bytes` always copies, so an unaligned length is padded and
+    /// the tail zeroed; the view-based copies round trip over the padded
+    /// buffer and leave the tail zero as well.
+    #[test]
+    fn from_host_bytes_unaligned_length_pads_and_zeroes() {
+        let src = [7u8; 100];
+        let buf = <HostBytesBackend as Backend>::from_host_bytes(&src);
+        assert_eq!(buf.len(), 128);
+        assert_eq!(&buf[..100], &src[..]);
+        assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
+
+        let mut owned = <HostBytesBackend as Backend>::alloc_bytes(100);
+        let src2 = [9u8; 100];
+        <HostBytesBackend as Backend>::copy_host_to_view(&mut <HostBytesBackend as Backend>::view_mut(&mut owned), &src2);
+        let mut dst = vec![0u8; 100];
+        <HostBytesBackend as Backend>::copy_view_to_host(&<HostBytesBackend as Backend>::view(&owned), &mut dst);
+        assert_eq!(dst, src2, "copy_host_to_view/copy_view_to_host round trip");
+
+        let mut all = vec![0xffu8; 128];
+        <HostBytesBackend as Backend>::copy_to_host(&owned, &mut all);
+        assert_eq!(&all[..100], &src2[..]);
+        assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
+    }
 }

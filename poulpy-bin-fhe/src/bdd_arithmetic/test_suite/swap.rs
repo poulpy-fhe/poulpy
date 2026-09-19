@@ -3,6 +3,7 @@ use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -77,7 +78,7 @@ where
 
         let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
-        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt_sel.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -158,7 +159,7 @@ where
 
         let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
-        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt_sel.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -240,7 +241,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+        let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -343,7 +344,7 @@ where
         + GLWEBlindRetrieval<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,

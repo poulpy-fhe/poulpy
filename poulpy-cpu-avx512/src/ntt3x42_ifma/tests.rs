@@ -23,7 +23,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -54,7 +54,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_dft,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
             test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -76,7 +76,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_dft_large,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<12, base2k: 50 },
+        params = TestParams { size: 1<<12, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
@@ -89,7 +89,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_dft_rayon,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42IfmaRayon,
-        params = TestParams { size: 1<<14, base2k: 50 },
+        params = TestParams { size: 1<<14, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
             test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
@@ -100,7 +100,7 @@ mod ntt3x42_ifma_tests {
         mod svp,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -112,7 +112,7 @@ mod ntt3x42_ifma_tests {
         mod vmp,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
             test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -126,7 +126,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_big,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
             test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -154,7 +154,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod derived,
         backend = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50 },
+        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
         tests = {
             test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
             test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -181,13 +181,14 @@ mod ntt3x42_ifma_tests {
             test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
             test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
             test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
+            test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
         }
     }
 
     backend_test_suite! {
         mod sampling,
         backend = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<12, base2k: 50 },
+        params = TestParams { size: 1<<12, base2k: 50, n: 1<<12 },
         tests = {
             test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
             test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
@@ -198,7 +199,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod window,
         backend = crate::NTT3x42Ifma,
-        params = TestParams { size: 1 << 8, base2k: 50 },
+        params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -207,6 +208,10 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
             test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
             test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
+            test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+            test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
+            test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
+            test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
             test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         }
     }
@@ -215,7 +220,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod window_rayon,
         backend = crate::NTT3x42IfmaRayon,
-        params = TestParams { size: 1 << 8, base2k: 50 },
+        params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -224,6 +229,10 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
             test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
             test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
+            test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+            test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
+            test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
+            test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
             test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         }
     }
@@ -240,7 +249,7 @@ mod ntt3x42_ifma_tests {
         mod ntt_n1024,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<10, base2k: 50 },
+        params = TestParams { size: 1<<10, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -253,7 +262,7 @@ mod ntt3x42_ifma_tests {
         mod ntt_n8192,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<13, base2k: 50 },
+        params = TestParams { size: 1<<13, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -266,7 +275,7 @@ mod ntt3x42_ifma_tests {
         mod ntt_n16384,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<14, base2k: 50 },
+        params = TestParams { size: 1<<14, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -279,7 +288,7 @@ mod ntt3x42_ifma_tests {
         mod ntt_n32768,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<15, base2k: 50 },
+        params = TestParams { size: 1<<15, base2k: 50, n: 8 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -385,29 +394,29 @@ mod ntt3x42_ifma_tests {
 
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma() {
-    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
+    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
+    test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma_rayon() {
-    let module = Module::<crate::NTT3x42IfmaRayon>::new(8);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(16);
+    test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_ntt3x42_ifma() {
-    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution(&module, 12);
+    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
+    test_convolution(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_pairwise_ntt3x42_ifma() {
-    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_pairwise(&module, 12);
+    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
+    test_convolution_pairwise(&module, module.n(), 12);
 }
 
 #[test]
@@ -441,27 +450,34 @@ fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
     let params = poulpy_hal::test_suite::TestParams {
         size: 1 << 8,
         base2k: 50,
+        n: 1 << 8,
     };
     poulpy_core::test_suite::noise::keyswitch::test_glwe_keyswitch(&params, &Module::<NTT3x42Ifma>::new(params.size as u64));
 }
 
 #[test]
 fn test_convolution_add_ntt3x42_ifma() {
-    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_add(&module, 12);
+    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
+    test_convolution_add(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
-    test_convolution_sum(&module, 12);
+    test_convolution_sum(&module, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::MIN_DEGREE, 12);
+    test_convolution_sum(&module, module.n(), 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
-    test_convolution_sum(&module, 12);
+    test_convolution_sum(
+        &module,
+        <crate::NTT3x42IfmaRayon as poulpy_hal::layouts::Backend>::MIN_DEGREE,
+        12,
+    );
+    test_convolution_sum(&module, module.n(), 12);
 }
 
 #[test]
@@ -478,4 +494,26 @@ fn test_ntt3x42_ifma_zeroed_allocation_alignment_and_padding() {
         assert!(is_aligned(bytes.as_ptr()));
         assert!(bytes.iter().all(|&byte| byte == 0));
     }
+}
+
+#[test]
+fn large_ring_ntt_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 17);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 17);
+}
+
+#[test]
+fn large_ring_ntt_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 18);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 18);
 }

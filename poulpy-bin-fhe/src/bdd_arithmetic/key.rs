@@ -8,6 +8,7 @@ use crate::{
         CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared, CircuitBootstrappingKeyPreparedFactory,
     },
 };
+use poulpy_hal::AlignedBuf;
 
 use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -274,9 +275,9 @@ where
     }
 }
 
-impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
+impl<BRA: BlindRotationAlgo> BDDKey<AlignedBuf, BRA, i64> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend>(
+    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -294,7 +295,7 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
     }
 }
 
-impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<Vec<u8>, BRA, i64> {
+impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<AlignedBuf, BRA, i64> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.cbt.read_from(reader)?;
         match reader.read_u8()? {
@@ -333,7 +334,7 @@ impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<Vec<u8>, BRA, i64> {
     }
 }
 
-impl<BRA: BlindRotationAlgo> WriterTo for BDDKey<Vec<u8>, BRA, i64> {
+impl<BRA: BlindRotationAlgo> WriterTo for BDDKey<AlignedBuf, BRA, i64> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.cbt.write_to(writer)?;
         match &self.ks_glwe {

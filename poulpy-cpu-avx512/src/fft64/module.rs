@@ -16,7 +16,7 @@ use poulpy_cpu_ref::reference::{
         ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
     },
 };
-use poulpy_hal::{alloc_aligned, assert_alignment, layouts::Backend};
+use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
 
 use crate::{
     FFT64Avx512,
@@ -82,11 +82,17 @@ pub struct FFT64Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
 impl Backend for FFT64Avx512 {
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+
+    // The AVX-512 complex multiply steps eight complex slots at a time with no
+    // tail, so the smallest ring this backend serves has n / 2 = 8 slots.
+    const MIN_DEGREE: usize = 16;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64Avx512Handle;
@@ -95,16 +101,13 @@ impl Backend for FFT64Avx512 {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut buf = alloc_aligned::<u8>(bytes.len());
-        buf.copy_from_slice(bytes);
-        buf
+        AlignedBuf::from(bytes)
     }
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        assert_alignment(bytes.as_ptr());
-        bytes
+        AlignedBuf::from(bytes)
     }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
         assert!(buf.len() >= dst.len());
@@ -117,12 +120,14 @@ impl Backend for FFT64Avx512 {
         buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len());
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len());
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -656,12 +661,13 @@ impl Reim4Convolution for FFT64Avx512 {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
-        assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
+        unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -675,12 +681,15 @@ impl Reim4Convolution for FFT64Avx512 {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
-        assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
+        unsafe {
+            reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
+        }
     }
 
     #[inline(always)]
@@ -696,13 +705,16 @@ impl Reim4Convolution for FFT64Avx512 {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
         unsafe {
-            reim4_convolution_pairwise_apply_avx512(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp)
+            reim4_convolution_pairwise_apply_avx512(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            )
         }
     }
 

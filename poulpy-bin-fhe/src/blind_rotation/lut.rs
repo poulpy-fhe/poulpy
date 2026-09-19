@@ -1,6 +1,7 @@
 use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{
@@ -350,11 +351,11 @@ where
             let mut tmp: Vec<i64> = vec![0i64; domain_size];
 
             for i in 0..res.extension_factor() {
-                let mut host = VecZnx::<Vec<u8>, i64>::from_bytes(
+                let mut host = VecZnx::<AlignedBuf, i64>::from_bytes(
                     res.data[i].n().as_usize(),
                     1,
                     res.data[i].size(),
-                    poulpy_hal::alloc_aligned::<u8>(VecZnx::<Vec<u8>, i64>::bytes_of(
+                    poulpy_hal::alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(
                         res.data[i].n().as_usize(),
                         1,
                         res.data[i].size(),
@@ -375,11 +376,11 @@ where
                 }
             }
         } else {
-            let mut host = VecZnx::<Vec<u8>, i64>::from_bytes(
+            let mut host = VecZnx::<AlignedBuf, i64>::from_bytes(
                 res.data[0].n().as_usize(),
                 1,
                 res.data[0].size(),
-                poulpy_hal::alloc_aligned::<u8>(VecZnx::<Vec<u8>, i64>::bytes_of(
+                poulpy_hal::alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(
                     res.data[0].n().as_usize(),
                     1,
                     res.data[0].size(),

@@ -35,7 +35,7 @@ use poulpy_hal::{
     execution::{ScratchWorkers, SerialTaskExecutor, scratch_workers, scratch_workers_within},
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, Module,
-        ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut,
+        ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut, check_degree,
         vec_znx_dft_backend_mut_from_mut,
     },
 };
@@ -90,11 +90,14 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "cnv_prepare_left: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
+        convolution_prepare_left::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -116,11 +119,14 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "cnv_prepare_right: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
+        convolution_prepare_right::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -133,7 +139,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(_module) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(_module.n()) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -219,7 +225,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = reim4_block_workers_within::<Self>(_module, per_worker, scratch.available()) * per_worker;
+        let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -244,7 +250,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = reim4_block_workers_within::<Self>(_module, per_worker, scratch.available()) * per_worker;
+        let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_apply_dft_add::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -259,7 +265,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(_module) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(_module.n()) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -282,7 +288,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = convolution_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = reim4_block_workers_within::<Self>(_module, per_worker, scratch.available()) * per_worker;
+        let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_pairwise_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
@@ -307,11 +313,15 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = left.n();
+        check_degree::<Self>(module.n(), n);
+        assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
+        assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
         let tmp_size = left.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self::<Self>(module.get_fft_table(), left, right, a, &mut tmp_ref);
+        convolution_prepare_self::<Self>(module.get_fft_table_for(n), left, right, a, &mut tmp_ref);
     }
 }
 
@@ -320,41 +330,26 @@ impl<BE: Backend<ZnxWord = i64> + ScratchWorkers> FFT64ConvolutionDefault for BE
 {
 }
 
-/// Worker slices for the block-parallel reim4 convolution kernels.
-fn reim4_block_workers<BE: Backend + ScratchWorkers>(module: &Module<BE>) -> usize
-where
-    Module<BE>: ModuleN,
-{
-    scratch_workers::<BE::TaskExecutor>((module.n() / 8).min(BE::APPLY))
+/// Worker slices for the block-parallel reim4 convolution kernels at degree `n`.
+fn reim4_block_workers<BE: Backend + ScratchWorkers>(n: usize) -> usize {
+    scratch_workers::<BE::TaskExecutor>((n / 8).min(BE::APPLY))
 }
 
-fn reim4_block_workers_within<BE: Backend + ScratchWorkers>(module: &Module<BE>, per_worker: usize, available: usize) -> usize
-where
-    Module<BE>: ModuleN,
-{
-    scratch_workers_within::<BE::TaskExecutor>((module.n() / 8).min(BE::APPLY), per_worker, available)
+fn reim4_block_workers_within<BE: Backend + ScratchWorkers>(n: usize, per_worker: usize, available: usize) -> usize {
+    scratch_workers_within::<BE::TaskExecutor>((n / 8).min(BE::APPLY), per_worker, available)
 }
 
-/// Worker slices for the block-group parallel convolution kernels.
-fn cnv_group_workers<BE: Backend + ScratchWorkers>(module: &Module<BE>) -> usize
-where
-    Module<BE>: ModuleN,
-{
-    scratch_workers::<BE::TaskExecutor>(cnv_groups(module).min(BE::APPLY))
+/// Worker slices for the block-group parallel convolution kernels at degree `n`.
+fn cnv_group_workers<BE: Backend + ScratchWorkers>(n: usize) -> usize {
+    scratch_workers::<BE::TaskExecutor>(cnv_groups(n).min(BE::APPLY))
 }
 
-fn cnv_group_workers_within<BE: Backend + ScratchWorkers>(module: &Module<BE>, per_worker: usize, available: usize) -> usize
-where
-    Module<BE>: ModuleN,
-{
-    scratch_workers_within::<BE::TaskExecutor>(cnv_groups(module).min(BE::APPLY), per_worker, available)
+fn cnv_group_workers_within<BE: Backend + ScratchWorkers>(n: usize, per_worker: usize, available: usize) -> usize {
+    scratch_workers_within::<BE::TaskExecutor>(cnv_groups(n).min(BE::APPLY), per_worker, available)
 }
 
-fn cnv_groups<BE: Backend>(module: &Module<BE>) -> usize
-where
-    Module<BE>: ModuleN,
-{
-    (module.n() / 2).div_ceil(CNV_ACC_GROUP)
+fn cnv_groups(n: usize) -> usize {
+    (n / 2).div_ceil(CNV_ACC_GROUP)
 }
 
 #[doc(hidden)]
@@ -384,7 +379,7 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -413,7 +408,7 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -430,7 +425,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        cnv_group_workers::<Self>(_module) * ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -537,7 +532,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = cnv_group_workers_within::<Self>(module, per_worker, scratch.available()) * per_worker;
+        let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_apply_dft::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -563,7 +558,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = cnv_group_workers_within::<Self>(module, per_worker, scratch.available()) * per_worker;
+        let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_apply_dft_add::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -612,7 +607,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        cnv_group_workers::<Self>(_module) * ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -636,7 +631,7 @@ where
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
-        let bytes = cnv_group_workers_within::<Self>(module, per_worker, scratch.available()) * per_worker;
+        let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_pairwise_apply_dft::<Self>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
@@ -665,7 +660,7 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes(left.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(left.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);

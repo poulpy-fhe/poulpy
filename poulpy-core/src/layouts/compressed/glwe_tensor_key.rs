@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
     source::Source,
@@ -133,7 +134,7 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GGLWECompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs))
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs))
     }
 }
 

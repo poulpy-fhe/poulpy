@@ -9,7 +9,7 @@
 //! The *prepared* (convolution-domain) caches live in
 //! [`crate::layouts::prepared`]; the HAL-dependent allocators and the
 //! prepare/eval reference algorithms live in
-//! [`crate::default::linear_transformation`].
+//! [`crate::reference::linear_transformation`].
 
 use std::collections::{BTreeMap, BTreeSet};
 

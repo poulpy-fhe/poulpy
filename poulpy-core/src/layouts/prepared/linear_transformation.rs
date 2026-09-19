@@ -4,7 +4,7 @@
 //! convolution: the input baby rotations are the *left* operand (`CnvPVecL`)
 //! and the matrix diagonals are the *right* operand (`CnvPVecR`). The two
 //! caches here hold those prepared operands. They are allocated and populated
-//! by the HAL-dependent routines in [`crate::default::linear_transformation`];
+//! by the HAL-dependent routines in [`crate::reference::linear_transformation`];
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 

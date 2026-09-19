@@ -7,6 +7,7 @@
 //! standard deviation to hold, so those two are registered by hand next to a
 //! suite that runs that wide, not from `core_backend_test_suite!` (degree 256).
 
+use poulpy_hal::AlignedBuf;
 use std::f64::consts::SQRT_2;
 
 use poulpy_hal::{
@@ -39,8 +40,8 @@ fn fill_and_download<BE: TestBackend>(
 where
     Module<BE>: ScalarZnxFillDistribution<BE>,
 {
-    let mut host: ScalarZnx<Vec<u8>, BE::ZnxWord> = ScalarZnx::from_data(
-        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+    let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord> = ScalarZnx::from_data(
+        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
         module.n(),
         COLS,
     );
@@ -179,12 +180,12 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     for col_i in 0..COLS {
-        let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(COLS, SIZE);
+        let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
         module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
         module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
 
         // The digits are only readable once normalized back into a `VecZnx`.
-        let mut res = module.vec_znx_alloc(COLS, SIZE);
+        let mut res = module.vec_znx_alloc(module.n(), COLS, SIZE);
         for col_j in 0..COLS {
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut res),

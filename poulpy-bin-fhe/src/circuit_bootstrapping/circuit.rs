@@ -750,11 +750,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
             key.brk
                 .execute(module, &mut res_glwe_brk_layout, lwe, &plan.lut, &mut op_scratch.borrow());
 
-            if res_glwe_brk_layout.base2k() == res_glwe_atk_layout.base2k() {
-                module.glwe_copy(&mut res_glwe_atk_layout, &res_glwe_brk_layout);
-            } else {
-                module.glwe_normalize(&mut res_glwe_atk_layout, &res_glwe_brk_layout, &mut op_scratch);
-            }
+            module.glwe_copy(&mut res_glwe_atk_layout, &res_glwe_brk_layout, &mut op_scratch);
         }
 
         let gap = 2 * plan.lut.drift / plan.lut.extension_factor();
@@ -776,7 +772,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
                 CircuitBootstrappingOutput::Constant => {
                     let (mut tmp_row, mut op_scratch) = scratch_1.borrow().take_glwe_scratch(&res_row);
                     module.glwe_trace(&mut tmp_row, 0, &res_glwe_atk_layout, &key.atk, &mut op_scratch);
-                    module.glwe_copy(&mut res_row, &tmp_row);
+                    module.glwe_copy(&mut res_row, &tmp_row, &mut op_scratch);
                 }
             }
 
@@ -828,7 +824,7 @@ fn post_process<R, A, M, H, BE>(
                 module.glwe_rotate_assign(-(1 << log_gap_in), &mut a_trace, &mut op_scratch.borrow());
             }
 
-            module.glwe_copy(ct, &a_trace);
+            module.glwe_copy(ct, &a_trace, &mut op_scratch);
         }
 
         let mut cts = HashMap::new();
@@ -837,11 +833,11 @@ fn post_process<R, A, M, H, BE>(
         }
 
         module.glwe_pack(&mut packed, cts, log_gap_out, auto_keys, &mut op_scratch);
-        module.glwe_copy(res, &packed);
+        module.glwe_copy(res, &packed, &mut op_scratch);
     } else {
         let (mut traced, mut op_scratch) = scratch.borrow().take_glwe_scratch(res);
         module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, &mut op_scratch);
-        module.glwe_copy(res, &traced);
+        module.glwe_copy(res, &traced, &mut op_scratch);
     }
 }
 

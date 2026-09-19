@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPrepare},
     layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolOwned},
@@ -61,13 +62,13 @@ where
 
         if let Distribution::BinaryBlock(_) = other.dist {
             let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
-            let mut buf: ScalarZnx<Vec<u8>, i64> = ScalarZnx::from_data(
-                HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, 1)),
+            let mut buf: ScalarZnx<AlignedBuf, i64> = ScalarZnx::from_data(
+                HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)),
                 n,
                 1,
             );
             (0..n << 1).for_each(|i| {
-                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1, PrepareHint::Reuse);
+                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(self.n(), 1, PrepareHint::Reuse);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);
                 x_pow_a.push(res);
             });

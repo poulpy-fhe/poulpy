@@ -116,7 +116,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
                 acc_prev[i].num = 0;
             }
         }
-        module.glwe_copy(res, &self.accumulators.last().unwrap().data);
+        module.glwe_copy(res, &self.accumulators.last().unwrap().data, scratch);
         self.reset()
     }
 
@@ -165,7 +165,7 @@ fn add_core<A, S, M, BE>(
 
     match acc_prev[0].num {
         0 => {
-            module.glwe_copy(&mut acc_prev[0].data, a);
+            module.glwe_copy(&mut acc_prev[0].data, a, scratch);
             acc_prev[0].num = 1;
         }
         1 => {

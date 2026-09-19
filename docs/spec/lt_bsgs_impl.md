@@ -8,7 +8,7 @@ first for the math (the diagonal method §2, the BSGS factorization §3, the sav
 beyond the spec*.
 
 All paths below are under
-[`poulpy-core/src/default/linear_transformation/`](../../poulpy-core/src/default/linear_transformation.rs)
+[`poulpy-core/src/reference/linear_transformation/`](../../poulpy-core/src/reference/linear_transformation.rs)
 unless noted. The scheme-agnostic data types and the BSGS schedule derivation live in
 [`poulpy-core/src/layouts/`](../../poulpy-core/src/layouts/linear_transformation.rs); the
 prepared (convolution-domain) caches live in
@@ -23,14 +23,14 @@ and so the layout/schedule math stays free of any backend.
 
 | File | Role | Spec § |
 |---|---|---|
-| [`linear_transformation.rs`](../../poulpy-core/src/default/linear_transformation.rs) | Module root: re-exports the data types and the `*_default` reference functions a backend forwards to. | §11 |
-| [`prepare.rs`](../../poulpy-core/src/default/linear_transformation/prepare.rs) | **Setup, RHS:** encode-then-`cnv_prepare_right` the matrix diagonals into `CnvPVecR`. | §5 |
-| [`baby_steps.rs`](../../poulpy-core/src/default/linear_transformation/baby_steps.rs) | **Setup, LHS / Phase A:** hoisted baby rotations `rot(v,k)`, prepared as `CnvPVecL`. | §6.2 |
-| [`inner_product.rs`](../../poulpy-core/src/default/linear_transformation/inner_product.rs) | **Phase B, PROD:** per-giant DFT-domain inner sum `Σ_k ũ_{j,k} ⊙ rot(v,k)`. | §6.3 |
-| [`lazy.rs`](../../poulpy-core/src/default/linear_transformation/lazy.rs) | **Phase B, ROT + Phase C:** lazy DFT giant rotation, DFT accumulate helpers, final normalize. | §6.3–§6.4 |
-| [`prepared_giants.rs`](../../poulpy-core/src/default/linear_transformation/prepared_giants.rs) | **Phase B driver:** the giant-step loop `glwe_eval_giant_steps`; dispatches lazy vs fallback; the `LinearTransformationRhs` trait that unifies prepared and streamed RHS. | §6.1, §6.3 |
-| [`eval.rs`](../../poulpy-core/src/default/linear_transformation/eval.rs) | **Public entry points** + scratch sizing (`*_tmp_bytes`). Thin forwards into the files above. | §11 |
-| [`tests.rs`](../../poulpy-core/src/default/linear_transformation/tests.rs) | Functional / identity / sparse / `n1`-sweep / headroom validation. | §12 |
+| [`linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs) | Module root: re-exports the data types and the `*_reference` functions a backend forwards to. | §11 |
+| [`prepare.rs`](../../poulpy-core/src/reference/linear_transformation/prepare.rs) | **Setup, RHS:** encode-then-`cnv_prepare_right` the matrix diagonals into `CnvPVecR`. | §5 |
+| [`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs) | **Setup, LHS / Phase A:** hoisted baby rotations `rot(v,k)`, prepared as `CnvPVecL`. | §6.2 |
+| [`inner_product.rs`](../../poulpy-core/src/reference/linear_transformation/inner_product.rs) | **Phase B, PROD:** per-giant DFT-domain inner sum `Σ_k ũ_{j,k} ⊙ rot(v,k)`. | §6.3 |
+| [`lazy.rs`](../../poulpy-core/src/reference/linear_transformation/lazy.rs) | **Phase B, ROT + Phase C:** lazy DFT giant rotation, DFT accumulate helpers, final normalize. | §6.3–§6.4 |
+| [`prepared_giants.rs`](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs) | **Phase B driver:** the giant-step loop `glwe_eval_giant_steps`; dispatches lazy vs fallback; the `LinearTransformationRhs` trait that unifies prepared and streamed RHS. | §6.1, §6.3 |
+| [`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs) | **Public entry points** + scratch sizing (`*_tmp_bytes`). Thin forwards into the files above. | §11 |
+| [`tests.rs`](../../poulpy-core/src/reference/linear_transformation/tests.rs) | Functional / identity / sparse / `n1`-sweep / headroom validation. | §12 |
 
 ### Data types (in `layouts`)
 
@@ -91,18 +91,18 @@ The BSGS evaluation is a bivariate convolution `M·v = Σ_k baby_k ⊗ diagonal_
 rotations are the **left** operand, the diagonals the **right** operand. Both are prepared
 once, at setup (**saving #8**).
 
-### 3.1 RHS — diagonals → `CnvPVecR` ([`prepare.rs`](../../poulpy-core/src/default/linear_transformation/prepare.rs))
+### 3.1 RHS — diagonals → `CnvPVecR` ([`prepare.rs`](../../poulpy-core/src/reference/linear_transformation/prepare.rs))
 
 `LinearTransformationRhsPrepared::alloc{,_from_index}` sizes the cache from the schedule
 and a plaintext-shape proxy (one `CnvPVecR(1, pt_size)` per real diagonal), recording the
 diagonals' `pt_base2k` / `pt_k` so the evaluator never needs the raw transform again.
 
-`glwe_prepare_linear_transformation_rhs_default` then fills each pre-allocated slot with
+`glwe_prepare_linear_transformation_rhs_reference` then fills each pre-allocated slot with
 `cnv_prepare_right(plaintext)`. Zero allocations happen here; it only populates. The
 diagonals are expected pre-encoded (and pre-rotated `ũ_{j,k} = rot(u_{n1·j+k}, −n1·j)`) by
 the CKKS layer — the core engine is scheme-agnostic.
 
-### 3.2 LHS — baby rotations → `CnvPVecL` ([`baby_steps.rs`](../../poulpy-core/src/default/linear_transformation/baby_steps.rs), Phase A)
+### 3.2 LHS — baby rotations → `CnvPVecL` ([`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs), Phase A)
 
 `glwe_prepare_linear_transformation_baby_steps` materializes `rot(v,k)` for every baby `k` in the
 cache. This is **Phase A** of the spec, and it carries three savings:
@@ -110,13 +110,13 @@ cache. This is **Phase A** of the spec, and it carries three savings:
 - **Saving #3 (free identity).** `k == 0` skips the key-switch and automorphism entirely:
   the input ciphertext `a` is prepared directly into `CnvPVecL`.
 - **Saving #2 (hoisting).** For the non-trivial `k`, the mask columns are DFT'd **once**
-  into `a_dft` ([baby_steps.rs:233-241](../../poulpy-core/src/default/linear_transformation/baby_steps.rs#L233-L241)),
+  into `a_dft` ([baby_steps.rs:233-241](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs#L233-L241)),
   and every per-`k` VMP reuses that single `a_dft_ref` — only the automorphism key differs.
   Each rotation is then `VMP → IDFT → add body → normalize → automorphism`
   (`glwe_hoisted_baby_rotation`), which is exactly the GLWE automorphism mechanics
   (spec §4), inlined so the hoisting seam is exposed.
 - The hoisted route is taken only when the input and key share a `base2k`
-  ([baby_steps.rs:225-230](../../poulpy-core/src/default/linear_transformation/baby_steps.rs#L225-L230));
+  ([baby_steps.rs:225-230](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs#L225-L230));
   otherwise it falls back to the public `glwe_automorphism` per baby (still correct, just
   un-hoisted).
 
@@ -125,7 +125,7 @@ rotations reused across **all** `n2` giant steps.
 
 ---
 
-## 4. Evaluation — the giant-step loop ([`prepared_giants.rs`](../../poulpy-core/src/default/linear_transformation/prepared_giants.rs))
+## 4. Evaluation — the giant-step loop ([`prepared_giants.rs`](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs))
 
 `glwe_eval_giant_steps` is the heart of Phase B/C. It is generic over the `LinearTransformationRhs`
 trait so the **same loop** drives both RHS flavors:
@@ -138,7 +138,7 @@ Only the per-giant `accumulate_prod` differs; the rotate/accumulate tail is shar
 ### 4.1 Path selection
 
 The loop picks one of two strategies up front
-([prepared_giants.rs:218-236](../../poulpy-core/src/default/linear_transformation/prepared_giants.rs#L218-L236)):
+([prepared_giants.rs:218-236](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L218-L236)):
 
 - **Lazy DFT path** (the hot path) — taken when `res`, the PROD output, and the keys all
   share a `base2k` (or when there is no giant rotation at all). Everything rides in DFT
@@ -147,7 +147,7 @@ The loop picks one of two strategies up front
   each giant contribution to SMALL and uses the public normalized `glwe_automorphism`. It
   is *correct* but gives up savings 4–6; it exists only so mismatched bases don't break.
 
-### 4.2 PROD — the inner sum ([`inner_product.rs`](../../poulpy-core/src/default/linear_transformation/inner_product.rs))
+### 4.2 PROD — the inner sum ([`inner_product.rs`](../../poulpy-core/src/reference/linear_transformation/inner_product.rs))
 
 For each giant step `j`, `glwe_accumulate_prepared_baby_steps_dft` computes
 `Σ_k ũ_{j,k} ⊙ rot(v,k)` and **leaves it in `VecZnxDft`**. Because `cnv_apply_dft`
@@ -159,7 +159,7 @@ PROD)**.
 The streamed sibling `glwe_accumulate_unprepared_baby_steps_dft` is identical except it
 `cnv_prepare_right`s each diagonal on the fly into one reused scratch `CnvPVecR` — see §6.
 
-### 4.3 ROT — the lazy giant rotation ([`lazy.rs`](../../poulpy-core/src/default/linear_transformation/lazy.rs))
+### 4.3 ROT — the lazy giant rotation ([`lazy.rs`](../../poulpy-core/src/reference/linear_transformation/lazy.rs))
 
 This is where the implementation is **lazier than the spec**. Spec §11 asked for a
 *deferred-normalization BIG automorphism*: `idft → big_add(body) → big_automorphism`, left
@@ -202,21 +202,21 @@ this final normalize.
 
 ---
 
-## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/default/linear_transformation/eval.rs))
+## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs))
 
-These `*_default` free functions are what a backend forwards to from its
-`crate::oep::LinearTransformationDefault` impl (via `impl_linear_transformation_defaults_full!`):
+These `*_reference` free functions are what a backend forwards to from its
+`crate::oep::LinearTransformationReference` impl (via `impl_linear_transformation_reference_full!`):
 
 | Function | Does |
 |---|---|
-| `glwe_prepare_linear_transformation_rhs_default` | Setup §3.1 (prepare.rs). |
-| `glwe_prepare_linear_transformation_baby_steps_default` | Setup §3.2 / Phase A (baby_steps.rs). |
-| `glwe_eval_linear_transformation_into_default` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
-| `glwe_eval_linear_transformation_unprepared_rhs_into_default` | Streamed eval (§6). |
-| `*_tmp_bytes_default` siblings | Scratch sizing. |
+| `glwe_prepare_linear_transformation_rhs_reference` | Setup §3.1 (prepare.rs). |
+| `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
+| `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
+| `glwe_eval_linear_transformation_unprepared_rhs_into_reference` | Streamed eval (§6). |
+| `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of
-`glwe_keyswitch_tmp_bytes_default`: they size each route (lazy DFT vs fallback, hoisted vs
+`glwe_keyswitch_tmp_bytes_reference`: they size each route (lazy DFT vs fallback, hoisted vs
 plain) and take the `max`. The eval budget covers the hoisted `a_dft`, the DFT PROD buffer
 + DFT temp, the DFT giant accumulator, the rotation scratch, the final BIG accumulator, and
 the per-op VMP/IDFT/normalize/convolution `*_tmp_bytes`. The streamed variant adds one
@@ -256,7 +256,7 @@ at memory-bound backends (e.g. GPU). It reuses the entire giant-step loop unchan
 
 The CKKS layer
 ([`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs),
-[`poulpy-ckks/src/default/linear_transformation.rs`](../../poulpy-ckks/src/default/linear_transformation.rs))
+[`poulpy-ckks/src/reference/linear_transformation.rs`](../../poulpy-ckks/src/reference/linear_transformation.rs))
 stays thin per spec §11: it owns all `log_delta` / `log_budget` / `cnv_offset` math,
 encodes and pre-rotates the diagonals, builds the galois-element → key map, and delegates
 every FHE operation to the core engine above. No FHE arithmetic lives in the CKKS layer.

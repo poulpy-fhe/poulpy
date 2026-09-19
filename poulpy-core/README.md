@@ -21,7 +21,7 @@ cargo test -p poulpy-cpu-ref --features enable-core
 `poulpy-core` is backend-agnostic. Concrete execution lives in backend crates such as
 `poulpy-cpu-ref`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
 `poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-ref`
-hosts the default implementations, while accelerated backends override selected methods.
+hosts the reference implementations, while accelerated backends override selected methods.
 
 The canonical public traits live under `poulpy_core::api::*`:
 
@@ -41,7 +41,7 @@ where
     // then call the safe `poulpy_core::api::*` traits through `module`
     // or the convenience methods on `GLWE`.
     let _ = module;
-    let _phantom: Option<GLWE<Vec<u8>>> = None;
+    let _phantom: Option<GLWE<AlignedBuf>> = None;
 }
 ```
 
@@ -61,11 +61,11 @@ For a runnable end-to-end example using a concrete backend, see
 | Module | Role |
 |--------|------|
 | `api` | Public traits for Module-LWE operations (`GLWEEncryptSk`, `GLWEAutomorphism`, `GLWETensoring`, …). Trait bounds reference `oep` for the backend capabilities they need. |
-| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `default` method automatically. Macros (`impl_*_defaults_full!`) are what a backend crate calls to opt in. |
-| `default` | Portable algorithm implementations as safe trait methods — the fallback every backend gets for free. |
+| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. Macros (`impl_*_reference_full!`) are what a backend crate calls to opt in. |
+| `reference` | The reference implementation of every operation: portable compositions of the HAL as safe trait methods, what every backend gets for free. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. |
 
-**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of relying on the blanket wiring to `default`. Only the operations that need a faster or device-native implementation require an override; everything else is inherited automatically.
+**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of relying on the blanket wiring to `reference`. Only the operations that need a faster or device-native implementation require an override; everything else is inherited automatically.
 
 ## Layouts
 
@@ -97,9 +97,9 @@ flowchart TD
 Equivalent Rust:
 
 ```rust
-let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> =
+let mut atk_compressed: GLWEAutomorphismKeyCompressed<AlignedBuf> =
     GLWEAutomorphismKeyCompressed::alloc(...);
-let mut atk: GLWEAutomorphismKey<Vec<u8>> =
+let mut atk: GLWEAutomorphismKey<AlignedBuf> =
     GLWEAutomorphismKey::alloc(...);
     module.decompress_automorphism_key(&mut atk, &atk_compressed);
 let mut atk_prep = atk.prepare_alloc(module);
@@ -114,7 +114,7 @@ let mut atk_prep = atk.prepare_alloc(module);
   However, it remains naturally usable on `GGLWE` and `GGSW` objects, since these are vectors/matrices of `GLWECiphertext`.
 
 ```rust
-let mut atk: GLWEAutomorphismKey<Vec<u8>> =
+let mut atk: GLWEAutomorphismKey<AlignedBuf> =
         GLWEAutomorphismKey::alloc(...);
 module.glwe_automorphism_key_encrypt_sk(&mut atk, ...);
 module.glwe_decrypt(&atk.at(row, 0), ...);

@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::pow2::CKKSPow2Default;
+use crate::reference::pow2::CKKSPow2Reference;
 
 use poulpy_core::{GLWECopy, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -50,10 +50,10 @@ pub unsafe trait CKKSPow2Impl: Backend {
 unsafe impl<BE: Backend> CKKSPow2Impl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: crate::default::pow2::CKKSPow2Default<BE> + GLWECopy<BE> + GLWEShift<BE>,
+    Module<BE>: crate::reference::pow2::CKKSPow2Reference<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
     fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_mul_pow2_tmp_bytes_default(res_size)
+        module.ckks_mul_pow2_tmp_bytes_reference(res_size)
     }
 
     fn ckks_mul_pow2_into_impl<Dst, Src>(
@@ -67,7 +67,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_mul_pow2_into_default(dst, src, bits, scratch)
+        module.ckks_mul_pow2_into_reference(dst, src, bits, scratch)
     }
 
     fn ckks_mul_pow2_assign_impl<Dst>(
@@ -79,11 +79,11 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_mul_pow2_assign_default(dst, bits, scratch)
+        module.ckks_mul_pow2_assign_reference(dst, bits, scratch)
     }
 
     fn ckks_div_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_div_pow2_tmp_bytes_default(res_size)
+        module.ckks_div_pow2_tmp_bytes_reference(res_size)
     }
 
     fn ckks_div_pow2_into_impl<Dst, Src>(
@@ -97,21 +97,21 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_div_pow2_into_default(dst, src, bits, scratch)
+        module.ckks_div_pow2_into_reference(dst, src, bits, scratch)
     }
 
     fn ckks_div_pow2_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, bits: usize) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_div_pow2_assign_default(dst, bits)
+        module.ckks_div_pow2_assign_reference(dst, bits)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_pow2_defaults {
+macro_rules! impl_ckks_pow2_reference {
     ($be:ty) => {
-        impl $crate::default::pow2::CKKSPow2Default<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::pow2::CKKSPow2Reference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_pow2_defaults;
+pub use crate::impl_ckks_pow2_reference;

@@ -5,6 +5,7 @@ use std::{
 
 use std::fmt;
 
+use crate::AlignedBuf;
 use crate::layouts::{
     Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, VecZnxInfos, VecZnxShape, ZnxInfos,
     ZnxView, ZnxViewMut, ZnxZero,
@@ -168,12 +169,14 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> VecZnxBigOwned<B>
+    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_vec_znx_big(n, cols, size));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxBig {
@@ -358,7 +361,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`VecZnxBigLayoutCompatible`](crate::layouts::VecZnxBigLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> VecZnxBig<D, W, B2>
     where
         B2: Backend<BigWord = W>,

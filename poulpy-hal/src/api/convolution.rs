@@ -6,41 +6,40 @@ use crate::layouts::{
 /// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
 ///
 /// ```text
-/// op         cnv_pvec_left_alloc(cols, size, hint) / cnv_pvec_right_alloc(cols, size, hint)
+/// op         cnv_pvec_left_alloc(n, cols, size, hint) / cnv_pvec_right_alloc(n, cols, size, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N CnvPVecL or CnvPVecR of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
-/// exact      not an arithmetic operation
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1; hint: the PrepareHint the destination will be written under
+/// ensures    returns an owned degree-n CnvPVecL or CnvPVecR of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecAlloc<BE: Backend> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
+    /// Returns an owned degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint`.
+    fn cnv_pvec_left_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
+    /// Returns an owned degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint`.
+    fn cnv_pvec_right_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
 }
 
 /// Returns the byte sizes for prepared convolution operands.
 ///
 /// ```text
-/// op         bytes_of_cnv_pvec_left(cols, size, hint) / bytes_of_cnv_pvec_right(cols, size, hint)
+/// op         bytes_of_cnv_pvec_left(n, cols, size, hint) / bytes_of_cnv_pvec_right(n, cols, size, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
-/// ensures    returns the byte size of such a prepared operand, the amount take_cnv_pvec_left_scratch and its right twin carve. The hint never changes the value a prepared operand denotes, and the in-tree backends give it the same size
-/// exact      not an arithmetic operation
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// ensures    returns the byte size required for the given prepared operand dimensions and hint
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecBytesOf {
-    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
-    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
+    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
+    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Bivariate convolution over `Z[X, Y] mod (X^N + 1)` where `Y = 2^{-K}`.
-///
-/// Provides methods to prepare left/right operands and apply the convolution.
-/// See method-level documentation for the mathematical formulation.
 pub trait Convolution<BE: Backend> {
-    /// Returns scratch bytes required for [`cnv_prepare_left`](Convolution::cnv_prepare_left).
+    /// Returns the scratch bytes [`cnv_prepare_left`](Convolution::cnv_prepare_left) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_left_tmp_bytes(res_size, a_size)
@@ -48,23 +47,20 @@ pub trait Convolution<BE: Backend> {
     /// mutation   none
     /// domain     res_size, a_size: the prepared operand's and the input's limb counts
     /// ensures    returns the scratch bytes cnv_prepare_left needs on those sizes
-    /// exact      not an arithmetic operation
     /// test       test_convolution
     /// ```
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the left
-    /// operand of a bivariate convolution.
+    /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
     /// op         cnv_prepare_left(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
+    /// domain     res: a CnvPVecL of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
-    /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
-    /// sparse     a is a sparse-capable slot: a degree-n input, n dividing N, produces a degree-n prepared operand standing for prep_L(switch_ring_{n->N}(a)) (4.5). Implemented in PR7 (#266)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution, test_convolution_prepare_shape_rejected
+    /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
+    /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_left(
         &self,
@@ -73,7 +69,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_prepare_right`](Convolution::cnv_prepare_right).
+    /// Returns the scratch bytes [`cnv_prepare_right`](Convolution::cnv_prepare_right) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_right_tmp_bytes(res_size, a_size)
@@ -81,23 +77,20 @@ pub trait Convolution<BE: Backend> {
     /// mutation   none
     /// domain     res_size, a_size: the prepared operand's and the input's limb counts
     /// ensures    returns the scratch bytes cnv_prepare_right needs on those sizes
-    /// exact      not an arithmetic operation
     /// test       test_convolution
     /// ```
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the right
-    /// operand of a bivariate convolution.
+    /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
     /// op         cnv_prepare_right(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecR with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
+    /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
-    /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
-    /// sparse     a is a sparse-capable slot, as for cnv_prepare_left (4.5)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution, test_convolution_prepare_shape_rejected
+    /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
+    /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_right(
         &self,
@@ -106,7 +99,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft`](Convolution::cnv_apply_dft).
+    /// Returns the scratch bytes [`cnv_apply_dft`](Convolution::cnv_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -114,12 +107,11 @@ pub trait Convolution<BE: Backend> {
     /// mutation   none
     /// domain     the sizes of the destination and of the two prepared operands
     /// ensures    returns the scratch bytes cnv_apply_dft needs on those sizes
-    /// exact      not an arithmetic operation
     /// test       test_convolution
     /// ```
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Returns scratch bytes required for [`cnv_by_const_apply`](Convolution::cnv_by_const_apply).
+    /// Returns the scratch bytes [`cnv_by_const_apply`](Convolution::cnv_by_const_apply) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -127,41 +119,23 @@ pub trait Convolution<BE: Backend> {
     /// mutation   none
     /// domain     the sizes of the destination and of the two coefficient-domain operands
     /// ensures    returns the scratch bytes cnv_by_const_apply needs on those sizes
-    /// exact      not an arithmetic operation
     /// test       test_convolution_by_const
     /// ```
     fn cnv_by_const_apply_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Evaluates a bivariate convolution over Z\[X, Y\] (x) Z\[Y\] mod (X^N + 1) where Y = 2^-K over the
-    /// selected columns and stores the result on the selected column, scaled by 2^{cnv_offset * Base2K}
+    /// Writes the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
     ///
-    /// Behavior is identical to [Convolution::cnv_apply_dft] with `b` treated as a constant polynomial
-    /// in the X variable, for example:
-    ///```text
-    ///       1    X   X^2  X^3
-    /// a = 1 [a00, a10, a20, a30] = (a00 + a01 * 2^-K) + (a10 + a11 * 2^-K) * X ...
-    ///     Y [a01, a11, a21, a31]
-    ///
-    /// b = 1 [b0] = (b00 + b01 * 2^-K)
-    ///     Y [b0]
-    /// ```
-    /// This method is intended to be used for multiplications by constants that are greater than the base2k.
-    ///
-    /// Required of every backend, never derived: it is an exact big-domain
-    /// product of `a` with one coefficient column of `b`, and the DFT
-    /// decomposition would route it through an approximate transform on FFT64.
-    #[allow(clippy::too_many_arguments)]
     /// ```text
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a VecZnxBig; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
-    /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
-    /// sparse     a is the sparse-capable slot, through the switch_ring substitution of 4.5, and stays derived there
-    /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on FFT64
+    /// definition res[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v,b_coeff]; other columns of res are unchanged
+    /// domain     res: a VecZnxBig of degree N; a: a dense VecZnx of degree N; b: a dense VecZnx of any degree, b_coeff < b.n(); res.size(), a.size() and b.size() >= 1
+    /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
+    /// ensures    the selected column holds the limb window of the constant convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         &self,
         cnv_offset: usize,
@@ -175,38 +149,33 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add).
+    /// Returns the scratch bytes [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
     /// class      support
     /// mutation   none
     /// domain     the sizes of the destination and of the two coefficient-domain operands
-    /// ensures    returns the scratch bytes cnv_by_const_apply_add needs: one res_size-limb VecZnxBig plus the product's own scratch. It is not cnv_by_const_apply_tmp_bytes
-    /// exact      not an arithmetic operation
+    /// ensures    returns the scratch bytes required by cnv_by_const_apply_add for the given offset and sizes
     /// test       test_convolution_by_const_add
     /// ```
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// `res[res_col] +=` the [`Convolution::cnv_by_const_apply`] result; limbs
-    /// the convolution would zero-fill are left untouched. Scratch requirement
-    /// is
-    /// [`cnv_by_const_apply_add_tmp_bytes`](Convolution::cnv_by_const_apply_add_tmp_bytes),
-    /// not [`cnv_by_const_apply_tmp_bytes`](Convolution::cnv_by_const_apply_tmp_bytes).
-    #[allow(clippy::too_many_arguments)]
+    /// Adds the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    ///
     /// ```text
     /// op         cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition vec_znx_big_add_assign(res, res_col, cnv_by_const_apply(cnv_offset, tmp, a, a_col, b, b_col, b_coeff), 0), tmp of res.size() limbs
+    /// definition res[res_col,j] = old(res)[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v,b_coeff]; selected-column limbs for which the sum index set is empty and other columns of res are unchanged
     /// domain     as for cnv_by_const_apply
-    /// requires   scratch >= cnv_by_const_apply_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    res[res_col] gains the cnv_by_const_apply result; the limbs the product would zero-fill gain zero and so keep their value
-    /// fallback   OEP default body: the product into a carved res.size()-limb VecZnxBig, then vec_znx_big_add_assign
+    /// requires   scratch >= cnv_by_const_apply_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
+    /// ensures    the selected column gains the constant convolution; limbs outside its support retain their old value
+    /// fallback   the product into a one-column res.size()-limb VecZnxBig, then vec_znx_big_add_assign
     /// override   allowed, with cnv_by_const_apply_add_tmp_bytes
-    /// exact      exact, as for cnv_by_const_apply
     /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived, test_convolution_by_const_degree_rejected
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         &self,
         cnv_offset: usize,
@@ -221,46 +190,18 @@ pub trait Convolution<BE: Backend> {
     );
 
     #[allow(clippy::too_many_arguments)]
-    /// Evaluates a bivariate convolution over Z\[X, Y\] (x) Z\[X, Y\] mod (X^N + 1) where Y = 2^-K over the
-    /// selected columns and stores the result on the selected column, scaled by 2^{cnv_offset * Base2K}
-    ///
-    /// # Example
-    ///```text
-    ///       1    X   X^2  X^3
-    /// a = 1 [a00, a10, a20, a30] = (a00 + a01 * 2^-K) + (a10 + a11 * 2^-K) * X ...
-    ///     Y [a01, a11, a21, a31]
-    ///
-    /// b = 1 [b00, b10, b20, b30] = (b00 + b01 * 2^-K) + (b10 + b11 * 2^-K) * X ...
-    ///     Y [b01, b11, b21, b31]
-    ///
-    /// If cnv_offset = 0:
-    ///
-    ///            1    X   X^2  X^3
-    /// res = 1  [r00, r10, r20, r30] = (r00 + r01 * 2^-K + r02 * 2^-2K + r03 * 2^-3K) + ... * X + ...
-    ///       Y  [r01, r11, r21, r31]
-    ///       Y^2[r02, r12, r22, r32]
-    ///       Y^3[r03, r13, r23, r33]
-    ///
-    /// If cnv_offset = 1:
-    ///
-    ///            1    X   X^2  X^3
-    /// res = 1  [r01, r11, r21, r31]  = (r01 + r02 * 2^-K + r03 * 2^-2K) + ... * X + ...
-    ///       Y  [r02, r12, r22, r32]
-    ///       Y^2[r03, r13, r23, r33]
-    ///       Y^3[  0,   0,   0 ,  0]
-    /// ```
-    /// If res.size() < a.size() + b.size() + k, result is truncated accordingly in the Y dimension.
+    /// Writes the convolution of `a[a_col]` and `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
     ///
     /// ```text
     /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a VecZnxDft; a: a CnvPVecL; b: a CnvPVecR, all of the module degree
+    /// definition idft(res)[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; other columns of res are unchanged
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; res.size(), a.size() and b.size() >= 1
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res shorter than a.size() + b.size() truncates in Y, and the limbs past the convolution bound are zero-filled
-    /// sparse     one of a and b may be a degree-n prepared operand, under the substitution of 4.5; there is no backend-generic body for it, so the mixed-degree sweep is a basis kernel per family (PR7, #266)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution
+    /// ensures    the selected inverse column holds the limb window of the convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
+    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
+    /// test       test_convolution, test_convolution_sparse
     /// ```
     fn cnv_apply_dft(
         &self,
@@ -274,39 +215,34 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add).
+    /// Returns the scratch bytes [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
     /// class      support
     /// mutation   none
     /// domain     the sizes of the destination and of the two prepared operands
-    /// ensures    returns the scratch bytes cnv_apply_dft_add needs: one res_size-limb VecZnxDft plus the convolution's own scratch. It is not cnv_apply_dft_tmp_bytes
-    /// exact      not an arithmetic operation
+    /// ensures    returns the scratch bytes required by cnv_apply_dft_add for the given offset and sizes
     /// test       test_convolution_add
     /// ```
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
-    /// `res[res_col] += a[a_col] (x) b[b_col]`, bit-identical to `cnv_apply_dft`
-    /// followed by a DFT-domain add. Limbs `>= min(res.size(), a.size() + b.size())`
-    /// are left untouched. Scratch requirement is
-    /// [`cnv_apply_dft_add_tmp_bytes`](Convolution::cnv_apply_dft_add_tmp_bytes).
-    #[allow(clippy::too_many_arguments)]
+    /// Adds the convolution of `a[a_col]` and `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    ///
     /// ```text
     /// op         cnv_apply_dft_add(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition vec_znx_dft_add_assign(res, res_col, cnv_apply_dft(cnv_offset, tmp, a, a_col, b, b_col), 0), tmp of res.size() limbs
+    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; selected-column limbs for which the sum index set is empty and other columns of res are unchanged
     /// domain     as for cnv_apply_dft
     /// requires   scratch >= cnv_apply_dft_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    res[res_col] gains the cnv_apply_dft result, bit-identically to that call followed by a DFT-domain add; the limbs past min(res.size(), a.size() + b.size()) gain zero and so keep their value
-    /// sparse     as for cnv_apply_dft (4.5)
-    /// fallback   OEP default body: the convolution into a carved res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
+    /// ensures    the selected column gains the convolution; limbs outside its support retain their old value
+    /// sparse     as for cnv_apply_dft
+    /// fallback   the convolution into a one-column res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution_add, test_cnv_apply_dft_add_derived
+    /// test       test_convolution_add, test_cnv_apply_dft_add_derived, test_convolution_sparse
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add(
         &self,
         cnv_offset: usize,
@@ -319,44 +255,32 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum).
-    ///
-    /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
+    /// Returns the scratch bytes [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size)
     /// class      support
     /// mutation   none
     /// domain     a_size and b_size are upper bounds over the term operands' sizes
-    /// ensures    returns the scratch bytes cnv_apply_dft_sum needs: the larger of the overwriting and the accumulating product the per-term fallback chains
-    /// exact      not an arithmetic operation
+    /// ensures    returns the scratch bytes cnv_apply_dft_sum needs on those sizes
     /// test       test_convolution_sum
     /// ```
     fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Evaluates a sum of bivariate convolutions: `res[res_col] = Σ_t a_t ⊛ b_t`,
-    /// scaled by `2^{cnv_offset * Base2K}`, overwriting `res[res_col]`.
-    ///
-    /// Each term behaves like one [`Convolution::cnv_apply_dft`] call over the
-    /// selected columns and the per-term results are summed; with an empty
-    /// `terms` slice the output column is zeroed. Backends may fuse the
-    /// accumulation (one lazy reduction per output limb, destination written
-    /// once), so the result is congruent to — but not necessarily bit-identical
-    /// with — a sequence of [`Convolution::cnv_apply_dft_add`] calls.
+    /// Writes the sum of the convolutions of the `terms` into `res[res_col]`, zeroing the column when `terms` is empty.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_apply_dft on the first term, then cnv_apply_dft_add on each of the rest
-    /// domain     res: a VecZnxDft; terms: prepared left and right operands with their column indices
-    /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), a_size, b_size)
-    /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the result is congruent to a chain of cnv_apply_dft_add calls without being bit-identical to it
-    /// sparse     per term, as for cnv_apply_dft (4.5)
-    /// fallback   OEP default body: the first term overwrites with cnv_apply_dft, which also zeroes the limbs past the convolution bound, and the remaining terms fold in with cnv_apply_dft_add
-    /// override   allowed, with cnv_apply_dft_sum_tmp_bytes; the avx and avx512 families override it with a fused kernel
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived
+    /// definition idft(res)[res_col,j] = sum_{0 <= t < terms.len()} sum_{0 <= u < terms[t].a.size(), 0 <= v < terms[t].b.size(), u + v = j + cnv_offset} terms[t].a[terms[t].a_col,u] * terms[t].b[terms[t].b_col,v]; an empty terms slice yields zero; other columns of res are unchanged
+    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a degree dividing it, with their column indices
+    /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), max({0} union {terms[t].a.size() : 0 <= t < terms.len()}), max({0} union {terms[t].b.size() : 0 <= t < terms.len()}))
+    /// ensures    the selected inverse column is the sum of the selected convolution limb windows; an empty slice zeroes the column
+    /// sparse     per term, as for cnv_apply_dft
+    /// fallback   an empty slice zeroes the selected column; otherwise cnv_apply_dft overwrites with the first term and cnv_apply_dft_add accumulates the remaining terms
+    /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
+    /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived, test_convolution_sparse
     /// ```
     fn cnv_apply_dft_sum<'a>(
         &self,
@@ -368,37 +292,33 @@ pub trait Convolution<BE: Backend> {
     ) where
         BE: 'a;
 
-    /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
+    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
     /// class      support
     /// mutation   none
     /// domain     the sizes of the destination and of the two prepared operands
-    /// ensures    returns the scratch bytes cnv_pairwise_apply_dft needs: the larger of the overwriting and the accumulating product it chains
-    /// exact      not an arithmetic operation
+    /// ensures    returns the scratch bytes cnv_pairwise_apply_dft needs on those sizes
     /// test       test_convolution_pairwise
     /// ```
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     #[allow(clippy::too_many_arguments)]
-    /// Evaluates the bivariate pair-wise convolution res = (a\[i\] + a\[j\]) * (b\[i\] + b\[j\]).
-    /// If i == j then calls [Convolution::cnv_apply_dft], i.e. res = a\[i\] * b\[i\].
-    /// See [Convolution::cnv_apply_dft] for information about the bivariate convolution.
+    /// Writes the convolution of column `i` of `a` and `b` into `res[res_col]` when `i == j`, and the convolution of their two column sums otherwise.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft(cnv_offset, res, res_col, a, b, i, j, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_apply_dft(a[i], b[i]) then cnv_apply_dft_add of (a[i], b[j]), (a[j], b[i]) and (a[j], b[j]); i == j degenerates to the single product
-    /// domain     res: a VecZnxDft; a: a CnvPVecL; b: a CnvPVecR; i, j column indices
+    /// definition for every 0 <= ell < res.size(), idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} a[i,u] * b[i,v] if i == j, and idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} (a[i,u] + a[j,u]) * (b[i,v] + b[j,v]) if i != j; other columns of res are unchanged
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    for i != j, idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear; for i == j it is the single product a[i] * b[i], not the four-fold one the sum would give
-    /// sparse     per product, as for cnv_apply_dft (4.5)
-    /// fallback   OEP default body: the four-product expansion above
-    /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes; the avx512 family overrides it with a fused kernel
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_convolution_pairwise, test_cnv_pairwise_apply_dft_derived
+    /// ensures    the selected inverse column contains one convolution when i == j and the convolution of the two column sums when i != j
+    /// sparse     per product, as for cnv_apply_dft
+    /// fallback   cnv_apply_dft for columns (i,i), followed when i != j by cnv_apply_dft_add for (i,j), (j,i) and (j,j)
+    /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes
+    /// test       test_convolution_pairwise, test_cnv_pairwise_apply_dft_derived, test_convolution_sparse
     /// ```
     fn cnv_pairwise_apply_dft(
         &self,
@@ -412,36 +332,31 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_prepare_self`](Convolution::cnv_prepare_self).
+    /// Returns the scratch bytes [`cnv_prepare_self`](Convolution::cnv_prepare_self) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_self_tmp_bytes(res_size, a_size)
     /// class      support
     /// mutation   none
     /// domain     res_size, a_size: the prepared operands' and the input's limb counts
-    /// ensures    returns the scratch bytes cnv_prepare_self needs: the larger of the two prepares
-    /// exact      not an arithmetic operation
+    /// ensures    returns the scratch bytes cnv_prepare_self needs on those sizes
     /// test       test_cnv_prepare_self_derived
     /// ```
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 
-    /// Prepares both left and right convolution operands from the same input polynomial,
-    /// sharing the FFT/NTT computation. This is an optimization for self-convolution
-    /// (squaring) where both operands are the same polynomial.
+    /// Writes each column of `a` into both `left` and `right`, truncated or zero-extended to their limb count.
     ///
     /// ```text
     /// op         cnv_prepare_self(left, right, a, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_prepare_left(left, a) and cnv_prepare_right(right, a)
-    /// domain     left: a CnvPVecL; right: a CnvPVecR with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
+    /// definition left[c,j] and right[c,j] read as a[c,j] for every 0 <= c < left.cols() and 0 <= j < left.size()
+    /// domain     left: a CnvPVecL of degree N; right: a CnvPVecR of degree N, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of degree N with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
-    /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
-    /// sparse     a is a sparse-capable slot, as for cnv_prepare_left (4.5)
-    /// fallback   OEP default body: the two prepares in sequence
-    /// override   allowed, with cnv_prepare_self_tmp_bytes; a backend that shares the transform between the two does it here
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_cnv_prepare_self_derived, test_convolution_prepare_shape_rejected
+    /// ensures    both prepared operands read the source truncated or zero-extended to their limb count
+    /// fallback   OEP default body: the shape check, then the two prepares in sequence
+    /// override   allowed, with cnv_prepare_self_tmp_bytes
+    /// test       test_cnv_prepare_self_derived, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_self(
         &self,

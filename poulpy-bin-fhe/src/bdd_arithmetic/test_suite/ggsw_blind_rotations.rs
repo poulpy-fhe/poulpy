@@ -75,7 +75,7 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
     let mut res: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_res_infos);
 
-    let mut scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+    let mut scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
     scalar.raw_mut().iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
 
     let k: u32 = source.next_u32();
@@ -136,10 +136,10 @@ where
 
             let rot: i64 = (((k >> bit_start) & mask) << bit_step) as i64;
 
-            let mut scalar_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut scalar_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
             scalar_want.raw_mut().copy_from_slice(scalar.raw());
 
-            let mut scalar_want_vec: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, 1);
+            let mut scalar_want_vec: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, 1);
             scalar_want_vec.raw_mut().copy_from_slice(scalar_want.raw());
             {
                 let mut scalar_want_backend =

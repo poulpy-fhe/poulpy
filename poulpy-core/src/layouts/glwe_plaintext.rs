@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use std::fmt;
 
 use poulpy_hal::layouts::{
@@ -156,8 +157,8 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
         BE::copy_from_host(self.data.data_mut(), bytes);
     }
 
-    /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<Vec<u8>, W>`].
-    pub fn to_host_owned<BE>(&self) -> GLWEPlaintext<Vec<u8>, W>
+    /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<AlignedBuf, W>`].
+    pub fn to_host_owned<BE>(&self) -> GLWEPlaintext<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -209,7 +210,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPlaintext<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
+impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -222,7 +223,7 @@ impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
         let size: usize = infos.size();
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.into(), 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -236,7 +237,7 @@ impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.into(), 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -247,12 +248,12 @@ impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
     }
 }
 
-impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
+impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
     pub fn alloc_with_meta(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.into(), 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -269,11 +270,11 @@ impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
         // Mirror `alloc_from_infos` / `take_glwe_plaintext_scratch`: size to
         // `infos.size()` so key infos (with auxiliary limbs) reserve the full
         // width. For non-key infos `size() == ceil(k/base2k)`.
-        VecZnx::<Vec<u8>, W>::bytes_of(infos.n().into(), 1, infos.size())
+        VecZnx::<AlignedBuf, W>::bytes_of(infos.n().into(), 1, infos.size())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 

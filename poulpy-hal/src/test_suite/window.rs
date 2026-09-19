@@ -3,6 +3,7 @@
 //! leaves everything outside the window untouched.
 
 use crate::{
+    AlignedBuf,
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall,
         VecZnxBigNegate, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc,
@@ -251,7 +252,7 @@ where
         "vec_znx_automorphism accepted a windowed view instead of panicking"
     );
 
-    let mut dft = module.vec_znx_dft_alloc(cols, size);
+    let mut dft = module.vec_znx_dft_alloc(params.n, cols, size);
     let dft_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_dft_apply(
             1,
@@ -268,7 +269,7 @@ where
         "vec_znx_dft_apply accepted a windowed view instead of panicking"
     );
 
-    let mut prep = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut prep = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(size, size));
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(
@@ -294,7 +295,7 @@ where
     assert!(add_into_ok, "vec_znx_add rejected a windowed view unexpectedly");
 }
 
-fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<Vec<u8>, BE::BigWord, BE> {
+fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE> {
     let host_bytes = BE::to_host_bytes(v.data());
     VecZnxBig::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), v.shape())
 }

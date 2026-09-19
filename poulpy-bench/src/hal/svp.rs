@@ -29,7 +29,7 @@ where
 
     let mut source = Source::new([0u8; 32]);
 
-    let mut svp: SvpPPolOwned<B> = module.svp_ppol_alloc(sweep.cols, PrepareHint::Reuse);
+    let mut svp: SvpPPolOwned<B> = module.svp_ppol_alloc(module.n(), sweep.cols, PrepareHint::Reuse);
     let a = random_host_scalar_znx(module.n(), sweep.cols, &mut source);
     let a = upload_host_scalar_znx::<B>(&a);
 
@@ -50,7 +50,7 @@ where
     let mut source = Source::new([0u8; 32]);
 
     let svp: SvpPPolOwned<B> = random_backend_svp_ppol::<B>(module.n(), sweep.cols, &mut source);
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
     let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.svp_apply_dft_tmp_bytes(sweep.size));
@@ -75,7 +75,7 @@ where
     let mut source = Source::new([0u8; 32]);
 
     let svp: SvpPPolOwned<B> = random_backend_svp_ppol::<B>(module.n(), sweep.cols, &mut source);
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
 
     bencher.iter(|| {
@@ -96,7 +96,7 @@ where
     let mut source = Source::new([0u8; 32]);
 
     let svp: SvpPPolOwned<B> = random_backend_svp_ppol::<B>(module.n(), sweep.cols, &mut source);
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let svp = svp.to_backend_ref();

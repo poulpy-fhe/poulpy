@@ -1025,9 +1025,16 @@ unsafe fn intt_iter_last_fused(
 /// # Safety
 ///
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "ntt_avx2: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;
@@ -1190,9 +1197,16 @@ pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [
 /// # Safety
 ///
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "intt_avx2: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;
@@ -1352,11 +1366,11 @@ mod tests {
 
     /// AVX2 NTT followed by AVX2 iNTT is the identity — mirrors the ref test.
     ///
-    /// Sweeps up to `n = 2^16` so the by-level phase (`n > CHANGE_MODE_N`),
+    /// Sweeps up to `n = 2^18` so the by-level phase (`n > CHANGE_MODE_N`),
     /// where the fused radix-4 / level-folding kernels run, is exercised.
     #[test]
     fn ntt_intt_identity_avx2() {
-        for log_n in 1..=16usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let inv = NttTableInv::<Primes30>::new(n);
@@ -1427,11 +1441,11 @@ mod tests {
 
     /// AVX2 NTT output matches reference NTT output.
     ///
-    /// Sweeps up to `n = 2^16` so the by-level phase (the only place the fused
+    /// Sweeps up to `n = 2^18` so the by-level phase (the only place the fused
     /// kernels differ from the by-block path) is checked bit-for-bit.
     #[test]
     fn ntt_avx2_vs_ref() {
-        for log_n in 1..=16usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
 
@@ -1455,10 +1469,10 @@ mod tests {
     ///
     /// Feeds a forward-transformed vector (via the reference forward NTT, shared
     /// by both sides) into the AVX2 and reference iNTTs and compares the raw
-    /// q120b limbs.  Sweeps up to `n = 2^16` to cover the fused by-level path.
+    /// q120b limbs.  Sweeps up to `n = 2^18` to cover the fused by-level path.
     #[test]
     fn intt_avx2_vs_ref() {
-        for log_n in 1..=16usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let inv = NttTableInv::<Primes30>::new(n);

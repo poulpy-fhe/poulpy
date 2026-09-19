@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, ZnxViewMut},
@@ -79,8 +80,8 @@ where
             let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
             let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
-            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
-            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -171,7 +172,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_in,
                             ),
                             &sk_prepared,
@@ -237,8 +238,8 @@ where
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
             let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
 
-            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
-            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -324,7 +325,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_in,
                             ),
                             &sk_prepared,

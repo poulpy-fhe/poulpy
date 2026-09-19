@@ -84,7 +84,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)

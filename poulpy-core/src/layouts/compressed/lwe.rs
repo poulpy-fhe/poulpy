@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
@@ -11,7 +12,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    encryption::lwe::LWEFillMaskDefault,
+    encryption::lwe::LWEFillMaskReference,
     layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetBase2k, TorusPrecision},
 };
 
@@ -104,7 +105,7 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     }
 
     pub fn bytes_of(base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 
@@ -130,7 +131,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
 
 pub trait LWEDecompress
 where
-    Self: LWEFillMaskDefault<Self::Backend> + VecZnxCopy<Self::Backend>,
+    Self: LWEFillMaskReference<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -147,14 +148,14 @@ where
             assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
             self.vec_znx_copy(&mut res.body, 0, &other.data, 0);
         }
-        self.fill_lwe_mask_from_seed_default(other.base2k().into(), res, other.seed);
+        self.fill_lwe_mask_from_seed_reference(other.base2k().into(), res, other.seed);
         res.set_base2k(other.base2k());
     }
 }
 
 impl<B: Backend> LWEDecompress for Module<B>
 where
-    Self: LWEFillMaskDefault<B> + VecZnxCopy<B>,
+    Self: LWEFillMaskReference<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }

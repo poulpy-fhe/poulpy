@@ -29,7 +29,7 @@ use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
         DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+        VmpPMatBackendRef, ZnxInfos, check_degree,
     },
 };
 
@@ -164,6 +164,9 @@ pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
     tmp: &mut [u64],
 ) {
     let n = res.n();
+    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
+    assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
+    let table = handle(module).table_ntt_for(n);
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_blk_quads = n / 8;
@@ -183,7 +186,7 @@ pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
             let pos = n * (row_i * ncols + col_i);
             crate::NTT3x42Ifma::ntt3x42_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
             // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
-            unsafe { ntt_avx512::<Primes42>(&handle(module).table_ntt, tmp_b, true) };
+            unsafe { ntt_avx512::<Primes42>(table, tmp_b, true) };
             let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
             crate::NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, tmp_c, tmp_b);
 
@@ -711,7 +714,12 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
+    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();
     let ncols = pmat.cols_out() * pmat.size();
@@ -748,7 +756,12 @@ pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
+    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();
     let ncols = pmat.cols_out() * pmat.size();
@@ -1228,8 +1241,8 @@ mod tests {
         pool.install(|| {
             let n = 64;
             let module = Module::<crate::NTT3x42Ifma>::new(n as u64);
-            let mut input = module.vec_znx_dft_alloc(2, 27);
-            let mut key = module.vmp_pmat_alloc(7, 2, 2, 33, PrepareHint::Reuse);
+            let mut input = module.vec_znx_dft_alloc(n, 2, 27);
+            let mut key = module.vmp_pmat_alloc(n, 7, 2, 2, 33, PrepareHint::Reuse);
             let mut seed = 0x713da891ef42_u64;
             for data in [input.data.as_mut_slice(), key.data_mut().as_mut()] {
                 for group in cast_slice_mut::<_, u64>(data).chunks_exact_mut(16) {
@@ -1250,8 +1263,8 @@ mod tests {
                 input.data[..16 * n * 2 * prefix].fill(0);
                 for dsize in [2, 3, 4, 5] {
                     for size in [16, 31, 64] {
-                        let mut expected = module.vec_znx_dft_alloc(2, size);
-                        let mut actual = module.vec_znx_dft_alloc(2, size);
+                        let mut expected = module.vec_znx_dft_alloc(n, 2, size);
+                        let mut actual = module.vec_znx_dft_alloc(n, 2, size);
                         let bytes = vmp_apply_digits_strided_tmp_bytes_ifma(2, 27, dsize, 7, 2, 4);
                         let mut scratch = vec![0; bytes / size_of::<u64>()];
                         expected.data.fill(0xa5);

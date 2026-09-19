@@ -5,17 +5,17 @@
 //! Bootstrapping for CKKS via Partial CoeffToSlot" (Coron & Seuré,
 //! [ePrint 2025/886](https://eprint.iacr.org/2025/886), ASIACRYPT 2025).
 //! The DFT/packing conventions are the crate's **official** ones — the
-//! generator-5 embedding of [`gen_dft_matrices`](crate::default::dft), block
+//! generator-5 embedding of [`gen_dft_matrices`](crate::reference::dft), block
 //! coefficients in natural slot order — not the paper reference
 //! implementation's variant-DFT + extended bit-reversal: each `2C`-wide slot
 //! block is an element of `ℂ[Z]/(Z^{2C} − i)`, packed in the clear by a
 //! per-block small FFT and inverted homomorphically by the same generator's
-//! Encode factorization (see `crate::default::paco::lt`).
+//! Encode factorization (see `crate::reference::paco::lt`).
 //!
 //! The invariant-bearing types live here with the rest of the CKKS data
 //! structures; the cleartext circle embedding and coefficient encodings live
 //! in `crate::encoding::paco`; the backend-generic circuits, factor
-//! generation, and drivers live in [`crate::default::paco`]; evaluation is
+//! generation, and drivers live in [`crate::reference::paco`]; evaluation is
 //! exposed through [`CKKSPaCoOps`](crate::api::CKKSPaCoOps). The
 //! implementation submodules stay crate-private so helper functions and
 //! orchestration details do not become a second public API.

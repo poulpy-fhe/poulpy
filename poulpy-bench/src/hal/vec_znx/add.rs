@@ -25,7 +25,7 @@ where
     let b = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
     let b = upload_host_vec_znx::<B>(&b);
-    let mut c = module.vec_znx_alloc(sweep.cols, sweep.size);
+    let mut c = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_backend_ref::<B>(&a);
@@ -48,7 +48,7 @@ where
 
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
-    let mut b = module.vec_znx_alloc(sweep.cols, sweep.size);
+    let mut b = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_backend_ref::<B>(&a);

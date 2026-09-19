@@ -1,39 +1,55 @@
-/// Abstract precomputed table for the negacyclic (reim) FFT and its inverse.
-///
-/// Implementors hold precomputed twiddle factors for ring degree `m` and expose
-/// in-place forward (`fft`) and inverse (`ifft`) transforms over a data slice of
-/// length `2m` in the real/imaginary interleaved layout.
+/// A precomputed complex transform table with separate real and imaginary halves.
 ///
 /// ```text
-/// op         NegacyclicFFT::{m, fft, ifft}(data)
+/// op         NegacyclicFFT::m()
 /// class      support
-/// mutation   in-place
-/// domain     data: 2m floats in the table's interleaved real/imaginary layout
-/// ensures    fft is the negacyclic forward transform for degree m and ifft its inverse, both in place; the pair round-trips up to the float error of the implementation
-/// exact      host float, backend-internal; never compared across backends
+/// mutation   none
+/// domain     -
+/// ensures    returns the positive power-of-two complex transform length m
 /// test       none
 /// ```
 pub trait NegacyclicFFT<F> {
+    /// Returns the complex transform length `m`.
     fn m(&self) -> usize;
+
+    /// Applies the forward complex transform in place.
+    ///
+    /// ```text
+    /// op         NegacyclicFFT::fft(data)
+    /// class      basis
+    /// mutation   in-place
+    /// definition z(data,r) = sum_{0 <= t < m} z(old(data),t) * omega(m,r)^t for every 0 <= r < m
+    /// domain     data: 2*m real scalars, with real parts in data[0..m] and imaginary parts in data[m..2*m]
+    /// ensures    every element of data is written with the forward transform
+    /// test       test_negacyclic_fft
+    /// ```
     fn fft(&self, data: &mut [F]);
+
+    /// Applies the unnormalized inverse complex transform in place.
+    ///
+    /// ```text
+    /// op         NegacyclicFFT::ifft(data)
+    /// class      basis
+    /// mutation   in-place
+    /// definition z(data,t) = sum_{0 <= r < m} z(old(data),r) * omega(m,r)^(-t) for every 0 <= t < m
+    /// domain     data: 2*m real scalars, with real parts in data[0..m] and imaginary parts in data[m..2*m]
+    /// ensures    applying ifft after fft multiplies each original element by m, up to floating arithmetic error
+    /// test       test_negacyclic_fft
+    /// ```
     fn ifft(&self, data: &mut [F]);
 }
 
-/// Extension of [`NegacyclicFFT`] that also provides a constructor.
-///
-/// Separated from the base trait so that generic bounds can distinguish between
-/// "needs a precomputed table" (`NegacyclicFFTNew`) and "just needs to call fft/ifft"
-/// (`NegacyclicFFT`).
+/// Constructs a precomputed complex transform table.
 ///
 /// ```text
 /// op         NegacyclicFFTNew::new(m)
 /// class      support
 /// mutation   none
-/// domain     m: a power of two
-/// ensures    returns a table of twiddle factors for degree m; split from NegacyclicFFT so a bound can ask for "transforms" without asking for "builds a table"
-/// exact      not an arithmetic operation
+/// domain     m: a positive power of two
+/// ensures    returns a table of complex transform length m
 /// test       none
 /// ```
 pub trait NegacyclicFFTNew<F>: NegacyclicFFT<F> + Sized {
+    /// Returns a table of complex transform length `m`.
     fn new(m: usize) -> Self;
 }

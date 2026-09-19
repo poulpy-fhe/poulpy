@@ -18,6 +18,7 @@ use poulpy_core::layouts::{
     GGLWE, GGLWEInfos, GGSW, GGSWInfos, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext, GLWETensor, GLWETensorKey,
     ModuleCoreAlloc,
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{FillUniform, HostBytesBackend, Module},
     source::Source,
@@ -43,11 +44,11 @@ macro_rules! host_builder {
 }
 
 host_builder! {
-    host_glwe => GLWE<Vec<u8>, i64>, glwe_alloc_from_infos, GLWEInfos,
-    host_glwe_plaintext => GLWEPlaintext<Vec<u8>, i64>, glwe_plaintext_alloc_from_infos, GLWEInfos,
-    host_glwe_tensor => GLWETensor<Vec<u8>, i64>, glwe_tensor_alloc_from_infos, GLWEInfos,
-    host_gglwe => GGLWE<Vec<u8>, i64>, gglwe_alloc_from_infos, GGLWEInfos,
-    host_ggsw => GGSW<Vec<u8>, i64>, ggsw_alloc_from_infos, GGSWInfos,
-    host_glwe_automorphism_key => GLWEAutomorphismKey<Vec<u8>, i64>, glwe_automorphism_key_alloc_from_infos, GGLWEInfos,
-    host_glwe_tensor_key => GLWETensorKey<Vec<u8>, i64>, glwe_tensor_key_alloc_from_infos, GGLWEInfos,
+    host_glwe => GLWE<AlignedBuf, i64>, glwe_alloc_from_infos, GLWEInfos,
+    host_glwe_plaintext => GLWEPlaintext<AlignedBuf, i64>, glwe_plaintext_alloc_from_infos, GLWEInfos,
+    host_glwe_tensor => GLWETensor<AlignedBuf, i64>, glwe_tensor_alloc_from_infos, GLWEInfos,
+    host_gglwe => GGLWE<AlignedBuf, i64>, gglwe_alloc_from_infos, GGLWEInfos,
+    host_ggsw => GGSW<AlignedBuf, i64>, ggsw_alloc_from_infos, GGSWInfos,
+    host_glwe_automorphism_key => GLWEAutomorphismKey<AlignedBuf, i64>, glwe_automorphism_key_alloc_from_infos, GGLWEInfos,
+    host_glwe_tensor_key => GLWETensorKey<AlignedBuf, i64>, glwe_tensor_key_alloc_from_infos, GGLWEInfos,
 }

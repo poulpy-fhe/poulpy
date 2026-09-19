@@ -50,7 +50,7 @@ where
     let cols = host.cols();
     let size = host.size();
     let uploaded = upload_vec_znx::<BE>(host);
-    let mut res = module.vec_znx_big_alloc(cols, size);
+    let mut res = module.vec_znx_big_alloc(host.n(), cols, size);
     for j in 0..cols {
         module.vec_znx_big_from_small(&mut res.to_backend_mut(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
     }
@@ -108,7 +108,7 @@ where
 {
     let (a_base2k, res_base2k) = base2k;
     let shape = backend.shape();
-    let mut res_backend = module.vec_znx_alloc(shape.cols(), res_size);
+    let mut res_backend = module.vec_znx_alloc(shape.n(), shape.cols(), res_size);
     for j in 0..shape.cols() {
         module.vec_znx_big_normalize(
             &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res_backend),
@@ -162,7 +162,7 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_digest = a.digest_u64();
 
@@ -172,7 +172,7 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
         assert_eq!(a.digest_u64(), a_digest);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(cols, b_size);
+            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
             b.fill_uniform(base2k, &mut source);
             let b_digest = b.digest_u64();
 
@@ -182,8 +182,8 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
             assert_eq!(b.digest_u64(), b_digest);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -243,14 +243,14 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res = module_host.vec_znx_alloc(cols, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
             res.fill_uniform(base2k, &mut source);
 
             let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -292,22 +292,22 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(cols, b_size);
+            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
             b.fill_uniform(base2k, &mut source);
             let b_digest: u64 = b.digest_u64();
             let b_ref = upload_vec_znx::<BR>(&b);
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -368,7 +368,7 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_digest: u64 = a.digest_u64();
@@ -376,7 +376,7 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res = module_host.vec_znx_alloc(cols, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
             res.fill_uniform(base2k, &mut source);
 
             let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -436,7 +436,7 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
@@ -444,8 +444,8 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
 
         for res_size in [1, 2, 3, 4] {
             for p in [-5, 5] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -497,7 +497,7 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
     );
 
     for res_size in [1, 2, 3, 4] {
-        let mut res = module_host.vec_znx_alloc(cols, res_size);
+        let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
         res.fill_uniform(base2k, &mut source);
 
         for p in [-5, 5] {
@@ -540,15 +540,15 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-            let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+            let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+            let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
             // Reference
             for i in 0..cols {
@@ -595,7 +595,7 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for res_size in [1, 2, 3, 4] {
-        let mut res = module_host.vec_znx_alloc(cols, res_size);
+        let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
         res.fill_uniform(base2k, &mut source);
 
         let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -646,7 +646,7 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
     );
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(63, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
@@ -735,22 +735,22 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(cols, b_size);
+            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
             b.fill_uniform(base2k, &mut source);
 
             let b_ref = big_from_small_host(module_ref, &b);
             let b_test = big_from_small_host(module_test, &b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -810,14 +810,14 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res = module_host.vec_znx_alloc(cols, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
             res.fill_uniform(base2k, &mut source);
 
             let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -865,14 +865,14 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res = module_host.vec_znx_alloc(cols, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
             res.fill_uniform(base2k, &mut source);
 
             let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -920,21 +920,21 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(cols, b_size);
+            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
             b.fill_uniform(base2k, &mut source);
             let b_ref = upload_vec_znx::<BR>(&b);
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -994,21 +994,21 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(cols, b_size);
+            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
             b.fill_uniform(base2k, &mut source);
             let b_ref = upload_vec_znx::<BR>(&b);
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+                let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut res_big_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
                 // Reference
                 for i in 0..cols {
@@ -1068,7 +1068,7 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_digest: u64 = a.digest_u64();
@@ -1076,7 +1076,7 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res = module_host.vec_znx_alloc(cols, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
             res.fill_uniform(base2k, &mut source);
 
             let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -1136,7 +1136,7 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
 
         let a_digest: u64 = a.digest_u64();
@@ -1145,7 +1145,7 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
 
         for res_size in [1, 2, 3, 4] {
             for res_offset in -(base2k as i64)..=(base2k as i64) {
-                let mut res = module_host.vec_znx_alloc(cols, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
                 res.fill_uniform(base2k, &mut source);
 
                 let mut res_big_ref = big_from_small_host(module_ref, &res);
@@ -1207,14 +1207,14 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_ref_backend = upload_vec_znx::<BR>(&a);
         let a_test_backend = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(cols, res_size);
-            let mut res_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, res_size);
+            let mut res_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
+            let mut res_test: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(params.n, cols, res_size);
 
             for j in 0..cols {
                 module_ref.vec_znx_big_from_small(
@@ -1238,7 +1238,7 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
             // The input is canonical, so with room to hold it the round trip is
             // the identity and the limbs past it are zero.
             if res_size >= a_size {
-                let mut want = module_host.vec_znx_alloc(cols, res_size);
+                let mut want = module_host.vec_znx_alloc(params.n, cols, res_size);
                 for j in 0..cols {
                     for limb in 0..res_size {
                         if limb < a_size {
@@ -1270,8 +1270,8 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
-    let n: usize = module_ref.n();
-    assert_eq!(n, module_test.n());
+    let n: usize = params.n;
+    assert_eq!(n, params.n);
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1279,7 +1279,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_ref = big_from_small_host(module_ref, &a);
         let a_test = big_from_small_host(module_test, &a);
@@ -1289,7 +1289,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
                 continue;
             }
             for res_coeff in [0, 1, n - 1] {
-                let zeros = module_host.vec_znx_alloc(cols, res_size);
+                let zeros = module_host.vec_znx_alloc(params.n, cols, res_size);
                 let mut res_ref = big_from_small_host(module_ref, &zeros);
                 let mut res_test = big_from_small_host(module_test, &zeros);
 
@@ -1302,7 +1302,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
                 let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
                 assert_eq!(got_ref, got_test);
 
-                let mut want_host = module_host.vec_znx_alloc(cols, res_size);
+                let mut want_host = module_host.vec_znx_alloc(params.n, cols, res_size);
                 for j in 0..cols {
                     for limb in 0..res_size {
                         let slice = want_host.at_mut(j, limb);
@@ -1340,21 +1340,21 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
-    let n: usize = module_ref.n();
-    assert_eq!(n, module_test.n());
+    let n: usize = params.n;
+    assert_eq!(n, params.n);
 
     let cols: usize = 3;
     let mut source: Source = Source::new([0u8; 32]);
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut weights = module_host.scalar_znx_alloc(2);
+    let mut weights = module_host.scalar_znx_alloc(params.n, 2);
     fill_ternary(&mut weights, &mut source);
     let weights_ref = upload_scalar_znx::<BR>(&weights);
     let weights_test = upload_scalar_znx::<BT>(&weights);
 
     for a_size in [1, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_ref_backend = upload_vec_znx::<BR>(&a);
         let a_test_backend = upload_vec_znx::<BT>(&a);
@@ -1366,7 +1366,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
             for weights_col in [0, 1] {
                 for coeffs in [1, n / 2, n] {
                     let take: usize = 2;
-                    let zeros = module_host.vec_znx_alloc(1, res_size);
+                    let zeros = module_host.vec_znx_alloc(params.n, 1, res_size);
                     let mut res_ref = big_from_small_host(module_ref, &zeros);
                     let mut res_test = big_from_small_host(module_test, &zeros);
 
@@ -1393,7 +1393,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
                     let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
                     assert_eq!(got_ref, got_test);
 
-                    let mut want_host = module_host.vec_znx_alloc(1, res_size);
+                    let mut want_host = module_host.vec_znx_alloc(params.n, 1, res_size);
                     for limb in 0..res_size {
                         let mut acc: Vec<i64> = vec![0; n];
                         for col in 0..take {
@@ -1435,21 +1435,21 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
-    let n: usize = module_ref.n();
-    assert_eq!(n, module_test.n());
+    let n: usize = params.n;
+    assert_eq!(n, params.n);
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut b = module_host.scalar_znx_alloc(cols);
+    let mut b = module_host.scalar_znx_alloc(params.n, cols);
     fill_ternary(&mut b, &mut source);
     let b_ref = upload_scalar_znx::<BR>(&b);
     let b_test = upload_scalar_znx::<BT>(&b);
 
     for a_size in [1, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_ref_backend = upload_vec_znx::<BR>(&a);
         let a_test_backend = upload_vec_znx::<BT>(&a);
@@ -1458,7 +1458,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             if res_size > a_size {
                 continue;
             }
-            let zeros = module_host.vec_znx_alloc(cols, res_size);
+            let zeros = module_host.vec_znx_alloc(params.n, cols, res_size);
             let mut res_ref = big_from_small_host(module_ref, &zeros);
             let mut res_test = big_from_small_host(module_test, &zeros);
 
@@ -1485,7 +1485,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
             assert_eq!(got_ref, got_test);
 
-            let mut want_host = module_host.vec_znx_alloc(cols, res_size);
+            let mut want_host = module_host.vec_znx_alloc(params.n, cols, res_size);
             for j in 0..cols {
                 for limb in 0..res_size {
                     let product: Vec<i64> = (0..n).map(|k| a.at(j, limb)[k] * b.at(j, 0)[k]).collect();

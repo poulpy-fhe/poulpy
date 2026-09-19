@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{ScalarZnxAutomorphism, VecZnxCopy, VecZnxZero},
@@ -129,7 +130,7 @@ impl<D: Data, W: ZnxWord> GLWESecret<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWESecret<Vec<u8>, W> {
+impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -140,7 +141,7 @@ impl<W: ZnxWord> GLWESecret<Vec<u8>, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecret {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<Vec<u8>, W>::bytes_of(n.into(), rank.into())),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
                 n.into(),
                 rank.into(),
             ),
@@ -156,7 +157,7 @@ impl<W: ZnxWord> GLWESecret<Vec<u8>, W> {
     }
 
     pub fn bytes_of(n: Degree, rank: Rank) -> usize {
-        ScalarZnx::<Vec<u8>, W>::bytes_of(n.into(), rank.into())
+        ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())
     }
 }
 

@@ -26,7 +26,7 @@ pub fn runner_vec_znx_mul_xp_minus_one<B: Backend<ZnxWord = i64>, M: Measurement
 
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
-    let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
+    let mut res = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_backend_ref::<B>(&a);

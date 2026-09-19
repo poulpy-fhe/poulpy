@@ -3,6 +3,7 @@
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{GLWESecret, LWEInfos};
 use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{ZnxViewMut, ZnxZero},
     source::Source,
@@ -81,7 +82,7 @@ impl ShipSecretSpec {
     }
 
     /// Writes the support into the coefficients of a host GLWE secret.
-    pub fn fill_glwe_secret(&self, plan: &ShipPlan, sk: &mut GLWESecret<Vec<u8>, i64>) -> Result<()> {
+    pub fn fill_glwe_secret(&self, plan: &ShipPlan, sk: &mut GLWESecret<AlignedBuf, i64>) -> Result<()> {
         ensure!(
             sk.n().as_usize() == plan.n(),
             "SHIP secret degree {} does not match plan degree {}",

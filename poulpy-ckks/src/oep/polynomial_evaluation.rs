@@ -15,10 +15,10 @@ use crate::{
         BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps,
         PolynomialInputTransform, PowerBasisHelper,
     },
-    default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
+    reference::polynomial_evaluation::PolynomialEvaluationReference,
 };
 
 /// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
@@ -55,7 +55,7 @@ where
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
             module.ckks_square_into(&mut doubled, src, tsk, scratch)?;
             module.ckks_mul_pow2_assign(&mut doubled, 1, scratch)?;
-            let one = crate::default::carry_verb::ckks_one_pt(module, src.base2k())?;
+            let one = crate::reference::carry_verb::ckks_one_pt(module, src.base2k())?;
             module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, scratch)?;
             Ok(doubled)
         }
@@ -151,7 +151,7 @@ where
         + GLWEZero<BE>
         + GLWEPolynomialEvaluation<BE>
         + CKKSModuleAlloc<BE>
-        + PolynomialEvaluationDefault<BE>,
+        + PolynomialEvaluationReference<BE>,
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(
         module: &Module<BE>,
@@ -169,7 +169,7 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<R, B, A, G, H>(res, poly, power_basis, tsk, scratch)
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(res, poly, power_basis, tsk, scratch)
     }
 
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
@@ -187,7 +187,13 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        module.ckks_eval_poly_complex_const_coeffs_from_power_basis_default::<R, C, A, G, H>(res, poly, power_basis, tsk, scratch)
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
+            res,
+            poly,
+            power_basis,
+            tsk,
+            scratch,
+        )
     }
 
     fn ckks_eval_poly_real_const_coeffs_impl<R, S, B, H>(
@@ -210,7 +216,7 @@ where
         let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
         let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
         power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis_default(dst, bsgs, &power_basis, tsk, scratch)?;
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis_reference(dst, bsgs, &power_basis, tsk, scratch)?;
         if matches!(
             transform,
             PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
@@ -243,7 +249,7 @@ where
         let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
         let mut power_basis = PowerBasis::new(poly.re.basis(), x1);
         power_basis.populate(poly.re.degree(), poly.re.log_split(), poly.re.parity(), module, tsk, scratch)?;
-        module.ckks_eval_poly_complex_const_coeffs_from_power_basis_default(dst, poly, &power_basis, tsk, scratch)?;
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis_reference(dst, poly, &power_basis, tsk, scratch)?;
         if matches!(
             transform,
             PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput

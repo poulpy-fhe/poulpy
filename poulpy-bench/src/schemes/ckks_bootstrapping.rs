@@ -1,9 +1,7 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
 //! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! re-derived at the backend's digit shape by
-//! [`preset_for_backend`](poulpy_ckks::test_suite::presets::preset_for_backend).
-//! Criterion's name filter selects a preset by its name. The setup, the
+//! at a radix supported by the backend. Criterion's name filter selects a preset by its name. The setup, the
 //! bootstrap call, and the precision measurement are the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks.
@@ -67,13 +65,11 @@ where
             im.worst_err,
             preset.log2_precision(),
         );
-        if BE::DFT_IS_EXACT {
-            let advertised = preset.log2_precision() as f64;
-            assert!(
-                re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
-                "preset {id} advertises {advertised} bits of precision"
-            );
-        }
+        let advertised = preset.log2_precision() as f64;
+        assert!(
+            re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
+            "preset {id} advertises {advertised} bits of precision"
+        );
     }
 }
 
@@ -93,7 +89,8 @@ where
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
-        runner_ckks_bootstrapping::<BE>(&mut group, preset_for_backend::<BE>(&preset).unwrap());
+        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        runner_ckks_bootstrapping::<BE>(&mut group, preset);
     }
     group.finish();
 }

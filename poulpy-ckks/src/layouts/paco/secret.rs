@@ -27,8 +27,8 @@ use poulpy_hal::{
 };
 
 use super::{context::PaCoContext, plan::PaCoPlan};
-use crate::default::dft::DftScalar;
 use crate::encoding::paco::cpx::Cpx;
+use crate::reference::dft::DftScalar;
 use crate::{
     api::{CKKSEncodingOps, PaCoScalar},
     layouts::{CKKSEncodingBuffer, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer},
@@ -117,7 +117,7 @@ where
         crate::layouts::PaCoSlotOrder::Natural => Box::new(br),
         crate::layouts::PaCoSlotOrder::BitRevLow => {
             let log_p = p.log_c() - 1;
-            Box::new(move |k: usize| br(crate::default::paco::ops::ext_bitrev_low(k, log_p)))
+            Box::new(move |k: usize| br(crate::reference::paco::ops::ext_bitrev_low(k, log_p)))
         }
     };
 

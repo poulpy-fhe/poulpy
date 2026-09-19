@@ -8,6 +8,7 @@ use poulpy_core::{
     },
 };
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Backend, Module, ScratchOwned, VecZnxToBackendMut},
@@ -34,9 +35,9 @@ fn main() {
 
     let glwe_pt_infos: GLWEPlaintextLayout = GLWEPlaintextLayout { n, base2k, k: k_pt };
 
-    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&glwe_ct_infos);
-    let mut pt_want: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
-    let mut pt_have: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_ct_infos);
+    let mut pt_want: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
+    let mut pt_have: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
 
     let mut source_xs: Source = Source::new([0u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
@@ -45,7 +46,7 @@ fn main() {
     let mut scratch: ScratchOwned<BackendImpl> =
         ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_ct_infos) | module.glwe_decrypt_tmp_bytes(&glwe_ct_infos));
 
-    let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_ct_infos);
+    let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc_from_infos(&glwe_ct_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
@@ -55,7 +56,9 @@ fn main() {
     module.vec_znx_fill_uniform_source(
         base2k.into(),
         pt_want.k().as_usize(),
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_want.data_mut()),
+        &mut <poulpy_hal::layouts::VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(
+            pt_want.data_mut(),
+        ),
         0,
         &mut source_xa,
     );

@@ -32,9 +32,9 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
-    default::paco::ops::PaCoSlotOps,
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
+    reference::paco::ops::PaCoSlotOps,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -354,8 +354,8 @@ fn seq_bootstrap_case<BE, F, E>(
     // bit-identical bootstrap output.
     let mut view_arena = alloc_scratch(&params, &module);
     let view_scratch = view_arena.borrow();
-    let (mut ct_view, _rest) = view_scratch.take_ckks_ciphertext_like_scratch(&ct_in);
-    module.glwe_copy(&mut ct_view, &ct_in);
+    let (mut ct_view, mut rest) = view_scratch.take_ckks_ciphertext_like_scratch(&ct_in);
+    module.glwe_copy(&mut ct_view, &ct_in, &mut rest);
     let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, &mut scratch.borrow())

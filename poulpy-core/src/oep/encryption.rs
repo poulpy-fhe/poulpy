@@ -8,14 +8,14 @@ use poulpy_hal::{
 use crate::{
     EncryptionInfos, GetDistribution, GetDistributionMut,
     encryption::{
-        GGLWECompressedEncryptSkDefault, GGLWEEncryptSkDefault, GGLWEToGGSWKeyCompressedEncryptSkDefault,
-        GGLWEToGGSWKeyEncryptSkDefault, GGSWCompressedEncryptSkDefault, GGSWEncryptSkDefault,
-        GLWEAutomorphismKeyCompressedEncryptSkDefault, GLWEAutomorphismKeyEncryptPkDefault, GLWEAutomorphismKeyEncryptSkDefault,
-        GLWECompressedEncryptSkDefault, GLWEEncryptPkDefault, GLWEEncryptSkDefault, GLWEMaskFillDefault,
-        GLWEPublicKeyGenerateDefault, GLWESwitchingKeyCompressedEncryptSkDefault, GLWESwitchingKeyEncryptPkDefault,
-        GLWESwitchingKeyEncryptSkDefault, GLWETensorKeyCompressedEncryptSkDefault, GLWETensorKeyEncryptSkDefault,
-        GLWEToLWESwitchingKeyEncryptSkDefault, LWEEncryptSkDefault, LWEFillMaskDefault, LWESwitchingKeyEncryptDefault,
-        LWEToGLWESwitchingKeyEncryptSkDefault,
+        GGLWECompressedEncryptSkReference, GGLWEEncryptSkReference, GGLWEToGGSWKeyCompressedEncryptSkReference,
+        GGLWEToGGSWKeyEncryptSkReference, GGSWCompressedEncryptSkReference, GGSWEncryptSkReference,
+        GLWEAutomorphismKeyCompressedEncryptSkReference, GLWEAutomorphismKeyEncryptPkReference,
+        GLWEAutomorphismKeyEncryptSkReference, GLWECompressedEncryptSkReference, GLWEEncryptPkReference, GLWEEncryptSkReference,
+        GLWEMaskFillReference, GLWEPublicKeyGenerateReference, GLWESwitchingKeyCompressedEncryptSkReference,
+        GLWESwitchingKeyEncryptPkReference, GLWESwitchingKeyEncryptSkReference, GLWETensorKeyCompressedEncryptSkReference,
+        GLWETensorKeyEncryptSkReference, GLWEToLWESwitchingKeyEncryptSkReference, LWEEncryptSkReference, LWEFillMaskReference,
+        LWESwitchingKeyEncryptReference, LWEToGLWESwitchingKeyEncryptSkReference,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -33,7 +33,7 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait EncryptionImpl: Backend {
-    fn fill_glwe_mask_from_source_default<R>(
+    fn fill_glwe_mask_from_source_reference<R>(
         module: &Module<Self>,
         base2k: usize,
         res: &mut R,
@@ -43,7 +43,7 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self>;
 
-    fn fill_glwe_mask_from_seed_default<R>(
+    fn fill_glwe_mask_from_seed_reference<R>(
         module: &Module<Self>,
         base2k: usize,
         res: &mut R,
@@ -53,19 +53,19 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self>;
 
-    fn fill_lwe_mask_from_source_default<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn fill_lwe_mask_from_source_reference<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<Self>;
 
-    fn fill_lwe_mask_from_seed_default<R>(module: &Module<Self>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn fill_lwe_mask_from_seed_reference<R>(module: &Module<Self>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<Self>;
 
-    fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn lwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_default<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -80,11 +80,11 @@ pub unsafe trait EncryptionImpl: Backend {
         S: LWESecretToBackendRef<Self>,
         E: EncryptionInfos;
 
-    fn glwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_sk_default<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -99,7 +99,7 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn glwe_encrypt_zero_sk_default<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, E, S>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -112,11 +112,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn glwe_encrypt_pk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_pk_default<R, P, K, E>(
+    fn glwe_encrypt_pk_reference<R, P, K, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -131,7 +131,7 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_encrypt_zero_pk_default<R, K, E>(
+    fn glwe_encrypt_zero_pk_reference<R, K, E>(
         module: &Module<Self>,
         res: &mut R,
         pk: &K,
@@ -144,7 +144,7 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_public_key_generate_default<R, S, E>(
+    fn glwe_public_key_generate_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -156,11 +156,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution;
 
-    fn gglwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn gglwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -175,11 +175,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn ggsw_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn ggsw_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
 
-    fn ggsw_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -194,11 +194,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + LWEInfos + GLWEInfos;
 
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_to_ggsw_key_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -211,11 +211,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_switching_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<Self>,
         res: &mut R,
         sk_in: &S1,
@@ -230,15 +230,15 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_tensor_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_tensor_key_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -251,11 +251,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_to_lwe_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_to_lwe_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<Self>,
         res: &mut R,
         sk_lwe: &S1,
@@ -270,11 +270,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         R: GGLWEToBackendMut<Self> + GGLWEInfos;
 
-    fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn lwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<Self>,
         res: &mut R,
         sk_lwe_in: &S1,
@@ -289,11 +289,11 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: LWESecretToBackendRef<Self>,
         S2: LWESecretToBackendRef<Self>;
 
-    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn lwe_to_glwe_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<Self>,
         res: &mut R,
         sk_lwe: &S1,
@@ -308,11 +308,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         R: GGLWEToBackendMut<Self> + GGLWEInfos;
 
-    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_automorphism_key_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         p: i64,
@@ -326,15 +326,15 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
 
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -349,11 +349,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -368,11 +368,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn ggsw_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
 
-    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: &P,
@@ -387,11 +387,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -404,11 +404,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_automorphism_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         p: i64,
@@ -422,11 +422,11 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
 
-    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_switching_key_compressed_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<Self>,
         res: &mut R,
         sk_in: &S1,
@@ -441,11 +441,11 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_tensor_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
         sk: &S,
@@ -459,39 +459,39 @@ pub unsafe trait EncryptionImpl: Backend {
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 }
 
-pub trait EncryptionDefault<BE: Backend>:
-    GLWEMaskFillDefault<BE>
-    + LWEFillMaskDefault<BE>
-    + LWEEncryptSkDefault<BE>
-    + GLWEEncryptSkDefault<BE>
-    + GLWEEncryptPkDefault<BE>
-    + GLWEPublicKeyGenerateDefault<BE>
-    + GGLWEEncryptSkDefault<BE>
-    + GGSWEncryptSkDefault<BE>
-    + GGLWEToGGSWKeyEncryptSkDefault<BE>
-    + GLWESwitchingKeyEncryptSkDefault<BE>
-    + GLWESwitchingKeyEncryptPkDefault<BE>
-    + GLWETensorKeyEncryptSkDefault<BE>
-    + GLWEToLWESwitchingKeyEncryptSkDefault<BE>
-    + LWESwitchingKeyEncryptDefault<BE>
-    + LWEToGLWESwitchingKeyEncryptSkDefault<BE>
-    + GLWEAutomorphismKeyEncryptSkDefault<BE>
-    + GLWEAutomorphismKeyEncryptPkDefault<BE>
-    + GLWECompressedEncryptSkDefault<BE>
-    + GGLWECompressedEncryptSkDefault<BE>
-    + GGSWCompressedEncryptSkDefault<BE>
-    + GGLWEToGGSWKeyCompressedEncryptSkDefault<BE>
-    + GLWEAutomorphismKeyCompressedEncryptSkDefault<BE>
-    + GLWESwitchingKeyCompressedEncryptSkDefault<BE>
-    + GLWETensorKeyCompressedEncryptSkDefault<BE>
+pub trait EncryptionReference<BE: Backend>:
+    GLWEMaskFillReference<BE>
+    + LWEFillMaskReference<BE>
+    + LWEEncryptSkReference<BE>
+    + GLWEEncryptSkReference<BE>
+    + GLWEEncryptPkReference<BE>
+    + GLWEPublicKeyGenerateReference<BE>
+    + GGLWEEncryptSkReference<BE>
+    + GGSWEncryptSkReference<BE>
+    + GGLWEToGGSWKeyEncryptSkReference<BE>
+    + GLWESwitchingKeyEncryptSkReference<BE>
+    + GLWESwitchingKeyEncryptPkReference<BE>
+    + GLWETensorKeyEncryptSkReference<BE>
+    + GLWEToLWESwitchingKeyEncryptSkReference<BE>
+    + LWESwitchingKeyEncryptReference<BE>
+    + LWEToGLWESwitchingKeyEncryptSkReference<BE>
+    + GLWEAutomorphismKeyEncryptSkReference<BE>
+    + GLWEAutomorphismKeyEncryptPkReference<BE>
+    + GLWECompressedEncryptSkReference<BE>
+    + GGLWECompressedEncryptSkReference<BE>
+    + GGSWCompressedEncryptSkReference<BE>
+    + GGLWEToGGSWKeyCompressedEncryptSkReference<BE>
+    + GLWEAutomorphismKeyCompressedEncryptSkReference<BE>
+    + GLWESwitchingKeyCompressedEncryptSkReference<BE>
+    + GLWETensorKeyCompressedEncryptSkReference<BE>
 {
 }
 
 unsafe impl<BE: Backend> EncryptionImpl for BE
 where
-    Module<BE>: EncryptionDefault<BE>,
+    Module<BE>: EncryptionReference<BE>,
 {
-    fn fill_glwe_mask_from_source_default<R>(
+    fn fill_glwe_mask_from_source_reference<R>(
         module: &Module<BE>,
         base2k: usize,
         res: &mut R,
@@ -501,10 +501,10 @@ where
     ) where
         R: GLWEToBackendMut<BE>,
     {
-        module.fill_glwe_mask_from_source_default(base2k, res, res_col, rank, source_xa)
+        module.fill_glwe_mask_from_source_reference(base2k, res, res_col, rank, source_xa)
     }
 
-    fn fill_glwe_mask_from_seed_default<R>(
+    fn fill_glwe_mask_from_seed_reference<R>(
         module: &Module<BE>,
         base2k: usize,
         res: &mut R,
@@ -514,31 +514,31 @@ where
     ) where
         R: GLWEToBackendMut<BE>,
     {
-        module.fill_glwe_mask_from_seed_default(base2k, res, res_col, rank, seed_xa)
+        module.fill_glwe_mask_from_seed_reference(base2k, res, res_col, rank, seed_xa)
     }
 
-    fn fill_lwe_mask_from_source_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn fill_lwe_mask_from_source_reference<R>(module: &Module<BE>, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>,
     {
-        module.fill_lwe_mask_from_source_default(base2k, res, source_xa)
+        module.fill_lwe_mask_from_source_reference(base2k, res, source_xa)
     }
 
-    fn fill_lwe_mask_from_seed_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn fill_lwe_mask_from_seed_reference<R>(module: &Module<BE>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>,
     {
-        module.fill_lwe_mask_from_seed_default(base2k, res, seed_xa)
+        module.fill_lwe_mask_from_seed_reference(base2k, res, seed_xa)
     }
 
-    fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: LWEInfos,
     {
-        module.lwe_encrypt_sk_tmp_bytes_default(infos)
+        module.lwe_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn lwe_encrypt_sk_default<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -553,17 +553,17 @@ where
         S: LWESecretToBackendRef<BE>,
         E: EncryptionInfos,
     {
-        module.lwe_encrypt_sk_default(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        module.lwe_encrypt_sk_reference(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        module.glwe_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_encrypt_sk_default<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -578,10 +578,10 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.glwe_encrypt_sk_default(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_encrypt_sk_reference(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_encrypt_zero_sk_default<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, E, S>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -594,17 +594,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.glwe_encrypt_zero_sk_default(res, sk, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_encrypt_zero_sk_reference(res, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_encrypt_pk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        module.glwe_encrypt_pk_tmp_bytes_default(infos)
+        module.glwe_encrypt_pk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_encrypt_pk_default<R, P, K, E>(
+    fn glwe_encrypt_pk_reference<R, P, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -619,10 +619,10 @@ where
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_encrypt_pk_default(res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+        module.glwe_encrypt_pk_reference(res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     }
 
-    fn glwe_encrypt_zero_pk_default<R, K, E>(
+    fn glwe_encrypt_zero_pk_reference<R, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pk: &K,
@@ -635,10 +635,10 @@ where
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_encrypt_zero_pk_default(res, pk, enc_infos, source_xu, source_xe, scratch)
+        module.glwe_encrypt_zero_pk_reference(res, pk, enc_infos, source_xu, source_xe, scratch)
     }
 
-    fn glwe_public_key_generate_default<R, S, E>(
+    fn glwe_public_key_generate_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -650,17 +650,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        module.glwe_public_key_generate_default(res, sk, enc_infos, source_xe, source_xa)
+        module.glwe_public_key_generate_reference(res, sk, enc_infos, source_xe, source_xa)
     }
 
-    fn gglwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn gglwe_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.gglwe_encrypt_sk_tmp_bytes_default(infos)
+        module.gglwe_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn gglwe_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -675,17 +675,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.gglwe_encrypt_sk_default(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        module.gglwe_encrypt_sk_reference(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn ggsw_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn ggsw_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
-        module.ggsw_encrypt_sk_tmp_bytes_default(infos)
+        module.ggsw_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn ggsw_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -700,17 +700,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
-        module.ggsw_encrypt_sk_default(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        module.ggsw_encrypt_sk_reference(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_default(infos)
+        module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn gglwe_to_ggsw_key_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -723,17 +723,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.gglwe_to_ggsw_key_encrypt_sk_default(res, sk, enc_infos, source_xe, source_xa, scratch)
+        module.gglwe_to_ggsw_key_encrypt_sk_reference(res, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_switching_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_switching_key_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_switching_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<BE>,
         res: &mut R,
         sk_in: &S1,
@@ -748,24 +748,24 @@ where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_switching_key_encrypt_sk_default(res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_switching_key_encrypt_sk_reference(res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_switching_key_encrypt_pk_tmp_bytes_default(infos)
+        module.glwe_switching_key_encrypt_pk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_tensor_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_tensor_key_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_tensor_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_tensor_key_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -778,17 +778,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_tensor_key_encrypt_sk_default(res, sk, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_tensor_key_encrypt_sk_reference(res, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_to_lwe_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_to_lwe_key_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_to_lwe_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<BE>,
         res: &mut R,
         sk_lwe: &S1,
@@ -803,17 +803,17 @@ where
         E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        module.glwe_to_lwe_key_encrypt_sk_default(res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_to_lwe_key_encrypt_sk_reference(res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.lwe_switching_key_encrypt_sk_tmp_bytes_default(infos)
+        module.lwe_switching_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn lwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<BE>,
         res: &mut R,
         sk_lwe_in: &S1,
@@ -828,17 +828,17 @@ where
         S1: LWESecretToBackendRef<BE>,
         S2: LWESecretToBackendRef<BE>,
     {
-        module.lwe_switching_key_encrypt_sk_default(res, sk_lwe_in, sk_lwe_out, enc_infos, source_xe, source_xa, scratch)
+        module.lwe_switching_key_encrypt_sk_reference(res, sk_lwe_in, sk_lwe_out, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.lwe_to_glwe_key_encrypt_sk_tmp_bytes_default(infos)
+        module.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn lwe_to_glwe_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<BE>,
         res: &mut R,
         sk_lwe: &S1,
@@ -853,17 +853,17 @@ where
         E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        module.lwe_to_glwe_key_encrypt_sk_default(res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
+        module.lwe_to_glwe_key_encrypt_sk_reference(res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_automorphism_key_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_automorphism_key_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         p: i64,
@@ -877,24 +877,24 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_automorphism_key_encrypt_sk_default(res, p, sk, enc_infos, source_xe, source_xa, scratch)
+        module.glwe_automorphism_key_encrypt_sk_reference(res, p, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_automorphism_key_encrypt_pk_tmp_bytes_default(infos)
+        module.glwe_automorphism_key_encrypt_pk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        module.glwe_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -909,17 +909,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.glwe_compressed_encrypt_sk_default(res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+        module.glwe_compressed_encrypt_sk_reference(res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 
-    fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.gglwe_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.gglwe_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -934,17 +934,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.gglwe_compressed_encrypt_sk_default(res, pt, sk, seed, enc_infos, source_xe, scratch)
+        module.gglwe_compressed_encrypt_sk_reference(res, pt, sk, seed, enc_infos, source_xe, scratch)
     }
 
-    fn ggsw_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
-        module.ggsw_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.ggsw_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -959,17 +959,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.ggsw_compressed_encrypt_sk_default(res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+        module.ggsw_compressed_encrypt_sk_reference(res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -982,17 +982,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.gglwe_to_ggsw_key_compressed_encrypt_sk_default(res, sk, seed_xa, enc_infos, source_xe, scratch)
+        module.gglwe_to_ggsw_key_compressed_encrypt_sk_reference(res, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 
-    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_automorphism_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         p: i64,
@@ -1006,17 +1006,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_automorphism_key_compressed_encrypt_sk_default(res, p, sk, seed_xa, enc_infos, source_xe, scratch)
+        module.glwe_automorphism_key_compressed_encrypt_sk_reference(res, p, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 
-    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_switching_key_compressed_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
         module: &Module<BE>,
         res: &mut R,
         sk_in: &S1,
@@ -1031,17 +1031,17 @@ where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_switching_key_compressed_encrypt_sk_default(res, sk_in, sk_out, seed_xa, enc_infos, source_xe, scratch)
+        module.glwe_switching_key_compressed_encrypt_sk_reference(res, sk_in, sk_out, seed_xa, enc_infos, source_xe, scratch)
     }
 
-    fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_default(infos)
+        module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_reference(infos)
     }
 
-    fn glwe_tensor_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_compressed_encrypt_sk_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
@@ -1054,17 +1054,17 @@ where
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        module.glwe_tensor_key_compressed_encrypt_sk_default(res, sk, seed_xa, enc_infos, source_xe, scratch)
+        module.glwe_tensor_key_compressed_encrypt_sk_reference(res, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 }
 
-/// Marker opt-in for [`EncryptionDefault`] on `Module<$be>`.
+/// Marker opt-in for [`EncryptionReference`] on `Module<$be>`.
 ///
-/// Equivalent to writing `impl EncryptionDefault<$be> for Module<$be> {}`. The aggregator's
+/// Equivalent to writing `impl EncryptionReference<$be> for Module<$be> {}`. The aggregator's
 /// supertrait chain auto-derives all 22 encryption sub-defaults from their HAL bounds.
 #[macro_export]
-macro_rules! impl_encryption_defaults_full {
+macro_rules! impl_encryption_reference_full {
     ($be:ty) => {
-        impl $crate::oep::EncryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::oep::EncryptionReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
@@ -603,7 +604,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GGLWE<Vec<u8>, W> {
+impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -632,7 +633,7 @@ impl<W: ZnxWord> GGLWE<Vec<u8>, W> {
 
         GGLWE {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<Vec<u8>, W>::bytes_of(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     rank_in.into(),
@@ -677,7 +678,7 @@ impl<W: ZnxWord> GGLWE<Vec<u8>, W> {
     ) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
+        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }
 }
 

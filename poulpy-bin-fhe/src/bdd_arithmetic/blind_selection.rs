@@ -84,7 +84,7 @@ where
                     (None, Some(hi)) => {
                         self.glwe_zero(&mut zero);
                         self.cmux_assign(&mut zero, hi, &bit.to_backend_ref(), &mut scratch.borrow());
-                        self.glwe_copy(hi, &zero);
+                        self.glwe_copy(hi, &zero, &mut scratch);
                         a.insert(j, hi);
                     }
 
@@ -99,7 +99,7 @@ where
         let out: Option<&mut A> = a.remove(&0);
 
         if let Some(out) = out {
-            self.glwe_copy(res, out);
+            self.glwe_copy(res, out, &mut scratch);
         } else {
             self.glwe_zero(res);
         }

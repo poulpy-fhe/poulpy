@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::AlignedBuf;
 use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView};
 
 #[repr(C)]
@@ -126,18 +127,20 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(
         n: usize,
         cols: usize,
         size: usize,
         hint: PrepareHint,
-        bytes: impl Into<Vec<u8>>,
+        bytes: impl Into<AlignedBuf>,
     ) -> CnvPVecR<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecR {
@@ -251,18 +254,20 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(
         n: usize,
         cols: usize,
         size: usize,
         hint: PrepareHint,
-        bytes: impl Into<Vec<u8>>,
+        bytes: impl Into<AlignedBuf>,
     ) -> CnvPVecL<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecL {
@@ -435,7 +440,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> CnvPVecL<D, W, B2>
     where
         B2: Backend<DftWord = W>,
@@ -461,7 +466,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> CnvPVecR<D, W, B2>
     where
         B2: Backend<DftWord = W>,

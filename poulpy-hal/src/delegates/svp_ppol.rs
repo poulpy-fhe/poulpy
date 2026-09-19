@@ -22,14 +22,14 @@ macro_rules! impl_svp_delegate {
 }
 
 impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
-    fn svp_ppol_alloc(&self, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B> {
-        SvpPPolOwned::<B>::alloc(self.n(), cols, hint)
+    fn svp_ppol_alloc(&self, n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B> {
+        SvpPPolOwned::<B>::alloc(n, cols, hint)
     }
 }
 
 impl<B: Backend> SvpPPolBytesOf for Module<B> {
-    fn bytes_of_svp_ppol(&self, cols: usize, hint: PrepareHint) -> usize {
-        B::bytes_of_svp_ppol(self.n(), cols, hint)
+    fn bytes_of_svp_ppol(&self, n: usize, cols: usize, hint: PrepareHint) -> usize {
+        B::bytes_of_svp_ppol(n, cols, hint)
     }
 }
 

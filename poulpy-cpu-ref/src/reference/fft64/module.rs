@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use bytemuck::Zeroable;
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
 /// Forward and inverse negacyclic FFT tables for one ring degree.
 pub struct FFT64Plan<F>
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
@@ -18,7 +19,7 @@ where
 
 impl<F> FFT64Plan<F>
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     /// Creates the plan for `Z[X]/(X^n + 1)`.
     pub fn new(n: usize) -> Self {
@@ -44,7 +45,7 @@ where
 /// Complete geometric family of FFT plans up to a maximum ring degree.
 pub struct FFT64PlanSet<F>
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     plans: Vec<FFT64Plan<F>>,
     max_n: usize,
@@ -52,7 +53,7 @@ where
 
 impl<F> FFT64PlanSet<F>
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     pub fn new(max_n: usize) -> Self {
         assert!(
@@ -90,7 +91,7 @@ where
 /// defaults share the same FFT64 handle contract across scalar and accelerated backends.
 pub trait FFTModuleHandle<F>: poulpy_hal::api::ModuleN
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
 
@@ -100,14 +101,6 @@ where
 
     fn get_ifft_table_for(&self, n: usize) -> &ReimIFFTTable<F> {
         self.get_fft_plan(n).ifft()
-    }
-
-    fn get_fft_table(&self) -> &ReimFFTTable<F> {
-        self.get_fft_table_for(self.n())
-    }
-
-    fn get_ifft_table(&self) -> &ReimIFFTTable<F> {
-        self.get_ifft_table_for(self.n())
     }
 }
 
@@ -119,7 +112,7 @@ where
 /// The handle must be fully initialized before `Module::new()` returns.
 pub unsafe trait FFTHandleProvider<F>
 where
-    F: Float + FloatConst + Debug,
+    F: Float + FloatConst + Debug + Zeroable,
 {
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
 }

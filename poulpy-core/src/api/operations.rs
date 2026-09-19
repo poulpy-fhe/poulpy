@@ -102,6 +102,9 @@ pub trait GLWEMulConst<BE: Backend> {
 /// normalized form on [`crate::layouts::GLWE`]); the convolution reads every
 /// bit of its live limbs and does not check.
 pub trait GLWEMulPlain<BE: Backend> {
+    /// The right operand may be compact: a degree that is a power-of-two divisor
+    /// of the module's, not below the backend floor, stands for its ring
+    /// embedding; the budget is an upper bound for it.
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -248,8 +251,20 @@ pub trait GLWEMulXpMinusOne<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
+/// Copies a canonical GLWE's torus value into the destination layout.
+///
+/// The destination keeps its metadata. Narrowing rounds to its logical `k`,
+/// including partial limbs; differing radices are converted. With equal radices
+/// and no precision loss, this is a limb copy with zero-extension. A rank-zero
+/// source may be copied into a higher-rank destination, whose mask is zeroed.
+/// Equal-layout copies also preserve unnormalized digits verbatim; normalizing
+/// such an intermediate remains the caller's responsibility.
 pub trait GLWECopy<BE: Backend> {
-    fn glwe_copy<R, A>(&self, res: &mut R, a: &A)
+    /// Scratch for the given source and destination layouts (zero for the
+    /// equal-radix, non-narrowing path).
+    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;

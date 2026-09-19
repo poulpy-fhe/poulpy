@@ -1,10 +1,10 @@
 //! Safe, user-facing traits for the GLWE linear transformation (BSGS).
 //!
-//! Dispatch follows the same `api -> oep -> delegates <- default` pattern as the
+//! Dispatch follows the same `api -> oep -> delegates <- reference` pattern as the
 //! other operation families: this module defines the abstract trait, the backend
 //! extension point lives in [`crate::oep::LinearTransformationImpl`], the blanket
 //! wiring is in the (private) `delegates` module, and the reference algorithms
-//! are in [`crate::default::linear_transformation`].
+//! are in [`crate::reference::linear_transformation`].
 
 #![allow(clippy::too_many_arguments)]
 
@@ -56,7 +56,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ///
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
-    /// `lt`. Performs zero `CnvPVecR` allocations.
+    /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
+    /// diagonals' degree, which a compact diagonal sets below the ring degree;
+    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
     fn glwe_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
@@ -82,7 +84,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
-    /// `P` (see [`DiagonalProd`](crate::default::linear_transformation::DiagonalProd)):
+    /// `P` (see [`DiagonalProd`](crate::reference::linear_transformation::DiagonalProd)):
     ///
     /// - `P = PreparedDiagonal` (resident): the diagonals are already in the
     ///   convolution domain, so each giant step is one fused accumulation.
@@ -104,6 +106,6 @@ pub trait GLWELinearTransformations<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>;
 }

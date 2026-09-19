@@ -11,6 +11,7 @@
 //! them to the backend, performs the operation, downloads, and asserts
 //! correctness.
 
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug};
 
@@ -151,7 +152,7 @@ pub const MUL_CONST: (f64, f64) = (0.271_828_182_845_904_5, -0.141_421_356_237_3
 /// float quantization targets `i64`/`i128` limbs. A backend with a narrower
 /// coefficient word needs its own codec, and its own suites.
 pub trait TestContextBackend:
-    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static
+    Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static
 where
     ScratchOwned<Self>: ScratchOwnedAlloc<Self>,
     for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
@@ -160,7 +161,7 @@ where
 
 impl<BE> TestContextBackend for BE
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
 }
@@ -546,7 +547,7 @@ where
 }
 
 /// Downloads a backend plaintext to the host.
-pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<Vec<u8>, BE::ZnxWord> {
+pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord> {
     pt.to_host_owned::<BE>()
 }
 
@@ -1010,7 +1011,7 @@ pub fn ckks_decrypt_with_prec<BE>(
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     prec: CKKSLayout,
     scratch: &mut ScratchArena<'_, BE>,
-) -> anyhow::Result<CKKSPlaintext<Vec<u8>, BE::ZnxWord>>
+) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -1062,7 +1063,7 @@ where
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
-    ckks_decode_pt(encoder, params.n / 2, &pt)
+    ckks_decode_pt(encoder, encoder.m(), &pt)
 }
 
 /// Decodes a host-side plaintext to slot vectors.
@@ -1325,7 +1326,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     });
     module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);
-    let (re_out, im_out) = ckks_decode_pt(encoder, params.n / 2, &pt_host);
+    let (re_out, im_out) = ckks_decode_pt(encoder, encoder.m(), &pt_host);
     assert_precision(&format!("{label} re"), &re_out, want_re, log_delta, params.n);
     assert_precision(&format!("{label} im"), &im_out, want_im, log_delta, params.n);
 }

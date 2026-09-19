@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use std::marker::PhantomData;
 
 use crate::bdd_arithmetic::{BDDKeyPrepared, FheUint, FheUintPrepareDebug, ToBits};
@@ -104,7 +105,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> GGSWInfos for FheUintPrepar
     }
 }
 
-impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<Vec<u8>, T, i64> {
+impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
     pub fn noise<S, M, BE>(
         &self,
         module: &M,
@@ -117,7 +118,7 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<Vec<u8>, T, i64> {
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         M: GGSWNoise<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,
     {
@@ -125,7 +126,7 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<Vec<u8>, T, i64> {
         for (i, ggsw) in self.bits.iter().enumerate() {
             use poulpy_hal::layouts::ZnxViewMut;
             let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-                HostBytesBackend::alloc_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(usize::from(self.n()), 1)),
+                HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
                 usize::from(self.n()),
                 1,
             );
@@ -172,7 +173,7 @@ where
     }
 }
 
-impl<T: UnsignedInteger> FheUintPreparedDebug<Vec<u8>, T, i64> {
+impl<T: UnsignedInteger> FheUintPreparedDebug<AlignedBuf, T, i64> {
     pub fn prepare<BRA, M, BE>(
         &mut self,
         module: &M,
@@ -181,7 +182,7 @@ impl<T: UnsignedInteger> FheUintPreparedDebug<Vec<u8>, T, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BRA: BlindRotationAlgo,
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
         M: FheUintPrepareDebug<BRA, T, BE>,
     {
         module.fhe_uint_debug_prepare(self, other, key, scratch);

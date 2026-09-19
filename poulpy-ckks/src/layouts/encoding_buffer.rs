@@ -57,18 +57,18 @@ impl<D: Data, F> CKKSEncodingBufferInfos for CKKSEncodingBuffer<D, F> {
 impl<D: HostDataRef, F: Pod> CKKSEncodingBuffer<D, F> {
     /// Host view used by host backend implementations.
     pub fn as_slice(&self) -> &[F] {
-        let values = bytemuck::cast_slice(self.data.as_ref());
-        assert_eq!(values.len(), self.len);
-        values
+        let values: &[F] = bytemuck::cast_slice(self.data.as_ref());
+        assert!(values.len() >= self.len, "encoding buffer shorter than its length");
+        &values[..self.len]
     }
 }
 
 impl<D: HostDataMut, F: Pod> CKKSEncodingBuffer<D, F> {
     /// Mutable host view used by host backend implementations.
     pub fn as_mut_slice(&mut self) -> &mut [F] {
-        let values = bytemuck::cast_slice_mut(self.data.as_mut());
-        assert_eq!(values.len(), self.len);
-        values
+        let values: &mut [F] = bytemuck::cast_slice_mut(self.data.as_mut());
+        assert!(values.len() >= self.len, "encoding buffer shorter than its length");
+        &mut values[..self.len]
     }
 }
 

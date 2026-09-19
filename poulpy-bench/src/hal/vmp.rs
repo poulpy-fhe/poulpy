@@ -35,8 +35,14 @@ where
 
     let mat = random_host_mat_znx(module.n(), sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, &mut source);
     let mat = upload_host_mat_znx::<B>(&mat);
-    let mut pmat: VmpPMatOwned<B> =
-        module.vmp_pmat_alloc(sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, PrepareHint::Reuse);
+    let mut pmat: VmpPMatOwned<B> = module.vmp_pmat_alloc(
+        module.n(),
+        sweep.rows,
+        sweep.cols_in,
+        sweep.cols_out,
+        sweep.size,
+        PrepareHint::Reuse,
+    );
 
     bencher.iter(|| {
         let mut pmat_backend = pmat.to_backend_mut();
@@ -64,7 +70,7 @@ where
         sweep.size,
     ));
 
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols_out, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols_out, sweep.size);
     let a = random_host_vec_znx(module.n(), sweep.cols_in, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
     let pmat: VmpPMatOwned<B> =
@@ -96,7 +102,7 @@ where
         sweep.size,
     ));
 
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols_out, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols_out, sweep.size);
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols_in, sweep.size, &mut source);
     let pmat: VmpPMatOwned<B> =
         random_backend_vmp_pmat::<B>(module.n(), sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, &mut source);

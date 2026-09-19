@@ -15,11 +15,11 @@
 //! override is pinned to the same oracle as the default body. Coefficient- and
 //! big-domain results are compared bit for bit; DFT-domain results are
 //! compared after `idft` and `big_normalize` at the suite's `base2k`, which is
-//! how the rest of this suite states DFT-domain equality (spec decision 4).
+//! how the rest of this suite states DFT-domain equality.
 //!
 //! Where the two sides are allowed to distribute the same value over
 //! different non-canonical digits, the accumulating shifts, the comparison
-//! is on canonical forms, as in PR2's `rsh_sub` proof.
+//! is on canonical forms, as in the `rsh_sub` argument.
 
 use crate::{
     api::{
@@ -37,9 +37,9 @@ use crate::{
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
-        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView,
-        ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
+        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxOwned, VmpPMatToBackendMut,
+        VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
         HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
@@ -80,11 +80,11 @@ where
     let (rows, cols_in, cols_out, size) = (4usize, 2usize, 2usize, 4usize);
     let mut source: Source = Source::new([0u8; 32]);
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
-    let mut a = module_host.vec_znx_alloc(cols_in, size);
+    let mut a = module_host.vec_znx_alloc(params.n, cols_in, size);
     a.fill_uniform(base2k, &mut source);
-    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
+    let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
     mat.fill_uniform(base2k, &mut source);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -95,7 +95,7 @@ where
     );
 
     let mat_backend = upload_mat_znx::<BE>(&mat);
-    let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
+    let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
     module.vmp_prepare(
         &mut pmat.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
@@ -117,7 +117,7 @@ where
     let a_dft_size: usize = a_size.min(b_rows);
     let offset: usize = b_cols_in - cols_to_copy;
 
-    let mut a_dft_oracle = module.vec_znx_dft_alloc(b_cols_in, a_dft_size);
+    let mut a_dft_oracle = module.vec_znx_dft_alloc(params.n, b_cols_in, a_dft_size);
     for j in 0..offset {
         module.vec_znx_dft_zero(&mut a_dft_oracle.to_backend_mut(), j);
     }
@@ -125,7 +125,7 @@ where
         module.vec_znx_dft_apply(1, 0, &mut a_dft_oracle.to_backend_mut(), offset + j, &a_ref, a_start_col + j);
     }
 
-    let mut res_oracle = module.vec_znx_dft_alloc(cols_out, size);
+    let mut res_oracle = module.vec_znx_dft_alloc(params.n, cols_out, size);
     module.vmp_apply_dft_to_dft(
         &mut res_oracle.to_backend_mut(),
         &a_dft_oracle.to_backend_ref(),
@@ -134,13 +134,13 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut res_derived = module.vec_znx_dft_alloc(cols_out, size);
+    let mut res_derived = module.vec_znx_dft_alloc(params.n, cols_out, size);
     vmp_apply_dft_derived::<BE, _>(module, &mut res_derived, &a_ref, &pmat_ref, &mut scratch.borrow());
 
-    let mut big = module.vec_znx_big_alloc(1, size);
+    let mut big = module.vec_znx_big_alloc(params.n, 1, size);
     for col in 0..cols_out {
-        let want_template = module_host.vec_znx_alloc(1, size);
-        let have_template = module_host.vec_znx_alloc(1, size);
+        let want_template = module_host.vec_znx_alloc(params.n, 1, size);
+        let have_template = module_host.vec_znx_alloc(params.n, 1, size);
         let mut want_backend = upload_vec_znx::<BE>(&want_template);
         let mut have_backend = upload_vec_znx::<BE>(&have_template);
 
@@ -216,7 +216,7 @@ where
     let mat_size: usize = 4;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for ((cols_in, cols_out), (res_size, a_size)) in [(2usize, 2usize), (2, 3)]
         .into_iter()
@@ -224,11 +224,11 @@ where
     {
         let rows: usize = a_size;
 
-        let mut a = module_host.vec_znx_alloc(cols_in, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols_in, a_size);
         a.fill_uniform(base2k, &mut source);
-        let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
+        let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, mat_size);
         mat.fill_uniform(base2k, &mut source);
-        let mut res_init = module_host.vec_znx_alloc(cols_out, res_size);
+        let mut res_init = module_host.vec_znx_alloc(params.n, cols_out, res_size);
         res_init.fill_uniform(base2k, &mut source);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -240,7 +240,7 @@ where
         );
 
         let mat_backend = upload_mat_znx::<BE>(&mat);
-        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
+        let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
         module.vmp_prepare(
             &mut pmat.to_backend_mut(),
             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
@@ -250,7 +250,7 @@ where
 
         let a_backend = upload_vec_znx::<BE>(&a);
         let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
-        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
+        let mut a_dft = module.vec_znx_dft_alloc(params.n, cols_in, a_size);
         for j in 0..cols_in {
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), j, &a_ref, j);
         }
@@ -262,19 +262,19 @@ where
         for limb_offset in [0usize, 1usize] {
             // Three independent copies of the same initial accumulator, one
             // per path, so each can be mutated without disturbing the others.
-            let mut res_oracle = module.vec_znx_dft_alloc(cols_out, res_size);
-            let mut res_derived = module.vec_znx_dft_alloc(cols_out, res_size);
-            let mut res_module = module.vec_znx_dft_alloc(cols_out, res_size);
+            let mut res_oracle = module.vec_znx_dft_alloc(params.n, cols_out, res_size);
+            let mut res_derived = module.vec_znx_dft_alloc(params.n, cols_out, res_size);
+            let mut res_module = module.vec_znx_dft_alloc(params.n, cols_out, res_size);
             for j in 0..cols_out {
                 module.vec_znx_dft_apply(1, 0, &mut res_oracle.to_backend_mut(), j, &res_init_ref, j);
                 module.vec_znx_dft_apply(1, 0, &mut res_derived.to_backend_mut(), j, &res_init_ref, j);
                 module.vec_znx_dft_apply(1, 0, &mut res_module.to_backend_mut(), j, &res_init_ref, j);
             }
 
-            // Oracle: the spec definition of `vmp_apply_dft_to_dft_add`,
+            // Oracle: the contract definition of `vmp_apply_dft_to_dft_add`,
             // spelled out through the public api traits, a fresh product,
             // then folded in column by column.
-            let mut fresh = module.vec_znx_dft_alloc(cols_out, res_size);
+            let mut fresh = module.vec_znx_dft_alloc(params.n, cols_out, res_size);
             module.vmp_apply_dft_to_dft(
                 &mut fresh.to_backend_mut(),
                 &a_dft_ref,
@@ -312,9 +312,9 @@ where
                 &mut scratch.borrow(),
             );
 
-            let mut big = module.vec_znx_big_alloc(1, res_size);
+            let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
             for j in 0..cols_out {
-                let want_template = module_host.vec_znx_alloc(1, res_size);
+                let want_template = module_host.vec_znx_alloc(params.n, 1, res_size);
                 let mut oracle_backend = upload_vec_znx::<BE>(&want_template);
                 let mut derived_backend = upload_vec_znx::<BE>(&want_template);
                 let mut module_backend = upload_vec_znx::<BE>(&want_template);
@@ -385,10 +385,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -396,7 +396,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(res_size));
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
                 let mut want_backend = upload_vec_znx::<BE>(&res);
@@ -411,7 +411,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `lsh`, spelled out.
+                // Oracle: the contract definition of `lsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -446,10 +446,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -457,7 +457,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
                 let mut want_backend = upload_vec_znx::<BE>(&res);
@@ -472,7 +472,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `rsh`, spelled out.
+                // Oracle: the contract definition of `rsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -499,11 +499,11 @@ where
     {
         let res_size: usize = 2;
         let k: usize = res_size * base2k + 3;
-        let mut a = module_host.vec_znx_alloc(1, 2);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, 2);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
-        let mut res = module_host.vec_znx_alloc(1, res_size);
+        let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
         res.fill_uniform(base2k, &mut source);
         let mut have_backend = upload_vec_znx::<BE>(&res);
         module.vec_znx_rsh(
@@ -542,10 +542,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -557,7 +557,7 @@ where
             );
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let orig_backend = upload_vec_znx::<BE>(&res);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -574,7 +574,7 @@ where
                 );
 
                 // Oracle: shift into a fresh buffer, then combine on the api.
-                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
                 module.vec_znx_lsh(
                     base2k,
                     k,
@@ -631,10 +631,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -646,7 +646,7 @@ where
             );
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let orig_backend = upload_vec_znx::<BE>(&res);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -663,7 +663,7 @@ where
                 );
 
                 // Oracle: shift into a fresh buffer, then combine on the api.
-                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
                 module.vec_znx_lsh(
                     base2k,
                     k,
@@ -720,10 +720,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -735,7 +735,7 @@ where
             );
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let orig_backend = upload_vec_znx::<BE>(&res);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -752,7 +752,7 @@ where
                 );
 
                 // Oracle: shift into a fresh buffer, then combine on the api.
-                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
                 module.vec_znx_rsh(
                     base2k,
                     k,
@@ -809,10 +809,10 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for a_size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -824,7 +824,7 @@ where
             );
 
             for k in 0..=(res_size * base2k) {
-                let mut res = module_host.vec_znx_alloc(1, res_size);
+                let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
                 res.fill_uniform(base2k, &mut source);
                 let orig_backend = upload_vec_znx::<BE>(&res);
                 let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -841,7 +841,7 @@ where
                 );
 
                 // Oracle: shift into a fresh buffer, then combine on the api.
-                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
                 module.vec_znx_rsh(
                     base2k,
                     k,
@@ -901,7 +901,7 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for res_size in [1usize, 2, 4] {
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -911,7 +911,7 @@ where
         );
 
         for k in 0..=(res_size * base2k + base2k) {
-            let mut res = module_host.vec_znx_alloc(1, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
             res.fill_uniform(base2k, &mut source);
             let orig_backend = upload_vec_znx::<BE>(&res);
             let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -936,7 +936,7 @@ where
             );
 
             // Oracle: shift into a fresh buffer, then copy back.
-            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
             module.vec_znx_lsh(
                 base2k,
                 k,
@@ -995,7 +995,7 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for res_size in [1usize, 2, 4] {
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -1005,7 +1005,7 @@ where
         );
 
         for k in 0..=(res_size * base2k) {
-            let mut res = module_host.vec_znx_alloc(1, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
             res.fill_uniform(base2k, &mut source);
             let orig_backend = upload_vec_znx::<BE>(&res);
             let mut have_backend = upload_vec_znx::<BE>(&res);
@@ -1020,7 +1020,7 @@ where
             );
 
             // Oracle: shift into a fresh buffer, then copy back.
-            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(params.n, 1, res_size));
             module.vec_znx_rsh(
                 base2k,
                 k,
@@ -1065,15 +1065,15 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for size in [1usize, 2, 4] {
-        let mut a = module_host.vec_znx_alloc(1, size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
 
-        for p in [1i64, 5, -3, module.n() as i64] {
-            let mut res = module_host.vec_znx_alloc(1, size);
+        for p in [1i64, 5, -3, params.n as i64] {
+            let mut res = module_host.vec_znx_alloc(params.n, 1, size);
             res.fill_uniform(base2k, &mut source);
             let mut have_backend = upload_vec_znx::<BE>(&res);
             let mut want_backend = upload_vec_znx::<BE>(&res);
@@ -1126,7 +1126,7 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
 
     for size in [1usize, 2, 4] {
         // Each body gets its own `_tmp_bytes(size)` alone, so one that
@@ -1136,8 +1136,8 @@ where
         >(module, size));
         let mut scratch_api: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(size));
 
-        for p in [1i64, 5, -3, module.n() as i64] {
-            let mut a = module_host.vec_znx_alloc(1, size);
+        for p in [1i64, 5, -3, params.n as i64] {
+            let mut a = module_host.vec_znx_alloc(params.n, 1, size);
             a.fill_uniform(base2k, &mut source);
             let a_backend = upload_vec_znx::<BE>(&a);
 
@@ -1192,17 +1192,17 @@ where
     Module<BE>: VecZnxAddScalarAssign<BE> + VecZnxAddAssign<BE>,
 {
     let base2k: usize = params.base2k;
-    let n: usize = module.n();
+    let n: usize = params.n;
     let mut source: Source = Source::new([0u8; 32]);
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
 
-    let mut scalar = module_host.scalar_znx_alloc(1);
+    let mut scalar = module_host.scalar_znx_alloc(params.n, 1);
     scalar.fill_uniform(base2k, &mut source);
     let scalar_backend = upload_scalar_znx::<BE>(&scalar);
 
     for res_size in [1usize, 2, 4] {
         for res_limb in 0..res_size {
-            let mut res = module_host.vec_znx_alloc(1, res_size);
+            let mut res = module_host.vec_znx_alloc(params.n, 1, res_size);
             res.fill_uniform(base2k, &mut source);
             let mut have_backend = upload_vec_znx::<BE>(&res);
             let mut want_backend = upload_vec_znx::<BE>(&res);
@@ -1218,7 +1218,7 @@ where
 
             // Oracle: the scalar lifted into a full-width `VecZnx` whose only
             // non-zero limb is `res_limb`, added with the plain `add_assign`.
-            let mut lifted = module_host.vec_znx_alloc(1, res_size);
+            let mut lifted = module_host.vec_znx_alloc(params.n, 1, res_size);
             lifted.at_mut(0, res_limb).copy_from_slice(scalar.at(0, 0));
             let lifted_backend = upload_vec_znx::<BE>(&lifted);
             module.vec_znx_add_assign(
@@ -1256,39 +1256,45 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, params.n),
+        (4, 2, 3, params.n),
+        (2, 4, 3, params.n),
+        (3, 3, 5, params.n),
+        (4, 4, 2, params.n),
+        (4, 2, 5, params.n),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
-        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        let mut a_small = module_host.vec_znx_alloc(params.n, 1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
 
         // `a` as a VecZnxBig, through the basis promotion.
-        let mut a_big = module.vec_znx_big_alloc(1, a_size);
+        let mut a_big = module.vec_znx_big_alloc(params.n, 1, a_size);
         module.vec_znx_big_from_small(&mut a_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
 
-        let mut want_big = module.vec_znx_big_alloc(1, res_size);
-        let mut have_big = module.vec_znx_big_alloc(1, res_size);
-        let mut got_big = module.vec_znx_big_alloc(1, res_size);
+        let mut want_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut got_big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
         // Both destinations start on a non-zero sentinel: the limbs the
         // operation has to zero are only asserted if they did not read back
         // zero by accident.
-        let mut sentinel = module_host.vec_znx_alloc(1, res_size);
+        let mut sentinel = module_host.vec_znx_alloc(params.n, 1, res_size);
         for limb in 0..res_size {
             sentinel.at_mut(0, limb).fill(1i64 << (base2k - 2));
         }
@@ -1312,8 +1318,8 @@ where
         module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
         module.vec_znx_big_add_assign(&mut have_big.to_backend_mut(), 0, &a_big.to_backend_ref(), 0);
 
-        let want_template = module_host.vec_znx_alloc(1, res_size);
-        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let want_template = module_host.vec_znx_alloc(params.n, 1, res_size);
+        let have_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut want_backend = upload_vec_znx::<BE>(&want_template);
         let mut have_backend = upload_vec_znx::<BE>(&have_template);
         module.vec_znx_big_normalize(
@@ -1349,7 +1355,7 @@ where
             &vec_znx_backend_ref::<BE>(&b_backend),
             0,
         );
-        let got_template = module_host.vec_znx_alloc(1, res_size);
+        let got_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut got_backend = upload_vec_znx::<BE>(&got_template);
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut got_backend),
@@ -1366,13 +1372,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1395,39 +1401,45 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     // (small operand size, big operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (2, 4, 3),
-        (4, 2, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, params.n),
+        (2, 4, 3, params.n),
+        (4, 2, 3, params.n),
+        (3, 3, 5, params.n),
+        (4, 4, 2, params.n),
+        (4, 2, 5, params.n),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
-        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        let mut a_small: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b = module_host.vec_znx_alloc(params.n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
 
         // `b` as a VecZnxBig, through the basis promotion.
-        let mut b_big = module.vec_znx_big_alloc(1, b_size);
+        let mut b_big = module.vec_znx_big_alloc(params.n, 1, b_size);
         module.vec_znx_big_from_small(&mut b_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
 
-        let mut want_big = module.vec_znx_big_alloc(1, res_size);
-        let mut have_big = module.vec_znx_big_alloc(1, res_size);
-        let mut got_big = module.vec_znx_big_alloc(1, res_size);
+        let mut want_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut got_big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
         // Both destinations start on a non-zero sentinel: the limbs the
         // operation has to zero are only asserted if they did not read back
         // zero by accident.
-        let mut sentinel = module_host.vec_znx_alloc(1, res_size);
+        let mut sentinel = module_host.vec_znx_alloc(params.n, 1, res_size);
         for limb in 0..res_size {
             sentinel.at_mut(0, limb).fill(1i64 << (base2k - 2));
         }
@@ -1451,8 +1463,8 @@ where
         module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
         module.vec_znx_big_sub_assign(&mut have_big.to_backend_mut(), 0, &b_big.to_backend_ref(), 0);
 
-        let want_template = module_host.vec_znx_alloc(1, res_size);
-        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let want_template = module_host.vec_znx_alloc(params.n, 1, res_size);
+        let have_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut want_backend = upload_vec_znx::<BE>(&want_template);
         let mut have_backend = upload_vec_znx::<BE>(&have_template);
         module.vec_znx_big_normalize(
@@ -1488,7 +1500,7 @@ where
             &b_big.to_backend_ref(),
             0,
         );
-        let got_template = module_host.vec_znx_alloc(1, res_size);
+        let got_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut got_backend = upload_vec_znx::<BE>(&got_template);
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut got_backend),
@@ -1505,13 +1517,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1534,39 +1546,45 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, params.n),
+        (4, 2, 3, params.n),
+        (2, 4, 3, params.n),
+        (3, 3, 5, params.n),
+        (4, 4, 2, params.n),
+        (4, 2, 5, params.n),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
-        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        let mut a_small = module_host.vec_znx_alloc(params.n, 1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
 
         // `a` as a VecZnxBig, through the basis promotion.
-        let mut a_big = module.vec_znx_big_alloc(1, a_size);
+        let mut a_big = module.vec_znx_big_alloc(params.n, 1, a_size);
         module.vec_znx_big_from_small(&mut a_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
 
-        let mut want_big = module.vec_znx_big_alloc(1, res_size);
-        let mut have_big = module.vec_znx_big_alloc(1, res_size);
-        let mut got_big = module.vec_znx_big_alloc(1, res_size);
+        let mut want_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(params.n, 1, res_size);
+        let mut got_big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
         // Both destinations start on a non-zero sentinel: the limbs the
         // operation has to zero are only asserted if they did not read back
         // zero by accident.
-        let mut sentinel = module_host.vec_znx_alloc(1, res_size);
+        let mut sentinel = module_host.vec_znx_alloc(params.n, 1, res_size);
         for limb in 0..res_size {
             sentinel.at_mut(0, limb).fill(1i64 << (base2k - 2));
         }
@@ -1590,8 +1608,8 @@ where
         module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
         module.vec_znx_big_sub_negate_assign(&mut have_big.to_backend_mut(), 0, &a_big.to_backend_ref(), 0);
 
-        let want_template = module_host.vec_znx_alloc(1, res_size);
-        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let want_template = module_host.vec_znx_alloc(params.n, 1, res_size);
+        let have_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut want_backend = upload_vec_znx::<BE>(&want_template);
         let mut have_backend = upload_vec_znx::<BE>(&have_template);
         module.vec_znx_big_normalize(
@@ -1627,7 +1645,7 @@ where
             &vec_znx_backend_ref::<BE>(&b_backend),
             0,
         );
-        let got_template = module_host.vec_znx_alloc(1, res_size);
+        let got_template = module_host.vec_znx_alloc(params.n, 1, res_size);
         let mut got_backend = upload_vec_znx::<BE>(&got_template);
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut got_backend),
@@ -1644,13 +1662,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1676,14 +1694,14 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     // (a_size, res_size): equal, res shorter, res longer.
     for (a_size, res_size) in [(3usize, 3usize), (4, 2), (2, 4)] {
-        let mut a = module_host.vec_znx_alloc(1, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, 1, a_size);
         a.fill_uniform(base2k, &mut source);
-        let mut addend = module_host.vec_znx_alloc(1, a_size);
+        let mut addend = module_host.vec_znx_alloc(params.n, 1, a_size);
         addend.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
         let addend_backend = upload_vec_znx::<BE>(&addend);
@@ -1697,13 +1715,13 @@ where
             let addend_arg = with_addend.then_some((&addend_ref, 0));
 
             // The op consumes its input, so each side gets its own transform.
-            let mut have_dft = module.vec_znx_dft_alloc(1, a_size);
-            let mut want_dft = module.vec_znx_dft_alloc(1, a_size);
+            let mut have_dft = module.vec_znx_dft_alloc(params.n, 1, a_size);
+            let mut want_dft = module.vec_znx_dft_alloc(params.n, 1, a_size);
             for dft in [&mut have_dft, &mut want_dft] {
                 module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
             }
 
-            let res_template = module_host.vec_znx_alloc(1, res_size);
+            let res_template = module_host.vec_znx_alloc(params.n, 1, res_size);
             let mut have_backend = upload_vec_znx::<BE>(&res_template);
             let mut want_backend = upload_vec_znx::<BE>(&res_template);
 
@@ -1722,7 +1740,7 @@ where
 
             // Oracle: idft into a BIG, the optional small add, then normalize,
             // through the public api traits rather than the OEP dispatch.
-            let mut big = module.vec_znx_big_alloc(1, a_size);
+            let mut big = module.vec_znx_big_alloc(params.n, 1, a_size);
             module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
             if with_addend {
                 module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &addend_ref, 0);
@@ -1773,21 +1791,21 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     let cols: usize = 2;
 
     for (res_size, a_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
         let size: usize = res_size.min(a_size);
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
-        let mut seed = module_host.vec_znx_alloc(cols, res_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
+        let mut seed = module_host.vec_znx_alloc(params.n, cols, res_size);
         a.fill_uniform(base2k, &mut source);
         seed.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
         let seed_backend = upload_vec_znx::<BE>(&seed);
 
-        let mut a_dft = module.vec_znx_dft_alloc(cols, a_size);
+        let mut a_dft = module.vec_znx_dft_alloc(params.n, cols, a_size);
         for col in 0..cols {
             module.vec_znx_dft_apply(
                 1,
@@ -1804,14 +1822,14 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         );
 
         for p in [1i64, 5, -3] {
-            let plan = module.vec_znx_dft_automorphism_plan(p);
+            let plan = module.vec_znx_dft_automorphism_plan(params.n, p);
 
             // Every column of both destinations carries the same seed, so a
             // default body that wrote outside `col` would diverge from the
             // oracle there too.
             for col in 0..cols {
-                let mut have_dft = module.vec_znx_dft_alloc(cols, res_size);
-                let mut want_dft = module.vec_znx_dft_alloc(cols, res_size);
+                let mut have_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
+                let mut want_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
                 for dft in [&mut have_dft, &mut want_dft] {
                     for seeded in 0..cols {
                         module.vec_znx_dft_apply(
@@ -1837,14 +1855,14 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
 
                 // Oracle: automorphism into a `min(res, a)`-limb temporary, then
                 // the DFT-domain accumulation, through the public api traits.
-                let mut rot = module.vec_znx_dft_alloc(1, size);
+                let mut rot = module.vec_znx_dft_alloc(params.n, 1, size);
                 module.vec_znx_dft_automorphism_with_plan(&plan, &mut rot.to_backend_mut(), 0, &a_dft.to_backend_ref(), col);
                 module.vec_znx_dft_add_assign(&mut want_dft.to_backend_mut(), col, &rot.to_backend_ref(), 0);
 
-                let res_template = module_host.vec_znx_alloc(cols, res_size);
+                let res_template = module_host.vec_znx_alloc(params.n, cols, res_size);
                 let mut have_backend = upload_vec_znx::<BE>(&res_template);
                 let mut want_backend = upload_vec_znx::<BE>(&res_template);
-                let mut big = module.vec_znx_big_alloc(1, res_size);
+                let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
                 for (dft, out) in [(&mut have_dft, &mut have_backend), (&mut want_dft, &mut want_backend)] {
                     for normalized in 0..cols {
                         module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), normalized);
@@ -1894,14 +1912,14 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
     let cols: usize = 2;
     for (res_size, a_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
-        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
         a.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a);
-        let mut a_dft = module.vec_znx_dft_alloc(cols, a_size);
+        let mut a_dft = module.vec_znx_dft_alloc(params.n, cols, a_size);
         for col in 0..cols {
             module.vec_znx_dft_apply(
                 1,
@@ -1914,9 +1932,9 @@ where
         }
         for p in [1i64, 5, -3] {
             for col in 0..cols {
-                let mut have_dft = module.vec_znx_dft_alloc(cols, res_size);
-                let mut api_dft = module.vec_znx_dft_alloc(cols, res_size);
-                let mut want_dft = module.vec_znx_dft_alloc(cols, res_size);
+                let mut have_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
+                let mut api_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
+                let mut want_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
                 crate::oep::vec_znx_dft_automorphism_derived::<BE>(
                     module,
                     p,
@@ -1926,7 +1944,7 @@ where
                     col,
                 );
                 module.vec_znx_dft_automorphism(p, &mut api_dft.to_backend_mut(), col, &a_dft.to_backend_ref(), col);
-                let plan = module.vec_znx_dft_automorphism_plan(p);
+                let plan = module.vec_znx_dft_automorphism_plan(params.n, p);
                 module.vec_znx_dft_automorphism_with_plan(
                     &plan,
                     &mut want_dft.to_backend_mut(),
@@ -1934,11 +1952,11 @@ where
                     &a_dft.to_backend_ref(),
                     col,
                 );
-                let res_template = module_host.vec_znx_alloc(cols, res_size);
+                let res_template = module_host.vec_znx_alloc(params.n, cols, res_size);
                 let mut have_backend = upload_vec_znx::<BE>(&res_template);
                 let mut api_backend = upload_vec_znx::<BE>(&res_template);
                 let mut want_backend = upload_vec_znx::<BE>(&res_template);
-                let mut big = module.vec_znx_big_alloc(1, res_size);
+                let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
                 for (dft, out) in [
                     (&mut have_dft, &mut have_backend),
                     (&mut api_dft, &mut api_backend),
@@ -1995,16 +2013,16 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([2u8; 32]);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
     let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     let cols: usize = 2;
 
-    let mut scalar = module_host.scalar_znx_alloc(cols);
+    let mut scalar = module_host.scalar_znx_alloc(params.n, cols);
     scalar.fill_uniform(base2k, &mut source);
     let scalar_backend = upload_scalar_znx::<BE>(&scalar);
 
-    let mut svp: SvpPPolOwned<BE> = module.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp: SvpPPolOwned<BE> = module.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     for col in 0..cols {
         module.svp_prepare(
             &mut svp.to_backend_mut(),
@@ -2015,10 +2033,10 @@ where
     }
 
     for (res_size, b_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
-        let mut b = module_host.vec_znx_alloc(cols, b_size);
+        let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
         b.fill_uniform(base2k, &mut source);
         let b_backend = upload_vec_znx::<BE>(&b);
-        let mut seed = module_host.vec_znx_alloc(cols, res_size);
+        let mut seed = module_host.vec_znx_alloc(params.n, cols, res_size);
         seed.fill_uniform(base2k, &mut source);
         let seed_backend = upload_vec_znx::<BE>(&seed);
 
@@ -2028,8 +2046,8 @@ where
         // Every column starts on the same seed on both sides, so the limbs the
         // product has to zero are asserted and a write outside `col` shows up.
         for col in 0..cols {
-            let mut have_dft = module.vec_znx_dft_alloc(cols, res_size);
-            let mut want_dft = module.vec_znx_dft_alloc(cols, res_size);
+            let mut have_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
+            let mut want_dft = module.vec_znx_dft_alloc(params.n, cols, res_size);
             for dft in [&mut have_dft, &mut want_dft] {
                 for seeded in 0..cols {
                     module.vec_znx_dft_apply(
@@ -2056,7 +2074,7 @@ where
 
             // Oracle: transform b into a fresh VecZnxDft, then svp_apply_dft_to_dft,
             // through the public api traits.
-            let mut b_dft = module.vec_znx_dft_alloc(1, b_size);
+            let mut b_dft = module.vec_znx_dft_alloc(params.n, 1, b_size);
             module.vec_znx_dft_apply(
                 1,
                 0,
@@ -2074,10 +2092,10 @@ where
                 0,
             );
 
-            let res_template = module_host.vec_znx_alloc(cols, res_size);
+            let res_template = module_host.vec_znx_alloc(params.n, cols, res_size);
             let mut have_backend = upload_vec_znx::<BE>(&res_template);
             let mut want_backend = upload_vec_znx::<BE>(&res_template);
-            let mut big = module.vec_znx_big_alloc(1, res_size);
+            let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
             for (dft, out) in [(&mut have_dft, &mut have_backend), (&mut want_dft, &mut want_backend)] {
                 for normalized in 0..cols {
                     module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), normalized);
@@ -2133,14 +2151,15 @@ where
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
-    let mut res_oracle = module.vec_znx_dft_alloc(cols, res_size);
-    let mut res_derived = module.vec_znx_dft_alloc(cols, res_size);
-    let mut res_module = module.vec_znx_dft_alloc(cols, res_size);
-    let mut fresh = module.vec_znx_dft_alloc(1, res_size);
-    let mut big = module.vec_znx_big_alloc(1, res_size);
+    let mut res_oracle = module.vec_znx_dft_alloc(params.n, cols, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(params.n, cols, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(params.n, cols, res_size);
+    let mut fresh = module.vec_znx_dft_alloc(params.n, 1, res_size);
+    let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
     // Written at column 1 too: covers the column-interleaved `VecZnxDft` indexing.
     for res_col in 0..cols {
@@ -2159,7 +2178,7 @@ where
                 );
             }
 
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             module.cnv_apply_dft(
                 cnv_offset,
                 &mut fresh.to_backend_mut(),
@@ -2200,18 +2219,9 @@ where
                 &mut scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_apply_dft_add: derived decomposition != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
@@ -2255,13 +2265,14 @@ where
     // Written at column 1: covers the column-interleaved `VecZnxDft` indexing.
     let res_col: usize = 1;
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
-    let mut res_oracle = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_derived = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_module = module.vec_znx_dft_alloc(2, res_size);
-    let mut big = module.vec_znx_big_alloc(1, res_size);
+    let mut res_oracle = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
     // Terms mixing operand columns, like one BSGS giant step; the sweep takes
     // the first one, two and three of them.
@@ -2269,7 +2280,7 @@ where
 
     for n_terms in 1..=term_cols.len() {
         for cnv_offset in [0usize, 1usize] {
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             for (idx, &(a_col, b_col)) in term_cols[..n_terms].iter().enumerate() {
                 if idx == 0 {
                     module.cnv_apply_dft(
@@ -2332,18 +2343,9 @@ where
                 &mut module_scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_apply_dft_sum: derived decomposition != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
@@ -2379,13 +2381,14 @@ where
     let res_size: usize = a_size + b_size;
     let res_col: usize = 1;
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
-    let mut res_oracle = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_derived = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_module = module.vec_znx_dft_alloc(2, res_size);
-    let mut big = module.vec_znx_big_alloc(1, res_size);
+    let mut res_oracle = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
 
     for (i, j) in [(0usize, 0usize), (0, 1), (1, 0)] {
         for cnv_offset in [0usize, 1usize] {
@@ -2441,18 +2444,9 @@ where
                 &mut scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_pairwise_apply_dft: derived decomposition != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
@@ -2491,8 +2485,8 @@ where
     let res_col: usize = 1;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    let mut a = module_host.vec_znx_alloc(cols, a_size);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
+    let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
     a.fill_uniform(17, &mut source);
     let a_backend = upload_vec_znx::<BE>(&a);
     let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
@@ -2507,14 +2501,14 @@ where
     );
 
     // Oracle: the two prepares, driven separately.
-    let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut right_oracle: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
+    let mut right_oracle: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     module.cnv_prepare_left(&mut left_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
     module.cnv_prepare_right(&mut right_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
 
     // The derived free function, with an arena sized only by its own sibling.
-    let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
+    let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut derived_scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(cnv_prepare_self_tmp_bytes_derived::<BE>(module, a_size, a_size));
     cnv_prepare_self_derived::<BE>(
@@ -2526,8 +2520,8 @@ where
     );
 
     // The backend's own dispatch through the OEP method.
-    let mut left_module: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut right_module: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut left_module: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
+    let mut right_module: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     module.cnv_prepare_self(
         &mut left_module.to_backend_mut(),
         &mut right_module.to_backend_mut(),
@@ -2535,8 +2529,8 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut res_dft = module.vec_znx_dft_alloc(2, res_size);
-    let mut big = module.vec_znx_big_alloc(1, res_size);
+    let mut res_dft = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
     let mut product =
         |left: &CnvPVecLOwned<BE>, right: &CnvPVecROwned<BE>, col: usize, cnv_offset: usize, scratch: &mut ScratchOwned<BE>| {
             module.cnv_apply_dft(
@@ -2549,7 +2543,7 @@ where
                 col,
                 &mut scratch.borrow(),
             );
-            normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_dft, res_col, scratch)
+            normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_dft, res_col, scratch)
         };
 
     for col in 0..cols {
@@ -2592,10 +2586,10 @@ where
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    let mut a = module_host.vec_znx_alloc(a_cols, a_size);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
+    let mut a = module_host.vec_znx_alloc(params.n, a_cols, a_size);
     a.fill_uniform(17, &mut source);
-    let mut b = module_host.vec_znx_alloc(1, b_size);
+    let mut b = module_host.vec_znx_alloc(params.n, 1, b_size);
     b.fill_uniform(base2k, &mut source);
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
@@ -2609,10 +2603,10 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
-    let mut acc_oracle = module.vec_znx_big_alloc(1, res_size);
-    let mut acc_derived = module.vec_znx_big_alloc(1, res_size);
-    let mut acc_module = module.vec_znx_big_alloc(1, res_size);
-    let mut fresh = module.vec_znx_big_alloc(1, res_size);
+    let mut acc_oracle = module.vec_znx_big_alloc(params.n, 1, res_size);
+    let mut acc_derived = module.vec_znx_big_alloc(params.n, 1, res_size);
+    let mut acc_module = module.vec_znx_big_alloc(params.n, 1, res_size);
+    let mut fresh = module.vec_znx_big_alloc(params.n, 1, res_size);
 
     for cnv_offset in [0usize, 1usize] {
         // Identical deterministic initial accumulator content for all three paths.
@@ -2672,7 +2666,7 @@ where
         );
 
         let normalize = |big: &crate::layouts::VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
-            let template = module_host.vec_znx_alloc(1, res_size);
+            let template = module_host.vec_znx_alloc(params.n, 1, res_size);
             let mut backend = upload_vec_znx::<BE>(&template);
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut backend),
@@ -2708,6 +2702,7 @@ where
 fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     module: &Module<BE>,
     module_host: &Module<HostBytesBackend>,
+    n: usize,
     cols: usize,
     a_size: usize,
     b_size: usize,
@@ -2720,8 +2715,8 @@ where
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut a = module_host.vec_znx_alloc(cols, a_size);
-    let mut b = module_host.vec_znx_alloc(cols, b_size);
+    let mut a = module_host.vec_znx_alloc(n, cols, a_size);
+    let mut b = module_host.vec_znx_alloc(n, cols, b_size);
     a.fill_uniform(fill_base2k, &mut source);
     b.fill_uniform(fill_base2k, &mut source);
     let a_backend = upload_vec_znx::<BE>(&a);
@@ -2737,8 +2732,8 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
     module.cnv_prepare_left(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_backend),
@@ -2757,7 +2752,6 @@ where
 /// `base2k`: the comparison form this suite uses for DFT-domain results.
 fn normalize_dft_column<BE: TestBackend>(
     module: &Module<BE>,
-    module_host: &Module<HostBytesBackend>,
     base2k: usize,
     big: &mut crate::layouts::VecZnxBigOwned<BE>,
     res: &mut crate::layouts::VecZnxDftOwned<BE>,
@@ -2769,7 +2763,7 @@ where
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let size: usize = ZnxInfos::size(big);
-    let template = module_host.vec_znx_alloc(1, size);
+    let template: VecZnxOwned<i64> = VecZnx::alloc(big.n(), 1, size);
     let mut backend = upload_vec_znx::<BE>(&template);
     module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res.to_backend_mut(), res_col);
     module.vec_znx_big_normalize(

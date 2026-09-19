@@ -4,6 +4,7 @@ use std::{
     marker::PhantomData,
 };
 
+use crate::AlignedBuf;
 use crate::layouts::{
     Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, VecZnxBig, VecZnxInfos, VecZnxShape,
     ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
@@ -272,9 +273,11 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_dft(n, cols, size)`.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> VecZnxDftOwned<B> {
-        let data: Vec<u8> = bytes.into();
+    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_dft(n, cols, size)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B> {
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_vec_znx_dft(n, cols, size));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxDft {
@@ -472,7 +475,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> VecZnxDft<D, W, B2>
     where
         B2: Backend<DftWord = W>,
@@ -501,7 +504,7 @@ mod limb_range_tests {
     #[test]
     fn mutable_limb_range_rebases_a_nonzero_start() {
         let (n, cols, size) = (4, 2, 4);
-        let mut dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(n, cols, size);
+        let mut dft = VecZnxDft::<AlignedBuf, i64, HostBytesBackend>::alloc(n, cols, size);
         dft.data.fill(0xA5);
 
         {
@@ -522,13 +525,13 @@ mod limb_range_tests {
     fn from_shape_rejects_a_coefficient_window() {
         let shape = VecZnxShape::new(8, 1, 2).window_coeffs(4, 4);
         let bytes = HostBytesBackend::bytes_of_vec_znx_dft(8, 1, 2);
-        let _ = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::from_shape(vec![0u8; bytes], shape);
+        let _ = VecZnxDft::<AlignedBuf, i64, HostBytesBackend>::from_shape(AlignedBuf::from(vec![0u8; bytes]), shape);
     }
 
     #[test]
     #[should_panic(expected = "VecZnxDft::with_shape: windowed shapes are not supported")]
     fn with_shape_rejects_a_limb_window() {
-        let dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(8, 1, 4);
+        let dft = VecZnxDft::<AlignedBuf, i64, HostBytesBackend>::alloc(8, 1, 4);
         let shape = dft.shape().window_limbs(1, 2, 2);
         let _ = dft.with_shape(shape);
     }

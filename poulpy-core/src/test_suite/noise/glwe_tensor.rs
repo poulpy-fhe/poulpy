@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing},
     layouts::{FillUniform, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
@@ -13,10 +13,10 @@ use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
     GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
-        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
-        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
-        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
+        GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
+        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        TorusPrecision, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
@@ -203,7 +203,7 @@ where
             )
         };
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_in.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
         bivariate_convolution_naive::<_, BE>(
             module,
             in_base2k,
@@ -508,7 +508,8 @@ where
         pt_b.data_mut().fill_uniform(17, &mut source_xa);
         pt_a.data_mut().fill_uniform(17, &mut source_xa);
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_a.size() + pt_b.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+            module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
             in_base2k,
@@ -564,6 +565,84 @@ where
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
+        }
+    }
+}
+
+/// `glwe_mul_plain` and `glwe_mul_plain_assign` with a compact plaintext (degree
+/// `n/2` and `n/4`, never below the backend floor) are bit-identical to the same
+/// product with the plaintext embedded at the module degree by `switch_ring`.
+pub fn test_glwe_mul_plain_compact<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let n: usize = params.n;
+    let base2k: usize = params.base2k;
+    let k: usize = 4 * base2k;
+    let mut source: Source = Source::new([3u8; 32]);
+    for rank in 1_usize..=2 {
+        let layout: GLWELayout = GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        };
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+        a.data_mut().fill_uniform(base2k, &mut source);
+        for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
+            let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                    n: b_n.into(),
+                    base2k: base2k.into(),
+                    k: (2 * base2k).into(),
+                });
+            pt_compact.data_mut().fill_uniform(base2k, &mut source);
+            let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                    n: n.into(),
+                    base2k: base2k.into(),
+                    k: (2 * base2k).into(),
+                });
+            module.vec_znx_switch_ring(
+                &mut vec_znx_backend_mut::<BE>(pt_dense.data_mut()),
+                0,
+                &vec_znx_backend_ref::<BE>(pt_compact.data()),
+                0,
+            );
+            for cnv_offset in [0usize, base2k] {
+                let mut res_compact: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                // The assign form multiplies `res` in place, so its budget is
+                // the product one taken at `res` for both ciphertext operands.
+                let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                    module
+                        .glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense)
+                        .max(module.glwe_mul_plain_tmp_bytes(&res_dense, &res_dense, &pt_dense)),
+                );
+                module.glwe_mul_plain(cnv_offset, &mut res_compact, &a, &pt_compact, &mut scratch.borrow());
+                module.glwe_mul_plain(cnv_offset, &mut res_dense, &a, &pt_dense, &mut scratch.borrow());
+                assert_eq!(
+                    res_compact.data().raw(),
+                    res_dense.data().raw(),
+                    "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
+                );
+
+                let mut assign_compact: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                assign_compact.data_mut().raw_mut().copy_from_slice(a.data().raw());
+                assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
+                module.glwe_mul_plain_assign(cnv_offset, &mut assign_compact, &pt_compact, &mut scratch.borrow());
+                module.glwe_mul_plain_assign(cnv_offset, &mut assign_dense, &pt_dense, &mut scratch.borrow());
+                assert_eq!(
+                    assign_compact.data().raw(),
+                    assign_dense.data().raw(),
+                    "glwe_mul_plain_assign: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
+                );
+            }
         }
     }
 }
@@ -645,7 +724,8 @@ where
             pt_b.data_mut().at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
         }
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_a.size() + pt_b.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+            module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
             in_base2k,

@@ -281,3 +281,32 @@ pub fn reim4_convolution_by_real_const_2coeffs_ref(k: usize, dst: &mut [f64; 16]
     reim4_convolution_by_real_const_1coeff_ref(k, as_arr_mut(dst), a, a_size, b);
     reim4_convolution_by_real_const_1coeff_ref(k + 1, as_arr_mut(&mut dst[8..]), a, a_size, b);
 }
+
+/// Rows `0..size` of degree-`N` reim4 block `blk`, gathered from a degree-`n`
+/// prepared operand `src` (block-major, `size` rows of 8 f64 per block, lane
+/// `l` of a row at `l` for re and `4 + l` for im), `N = n << log_gap`: degree-`N`
+/// slot `i` reads degree-`n` slot `i >> log_gap`, so a whole block reads one
+/// slot once `log_gap >= 2`. `dst` receives `size` contiguous rows.
+pub fn reim4_gather_sparse_block(dst: &mut [f64], src: &[f64], size: usize, blk: usize, log_gap: usize) {
+    for lane in 0..4 {
+        let slot: usize = (4 * blk + lane) >> log_gap;
+        let base: usize = (slot >> 2) * size * 8 + (slot & 3);
+        for r in 0..size {
+            dst[8 * r + lane] = src[base + 8 * r];
+            dst[8 * r + 4 + lane] = src[base + 8 * r + 4];
+        }
+    }
+}
+
+/// [`reim4_gather_sparse_block`] of `src0` plus the same rows of `src1`: the
+/// pairwise operand sum of two columns of one degree-`n` operand.
+pub fn reim4_gather_sparse_block_sum(dst: &mut [f64], src0: &[f64], src1: &[f64], size: usize, blk: usize, log_gap: usize) {
+    for lane in 0..4 {
+        let slot: usize = (4 * blk + lane) >> log_gap;
+        let base: usize = (slot >> 2) * size * 8 + (slot & 3);
+        for r in 0..size {
+            dst[8 * r + lane] = src0[base + 8 * r] + src1[base + 8 * r];
+            dst[8 * r + 4 + lane] = src0[base + 8 * r + 4] + src1[base + 8 * r + 4];
+        }
+    }
+}

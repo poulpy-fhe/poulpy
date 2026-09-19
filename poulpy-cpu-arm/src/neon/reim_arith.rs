@@ -473,7 +473,8 @@ pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64
     let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
     let mantissa_msb: u64 = 0x0010_0000_0000_0000;
     let divi_bits_f: f64 = divisor * (1i64 << 52) as f64;
-    let offset: f64 = divisor / 2.0;
+    // A bias just below half avoids double rounding near ties and at 2^52.
+    let offset: f64 = divisor * 0.5f64.next_down();
 
     unsafe {
         let sign_mask_f = vreinterpretq_f64_u64(vdupq_n_u64(sign_mask));
@@ -527,7 +528,8 @@ pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
     let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
     let mantissa_msb: u64 = 0x0010_0000_0000_0000;
     let divi_bits_f: f64 = divisor * (1i64 << 52) as f64;
-    let offset: f64 = divisor / 2.0;
+    // A bias just below half avoids double rounding near ties and at 2^52.
+    let offset: f64 = divisor * 0.5f64.next_down();
 
     unsafe {
         let sign_mask_f = vreinterpretq_f64_u64(vdupq_n_u64(sign_mask));
@@ -579,6 +581,11 @@ fn _unused() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reim_to_znx_rounding_boundaries() {
+        poulpy_cpu_ref::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Neon>();
+    }
+
     use super::*;
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::test_suite::serialization::test_reader_writer_interface;
 
 use crate::layouts::{
@@ -25,128 +26,128 @@ const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 * BASE2K.0 + N_GLWE.0.i
 
 #[test]
 fn glwe_serialization() {
-    let original: GLWE<Vec<u8>, i64> = GLWE::alloc(N_GLWE, BASE2K, K, RANK);
+    let original: GLWE<AlignedBuf, i64> = GLWE::alloc(N_GLWE, BASE2K, K, RANK);
     poulpy_hal::test_suite::serialization::test_reader_writer_interface(original);
 }
 
 #[test]
 fn glwe_compressed_serialization() {
-    let original: GLWECompressed<Vec<u8>, i64> = GLWECompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, K, RANK);
+    let original: GLWECompressed<AlignedBuf, i64> = GLWECompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, K, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_serialization() {
-    let original: LWE<Vec<u8>, i64> = LWE::alloc(N_LWE, BASE2K, K);
+    let original: LWE<AlignedBuf, i64> = LWE::alloc(N_LWE, BASE2K, K);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_compressed_serialization() {
-    let original: LWECompressed<Vec<u8>, i64> = LWECompressed::alloc::<HostBytesBackend>(BASE2K, K);
+    let original: LWECompressed<AlignedBuf, i64> = LWECompressed::alloc::<HostBytesBackend>(BASE2K, K);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_gglwe_serialization() {
-    let original: GGLWE<Vec<u8>, i64> = GGLWE::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
+    let original: GGLWE<AlignedBuf, i64> = GGLWE::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_gglwe_compressed_serialization() {
-    let original: GGLWECompressed<Vec<u8>, i64> =
+    let original: GGLWECompressed<AlignedBuf, i64> =
         GGLWECompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_glwe_switching_key_serialization() {
-    let original: GLWESwitchingKey<Vec<u8>, i64> = GLWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
+    let original: GLWESwitchingKey<AlignedBuf, i64> = GLWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_glwe_switching_key_compressed_serialization() {
-    let original: GLWESwitchingKeyCompressed<Vec<u8>, i64> =
+    let original: GLWESwitchingKeyCompressed<AlignedBuf, i64> =
         GLWESwitchingKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_automorphism_key_serialization() {
-    let original: GLWEAutomorphismKey<Vec<u8>, i64> = GLWEAutomorphismKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
+    let original: GLWEAutomorphismKey<AlignedBuf, i64> = GLWEAutomorphismKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_automorphism_key_compressed_serialization() {
-    let original: GLWEAutomorphismKeyCompressed<Vec<u8>, i64> =
+    let original: GLWEAutomorphismKeyCompressed<AlignedBuf, i64> =
         GLWEAutomorphismKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_tensor_key_serialization() {
-    let original: GLWETensorKey<Vec<u8>, i64> = GLWETensorKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
+    let original: GLWETensorKey<AlignedBuf, i64> = GLWETensorKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn test_tensor_key_compressed_serialization() {
-    let original: GLWETensorKeyCompressed<Vec<u8>, i64> =
+    let original: GLWETensorKeyCompressed<AlignedBuf, i64> =
         GLWETensorKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn glwe_to_lwe_key_serialization() {
-    let original: GLWEToLWEKey<Vec<u8>, i64> = GLWEToLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
+    let original: GLWEToLWEKey<AlignedBuf, i64> = GLWEToLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn glwe_to_lwe_key_compressed_serialization() {
-    let original: GLWEToLWESwitchingKeyCompressed<Vec<u8>, i64> =
+    let original: GLWEToLWESwitchingKeyCompressed<AlignedBuf, i64> =
         GLWEToLWESwitchingKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_to_glwe_key_serialization() {
-    let original: LWEToGLWEKey<Vec<u8>, i64> = LWEToGLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
+    let original: LWEToGLWEKey<AlignedBuf, i64> = LWEToGLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_to_glwe_key_compressed_serialization() {
-    let original: LWEToGLWEKeyCompressed<Vec<u8>, i64> =
+    let original: LWEToGLWEKeyCompressed<AlignedBuf, i64> =
         LWEToGLWEKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_switching_key_serialization() {
-    let original: LWESwitchingKey<Vec<u8>, i64> = LWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX);
+    let original: LWESwitchingKey<AlignedBuf, i64> = LWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn lwe_switching_key_compressed_serialization() {
-    let original: LWESwitchingKeyCompressed<Vec<u8>, i64> =
+    let original: LWESwitchingKeyCompressed<AlignedBuf, i64> =
         LWESwitchingKeyCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, K_KEY_AUX);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn ggsw_serialization() {
-    let original: GGSW<Vec<u8>, i64> = GGSW::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
+    let original: GGSW<AlignedBuf, i64> = GGSW::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn ggsw_compressed_serialization() {
-    let original: GGSWCompressed<Vec<u8>, i64> =
+    let original: GGSWCompressed<AlignedBuf, i64> =
         GGSWCompressed::alloc::<HostBytesBackend>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
     test_reader_writer_interface(original);
 }

@@ -82,11 +82,13 @@ where
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
-            .max(crate::default::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
-                self,
-                ct_infos.max_size(),
-                pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
-            ))
+            .max(
+                crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
+                    self,
+                    ct_infos.max_size(),
+                    pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
+                ),
+            )
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.prepare_tensor_key_tmp_bytes(tsk_infos))

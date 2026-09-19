@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
@@ -86,7 +87,7 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWETensor<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWETensor<Vec<u8>, W> {
+impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -100,7 +101,7 @@ impl<W: ZnxWord> GLWETensor<Vec<u8>, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWETensor {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.into(), pairs, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, size)),
                 n.into(),
                 pairs,
                 size,
@@ -121,7 +122,7 @@ impl<W: ZnxWord> GLWETensor<Vec<u8>, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
         let cols: usize = rank.as_usize() + 1;
         let pairs: usize = (((cols + 1) * cols) >> 1).max(1);
-        VecZnx::<Vec<u8>, W>::bytes_of(n.into(), pairs, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, k.0.div_ceil(base2k.0) as usize)
     }
 }
 

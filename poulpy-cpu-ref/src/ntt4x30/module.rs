@@ -14,7 +14,7 @@
 use std::ptr::NonNull;
 
 use poulpy_hal::{
-    alloc_aligned, assert_alignment,
+    AlignedBuf, alloc_aligned,
     layouts::{Backend, Host},
 };
 
@@ -46,13 +46,13 @@ pub struct NTT4x30RefHandle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
 
 impl Backend for NTT4x30Ref {
-    const DFT_IS_EXACT: bool = true;
+    const MAX_BASE2K: usize = 52;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30RefHandle;
@@ -64,16 +64,13 @@ impl Backend for NTT4x30Ref {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut buf = alloc_aligned::<u8>(bytes.len());
-        buf.copy_from_slice(bytes);
-        buf
+        AlignedBuf::from(bytes)
     }
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        assert_alignment(bytes.as_ptr());
-        bytes
+        AlignedBuf::from(bytes)
     }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
         assert!(buf.len() >= dst.len());
@@ -86,12 +83,14 @@ impl Backend for NTT4x30Ref {
         buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len());
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len());
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()

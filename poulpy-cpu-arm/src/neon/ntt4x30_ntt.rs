@@ -347,12 +347,14 @@ unsafe fn intt_iter_red(
 }
 
 /// Forward Q120 NTT — NEON.
+///
+/// `data.len()` must be `4 * table.n`.
 pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
+    assert_eq!(data.len(), 4 * n, "ntt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
         return;
     }
-    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;
@@ -414,12 +416,14 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 }
 
 /// Inverse Q120 NTT — NEON.
+///
+/// `data.len()` must be `4 * table.n`.
 pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
+    assert_eq!(data.len(), 4 * n, "intt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
         return;
     }
-    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;
@@ -494,7 +498,7 @@ mod tests {
     /// NEON NTT then NEON iNTT round-trips to the original (mod each Q[k]).
     #[test]
     fn ntt_intt_identity_neon() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let inv = NttTableInv::<Primes30>::new(n);
@@ -519,7 +523,7 @@ mod tests {
 
     #[test]
     fn ntt_neon_vs_ref() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 13 + 5) % 201 - 100).collect();

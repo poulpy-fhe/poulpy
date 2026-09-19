@@ -18,8 +18,7 @@
 //!
 //! # Prime set
 //!
-//! All arithmetic is hardcoded to [`Primes30`] (the spqlios-arithmetic
-//! default, Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
+//! All arithmetic uses [`Primes30`] (Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
 //! is future work.
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -27,7 +26,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use crate::{
     layouts::{
         Backend, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, ZnxView, ZnxViewMut, check_degree,
     },
     reference::{
         SendPtr,
@@ -78,8 +77,9 @@ pub struct NttPlanSet<P: PrimeSetCrt4> {
 impl<P: PrimeSetCrt4> NttPlanSet<P> {
     pub fn new(max_n: usize) -> Self {
         assert!(
-            max_n.is_power_of_two(),
-            "maximum ring degree must be a power of two, got {max_n}"
+            max_n.is_power_of_two() && max_n <= (1 << P::MAX_LOG_N),
+            "maximum ring degree must be a power of two ≤ 2^{}, got {max_n}",
+            P::MAX_LOG_N
         );
         let plans = (0..=max_n.ilog2() as usize)
             .map(|log_n| NttPlan::new(1usize << log_n))
@@ -112,7 +112,7 @@ impl<P: PrimeSetCrt4> NttPlanSet<P> {
 /// `NttHandleProvider` for their concrete handle type; they do *not* implement
 /// this trait directly (which would violate the orphan rule).
 ///
-/// <!-- DOCUMENTED EXCEPTION: Primes30 hardcoded for spqlios compatibility.
+/// <!-- DOCUMENTED EXCEPTION: Primes30 is the default NTT4x30 prime set.
 ///   Generalisation path: add `type PrimeSet: PrimeSet` as an associated type here,
 ///   then parameterise NttTable/NttTableInv/BbcMeta accordingly. -->
 pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
@@ -125,12 +125,6 @@ pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
     /// Precomputed inverse NTT twiddle table (Primes30, size `n`).
     fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30> {
         self.get_ntt_plan(n).intt()
-    }
-    fn get_ntt_table(&self) -> &NttTable<Primes30> {
-        self.get_ntt_table_for(self.n())
-    }
-    fn get_intt_table(&self) -> &NttTableInv<Primes30> {
-        self.get_intt_table_for(self.n())
     }
     /// Precomputed metadata for `q120b × q120c` lazy multiply–accumulate.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
@@ -252,10 +246,13 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
     assert!(step >= 1, "ntt4x30_vec_znx_dft_apply: step must be >= 1");
+    let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let a_size = a.size();
     let res_size = res.size();
 
-    let table = module.get_ntt_table();
+    let table = module.get_ntt_table_for(n);
 
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
@@ -312,10 +309,12 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply");
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let table = module.get_intt_table();
+    let table = module.get_intt_table_for(n);
 
     for j in 0..min_size {
         let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
@@ -346,10 +345,12 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply_tmpa");
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let table = module.get_intt_table();
+    let table = module.get_intt_table_for(n);
 
     for j in 0..min_size {
         BE::ntt_dft_execute(table, limb_u64_mut::<_, BE>(a, a_col, j));
@@ -375,16 +376,17 @@ where
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
-    let table = module.get_intt_table();
+    let n = a.n();
+    check_degree::<BE>(module.n(), n);
+    let table = module.get_intt_table_for(n);
 
-    let (n, n_blocks, u64_ptr) = {
-        let n = a.n();
+    let (n_blocks, u64_ptr) = {
         let n_blocks = a.cols() * a.size();
         let ptr: *mut u64 = {
             let s = a.raw_mut();
             cast_slice_mut::<_, u64>(s).as_mut_ptr()
         };
-        (n, n_blocks, ptr)
+        (n_blocks, ptr)
     };
 
     unsafe { compact_all_blocks_scalar(n, n_blocks, u64_ptr, table) };
@@ -782,6 +784,11 @@ pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskEx
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let cols = res.cols();
     let size = res.size().min(a.size());
@@ -790,7 +797,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskEx
         let a_limb = limb_u64::<_, BE>(a, a_col, limb);
         let start = 4 * n * (limb * cols + res_col);
         let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 4 * n) };
-        for (i, &source) in plan.perm.iter().enumerate().take(n) {
+        for (i, &source) in plan.perm.iter().enumerate() {
             let source = source as usize;
             let value = &a_limb[4 * source..4 * source + 4];
             BE::ntt_add_assign(&mut res_limb[4 * i..4 * i + 4], value);

@@ -7,6 +7,7 @@ use poulpy_core::{
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{ModuleLogN, ModuleN},
@@ -373,7 +374,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot: i64 = (T::bit_index(dst << 3) << log_gap) as i64;
 
-        module.glwe_copy(self, a);
+        module.glwe_copy(self, a, scratch);
 
         self.zero_byte(module, dst, keys, scratch);
 
@@ -507,7 +508,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     }
 }
 
-impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
+impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
     pub fn from_fhe_uint_prepared<M, H, BE>(
         &mut self,
         module: &M,
@@ -515,14 +516,14 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + 'static,
         M: GLWEBytesOf<BE>
             + Cmux<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
             + GLWEPacking<BE>
             + GLWECopy<BE>,
-        GLWE<Vec<u8>, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        GLWE<AlignedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
         Self: GLWEToBackendMut<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         H: GetAutomorphismKey<BE>,
@@ -619,11 +620,11 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         // Splice sext
         let mut tmp: FheUint<BE::OwnedBuf, T, BE::ZnxWord> = FheUint::alloc_from_infos(module, self);
         let mut current: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
-        module.glwe_copy(&mut current, self);
+        module.glwe_copy(&mut current, self, &mut scratch_1);
         for i in (byte + 1)..(1 << T::LOG_BYTES) as usize {
             tmp.splice_u8(module, i, 0, &current, &sext, keys, &mut scratch_1);
-            module.glwe_copy(&mut current, &tmp.bits);
+            module.glwe_copy(&mut current, &tmp.bits, &mut scratch_1);
         }
-        module.glwe_copy(self, &current);
+        module.glwe_copy(self, &current, &mut scratch_1);
     }
 }

@@ -6,6 +6,7 @@
 //! Tests validate correctness against the reference implementation in
 //! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
+use crate::AlignedBuf;
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
     ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
@@ -13,8 +14,11 @@ use crate::layouts::{
 
 pub mod convolution;
 pub mod derived;
+pub mod reim;
 pub mod serialization;
+pub mod sparse;
 pub mod svp;
+pub mod transfer;
 pub mod vec_znx;
 pub mod vec_znx_big;
 pub mod vec_znx_dft;
@@ -28,10 +32,10 @@ pub mod word_compat;
 ///
 /// Centralising these values at the macro call-site makes it possible to
 /// instantiate the same test suite with backend-appropriate parameters
-/// (e.g. different `base2k` for FFT64 vs NTT4x30).
+/// (e.g. different `base2k` for a floating-point FFT backend vs an NTT backend).
 #[derive(Clone, Copy, Debug)]
 pub struct TestParams {
-    /// Ring degree N (polynomial degree).
+    /// Ring degree N the module is built at.
     pub size: usize,
     /// Primary decomposition base (limbs are base-2^`base2k`).
     ///
@@ -39,6 +43,20 @@ pub struct TestParams {
     /// this value via fixed offsets that preserve the original relative
     /// relationships between bases.
     pub base2k: usize,
+    /// Operand degree `n`, a power of two at most `size`; every test
+    /// allocates and computes at `n`. The suite macros run each test at `n`
+    /// and, when it differs, at `size`.
+    pub n: usize,
+}
+
+/// The degrees the suite macros run a test at: `params.n`, then `params.size`
+/// when it differs.
+pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
+    if params.n == params.size {
+        vec![params.size]
+    } else {
+        vec![params.n, params.size]
+    }
 }
 
 /// Backend bound used by the generic test suites.
@@ -95,7 +113,7 @@ pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::Znx
     ScalarZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols())
 }
 
-pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
     ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
@@ -106,7 +124,7 @@ pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>)
     VecZnx::from_shape(BE::from_host_bytes(host.data().as_ref()), shape)
 }
 
-pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     VecZnx::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), shape)
@@ -124,7 +142,7 @@ pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>)
     )
 }
 
-pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     MatZnx::from_data(
@@ -160,7 +178,10 @@ macro_rules! backend_test_suite {
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    ($impl)(&*PARAMS, &*MODULE);
+                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        ($impl)(&params, &*MODULE);
+                    }
                 }
             )+
         }
@@ -195,7 +216,10 @@ macro_rules! cross_backend_test_suite {
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    ($impl)(&*PARAMS, &*MODULE_HOST, &*MODULE_REF, &*MODULE_TEST);
+                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        ($impl)(&params, &*MODULE_HOST, &*MODULE_REF, &*MODULE_TEST);
+                    }
                 }
             )+
         }

@@ -108,7 +108,14 @@ where
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWEPrepared {
-            data: self.vmp_pmat_alloc(dnum.into(), rank_in.into(), (rank_out + 1).into(), size, PrepareHint::Reuse),
+            data: self.vmp_pmat_alloc(
+                self.ring_degree().into(),
+                dnum.into(),
+                rank_in.into(),
+                (rank_out + 1).into(),
+                size,
+                PrepareHint::Reuse,
+            ),
             base2k,
             dsize,
             k_aux,
@@ -145,7 +152,14 @@ where
     ) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        self.bytes_of_vmp_pmat(dnum.into(), rank_in.into(), (rank_out + 1).into(), size, PrepareHint::Reuse)
+        self.bytes_of_vmp_pmat(
+            self.ring_degree().into(),
+            dnum.into(),
+            rank_in.into(),
+            (rank_out + 1).into(),
+            size,
+            PrepareHint::Reuse,
+        )
     }
 
     /// Returns the byte size required to store a [`GGLWEPrepared`] matching `infos`.

@@ -8,7 +8,7 @@ use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
         DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
     },
 };
 
@@ -58,11 +58,13 @@ pub(crate) fn svp_prepare(
     a_col: usize,
 ) {
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
 
     let mut tmp = vec![0u64; 3 * n];
     NTT3x42Ifma::ntt3x42_ifma_from_znx64(&mut tmp, a.at(a_col, 0));
     // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
-    unsafe { ntt_avx512::<Primes42>(&handle(module).table_ntt, &mut tmp, true) };
+    unsafe { ntt_avx512::<Primes42>(handle(module).table_ntt_for(n), &mut tmp, true) };
 
     let res_u64: &mut [u64] = cast_slice_mut(res.data_mut());
     let prepared = &mut res_u64[6 * n * res_col..][..6 * n];
@@ -108,7 +110,7 @@ pub(crate) fn svp_apply_dft<E: poulpy_hal::execution::TaskExecutor>(
     b_col: usize,
 ) {
     let b_size = b.size();
-    let mut b_dft_owned = module.vec_znx_dft_alloc(1, b_size);
+    let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b_size);
     let mut b_dft = b_dft_owned.to_backend_mut();
     <Module<NTT3x42Ifma> as VecZnxDftApply<NTT3x42Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     let b_dft_ref = b_dft.reborrow_backend_ref();
@@ -126,6 +128,8 @@ pub(crate) fn svp_apply_dft_to_dft<E: poulpy_hal::execution::TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    assert_eq!(a.n(), n, "svp_apply_dft_to_dft: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(b.n(), n, "svp_apply_dft_to_dft: b.n():{} != res.n():{n}", b.n());
     let res_size = res.size();
     let res_cols = res.cols();
     let b_cols = b.cols();

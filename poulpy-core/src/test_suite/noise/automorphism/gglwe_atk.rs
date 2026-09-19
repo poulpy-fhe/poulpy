@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism},
     layouts::{Backend, GaloisElement, Module, ScalarZnx, ScratchOwned},
@@ -18,7 +19,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = AlignedBuf>>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -194,7 +195,9 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+pub fn test_gglwe_automorphism_key_automorphism_assign<
+    BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = AlignedBuf>,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where

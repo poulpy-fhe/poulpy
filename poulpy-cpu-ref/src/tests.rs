@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -15,65 +16,105 @@ mod delegating_backend;
 mod derived_scratch;
 
 #[test]
+fn bootstrapping_presets_respect_max_base2k() {
+    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_for_backend};
+    use poulpy_core::layouts::LWEInfos;
+
+    assert_eq!(Module::<FFT64Ref>::MAX_BASE2K, 19);
+    assert_eq!(Module::<NTT4x30Ref>::MAX_BASE2K, 52);
+    for preset in all().unwrap() {
+        let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
+        let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();
+        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+        assert_eq!(
+            (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
+            (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
+        );
+        for adapted in [fft, ntt] {
+            assert_eq!(
+                (adapted.input_k(), adapted.output_k(), adapted.bootstrap_k()),
+                (preset.input_k(), preset.output_k(), preset.bootstrap_k())
+            );
+            assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
+            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
+            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+        }
+    }
+}
+
+#[test]
 fn test_convolution_by_const_fft64_ref() {
-    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_by_const(&module, 17);
-    test_convolution_by_const_add(&module, 17);
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
+    test_convolution_by_const(&module, 8, 17);
+    test_convolution_by_const(&module, 64, 17);
+    test_convolution_by_const_add(&module, 8, 17);
+    test_convolution_by_const_add(&module, 64, 17);
 }
 
 #[test]
 fn test_convolution_fft64_ref() {
-    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution(&module, 17);
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
+    test_convolution(&module, 8, 17);
+    test_convolution(&module, 64, 17);
 }
 
 #[test]
 fn test_convolution_pairwise_fft64_ref() {
-    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_pairwise(&module, 17);
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
+    test_convolution_pairwise(&module, 8, 17);
+    test_convolution_pairwise(&module, 64, 17);
 }
 
 #[test]
 fn test_convolution_add_fft64_ref() {
-    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_add(&module, 17);
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
+    test_convolution_add(&module, 8, 17);
+    test_convolution_add(&module, 64, 17);
 }
 
 #[test]
 fn test_convolution_sum_fft64_ref() {
-    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_sum(&module, 17);
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
+    test_convolution_sum(&module, 8, 17);
+    test_convolution_sum(&module, 64, 17);
 }
 
 #[test]
 fn test_convolution_by_const_ntt4x30_ref() {
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_by_const(&module, 50);
-    test_convolution_by_const_add(&module, 50);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(64);
+    test_convolution_by_const(&module, 8, 50);
+    test_convolution_by_const(&module, 64, 50);
+    test_convolution_by_const_add(&module, 8, 50);
+    test_convolution_by_const_add(&module, 64, 50);
 }
 
 #[test]
 fn test_convolution_ntt4x30_ref() {
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution(&module, 50);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(64);
+    test_convolution(&module, 8, 50);
+    test_convolution(&module, 64, 50);
 }
 
 #[test]
 fn test_convolution_pairwise_ntt4x30_ref() {
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_pairwise(&module, 50);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(64);
+    test_convolution_pairwise(&module, 8, 50);
+    test_convolution_pairwise(&module, 64, 50);
 }
 
 #[test]
 fn test_convolution_add_ntt4x30_ref() {
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_add(&module, 50);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(64);
+    test_convolution_add(&module, 8, 50);
+    test_convolution_add(&module, 64, 50);
 }
 
 #[test]
 fn test_convolution_sum_ntt4x30_ref() {
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_sum(&module, 50);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(64);
+    test_convolution_sum(&module, 8, 50);
+    test_convolution_sum(&module, 64, 50);
 }
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
@@ -82,7 +123,7 @@ cross_backend_test_suite! {
     mod vec_znx,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_zero_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_matches_wrapper,
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
@@ -119,7 +160,7 @@ cross_backend_test_suite! {
     mod svp,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -130,7 +171,7 @@ cross_backend_test_suite! {
     mod vec_znx_big,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -158,7 +199,7 @@ cross_backend_test_suite! {
     mod vec_znx_dft,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -176,7 +217,7 @@ cross_backend_test_suite! {
     mod vec_znx_dft_automorphism,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
@@ -187,7 +228,7 @@ cross_backend_test_suite! {
     mod vmp,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -201,7 +242,7 @@ cross_backend_test_suite! {
 backend_test_suite! {
     mod derived_fft64,
     backend = crate::FFT64Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
         test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -234,7 +275,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod derived_ntt4x30,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
         test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -267,7 +308,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod sampling,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<12, base2k: 12 },
+    params = TestParams { size: 1<<12, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
     }
@@ -278,7 +319,8 @@ backend_test_suite! {
 backend_test_suite! {
     mod sampling_core,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<12, base2k: 12 },
+    // the core suite computes at the module degree, no sweep
+    params = TestParams { size: 1<<12, base2k: 12, n: 1<<12 },
     tests = {
         test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
         test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
@@ -289,7 +331,8 @@ backend_test_suite! {
 backend_test_suite! {
     mod sampling_core_fft64,
     backend = crate::FFT64Ref,
-    params = TestParams { size: 1<<12, base2k: 17 },
+    // the core suite computes at the module degree, no sweep
+    params = TestParams { size: 1<<12, base2k: 17, n: 1<<12 },
     tests = {
         test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
         test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
@@ -299,7 +342,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod window_fft64,
     backend = crate::FFT64Ref,
-    params = TestParams { size: 1 << 8, base2k: 12 },
+    params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -308,14 +351,19 @@ backend_test_suite! {
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
         test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
+        test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+        test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
+        test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
+        test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
+        test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
 
 backend_test_suite! {
     mod window_ntt4x30,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1 << 8, base2k: 12 },
+    params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -324,7 +372,12 @@ backend_test_suite! {
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
         test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
+        test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+        test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
+        test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
+        test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
+        test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
 
@@ -332,14 +385,16 @@ backend_test_suite! {
 poulpy_core::core_backend_test_suite!(
     mod fft64,
     backend = crate::FFT64Ref,
-    params = TestParams { size: 1<<8, base2k: 17 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_backend_test_suite!(
     mod ntt4x30,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 52 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
 );
 
 #[test]
@@ -362,10 +417,10 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             if k / base2k + 1 > size {
                 continue;
             }
-            let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(1, size);
+            let mut a: VecZnx<AlignedBuf, i64> = module_host.vec_znx_alloc(module_host.n(), 1, size);
             a.fill_uniform(base2k, &mut source);
             let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(1, size));
+            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(module_host.n(), 1, size));
             module.vec_znx_rsh(
                 base2k,
                 k,
@@ -428,7 +483,8 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_cross_family,
     backend_ref = crate::NTT4x30Ref,
     backend_test = crate::FFT64Ref,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -471,17 +527,17 @@ where
             for offset in [-(a_base2k as i64), -3, -1, 0, 1, 3, a_base2k as i64] {
                 for a_size in 1..=3usize {
                     for res_size in 1..=3usize {
-                        let mut a = module_host.vec_znx_alloc(1, a_size);
+                        let mut a = module_host.vec_znx_alloc(module_host.n(), 1, a_size);
                         a.fill_uniform(63, &mut source);
                         let uploaded = upload_vec_znx::<BE>(&a);
-                        let mut big = module.vec_znx_big_alloc(1, a_size);
+                        let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
                         module.vec_znx_big_from_small(
                             &mut big.to_backend_mut(),
                             0,
                             &<VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(&uploaded),
                             0,
                         );
-                        let mut res = module.vec_znx_alloc(1, res_size);
+                        let mut res = module.vec_znx_alloc(module.n(), 1, res_size);
                         module.vec_znx_big_normalize(
                             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res),
                             res_base2k,
@@ -543,7 +599,12 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
     for a_base2k in 1..=62 {
         for res_base2k in 1..=62 {
             for a_size in 0..=8 {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * a_size], N, 1, a_size);
+                let mut input = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(
+                    AlignedBuf::from(vec![0; 16 * N * a_size]),
+                    N,
+                    1,
+                    a_size,
+                );
                 for j in 0..a_size {
                     for i in 0..N {
                         random ^= random << 17;
@@ -558,7 +619,8 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         };
                     }
                 }
-                let mut small_input = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * a_size], N, 1, a_size);
+                let mut small_input =
+                    VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * a_size]), N, 1, a_size);
                 for j in 0..a_size {
                     for i in 0..N {
                         small_input.at_mut(0, j)[i] = if (4..=5).contains(&i) {
@@ -569,8 +631,10 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                     }
                 }
                 for res_size in 1..=8 {
-                    let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
-                    let mut small_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
+                    let mut output =
+                        VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * res_size]), N, 1, res_size);
+                    let mut small_output =
+                        VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * res_size]), N, 1, res_size);
                     let bracket = (a_size * a_base2k + res_size * res_base2k + 128) as i64;
                     let gap = (a_size * a_base2k) as i64 - (res_size * res_base2k) as i64;
                     for offset in [
@@ -597,12 +661,12 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                             &mut carry,
                         );
                         vec_znx_normalize::<FFT64Ref>(
-                            &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small_output),
+                            &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small_output),
                             res_base2k,
                             res_size * res_base2k,
                             offset,
                             0,
-                            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small_input),
+                            &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small_input),
                             a_base2k,
                             0,
                             &mut [0i64; 3 * N],
@@ -649,13 +713,19 @@ fn test_normalize_exact_canonical_precision() {
         (&[i64::MAX], 64, 64, 62, 0, &[i64::MIN]),
     ];
     for &(values, a_base2k, res_base2k, res_k, offset, expected) in cases {
-        let mut small = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * values.len()], 1, 1, values.len());
-        let mut big = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * values.len()], 1, 1, values.len());
+        let mut small = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * values.len()]), 1, 1, values.len());
+        let mut big = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(
+            AlignedBuf::from(vec![0; 16 * values.len()]),
+            1,
+            1,
+            values.len(),
+        );
         for (j, &value) in values.iter().enumerate() {
             small.at_mut(0, j)[0] = value;
             big.at_mut(0, j)[0] = value as i128;
         }
-        let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![93; 8 * expected.len()], 1, 1, expected.len());
+        let mut output =
+            VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![93; 8 * expected.len()]), 1, 1, expected.len());
         ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
             &mut output,
             res_base2k,
@@ -670,12 +740,12 @@ fn test_normalize_exact_canonical_precision() {
         assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
         if a_base2k <= 62 && res_base2k <= 62 {
             vec_znx_normalize::<FFT64Ref>(
-                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
                 res_base2k,
                 res_k,
                 offset,
                 0,
-                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small),
+                &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small),
                 a_base2k,
                 0,
                 &mut [0; 3],
@@ -686,7 +756,7 @@ fn test_normalize_exact_canonical_precision() {
                 res_base2k,
                 res_k,
                 0,
-                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
+                &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
                 0,
                 &mut [0],
             );
@@ -702,9 +772,9 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
         vec_znx_big::{AddOp, SubOp},
     };
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, ZnxView, ZnxViewMut};
-    let mut regression_input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16], 1, 1, 1);
+    let mut regression_input = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16]), 1, 1, 1);
     regression_input.at_mut(0, 0)[0] = 3;
-    let mut regression_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 24], 1, 1, 3);
+    let mut regression_output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 24]), 1, 1, 3);
     ntt4x30_vec_znx_big_normalize_assign::<SubOp, _, _, NTT4x30Ref>(
         &mut regression_output,
         2,
@@ -720,13 +790,14 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
     for a_base2k in [1, 2, 17, 50, 62] {
         for res_base2k in [1, 2, 19, 51, 62] {
             for offset in [i64::MIN, -400, -63, -1, 0, 1, 63, 400, i64::MAX] {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * 3], N, 1, 3);
+                let mut input =
+                    VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16 * N * 3]), N, 1, 3);
                 for j in 0..3 {
                     for i in 0..N {
                         input.at_mut(0, j)[i] = (NORMALIZE_IDFT_BOUND / (i as i128 + 1)) * if (i + j) % 2 == 0 { -1 } else { 1 };
                     }
                 }
-                let alloc = || VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * 3], N, 1, 3);
+                let alloc = || VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * 3]), N, 1, 3);
                 let mut want = alloc();
                 let mut carry = [0i128; 3 * N];
                 ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
@@ -883,13 +954,14 @@ fn test_vec_znx_big_normalize_wide_radices() {
     for a_base2k in [1, 63, 64, 65, 126, 127] {
         for res_base2k in [1, 17, 63, 64] {
             for size in 1..=3 {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 32 * size], 2, 1, size);
+                let mut input =
+                    VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 32 * size]), 2, 1, size);
                 for j in 0..size {
                     input
                         .at_mut(0, j)
                         .copy_from_slice(&[-NORMALIZE_IDFT_BOUND, NORMALIZE_IDFT_BOUND]);
                 }
-                let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 16 * size], 2, 1, size);
+                let mut output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
                 for offset in [-400, -64, -(a_base2k as i64), -1, 0, 1, 64, 400] {
                     ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                         &mut output,
@@ -903,7 +975,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         &mut [0; 6],
                     );
                     for sub in [false, true] {
-                        let mut assigned = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 16 * size], 2, 1, size);
+                        let mut assigned = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
                         for j in 0..size {
                             assigned.at_mut(0, j).copy_from_slice(&[-(1i64 << 62), 1i64 << 62]);
                         }
@@ -971,6 +1043,7 @@ mod canonical_precision_tests {
         },
     };
     use dashu_int::IBig;
+    use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
 
     const N: usize = 9;
@@ -999,14 +1072,15 @@ mod canonical_precision_tests {
         result
     }
 
-    fn small(size: usize) -> VecZnx<Vec<u8>, i64> {
-        VecZnx::from_data(vec![0xa5; 8 * N * 2 * size], N, 2, size)
+    fn small(size: usize) -> VecZnx<AlignedBuf, i64> {
+        VecZnx::from_data(AlignedBuf::from(vec![0xa5; 8 * N * 2 * size]), N, 2, size)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn check(a: &[Vec<i128>], ka: usize, kr: usize, k: usize, size: usize, offset: i64, ranges: bool) {
         let mut input = small(a.len());
-        let mut wide = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * 2 * a.len()], N, 2, a.len());
+        let mut wide =
+            VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16 * N * 2 * a.len()]), N, 2, a.len());
         for (j, values) in a.iter().enumerate() {
             for (i, &value) in values.iter().enumerate() {
                 input.at_mut(1, j)[i] = value as i64;
@@ -1017,7 +1091,7 @@ mod canonical_precision_tests {
         let expected: Vec<_> = (0..N)
             .map(|i| oracle(&a.iter().map(|v| v[i]).collect::<Vec<_>>(), ka, kr, k, size, offset))
             .collect();
-        let verify = |name: &str, output: &VecZnx<Vec<u8>, i64>| {
+        let verify = |name: &str, output: &VecZnx<AlignedBuf, i64>| {
             for (i, want) in expected.iter().enumerate() {
                 let got: Vec<_> = (0..size).map(|j| output.at(1, j)[i]).collect();
                 assert_eq!(
@@ -1031,7 +1105,7 @@ mod canonical_precision_tests {
         };
         let mut output = small(size);
         if narrow {
-            let src = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
+            let src = <VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
             if ranges {
                 let ptr = output.data_mut().as_mut_ptr().cast::<i64>();
                 for (start, len) in [(0, 2), (2, 3), (5, 4)] {
@@ -1054,7 +1128,7 @@ mod canonical_precision_tests {
                 }
             } else {
                 vec_znx_normalize::<FFT64Ref>(
-                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                    &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
                     kr,
                     k,
                     offset,
@@ -1115,7 +1189,7 @@ mod canonical_precision_tests {
                     kr,
                     k,
                     0,
-                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
+                    &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
                     1,
                     &mut [73; N],
                 );

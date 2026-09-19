@@ -54,7 +54,7 @@ where
     /// Allocates a new prepared GLWE with the given parameters.
     fn glwe_prepared_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPrepared<B::OwnedBuf, B> {
         GLWEPrepared {
-            data: self.vec_znx_dft_alloc((rank + 1).into(), k.0.div_ceil(base2k.0) as usize),
+            data: self.vec_znx_dft_alloc(self.ring_degree().into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize),
             base2k,
             k,
         }
@@ -68,7 +68,7 @@ where
     }
 
     fn glwe_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.bytes_of_vec_znx_dft((rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+        self.bytes_of_vec_znx_dft(self.ring_degree().into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
     }
 
     fn glwe_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize

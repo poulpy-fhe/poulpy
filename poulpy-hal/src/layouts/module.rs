@@ -19,12 +19,16 @@ use crate::{
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
 pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
-    /// Whether this backend's transform-domain arithmetic is exact within its
-    /// documented operand bounds.
+    /// Smallest ring degree every kernel of this backend accepts.
     ///
-    /// This is an arithmetic property of the backend implementation, not of
-    /// the [`DftWord`](crate::layouts::DftWord) byte-layout marker.
-    const DFT_IS_EXACT: bool = false;
+    /// A module built at degree `N` serves every power-of-two degree `n` with
+    /// `MIN_DEGREE <= n <= N`. A backend whose kernels process a fixed number
+    /// of coefficients per step raises it to the smallest degree they handle.
+    const MIN_DEGREE: usize = 8;
+
+    /// Maximum supported limb radix for FHE parameter selection.
+    /// Operation-specific input and accumulation bounds still apply.
+    const MAX_BASE2K: usize;
 
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;
@@ -38,6 +42,7 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     ///
     /// This buffer may be host-resident or device-resident. It is intentionally
     /// no longer required to expose direct host byte slices.
+    /// Host-resident backends use [`AlignedBuf`](crate::AlignedBuf).
     type OwnedBuf: Data + Send + Sync;
     /// Shared borrowed view into backend-owned storage.
     type BufRef<'a>: Data + Sync
@@ -67,11 +72,12 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
         buf
     }
     /// Uploads or copies host bytes into backend-owned storage.
-    fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
-    /// Wraps/Uploads a host-owned byte buffer into backend-owned storage.
     ///
-    /// Backends may override this for a zero-copy fast path when the input is
-    /// already in a compatible host representation.
+    /// The buffer may be longer than `bytes`; the extra bytes are zero.
+    fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
+    /// Copies a host-owned byte buffer into backend-owned storage.
+    ///
+    /// The buffer may be longer than `bytes`; the extra bytes are zero.
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf;
     /// Copies the contents of a backend-owned buffer into a fresh host `Vec<u8>`.
     ///
@@ -80,23 +86,31 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8>;
     /// Copies the contents of a backend-owned buffer into a host byte slice.
     ///
-    /// `dst.len()` must equal the byte length of `buf`.
+    /// `dst.len()` is at most the byte length of `buf`; the first `dst.len()`
+    /// bytes are copied.
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]);
     /// Copies a host byte slice into a backend-owned buffer.
     ///
-    /// `src.len()` must equal the byte length of `buf`.
+    /// `src.len()` is at most the byte length of `buf`; the bytes past
+    /// `src.len()` are zeroed.
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]);
     /// Copies a backend-native borrowed view into a host byte slice.
     ///
     /// Unlike [`Self::copy_to_host`], this accepts a view carved from an
     /// arena. Device backends should implement it with a device-to-host copy
     /// from the view's native address.
+    ///
+    /// `dst.len()` is at most the byte length of `buf`; the first `dst.len()`
+    /// bytes are copied.
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]);
     /// Copies a host byte slice into a backend-native mutable borrowed view.
     ///
     /// Unlike [`Self::copy_from_host`], this accepts a view carved from an
     /// arena. Device backends should implement it with a host-to-device copy
     /// to the view's native address.
+    ///
+    /// `src.len()` is at most the byte length of `buf`; the bytes past
+    /// `src.len()` are zeroed.
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]);
     /// Returns the number of bytes stored in a backend-owned buffer.
     fn len_bytes(buf: &Self::OwnedBuf) -> usize;
@@ -235,8 +249,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 /// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
 /// [`api`](crate::api) trait methods are dispatched through this type.
-/// Existing fixed-ring operations use the maximum degree; dimension-aware
-/// operations may select any supported power-of-two degree from the handle.
+/// Every operation serves operands of any power-of-two degree `n` with
+/// `B::MIN_DEGREE <= n <= N`, read from the operands; the handle holds the
+/// transform tables of every such degree. Allocation takes the degree
+/// explicitly.
 ///
 /// The module **owns** its handle; dropping the `Module` calls
 /// [`Backend::destroy`].
@@ -251,6 +267,9 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
+    /// The backend's supported FHE limb radix; see [`Backend::MAX_BASE2K`].
+    pub const MAX_BASE2K: usize = B::MAX_BASE2K;
+
     /// Creates a backend module for ring degree `N`.
     #[inline]
     pub fn new(n: u64) -> Self
@@ -297,50 +316,48 @@ impl<B: Backend> Module<B> {
         self.ptr.as_ptr()
     }
 
-    /// Returns the maximum supported ring degree `N`.
+    /// Returns the largest ring degree `N` the module serves.
     #[inline]
     pub fn n(&self) -> usize {
         self.n as usize
     }
 
-    /// Explicit alias for [`Self::n`] when treating the module as a
-    /// multi-ring execution context.
+    /// Same as [`Self::n`].
     #[inline]
     pub fn max_n(&self) -> usize {
         self.n()
     }
 
-    /// Allocates a zero-initialized backend-owned [`ScalarZnx`].
+    /// Allocates a zero-initialized backend-owned [`ScalarZnx`] of degree `n`.
     #[inline]
-    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
+    pub fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
         let len = B::bytes_of_scalar_znx(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
     }
 
-    /// Allocates a zero-initialized backend-owned [`VecZnx`].
+    /// Allocates a zero-initialized backend-owned [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        vec_znx_alloc_zeroed::<B>(self.n(), cols, size)
+    pub fn vec_znx_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+        vec_znx_alloc_zeroed::<B>(n, cols, size)
     }
 
-    /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
+    /// Returns the byte size of a [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn bytes_of_vec_znx(&self, cols: usize, size: usize) -> usize {
-        self.bytes_of_vec_znx_n(self.n(), cols, size)
-    }
-
-    /// Returns the byte size of a [`VecZnx`] with an explicit coefficient degree.
-    #[inline]
-    pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
+    pub fn bytes_of_vec_znx(&self, n: usize, cols: usize, size: usize) -> usize {
         B::bytes_of_vec_znx(n, cols, size)
     }
 
-    /// Allocates a zero-initialized backend-owned [`MatZnx`].
+    /// Allocates a zero-initialized backend-owned [`MatZnx`] of degree `n`.
     #[inline]
-    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
+    pub fn mat_znx_alloc(
+        &self,
+        n: usize,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+    ) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
         let len = B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)
@@ -398,6 +415,19 @@ where
 impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
 impl<BE: Backend> CyclotomicOrder for Module<BE> where Self: ModuleN {}
+
+/// Asserts that a module of degree `module_n` serves operands of degree `n`.
+///
+/// `n` must be a power of two with `BE::MIN_DEGREE <= n <= module_n`. Every
+/// kernel calls this once at entry with the degree it read from its operands.
+#[inline]
+pub fn check_degree<BE: Backend>(module_n: usize, n: usize) {
+    assert!(
+        n.is_power_of_two() && n >= BE::MIN_DEGREE && n <= module_n,
+        "degree {n} is not served by the module: it must be a power of two between {} and {module_n}",
+        BE::MIN_DEGREE
+    );
+}
 
 /// Computes [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
 ///
@@ -490,4 +520,35 @@ pub fn mod_exp_u64(x: u64, e: usize) -> u64 {
         exp >>= 1;
     }
     y
+}
+
+#[cfg(test)]
+mod degree_tests {
+    use super::check_degree;
+    use crate::layouts::HostBytesBackend;
+
+    #[test]
+    fn check_degree_accepts_powers_of_two_between_floor_and_module() {
+        check_degree::<HostBytesBackend>(256, 256);
+        check_degree::<HostBytesBackend>(256, 8);
+        check_degree::<HostBytesBackend>(256, 64);
+    }
+
+    #[test]
+    #[should_panic(expected = "degree 512 is not served by the module")]
+    fn check_degree_rejects_above_module() {
+        check_degree::<HostBytesBackend>(256, 512);
+    }
+
+    #[test]
+    #[should_panic(expected = "degree 4 is not served by the module")]
+    fn check_degree_rejects_below_floor() {
+        check_degree::<HostBytesBackend>(256, 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "degree 24 is not served by the module")]
+    fn check_degree_rejects_non_power_of_two() {
+        check_degree::<HostBytesBackend>(256, 24);
+    }
 }

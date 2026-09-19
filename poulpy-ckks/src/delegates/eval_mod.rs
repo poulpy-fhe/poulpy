@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::GLWECopy;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
@@ -62,6 +63,7 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
+        + GLWECopy<BE>
         + CnvPVecBytesOf
         + Convolution<BE>
         + VecZnxRshTmpBytes
@@ -93,7 +95,7 @@ where
         let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
-        let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size(), PrepareHint::Reuse);
+        let hoisted_right = self.bytes_of_cnv_pvec_right(self.n(), cols, work.max_size(), PrepareHint::Reuse);
         let bsgs_giant = self
             .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
             .max(self.ckks_add_tmp_bytes(work.max_size()))
@@ -128,11 +130,12 @@ where
             base.max(params.f_mod_inv_bsgs.as_ref().map_or(0, poly_max))
         };
         let fused_baby =
-            crate::default::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(self, work.max_size(), pt_size_max);
+            crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(self, work.max_size(), pt_size_max);
 
         usize::from(needs_work_copy) * compact_work
             + self
                 .ckks_copy_tmp_bytes(work.max_size())
+                .max(self.glwe_copy_tmp_bytes(&work, ct))
                 .max(self.ckks_add_pt_const_tmp_bytes(work.max_size()))
                 .max(self.ckks_sub_pt_const_tmp_bytes(work.max_size()))
                 .max(bsgs_giant)

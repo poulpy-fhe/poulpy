@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
@@ -143,7 +144,7 @@ impl LWEInfos for LWELayout {
 /// - `body`: degree-0 polynomial (n = 1) holding the scalar body `b`.
 /// - `mask`: degree-n polynomial (n = lwe_dim) holding the mask `(a_1, ..., a_n)`.
 ///
-/// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
+/// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWE<D: Data, W: ZnxWord> {
     pub(crate) body: VecZnx<D, W>,
@@ -286,7 +287,7 @@ where
     }
 }
 
-impl<W: ZnxWord> LWE<Vec<u8>, W> {
+impl<W: ZnxWord> LWE<AlignedBuf, W> {
     /// Allocates a new [`LWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -304,13 +305,13 @@ impl<W: ZnxWord> LWE<Vec<u8>, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
             body: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
             ),
             mask: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.as_usize(), 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
                 n.as_usize(),
                 1,
                 size,
@@ -335,7 +336,7 @@ impl<W: ZnxWord> LWE<Vec<u8>, W> {
     /// * `k` -- torus precision.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
-        VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size) + VecZnx::<Vec<u8>, W>::bytes_of(n.as_usize(), 1, size)
+        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size) + VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)
     }
 }
 

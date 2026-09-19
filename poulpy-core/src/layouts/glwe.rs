@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
@@ -87,7 +88,7 @@ impl GLWEInfos for GLWELayout {
 /// Wraps a [`VecZnx`] with `rank + 1` columns: the first column is the body
 /// polynomial, and the remaining `rank` columns are the mask polynomials.
 ///
-/// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
+/// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 ///
 /// # Normalized form
 ///
@@ -174,7 +175,7 @@ impl<D: Data, W: ZnxWord> GLWEInfos for GLWE<D, W> {
 }
 
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
-    type Owned = GLWE<Vec<u8>, W>;
+    type Owned = GLWE<AlignedBuf, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         GLWE {
             data: self.data.to_owned_deep(),
@@ -185,8 +186,8 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> GLWE<D, W> {
-    /// Rebuilds this backend-owned ciphertext as a host-owned [`GLWE<Vec<u8>, W>`].
-    pub fn to_host_owned<BE>(&self) -> GLWE<Vec<u8>, W>
+    /// Rebuilds this backend-owned ciphertext as a host-owned [`GLWE<AlignedBuf, W>`].
+    pub fn to_host_owned<BE>(&self) -> GLWE<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -244,7 +245,7 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWE<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWE<Vec<u8>, W> {
+impl<W: ZnxWord> GLWE<AlignedBuf, W> {
     /// Allocates a new [`GLWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -263,7 +264,7 @@ impl<W: ZnxWord> GLWE<Vec<u8>, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWE {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     (rank + 1).into(),
                     size,
@@ -292,7 +293,7 @@ impl<W: ZnxWord> GLWE<Vec<u8>, W> {
     /// * `k` -- torus precision.
     /// * `rank` -- number of mask polynomials.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
     }
 }
 

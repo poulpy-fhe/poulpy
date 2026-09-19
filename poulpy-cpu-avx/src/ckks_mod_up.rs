@@ -6,17 +6,17 @@ use crate::NTT4x30AvxRayon;
 use poulpy_ckks::{
     CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
     api::CKKSPow2Ops,
-    default::bootstrapping::{ckks_encapsulated_mod_up_default, ckks_encapsulated_mod_up_tmp_bytes_default},
     oep::CKKSEncapsulatedModUpImpl,
+    reference::bootstrapping::{ckks_encapsulated_mod_up_reference, ckks_encapsulated_mod_up_tmp_bytes_reference},
 };
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
-    default::keyswitching::glwe::gglwe_product_output_size,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
     oep::GGLWEProductDigitsStridedImpl,
+    reference::keyswitching::glwe::gglwe_product_output_size,
 };
 use poulpy_hal::{
     api::{
@@ -133,12 +133,12 @@ where
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
     if dst.base2k() != sparse_to_dense.base2k() || sparse_to_dense.dsize().as_usize() < 2 || k_large < k_small + scale_up {
-        return ckks_encapsulated_mod_up_default(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
+        return ckks_encapsulated_mod_up_reference(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
     }
 
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     let shift = k_large - k_small - scale_up;
-    module.glwe_copy(dst, src);
+    module.glwe_copy(dst, src, scratch);
     module.glwe_rsh(shift, dst, scratch);
     dst.set_meta(CKKSMeta {
         log_delta: src.log_delta() + scale_up,
@@ -166,12 +166,14 @@ where
     };
     let base2k = key.base2k().as_usize();
     let product_limbs = base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k);
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, output_cols, output_size);
+    let (mut res_dft, mut scratch_1) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(module.n(), output_cols, output_size);
 
     {
         let dst_ref = dst.to_backend_ref();
         let a_size = dst_ref.size();
-        let (mut a_dft, mut product_scratch) = scratch_1.borrow().take_vec_znx_dft_scratch(module, mask_cols, a_size);
+        let (mut a_dft, mut product_scratch) = scratch_1.borrow().take_vec_znx_dft_scratch(module.n(), mask_cols, a_size);
         for col in 0..mask_cols {
             let mut suffix = a_dft.with_limb_range_mut(zero_prefix, a_size);
             module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, dst_ref.data(), col + 1);
@@ -189,7 +191,7 @@ where
     }
 
     let dst_ref = dst.to_backend_ref();
-    let (mut res_big, mut normalize_scratch) = scratch_1.take_vec_znx_big_scratch(module, output_cols, output_size);
+    let (mut res_big, mut normalize_scratch) = scratch_1.take_vec_znx_big_scratch(module.n(), output_cols, output_size);
     let res_dft_ref = res_dft.to_backend_ref();
     for col in 0..output_cols {
         module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut normalize_scratch);
@@ -233,7 +235,7 @@ macro_rules! impl_encapsulated_mod_up {
                 D2S: GGLWEInfos,
                 S2D: GGLWEInfos,
             {
-                ckks_encapsulated_mod_up_tmp_bytes_default(
+                ckks_encapsulated_mod_up_tmp_bytes_reference(
                     module,
                     dst_infos,
                     src_infos,

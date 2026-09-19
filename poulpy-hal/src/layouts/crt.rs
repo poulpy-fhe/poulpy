@@ -7,11 +7,10 @@
 //! and the resulting word type [`CrtWord<P, T>`], a [`DftWord`] for any
 //! `(P, T)`.
 //!
-//! Concrete prime sets live with their kernel families in the backend crates
-//! (e.g. `Primes29/30/31` and the full-CRT `PrimeSetCrt4` extension in
-//! `poulpy-cpu-ref`'s ntt4x30 module, `Primes42` and the Garner
-//! `PrimeSetNtt3x42Ifma` extension in `poulpy-cpu-avx512`), as do the CRT
-//! *reconstruction* constants, whose semantics differ per family.
+//! Concrete prime sets live with their kernel families in the backend crates,
+//! each backend crate implementing the prime-set traits next to its concrete
+//! word, as do the CRT *reconstruction* constants, whose semantics differ per
+//! family.
 
 use std::fmt::{self, Debug, Display, LowerHex};
 use std::ops::Add;
@@ -83,17 +82,14 @@ impl<T: LaneElem, const N: usize> LaneArray<T> for [T; N] {
 ///
 /// A prime set represents integers modulo `Q = Q[0]·...·Q[N-1]`, a
 /// product of `N` primes each of approximately the same bit-size.
-/// All primes support a primitive `2^17`-th root of unity, so NTT sizes
-/// up to `2^16` are supported.
+/// The root order determines the maximum supported negacyclic NTT size.
 ///
 /// The lane count and the storage element of the prime constants are part
 /// of the prime set (`Lanes<T> = [T; N]`, `PrimeElem` = `u32` for the
 /// ~30-bit family, `u64` for the ~42-bit family). CRT *reconstruction*
-/// constants are intentionally not part of this trait — their semantics
-/// differ per family (full-CRT vs Garner) and live on extension traits in
-/// the backend crates (e.g. `PrimeSetCrt4` in `poulpy-cpu-ref`,
-/// `PrimeSetNtt3x42Ifma` in `poulpy-cpu-avx512`), next to the concrete
-/// prime-set implementations.
+/// constants are intentionally not part of this trait, their semantics
+/// differ per family (full-CRT vs Garner) and live on extension traits a
+/// backend crate implements next to its concrete prime-set implementations.
 pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// Storage element of the prime constants.
     type PrimeElem: LaneElem;
@@ -107,10 +103,14 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
-    /// `OMEGA[k]` is a primitive `2^17`-th root of unity modulo `Q[k]`.
+    /// Maximum log2 of the negacyclic NTT size supported by `OMEGA`.
+    /// Defaults to 16 for prime sets using the original `2^17`-th roots.
+    const MAX_LOG_N: u32 = 16;
+
+    /// `OMEGA[k]` is a primitive `2^(MAX_LOG_N + 1)`-th root modulo `Q[k]`.
     ///
-    /// For an NTT of size `n ≤ 2^16`, the actual primitive `2n`-th root
-    /// used is `modq_pow(OMEGA[k], 2^16 / n, Q[k])`.
+    /// For an NTT of size `n ≤ 2^MAX_LOG_N`, the primitive `2n`-th root
+    /// used is `modq_pow(OMEGA[k], 2^MAX_LOG_N / n, Q[k])`.
     const OMEGA: Self::Lanes<Self::PrimeElem>;
 
     /// `ceil(log2(Q[0]))`.

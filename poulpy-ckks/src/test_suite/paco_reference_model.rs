@@ -27,11 +27,11 @@ use std::fmt::Debug;
 use num_traits::{FromPrimitive, ToPrimitive};
 use poulpy_hal::{api::NegacyclicFFT, source::Source};
 
-use crate::{default::dft::DftScalar, test_suite::reference_encoder::ReferenceEncoder};
 use crate::{
     encoding::paco::cpx::Cpx,
     layouts::{PaCoPlan, PaCoSecretSpec},
 };
+use crate::{reference::dft::DftScalar, test_suite::reference_encoder::ReferenceEncoder};
 
 /// Paper Eq. (8): coefficient `4h·j` of `a_v`, where `a_0 = ct0 + ct1`
 /// and `a_v = X^v·ct1` for `v > 0` in the negacyclic ring.

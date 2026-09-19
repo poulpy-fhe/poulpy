@@ -17,7 +17,7 @@ use poulpy_cpu_ref::reference::{
     },
 };
 use poulpy_hal::{
-    alloc_aligned, assert_alignment,
+    AlignedBuf, alloc_aligned,
     layouts::{Backend, Host},
 };
 
@@ -84,11 +84,13 @@ pub struct FFT64AvxHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
 
 impl Backend for FFT64Avx {
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64AvxHandle;
@@ -97,16 +99,13 @@ impl Backend for FFT64Avx {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut buf = alloc_aligned::<u8>(bytes.len());
-        buf.copy_from_slice(bytes);
-        buf
+        AlignedBuf::from(bytes)
     }
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        assert_alignment(bytes.as_ptr());
-        bytes
+        AlignedBuf::from(bytes)
     }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
         assert!(buf.len() >= dst.len());
@@ -119,12 +118,14 @@ impl Backend for FFT64Avx {
         buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len());
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len());
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -658,12 +659,13 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -677,12 +679,15 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe {
+            reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
+        }
     }
 
     #[inline(always)]
@@ -698,12 +703,17 @@ impl Reim4Convolution for FFT64Avx {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_pairwise_apply_avx(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp) }
+        unsafe {
+            reim4_convolution_pairwise_apply_avx(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            )
+        }
     }
 
     #[inline(always)]

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxFillUniformSource},
     layouts::{Backend, GaloisElement, Module, ScalarZnx, ScratchOwned},
@@ -18,7 +19,7 @@ use crate::{
     noise::GGLWENoise,
 };
 
-pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = AlignedBuf>>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
