@@ -1,7 +1,7 @@
 //! Homomorphic DFT parameters (CoeffsToSlots / SlotsToCoeffs).
 //!
 //! Scheme-level description of a factorized homomorphic (I)DFT. The factor
-//! matrices themselves are generated from this literal by the `default::dft`
+//! matrices themselves are generated from this literal by the `reference::dft`
 //! module; this file holds the (backend-free) parameter struct, its enums, and
 //! the prepared [`DFTMatrix`] that carries the encoded/prepared factor operands.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
@@ -96,7 +96,7 @@ pub struct DFTPlan {
 }
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
-/// generator (`crate::default::dft::matrices::merge_next_layer`) and the
+/// generator (`crate::reference::dft::matrices::merge_next_layer`) and the
 /// value-free index replay ([`DFTPlan::diagonal_indexes`]): the rotation a
 /// merged FFT layer applies. `level` counts down from `log_slots` (the layer
 /// being merged into the factor); `mask` is the factor's slot-count mask
@@ -472,7 +472,7 @@ impl DFTPlan {
     /// `{d, (d+rot), (d−rot)}` (modulo the factor's slot count) for each merged
     /// FFT layer, where `rot` depends only on the layer level, `kind` and
     /// `bit_reversed` — never on the twiddle values. This replays exactly that
-    /// index arithmetic, so it mirrors the diagonals the `default::dft` generator
+    /// index arithmetic, so it mirrors the diagonals the `reference::dft` generator
     /// produces. `log_n` (ring degree exponent) is needed only to decide the
     /// sparse-repack path (which prepends the `{0, slots}` repack diagonals and
     /// widens the first `Decode` factor to `2·slots`).
@@ -690,9 +690,9 @@ impl DftFormat for Repack {
 /// [`ckks_prepare_dft_matrix`]. The required Galois keys are reported by
 /// `galois_elements`.
 ///
-/// [`ckks_new_dft_matrix`]: crate::default::dft::ckks_new_dft_matrix
-/// [`ckks_prepare_dft_matrix`]: crate::default::dft::ckks_prepare_dft_matrix
-/// [`ckks_coeffs_to_slots_repack`]: crate::default::dft::ckks_coeffs_to_slots_repack
+/// [`ckks_new_dft_matrix`]: crate::reference::dft::ckks_new_dft_matrix
+/// [`ckks_prepare_dft_matrix`]: crate::reference::dft::ckks_prepare_dft_matrix
+/// [`ckks_coeffs_to_slots_repack`]: crate::reference::dft::ckks_coeffs_to_slots_repack
 pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
     _marker: PhantomData<(Dir, Fmt)>,
@@ -703,7 +703,7 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
 /// per factor, trading resident memory for faster repeated evaluation. Preserves
 /// the `Dir`/`Fmt` type-state of the matrix it was prepared from. Obtained by
 /// preparing a [`DFTMatrix`] via
-/// [`ckks_prepare_dft_matrix`](crate::default::dft::ckks_prepare_dft_matrix).
+/// [`ckks_prepare_dft_matrix`](crate::reference::dft::ckks_prepare_dft_matrix).
 pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
 
 impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {

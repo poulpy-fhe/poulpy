@@ -9,7 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    encryption::glwe::GLWEMaskFillDefault,
+    encryption::glwe::GLWEMaskFillReference,
     layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k, TorusPrecision},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -282,7 +282,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
-    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopy<Self::Backend>,
+    Self: GetDegree + GLWEMaskFillReference<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -307,7 +307,7 @@ where
 
             self.vec_znx_copy(&mut res.data, 0, &other.data, 0);
         }
-        self.fill_glwe_mask_from_seed_default(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
+        self.fill_glwe_mask_from_seed_reference(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
 
         res.set_base2k(other.base2k());
     }
@@ -315,7 +315,7 @@ where
 
 impl<B: Backend> GLWEDecompress for Module<B>
 where
-    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopy<B>,
+    Self: GetDegree + GLWEMaskFillReference<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }

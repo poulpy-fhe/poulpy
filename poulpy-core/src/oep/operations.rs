@@ -4,15 +4,16 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos,
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     operations::{
-        GGSWRotateDefault, GLWEAddDefault, GLWECopyDefault, GLWEMulConstDefault, GLWEMulPlainDefault, GLWEMulXpMinusOneDefault,
-        GLWENegateDefault, GLWENormalizeDefault, GLWERotateDefault, GLWEShiftDefault, GLWESubDefault, GLWEZeroDefault,
+        GGSWRotateReference, GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference,
+        GLWEMulXpMinusOneReference, GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference,
+        GLWESubReference, GLWEZeroReference,
     },
+    reference::{glwe_packing::GLWEPackingReference, glwe_trace::GLWETraceReference},
 };
 
 /// Backend-provided GLWE constant-multiplication operations.
@@ -381,7 +382,7 @@ pub unsafe trait GLWEPackImpl: Backend {
 
 unsafe impl<BE: Backend> GLWEMulConstImpl for BE
 where
-    Module<BE>: GLWEMulConstDefault<BE>,
+    Module<BE>: GLWEMulConstReference<BE>,
 {
     fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
     where
@@ -389,7 +390,7 @@ where
         A: GLWEInfos,
         B: GLWEInfos,
     {
-        module.glwe_mul_const_tmp_bytes_default(res, a, b)
+        module.glwe_mul_const_tmp_bytes_reference(res, a, b)
     }
 
     fn glwe_mul_const<R, A, B>(
@@ -405,7 +406,7 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_const_default(cnv_offset, res, a, b, b_coeff, scratch)
+        module.glwe_mul_const_reference(cnv_offset, res, a, b, b_coeff, scratch)
     }
 
     fn glwe_mul_const_assign<R, B>(
@@ -419,13 +420,13 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_const_assign_default(cnv_offset, res, b, b_coeff, scratch)
+        module.glwe_mul_const_assign_reference(cnv_offset, res, b, b_coeff, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWEMulPlainImpl for BE
 where
-    Module<BE>: GLWEMulPlainDefault<BE>,
+    Module<BE>: GLWEMulPlainReference<BE>,
 {
     fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
     where
@@ -433,7 +434,7 @@ where
         A: GLWEInfos,
         B: GLWEInfos,
     {
-        module.glwe_mul_plain_tmp_bytes_default(res, a, b)
+        module.glwe_mul_plain_tmp_bytes_reference(res, a, b)
     }
 
     fn glwe_mul_plain<R, A, B>(
@@ -448,7 +449,7 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
-        module.glwe_mul_plain_default(cnv_offset, res, a, b, scratch)
+        module.glwe_mul_plain_reference(cnv_offset, res, a, b, scratch)
     }
 
     fn glwe_mul_plain_assign<R, A>(module: &Module<BE>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -456,7 +457,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
-        module.glwe_mul_plain_assign_default(cnv_offset, res, a, scratch)
+        module.glwe_mul_plain_assign_reference(cnv_offset, res, a, scratch)
     }
 }
 
@@ -464,7 +465,7 @@ where
 ///
 /// Explicit opt-in lets optimized backends dispatch to specialized kernels.
 #[macro_export]
-macro_rules! impl_glwe_tensoring_default {
+macro_rules! impl_glwe_tensoring_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWETensoringImpl for $be {
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(
@@ -478,7 +479,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
@@ -492,7 +493,7 @@ macro_rules! impl_glwe_tensoring_default {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_tmp_bytes_reference(
                     module, res, a,
                 )
             }
@@ -509,7 +510,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_reference(
                     module, cnv_offset, res, a, b, scratch,
                 )
             }
@@ -524,7 +525,7 @@ macro_rules! impl_glwe_tensoring_default {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_reference(
                     module, cnv_offset, res, a, scratch,
                 )
             }
@@ -540,7 +541,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetTensorKey<$be>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_reference(
                     module, res, a, tsk, scratch,
                 )
             }
@@ -556,7 +557,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_tmp_bytes_reference(
                     module, res, a, tsk,
                 )
             }
@@ -566,7 +567,7 @@ macro_rules! impl_glwe_tensoring_default {
 
 unsafe impl<BE: Backend> GLWEAddImpl for BE
 where
-    Module<BE>: GLWEAddDefault<BE>,
+    Module<BE>: GLWEAddReference<BE>,
 {
     fn glwe_add_into<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
     where
@@ -574,7 +575,7 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
-        module.glwe_add_into_default(res, a, b)
+        module.glwe_add_into_reference(res, a, b)
     }
 
     fn glwe_add_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
@@ -582,33 +583,33 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_add_assign_default(res, a)
+        module.glwe_add_assign_reference(res, a)
     }
 }
 
 unsafe impl<BE: Backend> GLWENegateImpl for BE
 where
-    Module<BE>: GLWENegateDefault<BE>,
+    Module<BE>: GLWENegateReference<BE>,
 {
     fn glwe_negate<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_negate_default(res, a)
+        module.glwe_negate_reference(res, a)
     }
 
     fn glwe_negate_assign<R>(module: &Module<BE>, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_negate_assign_default(res)
+        module.glwe_negate_assign_reference(res)
     }
 }
 
 unsafe impl<BE: Backend> GLWESubImpl for BE
 where
-    Module<BE>: GLWESubDefault<BE>,
+    Module<BE>: GLWESubReference<BE>,
 {
     fn glwe_sub<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
     where
@@ -616,7 +617,7 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
-        module.glwe_sub_default(res, a, b)
+        module.glwe_sub_reference(res, a, b)
     }
 
     fn glwe_sub_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
@@ -624,7 +625,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_sub_assign_default(res, a)
+        module.glwe_sub_assign_reference(res, a)
     }
 
     fn glwe_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
@@ -632,28 +633,28 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_sub_negate_assign_default(res, a)
+        module.glwe_sub_negate_assign_reference(res, a)
     }
 }
 
 unsafe impl<BE: Backend> GLWEZeroImpl for BE
 where
-    Module<BE>: GLWEZeroDefault<BE>,
+    Module<BE>: GLWEZeroReference<BE>,
 {
     fn glwe_zero<R>(module: &Module<BE>, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_zero_default(res)
+        module.glwe_zero_reference(res)
     }
 }
 
 unsafe impl<BE: Backend> GLWECopyImpl for BE
 where
-    Module<BE>: GLWECopyDefault<BE>,
+    Module<BE>: GLWECopyReference<BE>,
 {
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A) -> usize {
-        module.glwe_copy_tmp_bytes_default(res, a)
+        module.glwe_copy_tmp_bytes_reference(res, a)
     }
 
     fn glwe_copy<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -661,16 +662,16 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_copy_default(res, a, scratch)
+        module.glwe_copy_reference(res, a, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWERotateImpl for BE
 where
-    Module<BE>: GLWERotateDefault<BE>,
+    Module<BE>: GLWERotateReference<BE>,
 {
     fn glwe_rotate_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_rotate_tmp_bytes_default()
+        module.glwe_rotate_tmp_bytes_reference()
     }
 
     fn glwe_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
@@ -678,57 +679,57 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_rotate_default(k, res, a)
+        module.glwe_rotate_reference(k, res, a)
     }
 
     fn glwe_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_rotate_assign_default(k, res, scratch)
+        module.glwe_rotate_assign_reference(k, res, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl for BE
 where
-    Module<BE>: GLWEMulXpMinusOneDefault<BE>,
+    Module<BE>: GLWEMulXpMinusOneReference<BE>,
 {
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_mul_xp_minus_one_default(k, res, a)
+        module.glwe_mul_xp_minus_one_reference(k, res, a)
     }
 
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_mul_xp_minus_one_assign_default(k, res, scratch)
+        module.glwe_mul_xp_minus_one_assign_reference(k, res, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWEShiftImpl for BE
 where
-    Module<BE>: GLWEShiftDefault<BE>,
+    Module<BE>: GLWEShiftReference<BE>,
 {
     fn glwe_shift_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
-        module.glwe_shift_tmp_bytes_default(res_size)
+        module.glwe_shift_tmp_bytes_reference(res_size)
     }
 
     fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_rsh_default(k, res, scratch)
+        module.glwe_rsh_reference(k, res, scratch)
     }
 
     fn glwe_lsh_assign<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_lsh_assign_default(res, k, scratch)
+        module.glwe_lsh_assign_reference(res, k, scratch)
     }
 
     fn glwe_lsh<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
@@ -736,7 +737,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_lsh_default(res, a, k, scratch)
+        module.glwe_lsh_reference(res, a, k, scratch)
     }
 
     fn glwe_lsh_add<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
@@ -744,7 +745,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_lsh_add_default(res, a, k, scratch)
+        module.glwe_lsh_add_reference(res, a, k, scratch)
     }
 
     fn glwe_lsh_sub<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
@@ -752,16 +753,16 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_lsh_sub_default(res, a, k, scratch)
+        module.glwe_lsh_sub_reference(res, a, k, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWENormalizeImpl for BE
 where
-    Module<BE>: GLWENormalizeDefault<BE>,
+    Module<BE>: GLWENormalizeReference<BE>,
 {
     fn glwe_normalize_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_normalize_tmp_bytes_default()
+        module.glwe_normalize_tmp_bytes_reference()
     }
 
     fn glwe_normalize<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -769,23 +770,23 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_normalize_default(res, a, scratch)
+        module.glwe_normalize_reference(res, a, scratch)
     }
 
     fn glwe_normalize_assign<R>(module: &Module<BE>, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        module.glwe_normalize_assign_default(res, scratch)
+        module.glwe_normalize_assign_reference(res, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GGSWRotateImpl for BE
 where
-    Module<BE>: GGSWRotateDefault<BE>,
+    Module<BE>: GGSWRotateReference<BE>,
 {
     fn ggsw_rotate_tmp_bytes(module: &Module<BE>) -> usize {
-        module.ggsw_rotate_tmp_bytes_default()
+        module.ggsw_rotate_tmp_bytes_reference()
     }
 
     fn ggsw_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
@@ -793,7 +794,7 @@ where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
-        module.ggsw_rotate_default(k, res, a)
+        module.ggsw_rotate_reference(k, res, a)
     }
 
     fn ggsw_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -801,16 +802,16 @@ where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
         let mut res_backend = res.to_backend_mut();
-        module.ggsw_rotate_assign_default(k, &mut res_backend, scratch)
+        module.ggsw_rotate_assign_reference(k, &mut res_backend, scratch)
     }
 }
 
 unsafe impl<BE: Backend> GLWETraceImpl for BE
 where
-    Module<BE>: crate::default::glwe_trace::GLWETraceDefault<BE>,
+    Module<BE>: crate::reference::glwe_trace::GLWETraceReference<BE>,
 {
     fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_trace_galois_elements_default()
+        module.glwe_trace_galois_elements_reference()
     }
 
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -819,7 +820,7 @@ where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_trace_tmp_bytes_default(res_infos, a_infos, key_infos)
+        module.glwe_trace_tmp_bytes_reference(res_infos, a_infos, key_infos)
     }
 
     fn glwe_trace<R, A, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -829,7 +830,7 @@ where
         H: GetAutomorphismKey<BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_default(res, skip, a, keys, &mut scratch_local)
+        module.glwe_trace_reference(res, skip, a, keys, &mut scratch_local)
     }
 
     fn glwe_trace_assign<R, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -838,17 +839,17 @@ where
         H: GetAutomorphismKey<BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_assign_default(res, skip, keys, &mut scratch_local)
+        module.glwe_trace_assign_reference(res, skip, keys, &mut scratch_local)
     }
 }
 
 unsafe impl<BE: Backend> GLWEPackImpl for BE
 where
-    Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
+    Module<BE>: crate::reference::glwe_packing::GLWEPackingReference<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
     fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_pack_galois_elements_default()
+        module.glwe_pack_galois_elements_reference()
     }
 
     fn glwe_pack_tmp_bytes<R, K>(module: &Module<BE>, res: &R, key: &K) -> usize
@@ -856,7 +857,7 @@ where
         R: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_pack_tmp_bytes_default(res, key)
+        module.glwe_pack_tmp_bytes_reference(res, key)
     }
 
     fn glwe_pack<R, A, H>(
@@ -872,41 +873,41 @@ where
         H: GetAutomorphismKey<BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_pack_default(res, a, log_gap_out, keys, &mut scratch_local)
+        module.glwe_pack_reference(res, a, log_gap_out, keys, &mut scratch_local)
     }
 }
-/// Implements [`GLWETraceDefault`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_trace_defaults`] free function.
+/// Implements [`GLWETraceReference`] for `Module<$be>` by forwarding every method to
+/// the corresponding [`glwe_trace_reference`] free function.
 #[macro_export]
-macro_rules! impl_glwe_trace_defaults_full {
+macro_rules! impl_glwe_trace_reference_full {
     ($be:ty) => {
-        impl $crate::default::glwe_trace::GLWETraceDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_trace_assign_tmp_bytes_default<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+        impl $crate::reference::glwe_trace::GLWETraceReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn glwe_trace_assign_tmp_bytes_reference<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_tmp_bytes_default::<$be, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_tmp_bytes_reference::<$be, _, _, _>(
                     self, a_infos, key_infos,
                 )
             }
 
-            fn glwe_trace_galois_elements_default(&self) -> ::std::vec::Vec<i64> {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_galois_elements_default::<$be, _>(self)
+            fn glwe_trace_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
+                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_galois_elements_reference::<$be, _>(self)
             }
 
-            fn glwe_trace_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+            fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_tmp_bytes_reference::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
 
-            fn glwe_trace_default<R, A, H>(
+            fn glwe_trace_reference<R, A, H>(
                 &self,
                 res: &mut R,
                 skip: usize,
@@ -918,12 +919,12 @@ macro_rules! impl_glwe_trace_defaults_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_reference::<$be, _, _, _, _>(
                     self, res, skip, a, keys, scratch,
                 )
             }
 
-            fn glwe_trace_assign_default<R, H>(
+            fn glwe_trace_assign_reference<R, H>(
                 &self,
                 res: &mut R,
                 skip: usize,
@@ -933,7 +934,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_reference::<$be, _, _, _>(
                     self, res, skip, keys, scratch,
                 )
             }
@@ -941,27 +942,27 @@ macro_rules! impl_glwe_trace_defaults_full {
     };
 }
 
-/// Implements [`GLWEPackingDefault`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_packing_defaults`] free function.
+/// Implements [`GLWEPackingReference`] for `Module<$be>` by forwarding every method to
+/// the corresponding [`glwe_packing_reference`] free function.
 #[macro_export]
-macro_rules! impl_glwe_packing_defaults_full {
+macro_rules! impl_glwe_packing_reference_full {
     ($be:ty) => {
-        impl $crate::default::glwe_packing::GLWEPackingDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_pack_galois_elements_default(&self) -> ::std::vec::Vec<i64> {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_galois_elements_default::<$be, _>(self)
+        impl $crate::reference::glwe_packing::GLWEPackingReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn glwe_pack_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
+                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_galois_elements_reference::<$be, _>(self)
             }
 
-            fn glwe_pack_tmp_bytes_default<R, K>(&self, res: &R, key: &K) -> usize
+            fn glwe_pack_tmp_bytes_reference<R, K>(&self, res: &R, key: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_tmp_bytes_default::<$be, _, _, _>(
+                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_tmp_bytes_reference::<$be, _, _, _>(
                     self, res, key,
                 )
             }
 
-            fn glwe_pack_default<R, A, H>(
+            fn glwe_pack_reference<R, A, H>(
                 &self,
                 res: &mut R,
                 a: ::std::collections::HashMap<usize, &mut A>,
@@ -973,7 +974,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                 A: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_reference::<$be, _, _, _, _>(
                     self,
                     res,
                     a,

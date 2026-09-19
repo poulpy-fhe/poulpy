@@ -1,15 +1,15 @@
 //! Public CKKS-facing API for the homomorphic DFT (CoeffsToSlots / SlotsToCoeffs).
 //!
 //! A thin trait on [`Module`] over the free functions in
-//! [`crate::default::dft`], so callers write `module.ckks_coeffs_to_slots(...)`.
+//! [`crate::reference::dft`], so callers write `module.ckks_coeffs_to_slots(...)`.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -31,7 +31,7 @@ use crate::{
 pub trait CKKSDFTOps<BE: Backend> {
     /// Prepares an unprepared [`DFTMatrix`] into its resident
     /// convolution-domain form [`DFTMatrixPrepared`] (see
-    /// [`crate::default::dft::ckks_prepare_dft_matrix`]): each factor's plaintext
+    /// [`crate::reference::dft::ckks_prepare_dft_matrix`]): each factor's plaintext
     /// diagonals are prepared into a `CnvPVec` right operand, trading resident
     /// memory for faster repeated evaluation. The plan and output-format variant
     /// are preserved.
@@ -157,7 +157,7 @@ pub trait CKKSDFTOps<BE: Backend> {
 pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {
     /// Builds the unprepared homomorphic (I)DFT described by `literal` at
     /// scalar precision `F` (the reference chain is
-    /// [`crate::default::dft::ckks_new_dft_matrix`]): each factor matrix is
+    /// [`crate::reference::dft::ckks_new_dft_matrix`]): each factor matrix is
     /// encoded into a CKKS linear transformation with plaintext diagonals,
     /// materialized per factor at eval time. Promote it to the resident form
     /// with [`CKKSDFTOps::ckks_prepare_dft_matrix`]. Each factor's BSGS

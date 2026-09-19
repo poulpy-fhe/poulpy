@@ -20,12 +20,12 @@ use poulpy_hal::{
 use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
-    default::keyswitching::GGLWEProductDefault,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
         Rank, TorusPrecision, gadget_product_limbs, key_size, prepared::GGLWEPreparedFactory,
     },
     oep::GGLWEProductDigitsStridedImpl,
+    reference::keyswitching::GGLWEProductReference,
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
 };
 
@@ -78,7 +78,7 @@ where
         let size_out = a_size;
         let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
         let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
-        let default_tmp = crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+        let default_tmp = crate::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
         let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
@@ -114,7 +114,7 @@ where
         let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
-        crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+        crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
             module,
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
@@ -384,7 +384,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
 pub fn test_gglwe_product_dft_selected<BE>(module: &Module<BE>, base2k: usize)
 where
     BE: poulpy_hal::test_suite::TestBackend<ZnxWord = i64>,
-    Module<BE>: GGLWEProductDefault<BE>
+    Module<BE>: GGLWEProductReference<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VmpPMatAlloc<BE>
@@ -511,7 +511,7 @@ where
 
         let product = |key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchOwned<BE>| {
             let mut res = module.vec_znx_dft_alloc(module.n(), cols_out, size);
-            module.gglwe_product_dft_default(
+            module.gglwe_product_dft_reference(
                 &mut res.to_backend_mut(),
                 &a_dft.to_backend_ref(),
                 key,
@@ -523,8 +523,8 @@ where
 
         let mut scratch = ScratchOwned::<BE>::alloc(
             module
-                .gglwe_product_dft_tmp_bytes_default(size, input_size, &key_of(&parent_pmat, &effective_layout, stride))
-                .max(module.gglwe_product_dft_tmp_bytes_default(size, input_size, &key_of(&sel_pmat, &effective_layout, 1))),
+                .gglwe_product_dft_tmp_bytes_reference(size, input_size, &key_of(&parent_pmat, &effective_layout, stride))
+                .max(module.gglwe_product_dft_tmp_bytes_reference(size, input_size, &key_of(&sel_pmat, &effective_layout, 1))),
         );
         let want = product(&key_of(&sel_pmat, &effective_layout, 1), &mut scratch);
         let have = product(&key_of(&parent_pmat, &effective_layout, stride), &mut scratch);

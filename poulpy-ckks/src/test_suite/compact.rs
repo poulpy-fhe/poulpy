@@ -437,7 +437,7 @@ pub fn test_compact_diagonal_encoder<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     for (slots, want_n) in [(compact_slots(&params), params.n / 4), (params.n / 2, params.n)] {
-        let lt = crate::default::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+        let lt = crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
             module,
             params.base2k.into(),
             params.prec().into(),

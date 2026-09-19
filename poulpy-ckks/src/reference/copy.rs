@@ -1,0 +1,37 @@
+use crate::CKKSResult as Result;
+use poulpy_core::{
+    GLWECopy, GLWEShift,
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
+};
+use poulpy_hal::layouts::{Backend, ScratchArena};
+
+use crate::{CKKSInfos, SetCKKSInfos, ckks_offset_unary};
+
+pub trait CKKSCopyReference<BE: Backend> {
+    fn ckks_copy_tmp_bytes_reference(&self, res_size: usize) -> usize
+    where
+        Self: GLWEShift<BE>,
+    {
+        self.glwe_shift_tmp_bytes(res_size)
+    }
+
+    fn ckks_copy_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Self: GLWECopy<BE> + GLWEShift<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSInfos,
+    {
+        let offset = ckks_offset_unary(dst, src);
+        if offset == 0 {
+            dst.set_meta(src.meta());
+            // `set_meta` no longer carries the budget (it lives in the GLWE `k`),
+            // so propagate `src`'s width explicitly. Stamped before the write,
+            // like every unary op, so the label matches the data.
+            dst.set_log_budget(src.log_budget());
+            self.glwe_copy(dst, src, scratch);
+        } else {
+            crate::ckks_shift_stamp_unary(self, "copy", dst, src, 0, 0, 0, scratch)?;
+        }
+        Ok(())
+    }
+}

@@ -22,7 +22,7 @@ SlotsToCoeffs ─► ModUp ─► CoeffsToSlots ─► EvalMod
 ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrappingOps`).
 CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
 
-The engine follows the usual `api` / `oep` / `default` / `delegates` split.
+The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end test is exactly such a hand-composed reference.

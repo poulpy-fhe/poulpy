@@ -15,13 +15,13 @@ use crate::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
         CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
-    default::bootstrapping::BootstrappingDefault,
     layouts::EvalModPlan,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EncodedLut,
     },
     oep::CKKSEncapsulatedModUpImpl,
+    reference::bootstrapping::BootstrappingReference,
 };
 
 impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingOps<BE> for Module<BE>
@@ -48,7 +48,7 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize {
-        BootstrappingDefault::new(self).ckks_mod_up_tmp_bytes_default(res_size)
+        BootstrappingReference::new(self).ckks_mod_up_tmp_bytes_reference(res_size)
     }
 
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
@@ -62,7 +62,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BootstrappingDefault::new(self).ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout)
+        BootstrappingReference::new(self).ckks_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
@@ -77,7 +77,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BootstrappingDefault::new(self).ckks_functional_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, luts, keys_layout)
+        BootstrappingReference::new(self).ckks_functional_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, luts, keys_layout)
     }
 
     fn ckks_mod_up_into<Dst, Src>(
@@ -92,7 +92,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
-        BootstrappingDefault::new(self).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
+        BootstrappingReference::new(self).ckks_mod_up_into_reference(dst, src, scale_up, scratch)?;
         // Relabel by the message ratio here, so callers never have to stamp
         // metadata by hand after the call.
         let mut meta = dst.meta();
@@ -114,7 +114,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
-        BootstrappingDefault::new(self).ckks_bootstrap_mod_up_default(dst, src, eval_mod, keys, scratch)
+        BootstrappingReference::new(self).ckks_bootstrap_mod_up_reference(dst, src, eval_mod, keys, scratch)
     }
 
     fn ckks_bootstrap<F, K>(
@@ -129,7 +129,7 @@ where
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
-        BootstrappingDefault::new(self).ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
+        BootstrappingReference::new(self).ckks_bootstrap_reference(ct_out, ct_in, ctx, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(
@@ -144,6 +144,6 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BootstrappingDefault::new(self).ckks_functional_bootstrap_default(ct_outs, ct_in, ctx, luts, keys, scratch)
+        BootstrappingReference::new(self).ckks_functional_bootstrap_reference(ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

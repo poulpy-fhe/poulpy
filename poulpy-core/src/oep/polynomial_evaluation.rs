@@ -3,8 +3,8 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    default::polynomial_evaluation::BSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
+    reference::polynomial_evaluation::BSGSOps,
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -52,9 +52,9 @@ pub unsafe trait PolynomialEvaluationImpl: Backend {
 }
 
 /// Override surface carrying the reference BSGS phase implementations.
-pub trait PolynomialEvaluationDefault<BE: Backend> {
+pub trait PolynomialEvaluationReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step_default<Ops, R, P, A, G>(
+    fn glwe_eval_baby_step_reference<Ops, R, P, A, G>(
         &self,
         ops: &Ops,
         res: &mut R,
@@ -70,7 +70,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
-    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, H>(
+    fn glwe_eval_giant_steps_reference<Ops, R, B, V, P, A, G, H>(
         &self,
         ops: &Ops,
         res: &mut R,
@@ -92,7 +92,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
 
 unsafe impl<BE: Backend> PolynomialEvaluationImpl for BE
 where
-    Module<BE>: PolynomialEvaluationDefault<BE>,
+    Module<BE>: PolynomialEvaluationReference<BE>,
 {
     fn glwe_eval_baby_step<Ops, R, P, A, G>(
         module: &Module<BE>,
@@ -110,7 +110,7 @@ where
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
     {
-        module.glwe_eval_baby_step_default::<Ops, R, P, A, G>(ops, res, parity, coeffs, power_basis, scratch)
+        module.glwe_eval_baby_step_reference::<Ops, R, P, A, G>(ops, res, parity, coeffs, power_basis, scratch)
     }
 
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
@@ -132,6 +132,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        module.glwe_eval_giant_steps_default::<Ops, R, B, V, P, A, G, H>(ops, res, baby_steps, power_basis, tsk, scratch)
+        module.glwe_eval_giant_steps_reference::<Ops, R, B, V, P, A, G, H>(ops, res, baby_steps, power_basis, tsk, scratch)
     }
 }

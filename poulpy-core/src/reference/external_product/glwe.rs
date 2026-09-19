@@ -1,0 +1,401 @@
+//! GLWE external-product internals + reference implementations of the
+//! [`GLWEExternalProductReference`] methods.
+//!
+//! Re-exported publicly through `crate::oep::glwe_external_product_reference`.
+
+use crate::api::GLWEBytesOf;
+use poulpy_hal::layouts::VecZnxDftBackendMut;
+use poulpy_hal::{
+    api::{
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
+    },
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+};
+
+use crate::{
+    ScratchArenaTakeCore,
+    api::GLWEExternalProductInternal,
+    layouts::{
+        GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GadgetProductOutputSizeParams, LWEInfos, gadget_product_limbs, gadget_product_output_size,
+    },
+    oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
+    reference::operations::GLWENormalizeReference,
+};
+
+/// Practical limb window used for an immediately normalized GGSW external
+/// product.
+///
+/// This is public so fused higher-level operations which use
+/// [`GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
+/// exactly the same rule as the reference implementation. Although any lower
+/// limb can affect rounding through a sufficiently long carry chain, the
+/// window includes the worst-case norm growth of the signed DFT products and
+/// their VMP accumulation.
+pub fn glwe_external_product_output_size<BE, R, A, G>(res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let product_terms = ggsw_infos
+        .n()
+        .as_usize()
+        .saturating_mul(ggsw_infos.dnum().as_usize())
+        .saturating_mul(ggsw_infos.dsize().as_usize())
+        .saturating_mul((ggsw_infos.rank() + 1).as_usize());
+    gadget_product_output_size(GadgetProductOutputSizeParams {
+        key_size: ggsw_infos.size(),
+        key_base2k: ggsw_infos.base2k(),
+        input_k: a_infos.k(),
+        output_k: res_infos.k(),
+        dsize: ggsw_infos.dsize(),
+        k_aux: ggsw_infos.k_aux(),
+        product_terms,
+        extra_live_limbs: 0,
+    })
+}
+
+fn glwe_external_product_dft_fill<BE, M>(
+    module: &M,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    a: GLWEBackendRef<'_, BE>,
+    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleN
+        + VecZnxDftBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAdd<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes,
+{
+    let cols: usize = (ggsw.rank() + 1).into();
+    let dsize: usize = ggsw.dsize().into();
+    let a_size: usize = a.size();
+    let product_terms = ggsw
+        .n()
+        .as_usize()
+        .saturating_mul(ggsw.dnum().as_usize())
+        .saturating_mul(dsize)
+        .saturating_mul(cols);
+    let product_limbs = gadget_product_limbs(ggsw.base2k(), product_terms);
+    // Same shape as `gglwe_product_dft_reference`, and the same two
+    // constraints hold; see the comment there for why. In short:
+    // `di == 0` is the overwriting pass and must run at the **full**
+    // width so no limb of `res_dft` keeps stale scratch, and it must be
+    // `di == 0` because `vmp_apply_dft_to_dft` covers its destination
+    // fully only at `limb_offset == 0`. The accumulating passes may keep
+    // the narrow view. The spill width includes both the elementary
+    // two-limb product and the accumulation growth for this shape.
+    //
+    // The one difference from the keyswitch: there the operand arrives
+    // already in DFT and each digit is sliced out with
+    // `vec_znx_dft_copy`, here it arrives in coefficients and the stride
+    // is folded into `vec_znx_dft_apply`, so no full-width DFT of `a` is
+    // ever materialized.
+    for di in 0..dsize {
+        let (mut a_dft, mut scratch_1) = scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(module.n(), cols, (a_size + di) / dsize);
+
+        for j in 0..cols {
+            module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
+        }
+
+        if di == 0 {
+            module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
+        } else {
+            let res_compute_size = gglwe_product_digit_output_size(res_dft.size(), ggsw.size(), dsize, di, product_limbs);
+            let mut res_view = res_dft.with_size_mut(res_compute_size);
+            module.vmp_apply_dft_to_dft_add(
+                &mut res_view,
+                &a_dft.to_backend_ref(),
+                &ggsw.data,
+                di,
+                &mut scratch_1.borrow(),
+            );
+        }
+    }
+}
+
+impl<BE: Backend> GLWEExternalProductInternal<BE> for Module<BE>
+where
+    Self: ModuleN
+        + VecZnxDftBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAdd<BE>
+        + VecZnxBigBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalize<BE>
+        + VecZnxNormalize<BE>,
+{
+    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos,
+    {
+        let align: usize = BE::SCRATCH_ALIGN;
+        let in_size: usize = a_infos.k().div_ceil(b_infos.base2k()).div_ceil(b_infos.dsize().into()) as usize;
+        let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, b_infos);
+        let cols: usize = (b_infos.rank() + 1).into();
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(self.n(), cols, in_size);
+        let lvl_1: usize = if b_infos.dsize() > 1 {
+            self.bytes_of_vec_znx_dft(self.n(), cols, output_size)
+        } else {
+            0
+        };
+        let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(output_size, in_size, in_size, cols, cols, b_infos.size());
+        let lvl_3: usize =
+            self.bytes_of_vec_znx_big(self.n(), cols, output_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
+        (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
+    }
+
+    fn glwe_external_product_dft<'r, A>(
+        &self,
+        res_dft: &mut VecZnxDftBackendMut<'r, BE>,
+        a: &A,
+        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE>,
+    {
+        let a = a.to_backend_ref();
+        glwe_external_product_dft_fill(self, res_dft, a, ggsw, scratch);
+    }
+}
+
+// === Free-function defaults for GLWEExternalProductReference ===
+
+pub fn glwe_external_product_dft_fill_tmp_bytes_reference<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    M: ModuleN + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let align: usize = BE::SCRATCH_ALIGN;
+    let in_size: usize = a_infos.k().div_ceil(ggsw_infos.base2k()).div_ceil(ggsw_infos.dsize().into()) as usize;
+    let ggsw_size: usize = ggsw_infos.size();
+    let cols: usize = (ggsw_infos.rank() + 1).into();
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols, in_size);
+    let lvl_1: usize = if ggsw_infos.dsize() > 1 {
+        module.bytes_of_vec_znx_dft(module.n(), cols, ggsw_size)
+    } else {
+        0
+    };
+    let lvl_2: usize = module.vmp_apply_dft_to_dft_tmp_bytes(ggsw_size, in_size, in_size, cols, cols, ggsw_size);
+    lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2
+}
+
+pub fn glwe_external_product_tmp_bytes_reference<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductReference<BE>
+        + GLWEExternalProductInternal<BE>
+        + GLWENormalizeReference<BE>
+        + ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let align: usize = BE::SCRATCH_ALIGN;
+    let cols: usize = res_infos.rank().as_usize() + 1;
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, ggsw_infos);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
+    let lvl_1: usize = module
+        .bytes_of_vec_znx_big(module.n(), cols, output_size)
+        .next_multiple_of(align)
+        + module
+            .vec_znx_idft_apply_tmp_bytes()
+            .max(module.vec_znx_big_normalize_tmp_bytes());
+    let lvl_2: usize = if a_infos.base2k() != ggsw_infos.base2k() {
+        let a_conv_infos = GLWELayout {
+            n: a_infos.n(),
+            base2k: ggsw_infos.base2k(),
+            k: a_infos.k(),
+            rank: a_infos.rank(),
+        };
+        let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
+        let lvl_2_1: usize = module
+            .glwe_normalize_tmp_bytes_reference()
+            .max(module.glwe_external_product_dft_fill_tmp_bytes_reference(&a_conv_infos, ggsw_infos));
+        lvl_2_0 + lvl_2_1
+    } else {
+        module.glwe_external_product_internal_tmp_bytes(res_infos, a_infos, ggsw_infos)
+    };
+    lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
+}
+
+pub fn glwe_external_product_reference<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductReference<BE>
+        + GLWEExternalProductInternal<BE>
+        + GLWENormalizeReference<BE>
+        + ModuleN
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    assert_eq!(ggsw.rank(), a.rank());
+    assert_eq!(ggsw.rank(), res.rank());
+    assert_eq!(ggsw.n(), res.n());
+    assert_eq!(a.n(), res.n());
+    assert!(
+        scratch.available() >= module.glwe_external_product_tmp_bytes_reference(res, a, ggsw),
+        "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
+        scratch.available(),
+        module.glwe_external_product_tmp_bytes_reference(res, a, ggsw)
+    );
+
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, a, ggsw);
+
+    let a_base2k: usize = a.base2k().into();
+    let ggsw_base2k: usize = ggsw.base2k().into();
+    let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
+    let cols: usize = (res.rank() + 1).into();
+    let (mut res_dft, scratch_1) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(module.n(), (res.rank() + 1).into(), output_size);
+
+    let mut scratch = scratch_1;
+    if a_base2k != ggsw_base2k {
+        scratch.scope(|scratch_phase| {
+            let (mut a_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
+                n: a.n(),
+                base2k: ggsw.base2k(),
+                k: (a.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
+                rank: a.rank(),
+            });
+            module.glwe_normalize_reference(&mut a_conv, a, &mut scratch_2.borrow());
+            module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
+        });
+    } else {
+        module.glwe_external_product_dft(&mut res_dft, a, ggsw, &mut scratch.borrow());
+    }
+
+    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
+    let res_dft_ref = res_dft.to_backend_ref();
+    for col in 0..cols {
+        module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
+    }
+    let res_big_ref = res_big.to_backend_ref();
+    let mut res_ref = res.to_backend_mut();
+    for j in 0..cols {
+        module.vec_znx_big_normalize(
+            &mut res_ref.data,
+            res_base2k,
+            res_k,
+            0,
+            j,
+            &res_big_ref,
+            ggsw_base2k,
+            j,
+            &mut scratch.borrow(),
+        );
+    }
+}
+
+pub fn glwe_external_product_assign_reference<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductReference<BE>
+        + GLWEExternalProductInternal<BE>
+        + GLWENormalizeReference<BE>
+        + ModuleN
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+{
+    assert_eq!(ggsw.rank(), res.rank());
+    assert_eq!(ggsw.n(), res.n());
+    assert!(
+        scratch.available() >= module.glwe_external_product_tmp_bytes_reference(res, res, ggsw),
+        "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
+        scratch.available(),
+        module.glwe_external_product_tmp_bytes_reference(res, res, ggsw)
+    );
+
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, ggsw);
+    let res_base2k: usize = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
+    let ggsw_base2k: usize = ggsw.base2k().as_usize();
+    let cols: usize = (res.rank() + 1).into();
+    let (mut res_dft, scratch_1) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(module.n(), (res.rank() + 1).into(), output_size);
+
+    let mut scratch = scratch_1;
+    if res_base2k != ggsw_base2k {
+        scratch.scope(|scratch_phase| {
+            let (mut res_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
+                n: res.n(),
+                base2k: ggsw.base2k(),
+                k: (res.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
+                rank: res.rank(),
+            });
+            module.glwe_normalize_reference(&mut res_conv, res, &mut scratch_2.borrow());
+            module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
+        });
+    } else {
+        module.glwe_external_product_dft(&mut res_dft, res, ggsw, &mut scratch.borrow());
+    }
+
+    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
+    let res_dft_ref = res_dft.to_backend_ref();
+    for col in 0..cols {
+        module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
+    }
+    let res_big_ref = res_big.to_backend_ref();
+    let mut res_ref = res.to_backend_mut();
+    for j in 0..cols {
+        module.vec_znx_big_normalize(
+            &mut res_ref.data,
+            res_base2k,
+            res_k,
+            0,
+            j,
+            &res_big_ref,
+            ggsw_base2k,
+            j,
+            &mut scratch.borrow(),
+        );
+    }
+}

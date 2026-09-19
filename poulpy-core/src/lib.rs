@@ -67,55 +67,55 @@
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
 
 pub mod api;
-pub mod default;
 mod delegates;
 mod dist;
 pub mod error;
 pub mod oep;
+pub mod reference;
 mod scratch;
 mod utils;
 
 pub mod layouts;
 pub use api::*;
-pub use default::encryption::*;
-pub use default::linear_transformation::*;
-pub(crate) use default::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
-pub use default::operations::*;
-pub use default::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use dist::*;
 pub use error::{CoreError, Result};
+pub use reference::encryption::*;
+pub use reference::linear_transformation::*;
+pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
+pub use reference::operations::*;
+pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use scratch::*;
 
 pub(crate) mod decryption {
-    pub(crate) use crate::default::decryption::*;
+    pub(crate) use crate::reference::decryption::*;
 }
 
 pub(crate) mod encryption {
     pub(crate) mod gglwe {
-        pub(crate) use crate::default::encryption::gglwe::*;
+        pub(crate) use crate::reference::encryption::gglwe::*;
     }
 
     pub(crate) mod glwe {
-        pub(crate) use crate::default::encryption::glwe::*;
+        pub(crate) use crate::reference::encryption::glwe::*;
     }
 
     pub(crate) mod glwe_switching_key {
-        pub(crate) use crate::default::encryption::glwe_switching_key::*;
+        pub(crate) use crate::reference::encryption::glwe_switching_key::*;
     }
 
-    pub(crate) use crate::default::encryption::*;
+    pub(crate) use crate::reference::encryption::*;
 }
 
 pub(crate) mod noise {
     pub(crate) mod glwe {
-        pub(crate) use crate::default::noise::glwe::*;
+        pub(crate) use crate::reference::noise::glwe::*;
     }
 
-    pub(crate) use crate::default::noise::*;
+    pub(crate) use crate::reference::noise::*;
 }
 
 pub(crate) mod operations {
-    pub(crate) use crate::default::operations::*;
+    pub(crate) use crate::reference::operations::*;
 }
 
 pub mod test_suite;

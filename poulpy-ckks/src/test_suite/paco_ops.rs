@@ -24,9 +24,9 @@ use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::CKKSConjugateOps,
-    default::paco::ops::{PaCoSlotOps, fold_rotations},
     encoding::paco::cpx::Cpx,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    reference::paco::ops::{PaCoSlotOps, fold_rotations},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,

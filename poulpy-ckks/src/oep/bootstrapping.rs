@@ -50,7 +50,7 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend {
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
 #[macro_export]
-macro_rules! impl_ckks_encapsulated_mod_up_default {
+macro_rules! impl_ckks_encapsulated_mod_up_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSEncapsulatedModUpImpl for $be {
             fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
@@ -66,7 +66,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                 D2S: ::poulpy_core::layouts::GGLWEInfos,
                 S2D: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::default::bootstrapping::ckks_encapsulated_mod_up_tmp_bytes_default(
+                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_tmp_bytes_reference(
                     module,
                     dst_infos,
                     src_infos,
@@ -94,7 +94,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
             {
-                $crate::default::bootstrapping::ckks_encapsulated_mod_up_default(
+                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_reference(
                     module,
                     dst,
                     src,
@@ -108,4 +108,4 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
     };
 }
 
-pub use crate::impl_ckks_encapsulated_mod_up_default;
+pub use crate::impl_ckks_encapsulated_mod_up_reference;

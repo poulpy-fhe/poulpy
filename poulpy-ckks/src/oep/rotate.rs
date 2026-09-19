@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::rotate::CKKSRotateDefault;
+use crate::reference::rotate::CKKSRotateReference;
 
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
@@ -44,10 +44,10 @@ pub unsafe trait CKKSRotateImpl: Backend {
 unsafe impl<BE: Backend> CKKSRotateImpl for BE
 where
     BE: Backend + HalVecZnxImpl,
-    Module<BE>: CKKSRotateDefault<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
+    Module<BE>: CKKSRotateReference<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
 {
     fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {
-        module.ckks_rotate_tmp_bytes_default(ct_infos, key_infos)
+        module.ckks_rotate_tmp_bytes_reference(ct_infos, key_infos)
     }
 
     fn ckks_rotate_into_impl<Dst, Src>(
@@ -61,7 +61,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_rotate_into_default(dst, src, key, scratch)
+        module.ckks_rotate_into_reference(dst, src, key, scratch)
     }
 
     fn ckks_rotate_assign_impl<Dst>(
@@ -73,14 +73,14 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_rotate_assign_default(dst, key, scratch)
+        module.ckks_rotate_assign_reference(dst, key, scratch)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_rotate_defaults {
+macro_rules! impl_ckks_rotate_reference {
     ($be:ty) => {
-        impl $crate::default::rotate::CKKSRotateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::rotate::CKKSRotateReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_rotate_defaults;
+pub use crate::impl_ckks_rotate_reference;

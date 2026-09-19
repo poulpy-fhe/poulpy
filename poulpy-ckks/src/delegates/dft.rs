@@ -1,5 +1,5 @@
 //! Delegating impl of the public [`CKKSDFTOps`] API onto the [`DFTImpl`] backend
-//! hook, completing the `api → oep → delegates ← default` chain for the
+//! hook, completing the `api → oep → delegates ← reference` chain for the
 //! homomorphic DFT.
 
 #![allow(clippy::too_many_arguments)]
@@ -7,8 +7,8 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 

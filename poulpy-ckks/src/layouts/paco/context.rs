@@ -28,7 +28,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
-use crate::default::paco::lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
+use crate::reference::paco::lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
     CKKSMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
@@ -216,7 +216,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 .log_delta()
                 .checked_add(dft.log_budget())
                 .context("PaCo factor torus width overflows usize")?;
-            crate::default::ckks_encode_linear_transformation_from_diagonals(
+            crate::reference::ckks_encode_linear_transformation_from_diagonals(
                 module,
                 base2k,
                 crate::CoeffsMeta {

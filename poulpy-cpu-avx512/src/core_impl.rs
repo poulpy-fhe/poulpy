@@ -6,15 +6,16 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
-    default::operations::{GLWETensoringDefault, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
-    impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
-    impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
-    impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
-    impl_ggsw_keyswitch_defaults_full, impl_glwe_automorphism_defaults_full, impl_glwe_external_product_defaults_full,
-    impl_glwe_keyswitch_defaults_full, impl_glwe_packing_defaults_full, impl_glwe_tensoring_default,
-    impl_glwe_trace_defaults_full, impl_linear_transformation_defaults_full, impl_lwe_keyswitch_defaults_full,
+    impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
+    impl_gglwe_product_digits_strided_reference, impl_ggsw_automorphism_reference_full,
+    impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full, impl_glwe_automorphism_reference_full,
+    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
+    impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
+    impl_lwe_keyswitch_reference_full,
     layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
     oep::GLWETensoringImpl,
+    reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
 use poulpy_hal::{
     api::{
@@ -29,12 +30,12 @@ use poulpy_hal::{
     },
 };
 
-impl_glwe_tensoring_default!(FFT64Avx512);
+impl_glwe_tensoring_reference!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_default!(FFT64Avx512Rayon);
-impl_gglwe_product_digits_strided_default!(FFT64Avx512);
+impl_glwe_tensoring_reference!(FFT64Avx512Rayon);
+impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_default!(FFT64Avx512Rayon);
+impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -452,7 +453,7 @@ macro_rules! impl_rank_one_tensoring {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply_tmp_bytes(module, res, a, b)
                 } else {
-                    module.glwe_tensor_apply_tmp_bytes_default(res, a, b)
+                    module.glwe_tensor_apply_tmp_bytes_reference(res, a, b)
                 }
             }
 
@@ -464,7 +465,7 @@ macro_rules! impl_rank_one_tensoring {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_square_tmp_bytes(module, res, a)
                 } else {
-                    module.glwe_tensor_square_apply_tmp_bytes_default(res, a)
+                    module.glwe_tensor_square_apply_tmp_bytes_reference(res, a)
                 }
             }
 
@@ -483,7 +484,7 @@ macro_rules! impl_rank_one_tensoring {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply(module, cnv_offset, res, a, b, scratch)
                 } else {
-                    module.glwe_tensor_apply_default(cnv_offset, res, a, b, scratch)
+                    module.glwe_tensor_apply_reference(cnv_offset, res, a, b, scratch)
                 }
             }
 
@@ -500,7 +501,7 @@ macro_rules! impl_rank_one_tensoring {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_square(module, cnv_offset, res, a, scratch)
                 } else {
-                    module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)
+                    module.glwe_tensor_square_apply_reference(cnv_offset, res, a, scratch)
                 }
             }
 
@@ -515,7 +516,7 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEToBackendRef<$be> + GLWEInfos,
                 T: poulpy_core::layouts::GetTensorKey<$be>,
             {
-                module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
+                module.glwe_tensor_relinearize_reference(res, a, tsk, scratch)
             }
 
             fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, tsk: &B) -> usize
@@ -524,7 +525,7 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEInfos,
                 B: GGLWEInfos,
             {
-                module.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
+                module.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk)
             }
         }
     };
@@ -635,167 +636,167 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
     }
 }
 
-impl_glwe_automorphism_defaults_full!(FFT64Avx512);
-impl_glwe_automorphism_defaults_full!(NTT4x30Avx512);
+impl_glwe_automorphism_reference_full!(FFT64Avx512);
+impl_glwe_automorphism_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_glwe_automorphism_defaults_full!(NTT3x42Ifma);
+impl_glwe_automorphism_reference_full!(NTT3x42Ifma);
 
-impl_ggsw_automorphism_defaults_full!(FFT64Avx512);
-impl_ggsw_automorphism_defaults_full!(NTT4x30Avx512);
+impl_ggsw_automorphism_reference_full!(FFT64Avx512);
+impl_ggsw_automorphism_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_ggsw_automorphism_defaults_full!(NTT3x42Ifma);
+impl_ggsw_automorphism_reference_full!(NTT3x42Ifma);
 
-impl_gglwe_automorphism_defaults_full!(FFT64Avx512);
-impl_gglwe_automorphism_defaults_full!(NTT4x30Avx512);
+impl_gglwe_automorphism_reference_full!(FFT64Avx512);
+impl_gglwe_automorphism_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_gglwe_automorphism_defaults_full!(NTT3x42Ifma);
+impl_gglwe_automorphism_reference_full!(NTT3x42Ifma);
 
-impl_decryption_defaults_full!(FFT64Avx512);
-impl_decryption_defaults_full!(NTT4x30Avx512);
+impl_decryption_reference_full!(FFT64Avx512);
+impl_decryption_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_decryption_defaults_full!(NTT3x42Ifma);
+impl_decryption_reference_full!(NTT3x42Ifma);
 
-impl_glwe_trace_defaults_full!(FFT64Avx512);
-impl_glwe_trace_defaults_full!(NTT4x30Avx512);
+impl_glwe_trace_reference_full!(FFT64Avx512);
+impl_glwe_trace_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_glwe_trace_defaults_full!(NTT3x42Ifma);
+impl_glwe_trace_reference_full!(NTT3x42Ifma);
 
-impl_glwe_packing_defaults_full!(FFT64Avx512);
-impl_glwe_packing_defaults_full!(NTT4x30Avx512);
+impl_glwe_packing_reference_full!(FFT64Avx512);
+impl_glwe_packing_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_glwe_packing_defaults_full!(NTT3x42Ifma);
+impl_glwe_packing_reference_full!(NTT3x42Ifma);
 
-impl_conversion_defaults_full!(FFT64Avx512);
-impl_conversion_defaults_full!(NTT4x30Avx512);
+impl_conversion_reference_full!(FFT64Avx512);
+impl_conversion_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_conversion_defaults_full!(NTT3x42Ifma);
+impl_conversion_reference_full!(NTT3x42Ifma);
 
-impl_glwe_keyswitch_defaults_full!(FFT64Avx512);
-impl_glwe_keyswitch_defaults_full!(NTT4x30Avx512);
+impl_glwe_keyswitch_reference_full!(FFT64Avx512);
+impl_glwe_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_glwe_keyswitch_defaults_full!(NTT3x42Ifma);
+impl_glwe_keyswitch_reference_full!(NTT3x42Ifma);
 
-impl_gglwe_keyswitch_defaults_full!(FFT64Avx512);
-impl_gglwe_keyswitch_defaults_full!(NTT4x30Avx512);
+impl_gglwe_keyswitch_reference_full!(FFT64Avx512);
+impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_gglwe_keyswitch_defaults_full!(NTT3x42Ifma);
+impl_gglwe_keyswitch_reference_full!(NTT3x42Ifma);
 
-impl_ggsw_keyswitch_defaults_full!(FFT64Avx512);
-impl_ggsw_keyswitch_defaults_full!(NTT4x30Avx512);
+impl_ggsw_keyswitch_reference_full!(FFT64Avx512);
+impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_ggsw_keyswitch_defaults_full!(NTT3x42Ifma);
+impl_ggsw_keyswitch_reference_full!(NTT3x42Ifma);
 
-impl_lwe_keyswitch_defaults_full!(FFT64Avx512);
-impl_lwe_keyswitch_defaults_full!(NTT4x30Avx512);
+impl_lwe_keyswitch_reference_full!(FFT64Avx512);
+impl_lwe_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_lwe_keyswitch_defaults_full!(NTT3x42Ifma);
+impl_lwe_keyswitch_reference_full!(NTT3x42Ifma);
 
-impl_encryption_defaults_full!(FFT64Avx512);
+impl_encryption_reference_full!(FFT64Avx512);
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512, fft64);
-impl_encryption_defaults_full!(NTT4x30Avx512);
+impl_encryption_reference_full!(NTT4x30Avx512);
 poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
-impl_encryption_defaults_full!(NTT3x42Ifma);
+impl_encryption_reference_full!(NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_ref::impl_sampling_host!(NTT3x42Ifma, ntt4x30);
 
-impl_glwe_external_product_defaults_full!(FFT64Avx512);
-impl_glwe_external_product_defaults_full!(NTT4x30Avx512);
+impl_glwe_external_product_reference_full!(FFT64Avx512);
+impl_glwe_external_product_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_glwe_external_product_defaults_full!(NTT3x42Ifma);
+impl_glwe_external_product_reference_full!(NTT3x42Ifma);
 
-impl_gglwe_external_product_defaults_full!(FFT64Avx512);
-impl_gglwe_external_product_defaults_full!(NTT4x30Avx512);
+impl_gglwe_external_product_reference_full!(FFT64Avx512);
+impl_gglwe_external_product_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_gglwe_external_product_defaults_full!(NTT3x42Ifma);
+impl_gglwe_external_product_reference_full!(NTT3x42Ifma);
 
-impl_ggsw_external_product_defaults_full!(FFT64Avx512);
-impl_ggsw_external_product_defaults_full!(NTT4x30Avx512);
+impl_ggsw_external_product_reference_full!(FFT64Avx512);
+impl_ggsw_external_product_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_ggsw_external_product_defaults_full!(NTT3x42Ifma);
+impl_ggsw_external_product_reference_full!(NTT3x42Ifma);
 
-impl_linear_transformation_defaults_full!(FFT64Avx512);
-impl_linear_transformation_defaults_full!(NTT4x30Avx512);
+impl_linear_transformation_reference_full!(FFT64Avx512);
+impl_linear_transformation_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-impl_linear_transformation_defaults_full!(NTT3x42Ifma);
+impl_linear_transformation_reference_full!(NTT3x42Ifma);
 
 #[cfg(feature = "enable-rayon")]
-impl_glwe_automorphism_defaults_full!(FFT64Avx512Rayon);
+impl_glwe_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ggsw_automorphism_defaults_full!(FFT64Avx512Rayon);
+impl_ggsw_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_automorphism_defaults_full!(FFT64Avx512Rayon);
+impl_gglwe_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_decryption_defaults_full!(FFT64Avx512Rayon);
+impl_decryption_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_trace_defaults_full!(FFT64Avx512Rayon);
+impl_glwe_trace_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_packing_defaults_full!(FFT64Avx512Rayon);
+impl_glwe_packing_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_conversion_defaults_full!(FFT64Avx512Rayon);
+impl_conversion_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+impl_glwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+impl_gglwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ggsw_keyswitch_defaults_full!(FFT64Avx512Rayon);
+impl_ggsw_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_lwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+impl_lwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_encryption_defaults_full!(FFT64Avx512Rayon);
+impl_encryption_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_external_product_defaults_full!(FFT64Avx512Rayon);
+impl_glwe_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_external_product_defaults_full!(FFT64Avx512Rayon);
+impl_gglwe_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ggsw_external_product_defaults_full!(FFT64Avx512Rayon);
+impl_ggsw_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_linear_transformation_defaults_full!(FFT64Avx512Rayon);
+impl_linear_transformation_reference_full!(FFT64Avx512Rayon);
 
 #[cfg(feature = "enable-rayon")]
 mod ntt4x30_rayon_defaults {
     use super::*;
 
-    impl_glwe_automorphism_defaults_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_automorphism_defaults_full!(NTT4x30Avx512Rayon);
-    impl_gglwe_automorphism_defaults_full!(NTT4x30Avx512Rayon);
-    impl_decryption_defaults_full!(NTT4x30Avx512Rayon);
-    impl_glwe_trace_defaults_full!(NTT4x30Avx512Rayon);
-    impl_glwe_packing_defaults_full!(NTT4x30Avx512Rayon);
-    impl_conversion_defaults_full!(NTT4x30Avx512Rayon);
-    impl_glwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
-    impl_gglwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
-    impl_lwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
-    impl_encryption_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_decryption_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_trace_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_packing_reference_full!(NTT4x30Avx512Rayon);
+    impl_conversion_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_lwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_encryption_reference_full!(NTT4x30Avx512Rayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512Rayon, ntt4x30);
-    impl_glwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
-    impl_gglwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_external_product_defaults_full!(NTT4x30Avx512Rayon);
-    impl_linear_transformation_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_linear_transformation_reference_full!(NTT4x30Avx512Rayon);
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 mod ifma_rayon_defaults {
     use super::*;
 
-    impl_glwe_automorphism_defaults_full!(NTT3x42IfmaRayon);
-    impl_ggsw_automorphism_defaults_full!(NTT3x42IfmaRayon);
-    impl_gglwe_automorphism_defaults_full!(NTT3x42IfmaRayon);
-    impl_decryption_defaults_full!(NTT3x42IfmaRayon);
-    impl_glwe_trace_defaults_full!(NTT3x42IfmaRayon);
-    impl_glwe_packing_defaults_full!(NTT3x42IfmaRayon);
-    impl_conversion_defaults_full!(NTT3x42IfmaRayon);
-    impl_glwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
-    impl_gglwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
-    impl_ggsw_keyswitch_defaults_full!(NTT3x42IfmaRayon);
-    impl_lwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
-    impl_encryption_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_decryption_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_trace_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_packing_reference_full!(NTT3x42IfmaRayon);
+    impl_conversion_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_lwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_encryption_reference_full!(NTT3x42IfmaRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
-    impl_glwe_external_product_defaults_full!(NTT3x42IfmaRayon);
-    impl_gglwe_external_product_defaults_full!(NTT3x42IfmaRayon);
-    impl_ggsw_external_product_defaults_full!(NTT3x42IfmaRayon);
-    impl_linear_transformation_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_linear_transformation_reference_full!(NTT3x42IfmaRayon);
 }

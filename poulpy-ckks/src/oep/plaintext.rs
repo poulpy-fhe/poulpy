@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::plaintext::CKKSPlaintextDefault;
+use crate::reference::plaintext::CKKSPlaintextReference;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
@@ -32,10 +32,10 @@ pub unsafe trait CKKSPlaintextZnxImpl: Backend {
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
+    Module<BE>: CKKSPlaintextReference<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
 {
     fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_extract_pt_tmp_bytes_default(res_size)
+        module.ckks_extract_pt_tmp_bytes_reference(res_size)
     }
 
     fn ckks_extract_pt_impl<Dst, Src>(
@@ -48,14 +48,14 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        module.ckks_extract_pt_default(dst, src, scratch)
+        module.ckks_extract_pt_reference(dst, src, scratch)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_plaintext_defaults {
+macro_rules! impl_ckks_plaintext_reference {
     ($be:ty) => {
-        impl $crate::default::plaintext::CKKSPlaintextDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::plaintext::CKKSPlaintextReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_plaintext_defaults;
+pub use crate::impl_ckks_plaintext_reference;

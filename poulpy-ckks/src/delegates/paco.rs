@@ -14,15 +14,15 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoOps, CKKSRotateOps,
         CKKSSubOps, PaCoScalar,
     },
-    default::paco::{
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
+    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    reference::paco::{
         ops::PaCoSlotOps,
         parallel::{
             paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into, paco_bootstrap_parallel_into,
         },
         preflight::paco_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>

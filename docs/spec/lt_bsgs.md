@@ -18,13 +18,13 @@ implementation that realizes this specification.
 
 > **Implementation status.** The engine lives in **poulpy-core** as the scheme-agnostic
 > `GLWELinearTransformations` module tree
-> ([`poulpy-core/src/default/linear_transformation.rs`](../../poulpy-core/src/default/linear_transformation.rs)):
+> ([`poulpy-core/src/reference/linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs)):
 > the module root re-exports focused files for indexing (§3), preparation (§5), hoisted
 > baby rotations (§6.2), prepared inner products (§6.3), lazy giant rotations (§6.3), and
 > final normalization (§6.4). The one-shot borrowed API prepares a temporary transform
 > internally; the prepared evaluator implements the hoisted BSGS strategy described here. The
 > CKKS API
-> [`poulpy-ckks/src/default/linear_transformation.rs`](../../poulpy-ckks/src/default/linear_transformation.rs)
+> [`poulpy-ckks/src/reference/linear_transformation.rs`](../../poulpy-ckks/src/reference/linear_transformation.rs)
 > owns all `log_delta`/`log_budget` math: it derives the convolution alignment and result
 > metadata, then delegates to the core engine.
 
@@ -123,8 +123,8 @@ Primitives (all already implemented in the HAL):
 
 The composite `VMP → IDFT → add-body → normalize → automorphism` is exactly the GLWE
 automorphism in
-[`poulpy-core/.../automorphism/glwe.rs`](../../poulpy-core/src/default/automorphism/glwe.rs);
-the baby-step rotation reuses `glwe_automorphism_default` verbatim, the giant-step
+[`poulpy-core/.../automorphism/glwe.rs`](../../poulpy-core/src/reference/automorphism/glwe.rs);
+the baby-step rotation reuses `glwe_automorphism_reference` verbatim, the giant-step
 rotation needs one new deferred-normalization variant (§11).
 
 ---
@@ -234,7 +234,7 @@ return res                                                     # SMALL, encrypts
 
 Let `KS_g` be the key-switch with `autokey[g]` and `φ_g` the ring automorphism, so that
 `rot(ct, k) = φ_{gal(k)}(KS_{gal(k)}(ct))` (Poulpy's key-switch-then-permute order, see
-`glwe_automorphism_default`). Hoisting only shares the input DFT `a_dft` across the
+`glwe_automorphism_reference`). Hoisting only shares the input DFT `a_dft` across the
 per-`k` VMPs; it computes the identical `φ_g(KS_g(ct))`, so each `L[k]` is a faithful
 encryption of `rot(v, k)`.
 
@@ -331,7 +331,7 @@ the IDFT+normalize — i.e. they expose neither the hoisting seam nor the lazy-n
 seam this algorithm needs. From inside poulpy-core the right primitives are reachable;
 from poulpy-ckks they are not.
 
-- **Core engine.** `poulpy-core/src/default/linear_transformation/` mirrors the
+- **Core engine.** `poulpy-core/src/reference/linear_transformation/` mirrors the
   `automorphism` and `keyswitching` split. It exposes prepared-transform evaluation
   through `glwe_eval_linear_transformation`, which takes a prepared transform, prepared
   baby rotations, and the keyed set of GGLWE automorphism keys (`GetGaloisElement`).
@@ -348,19 +348,19 @@ from poulpy-ckks they are not.
   `vec_znx_dft_apply`, reused per key). For `dsize == 1` this is a single HAL call,
   `vmp_apply_dft_to_dft` (a fused `vmp_apply_dft_to_dft_add` also exists); for
   `dsize > 1` it is the digit-decomposition loop already implemented and tested in
-  `gglwe_product_dft_default`
-  ([keyswitching/glwe.rs:123](../../poulpy-core/src/default/keyswitching/glwe.rs)) — reuse
+  `gglwe_product_dft_reference`
+  ([keyswitching/glwe.rs:123](../../poulpy-core/src/reference/keyswitching/glwe.rs)) — reuse
   it, do not reimplement it in HAL.
 - **Glue is raw HAL.** Everything around the VMP is HAL: `vec_znx_idft_apply`,
   `vec_znx_big_add_small_assign` / `vec_znx_big_add_assign`, `vec_znx_automorphism` /
   `vec_znx_big_automorphism_assign`, `vec_znx_big_normalize`, and the `Convolution` trait
   (`cnv_apply_dft`, `vec_znx_dft_add_assign`, `vec_znx_idft_apply`) for `PROD`. This is
-  the same "reused VMP + HAL glue" construction style as `glwe_automorphism_add_default`.
+  the same "reused VMP + HAL glue" construction style as `glwe_automorphism_add_reference`.
 - **New helper needed.** Phase B's `ROT` is a *deferred-normalization plain
   automorphism*: `gglwe_product_dft → idft → big_add(carry body) → big_automorphism`,
   with **no** final normalize and **no** add-after-automorphism. It is a small variant
-  of `glwe_automorphism_add_default`
-  ([automorphism/glwe.rs:115](../../poulpy-core/src/default/automorphism/glwe.rs)) — that
+  of `glwe_automorphism_add_reference`
+  ([automorphism/glwe.rs:115](../../poulpy-core/src/reference/automorphism/glwe.rs)) — that
   function has the right `BIG`-automorphism mechanics but the wrong (`res = a + φ(KS a)`)
   add semantics; the BSGS path wants plain `res = φ(KS a)` left un-normalized in `BIG`.
   Factor it next to the existing automorphism variants so it can share their scratch
@@ -369,7 +369,7 @@ from poulpy-ckks they are not.
   `(r+1)`-column DFT accumulator + one DFT temp (for the convolution accumulate), the
   `BIG` final accumulator, plus the max of the VMP / IDFT / normalize / convolution
   `*_tmp_bytes`. Follow the additive-layout pattern of
-  `glwe_keyswitch_tmp_bytes_default`.
+  `glwe_keyswitch_tmp_bytes_reference`.
 - **Hoisting seam.** Factor the "DFT the mask once, `gglwe_product_dft` per key" loop so
   both Phase A (many baby keys, one input) and any future hoisted-giant-step optimization
   can share it.

@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::imag::CKKSImagDefault;
+use crate::reference::imag::CKKSImagReference;
 
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
@@ -55,10 +55,10 @@ unsafe impl<BE: Backend> CKKSImagImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>:
-        crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
+        crate::reference::imag::CKKSImagReference<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
     fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_mul_i_tmp_bytes_default(res_size)
+        module.ckks_mul_i_tmp_bytes_reference(res_size)
     }
 
     fn ckks_mul_i_into_impl<Dst, Src>(
@@ -71,18 +71,18 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_mul_i_into_default(dst, src, scratch)
+        module.ckks_mul_i_into_reference(dst, src, scratch)
     }
 
     fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_mul_i_assign_default(dst, scratch)
+        module.ckks_mul_i_assign_reference(dst, scratch)
     }
 
     fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_div_i_tmp_bytes_default(res_size)
+        module.ckks_div_i_tmp_bytes_reference(res_size)
     }
 
     fn ckks_div_i_into_impl<Dst, Src>(
@@ -95,21 +95,21 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_div_i_into_default(dst, src, scratch)
+        module.ckks_div_i_into_reference(dst, src, scratch)
     }
 
     fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_div_i_assign_default(dst, scratch)
+        module.ckks_div_i_assign_reference(dst, scratch)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_imag_defaults {
+macro_rules! impl_ckks_imag_reference {
     ($be:ty) => {
-        impl $crate::default::imag::CKKSImagDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::imag::CKKSImagReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_imag_defaults;
+pub use crate::impl_ckks_imag_reference;

@@ -32,9 +32,9 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
-    default::paco::ops::PaCoSlotOps,
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
+    reference::paco::ops::PaCoSlotOps,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
