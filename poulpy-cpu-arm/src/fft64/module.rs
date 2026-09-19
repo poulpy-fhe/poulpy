@@ -24,6 +24,7 @@ impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
 impl Backend for FFT64Neon {
     const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
