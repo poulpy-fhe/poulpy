@@ -877,7 +877,7 @@ where
     }
 }
 /// Implements [`GLWETraceReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_trace_reference`] free function.
+/// the corresponding free function in [`crate::reference::glwe_trace`].
 #[macro_export]
 macro_rules! impl_glwe_trace_reference_full {
     ($be:ty) => {
@@ -943,7 +943,7 @@ macro_rules! impl_glwe_trace_reference_full {
 }
 
 /// Implements [`GLWEPackingReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_packing_reference`] free function.
+/// the corresponding free function in [`crate::reference::glwe_packing`].
 #[macro_export]
 macro_rules! impl_glwe_packing_reference_full {
     ($be:ty) => {

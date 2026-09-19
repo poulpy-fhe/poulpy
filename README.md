@@ -63,21 +63,21 @@ Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same intern
 |--------|------|
 | `api` | Public traits user code calls. Bounds reference `oep` for the backend capabilities they need. |
 | `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. |
-| `reference` | The reference implementation of every operation: portable compositions of the HAL as safe trait methods, what every new backend gets for free. |
+| `reference` | The implementation of every operation: portable compositions of the HAL as safe trait methods, the definition of what each operation computes and the only validated circuit. Every backend runs it unless it overrides an operation with a faster route to the same result. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. Composite operations also live here. |
 
 ### Overriding at Any Level
 
-A backend overrides any operation by implementing the corresponding `oep` trait directly instead of relying on the blanket `reference` wiring. Only the hot-path operations need overrides; everything else inherits the portable `reference` implementation for free. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
+`reference` is not a fallback: it is the implementation, and an override is a faster route to the same result (a fused kernel, device-native code, another layout), never a different behaviour. A backend overrides an operation by implementing the corresponding `oep` trait directly instead of the blanket `reference` wiring. An override is validated, not trusted: the parity suite runs the operation on the backend under test and on an attested backend, on the same inputs, and requires the same result. Attestation is transitive: the oracle is `reference`, the portable backend runs it directly, and a backend attested against an attested backend is attested itself, so a new backend need not test against the oracle when an attested one is at hand (a GPU backend against an attested AVX-512 backend, for example). Every OEP method has such a test, and an override is correct only when its parity test passes. No passing parity test, no override. Only the hot-path operations need overrides; everything else runs the `reference` implementation. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
 
 ### Integrating a Backend
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `reference` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and each one is accepted only with its parity test passing against an attested backend, attestation being transitive back to `reference` (`core_parity_test_suite!`, the CKKS and bin-fhe parity suites, `cross_backend_test_suite!` and `test_suite::derived` for the HAL).
 
 See `poulpy-cpu-ref` for the reference implementation of all four steps.
 

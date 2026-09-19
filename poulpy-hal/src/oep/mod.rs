@@ -11,7 +11,12 @@
 //! Operations classified *derived* or *variant* carry a default body composed
 //! from the basis methods of the same backend (see [`crate::oep::derived`]); a backend
 //! implements the basis and inherits the rest, then overrides where a fused
-//! kernel is worth it, overriding a body and its `_tmp_bytes` together.
+//! kernel is worth it, overriding a body and its `_tmp_bytes` together. The
+//! default body is the definition of the operation; `test_suite::derived` and
+//! `cross_backend_test_suite!` validate every override against it, directly
+//! or through an attested backend (attestation is transitive back to the default
+//! body, so any attested backend serves as the oracle): an override is a faster route
+//! to the same result, correct only when that test passes.
 //!
 //! The exception is a `_tmp_bytes` that sizes a whole family rather than one
 //! body, `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and

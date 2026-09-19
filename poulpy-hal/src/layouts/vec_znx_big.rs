@@ -177,7 +177,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == B::bytes_of_vec_znx_big(n, cols, size));
+        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_vec_znx_big(n, cols, size)));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxBig {
             data,

@@ -317,3 +317,50 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
         },
     );
 }
+
+/// Extracting into a plaintext of another degree is a `PlaintextDegreeMismatch`.
+pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let src_prec = extract_src_prec(&params);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let (re1, im1) = test_vector_1::<F>(m);
+    let ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        src_prec.k().as_usize(),
+        &re1,
+        &im1,
+        src_prec,
+        &mut scratch.borrow(),
+    );
+    // A plaintext at half the ciphertext degree: the extraction cannot embed it.
+    let mut pt = host_module.ckks_pt_vec_alloc_compact(m / 2, params.base2k.into(), src_prec.k());
+    pt.set_meta(src_prec.meta());
+    let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
+    assert_ckks_error(
+        "decrypt_extract_degree_mismatch",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_extract_pt",
+            ct_n: params.n,
+            pt_n: params.n / 2,
+        },
+    );
+}

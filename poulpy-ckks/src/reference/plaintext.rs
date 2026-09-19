@@ -165,6 +165,14 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Self: VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;
+        if dst.n() != src.n() {
+            return Err(crate::CKKSCompositionError::PlaintextDegreeMismatch {
+                op: "ckks_extract_pt",
+                ct_n: src.n().as_usize(),
+                pt_n: dst.n().as_usize(),
+            }
+            .into());
+        }
         // The source budget is derived from the decrypted plaintext's torus width
         // `k` (which spans the source ciphertext) and the source scale `log_delta`.
         let src_log_budget = src.k().as_usize().saturating_sub(src_meta.log_delta);

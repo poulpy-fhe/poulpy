@@ -41,10 +41,6 @@ impl Backend for SrcBackend {
         bytes.to_vec()
     }
 
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
-    }
-
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
         buf.clone()
     }
@@ -169,10 +165,6 @@ impl Backend for DstBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         bytes.to_vec()
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {

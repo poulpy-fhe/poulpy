@@ -101,7 +101,7 @@ pub unsafe trait GGSWExternalProductImpl: Backend {
 /// Override surface for the GLWE external-product sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`glwe_external_product_reference`] for reference algorithms a backend may forward to.
+/// [`crate::reference::external_product::glwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GLWEExternalProductReference<BE: Backend> {
     fn glwe_external_product_dft_fill_tmp_bytes_reference<A, G>(&self, a_infos: &A, ggsw_infos: &G) -> usize
     where
@@ -302,7 +302,7 @@ where
 }
 
 /// Implements [`GLWEExternalProductReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_external_product_reference`] free function.
+/// the corresponding free function in [`crate::reference::external_product::glwe`].
 #[macro_export]
 macro_rules! impl_glwe_external_product_reference_full {
     ($be:ty) => {
@@ -360,7 +360,7 @@ macro_rules! impl_glwe_external_product_reference_full {
 }
 
 /// Implements [`GGLWEExternalProductReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`gglwe_external_product_reference`] free function.
+/// the corresponding free function in [`crate::reference::external_product::gglwe`].
 #[macro_export]
 macro_rules! impl_gglwe_external_product_reference_full {
     ($be:ty) => {
@@ -408,7 +408,7 @@ macro_rules! impl_gglwe_external_product_reference_full {
 }
 
 /// Implements [`GGSWExternalProductReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`ggsw_external_product_reference`] free function.
+/// the corresponding free function in [`crate::reference::external_product::ggsw`].
 #[macro_export]
 macro_rules! impl_ggsw_external_product_reference_full {
     ($be:ty) => {

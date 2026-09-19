@@ -6,7 +6,12 @@
 //! The public operation traits live in [`api`], while their blanket
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
 //! backend extension points in [`oep`]. This makes the crate portable
-//! across CPU, AVX, and future backends.
+//! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
+//! implementation of every operation, the only validated circuit; a backend
+//! override is a faster route to the same result, validated by the parity
+//! suite against an attested backend (attestation is transitive back to the
+//! reference, so any attested backend serves as the oracle) and correct only when that
+//! test passes.
 //!
 //! # Architecture
 //!

@@ -47,9 +47,6 @@ impl Backend for NTT4x30Neon {
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         AlignedBuf::from(bytes)
     }
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
         buf.to_vec()
     }

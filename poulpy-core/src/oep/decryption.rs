@@ -66,8 +66,8 @@ pub unsafe trait DecryptionImpl: Backend {
 
 /// Override surface for the decryption family.
 ///
-/// Abstract: no HAL supertraits, no default method bodies. See [`decryption_reference`]
-/// for reference algorithms a backend may forward to.
+/// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::decryption`]
+/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait DecryptionReference<BE: Backend> {
     fn glwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -118,7 +118,7 @@ pub trait DecryptionReference<BE: Backend> {
 }
 
 /// Implements [`DecryptionReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`decryption_reference`] free function.
+/// the corresponding free function in [`crate::reference::decryption`].
 #[macro_export]
 macro_rules! impl_decryption_reference_full {
     ($be:ty) => {

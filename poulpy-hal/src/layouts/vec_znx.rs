@@ -400,19 +400,19 @@ impl<W: ZnxWord> VecZnx<AlignedBuf, W> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `bytes_of(n, cols, size)`; a `Vec<u8>`
-    /// argument is first copied into storage padded to a 64-byte multiple, so its padded
-    /// length is what is compared.
+    /// Panics if the buffer length is not `bytes_of(n, cols, size)` rounded up to the
+    /// allocation padding ([`padded_bytes`](crate::layouts::padded_bytes)); a `Vec<u8>`
+    /// argument is first copied into padded storage.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
         assert!(
-            data.len() == Self::bytes_of(n, cols, size),
-            "from_bytes: data.len()={} != bytes_of({}, {}, {})={}",
+            data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, cols, size)),
+            "from_bytes: data.len()={} != padded bytes_of({}, {}, {})={}",
             data.len(),
             n,
             cols,
             size,
-            Self::bytes_of(n, cols, size)
+            crate::layouts::padded_bytes(Self::bytes_of(n, cols, size))
         );
         Self {
             data,

@@ -77,8 +77,11 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
     /// Copies a host-owned byte buffer into backend-owned storage.
     ///
-    /// The buffer may be longer than `bytes`; the extra bytes are zero.
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf;
+    /// The buffer may be longer than `bytes`; the extra bytes are zero. The
+    /// default body copies through [`Self::from_host_bytes`].
+    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
+        Self::from_host_bytes(&bytes)
+    }
     /// Copies the contents of a backend-owned buffer into a fresh host `Vec<u8>`.
     ///
     /// For host backends this is typically a simple clone of the underlying

@@ -6,7 +6,7 @@
 //! The per-verb `impl_ckks_{add,sub}_reference!` backend-wiring macros stay in their verb modules — they are the exported surface, this macro is `pub(crate)`.
 
 /// Generates a `CKKS{Add,Sub}Impl` OEP trait and its blanket impl forwarding
-/// to the verb's `CKKS{Add,Sub}Default` reference implementation.
+/// to the verb's `CKKS{Add,Sub}Reference` implementation.
 ///
 /// Parameters mirror [`ckks_carry_verb_reference!`](crate::reference::carry_verb::ckks_carry_verb_reference):
 /// the verb stem, the generated trait name, the default trait to forward to,

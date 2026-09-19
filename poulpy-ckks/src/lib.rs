@@ -7,6 +7,12 @@
 //! provided by `poulpy-core`, `poulpy-hal`, and the available compute
 //! backends (`poulpy-cpu-ref`, `poulpy-cpu-avx`).
 //!
+//! The [`reference`](mod@crate::reference) module is the implementation of every CKKS operation, the
+//! only validated circuit; a backend override through [`oep`] is a faster route
+//! to the same result, validated by the parity suite against an attested
+//! backend (attestation is transitive back to the reference) and correct only when that test
+//! passes.
+//!
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by
 //! most other CKKS libraries. Public precision management is exposed through

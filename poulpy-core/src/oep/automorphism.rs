@@ -161,7 +161,7 @@ pub unsafe trait AutomorphismImpl: Backend {
 /// method bodies. A backend may provide its own kernels for some or all methods without
 /// satisfying any HAL trait.
 ///
-/// To inherit the reference algorithms, forward each method to the corresponding
+/// To run the reference implementation, forward each method to the corresponding
 /// `glwe_automorphism_reference::*` free function — those carry the HAL bounds in their
 /// own `where` clauses, so the requirement only kicks in for methods that actually use
 /// the reference implementation.
@@ -248,7 +248,7 @@ pub trait GLWEAutomorphismReference<BE: Backend> {
 /// Override surface for the GGSW-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::ggsw`] for reference algorithms a backend may forward to.
+/// [`crate::reference::automorphism::ggsw`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GGSWAutomorphismReference<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
         &self,
@@ -287,7 +287,7 @@ pub trait GGSWAutomorphismReference<BE: Backend> {
 /// Override surface for the GGLWE key-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::gglwe`] for reference algorithms a backend may forward to.
+/// [`crate::reference::automorphism::gglwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GGLWEAutomorphismReference<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -506,7 +506,7 @@ where
 }
 
 /// Implements [`GLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::glwe`].
 ///
 /// Equivalent to writing all 9 forwarders by hand. For partial override (custom kernel for one
 /// or a few methods + defaults for the rest), write the impl block manually instead.
@@ -633,7 +633,7 @@ macro_rules! impl_glwe_automorphism_reference_full {
 }
 
 /// Implements [`GGSWAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`ggsw_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::ggsw`].
 #[macro_export]
 macro_rules! impl_ggsw_automorphism_reference_full {
     ($be:ty) => {
@@ -690,7 +690,7 @@ macro_rules! impl_ggsw_automorphism_reference_full {
 }
 
 /// Implements [`GGLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`gglwe_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::gglwe`].
 #[macro_export]
 macro_rules! impl_gglwe_automorphism_reference_full {
     ($be:ty) => {

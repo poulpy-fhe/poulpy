@@ -77,7 +77,7 @@ pub unsafe trait LinearTransformationImpl: Backend {
 /// Override surface for the linear-transformation family.
 ///
 /// Abstract: no method bodies. See [`crate::reference::linear_transformation`]
-/// for the reference algorithms a backend may forward to (the
+/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies (the
 /// [`crate::impl_linear_transformation_reference_full`] macro wires every method
 /// to them).
 pub trait LinearTransformationReference<BE: Backend> {

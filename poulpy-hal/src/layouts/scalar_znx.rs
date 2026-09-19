@@ -153,7 +153,7 @@ impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
     /// length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == Self::bytes_of(n, cols));
+        assert!(data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, cols)));
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),

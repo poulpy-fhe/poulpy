@@ -141,7 +141,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size, hint));
+        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_cnv_pvec_right(n, cols, size, hint)));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecR {
             data,
@@ -268,7 +268,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size, hint));
+        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_cnv_pvec_left(n, cols, size, hint)));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecL {
             data,
