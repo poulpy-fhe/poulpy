@@ -468,6 +468,20 @@ fn test_convolution_sum_ntt3x42_ifma() {
     test_convolution_sum(&module, module.n(), 12);
 }
 
+#[test]
+fn test_convolution_sum_ntt3x42_ifma_streaming() {
+    let module = Module::<NTT3x42Ifma>::new(1 << 16);
+    test_convolution_sum(&module, module.n(), 52);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_sum_ntt3x42_ifma_rayon_streaming() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 16);
+    let pool = ::rayon::ThreadPoolBuilder::new().num_threads(16).build().unwrap();
+    pool.install(|| test_convolution_sum(&module, module.n(), 52));
+}
+
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_rayon() {

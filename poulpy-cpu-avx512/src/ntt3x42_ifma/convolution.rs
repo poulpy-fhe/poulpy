@@ -1150,7 +1150,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
                     local_tmp,
                 );
             }
-            if !cached_overwrite {
+            // Workers fence before publishing; the serial loop fences once below.
+            if E::IS_PARALLEL && !cached_overwrite {
                 _mm_sfence();
             }
             return;
@@ -1215,6 +1216,9 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
         let local_tmp = &mut tmp_u64[..task_tmp_len];
         for group in 0..n_groups {
             run_group(local_tmp, group);
+        }
+        if !E::IS_PARALLEL && !cached_overwrite {
+            _mm_sfence();
         }
     }
 

@@ -1008,3 +1008,112 @@ pub(crate) fn vec_znx_dft_automorphism<E: poulpy_hal::execution::TaskExecutor>(
         }
     });
 }
+
+#[cfg(test)]
+mod finish_tests {
+    use super::*;
+    use poulpy_hal::{
+        api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxDftAlloc},
+        layouts::{
+            HostBytesBackend, ScratchOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
+            VecZnxToBackendMut, VecZnxToBackendRef,
+        },
+        oep::HalVecZnxDftImpl,
+    };
+
+    #[test]
+    fn finish_matches_composition_edges() {
+        for n in [8usize, 256, 65536] {
+            let module = Module::<NTT3x42Ifma>::new((n * 2) as u64);
+            let host = Module::<HostBytesBackend>::new((n * 2) as u64);
+            for base2k in [1, 17, 52, 63] {
+                if n == 65536 && base2k != 52 {
+                    continue;
+                }
+                let mut source = module.vec_znx_dft_alloc(n, 2, 5);
+                let mut big = module.vec_znx_big_alloc(n, 2, 5);
+                let mut residues = vec![0u64; 3 * n];
+                let edge = [
+                    0,
+                    1,
+                    -1,
+                    (1i128 << (base2k - 1)) - 1,
+                    1i128 << (base2k - 1),
+                    -(1i128 << (base2k - 1)),
+                    HALF_BIG_Q as i128,
+                    -(HALF_BIG_Q as i128),
+                    (1i128 << 100) + 17,
+                    -(1i128 << 100) - 17,
+                ];
+                for j in 0..5 {
+                    for i in 0..n {
+                        let value = edge[(i + 3 * j) % edge.len()];
+                        big.at_mut(1, j)[i] = value;
+                        for p in 0..3 {
+                            residues[p * n + i] = value.rem_euclid(Q[p] as i128) as u64;
+                        }
+                    }
+                    unsafe {
+                        ntt_avx512::<Primes42>(handle(&module).table_ntt_for(n), &mut residues, true);
+                        pack_limb_3x42_lazy(n, packed_limb_mut(cast_slice_mut(source.data_mut()), n, 2, 1, j), &residues);
+                    }
+                }
+                for add_size in [0, 3, 7] {
+                    let mut add = host.vec_znx_alloc(n, 2, add_size.max(1));
+                    for j in 0..add.size() {
+                        for (i, value) in add.at_mut(0, j).iter_mut().enumerate() {
+                            *value = [0, 1, -1, (1i64 << 62) - 1, -(1i64 << 62)][(i + j) % 5];
+                        }
+                    }
+                    let add_ref: VecZnxBackendRef<'_, NTT3x42Ifma> = VecZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&add);
+                    let mut expected_big = module.vec_znx_big_alloc(n, 2, 5);
+                    expected_big.data_mut().copy_from_slice(big.data());
+                    if add_size != 0 {
+                        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
+                            &mut &mut expected_big.to_backend_mut(),
+                            1,
+                            &add_ref,
+                            0,
+                        );
+                    }
+                    for k in [0, 1, base2k, base2k + 1, 3 * base2k - 1, 5 * base2k, 6 * base2k] {
+                        let mut got = host.vec_znx_alloc(n, 2, 6);
+                        got.at_mut(0, 0).fill(123);
+                        let mut expected = got.clone();
+                        let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(
+                            NTT3x42Ifma::vec_znx_idft_normalize_consume_tmp_bytes(&module, 6, 5),
+                        );
+                        let mut input = module.vec_znx_dft_alloc(n, 2, 5);
+                        input.data_mut().copy_from_slice(source.data());
+                        NTT3x42Ifma::vec_znx_idft_normalize_consume(
+                            &module,
+                            &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
+                            base2k,
+                            k,
+                            1,
+                            &mut input.to_backend_mut(),
+                            1,
+                            base2k,
+                            (add_size != 0).then_some((&add_ref, 0)),
+                            &mut scratch.arena(),
+                        );
+                        let expected_ref = expected_big.to_backend_ref();
+                        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, NTT3x42Ifma>(
+                            &mut &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
+                            base2k,
+                            k,
+                            0,
+                            1,
+                            &&expected_ref,
+                            base2k,
+                            1,
+                            &mut vec![0; 3 * n],
+                        );
+                        assert_eq!(got, expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
+                        assert_eq!(&source.data()[..2 * n * 8], &input.data()[..2 * n * 8]);
+                    }
+                }
+            }
+        }
+    }
+}

@@ -212,3 +212,39 @@ impl I128NormalizeOps for NTT3x42Ifma {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn middle_step_matches_reference_at_carry_boundaries() {
+        let edge = [
+            0,
+            1,
+            -1,
+            1i128 << 126,
+            -(1i128 << 126),
+            (1i128 << 64) - 1,
+            -(1i128 << 64),
+            (1i128 << 100) + 17,
+        ];
+        for base2k in [1, 2, 17, 50, 52, 62, 63, 64] {
+            for lsh in 0..base2k {
+                for n in [1, 8, 19, 256] {
+                    let a: Vec<_> = (0..n).map(|i| edge[i % edge.len()]).collect();
+                    for shift in 0..edge.len() {
+                        let mut carry: Vec<_> = (0..n).map(|i| edge[(i + shift) % edge.len()]).collect();
+                        let mut expected_carry = carry.clone();
+                        let mut res = vec![0; n];
+                        let mut expected = res.clone();
+                        NTT3x42Ifma::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
+                        poulpy_cpu_ref::NTT4x30Ref::nfc_middle_step(base2k, lsh, &mut expected, &a, &mut expected_carry);
+                        assert_eq!(res, expected, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
+                        assert_eq!(carry, expected_carry, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
+                    }
+                }
+            }
+        }
+    }
+}

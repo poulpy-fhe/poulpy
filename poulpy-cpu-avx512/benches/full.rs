@@ -19,6 +19,11 @@ fn bench_ckks_bootstrapping_ifma(_c: &mut Criterion) {
     bench_ckks_bootstrapping::<Ifma>(_c);
 }
 
+fn bench_ckks_bootstrapping_ifma_rayon(_c: &mut Criterion) {
+    #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+    bench_ckks_bootstrapping::<poulpy_cpu_avx512::NTT3x42IfmaRayon>(_c);
+}
+
 /// HAL sweep for `NTT3x42Ifma`, the one accelerated backend that had no HAL row.
 fn bench_hal_ifma(_c: &mut Criterion) {
     #[cfg(feature = "enable-ifma")]
@@ -40,6 +45,7 @@ criterion_group! {
      bench_ckks_bootstrapping::<Ntt>,
      bench_hal_ifma,
      bench_ckks_bootstrapping_ifma,
+     bench_ckks_bootstrapping_ifma_rayon,
      bench_ckks_bootstrapping::<Fft>,
      bench_binfhe::<Fft, CGGI>
 }
