@@ -103,7 +103,7 @@ pub unsafe trait ConversionImpl: Backend {
 /// Override surface for the conversion family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::conversion`]
-/// for reference algorithms a backend may forward to.
+/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
 pub trait ConversionReference<BE: Backend> {
     fn lwe_sample_extract_reference<R, A>(&self, res: &mut R, a: &A)
     where

@@ -4,12 +4,15 @@
 //! [`poulpy_hal::layouts::Module`], which resolve through two layers, with one exception:
 //!
 //! - `*Impl` traits (this module), blanket-implemented for every backend whose
-//!   `Module` implements the matching `*Default` traits. They are the seat the
+//!   `Module` implements the matching `*Reference` traits. They are the seat the
 //!   public API dispatches to, not the seat a backend takes.
-//! - `*Default` traits (this module), implemented on `Module<BE>`. **This is the
+//! - `*Reference` traits (this module), implemented on `Module<BE>`. **This is the
 //!   override surface.** They are abstract: no HAL supertraits and no default
-//!   method bodies, so an implementor owes exactly the methods of one family.
-//! - [`SamplingImpl`] is the one exception: it has no `*Default` twin and no
+//!   method bodies, so an implementor owes exactly the methods of one family,
+//!   each either forwarded to its reference body in [`crate::reference`] or
+//!   reimplemented as a faster route to the same result. The reference body is
+//!   the implementation; the parity suite pins every override to it.
+//! - [`SamplingImpl`] is the one exception: it has no `*Reference` twin and no
 //!   blanket impl, because `poulpy-core` has no reference body to offer. Every
 //!   other family's reference body composes HAL operations; drawing from a
 //!   distribution is not such a composition, and a backend's buffers are opaque
@@ -25,9 +28,9 @@
 //!
 //! # Taking the override surface
 //!
-//! A backend opts into the reference algorithms one family at a time, with the
+//! A backend takes the reference implementation one family at a time, with the
 //! `impl_*_reference_full!` macros re-exported below. Each macro implements a
-//! single `*Default` trait by forwarding every method to the corresponding
+//! single `*Reference` trait by forwarding every method to the corresponding
 //! reference body, so a backend that accelerates one family hand-writes that
 //! trait and macro-forwards the rest:
 //!
@@ -69,7 +72,7 @@
 //! impl_gglwe_automorphism_reference_full!(MyBackend);
 //! ```
 //!
-//! Note the size of that first impl. A `*Default` trait is abstract, so an
+//! Note the size of that first impl. A `*Reference` trait is abstract, so an
 //! override owes *every* method, not just the interesting one:
 //! `GLWEKeyswitchReference` is 3 methods, but `GLWEAutomorphismReference` is 9 —
 //! the plain and assign forms plus the `add`, `sub` and `sub_negate`

@@ -1,3 +1,12 @@
+//! The implementation of every CKKS operation.
+//!
+//! Each module composes one operation family from `poulpy-core` and the HAL.
+//! These compositions define what the operations compute and are the only
+//! validated circuit: a backend runs them through the `impl_ckks_*_reference!`
+//! macros of [`crate::oep`], or overrides a family through its `oep` trait
+//! with a faster route to the same result, which the parity suite pins to
+//! these bodies. An override that computes anything else is a defect.
+
 pub mod add;
 pub mod bootstrapping;
 pub(crate) mod carry_verb;

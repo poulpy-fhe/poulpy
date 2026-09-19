@@ -49,7 +49,7 @@ If you touch an accelerated backend, run its lane too, with `RUSTFLAGS="-C targe
 
 - Format with `cargo fmt --all`; the settings live in [`rustfmt.toml`](./rustfmt.toml). Clippy must be clean under `-D warnings`.
 - Public API items carry doc comments. Prefer documenting the contract, in particular anything a backend override has to reproduce.
-- Respect the four-layer split. `api` declares the user-facing trait, `oep` the override extension point, `delegates` the forwarding, and `reference` the portable body. A new operation family that a backend might want to specialize goes through `oep`, not straight into `reference`.
+- Respect the four-layer split. `api` declares the user-facing trait, `oep` the override extension point, `delegates` the forwarding, and `reference` the implementation itself, the portable composition every override must reproduce. A new operation family that a backend might want to specialize goes through `oep`, not straight into `reference`.
 - A backend does not re-implement the test suites: `poulpy-hal` and `poulpy-core` ship theirs as generic functions, instantiated through `backend_test_suite!`, `cross_backend_test_suite!`, `core_backend_test_suite!` and `core_parity_test_suite!`. See [Testing a Backend](./README.md#testing-a-backend). A backend with a narrow envelope (for example not supporting rank > 1 for CKKS) restricts the sweep through `ParityShapes` rather than dropping the suite.
 - Non-trivial logic must come with its own tests. 
 - Correctness against the noise model belongs in the `noise` suite, agreement with the reference backend in the `parity` suite.

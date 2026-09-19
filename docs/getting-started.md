@@ -107,13 +107,13 @@ Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same intern
 |--------|------|
 | `api` | Public traits user code calls |
 | `oep` | Open extension points, the unsafe backend dispatch traits |
-| `reference` | The reference implementation of every operation, what every backend gets for free |
+| `reference` | The implementation of every operation, the definition of what it computes; every backend runs it unless it overrides with a faster route to the same result |
 | `delegates` | Wires the `api` traits onto `Module<B>` through `oep` |
 
 The reason for this split is that it decouples scheme code from the arithmetic backend.
 You write a scheme once against the `api` traits, name a backend as the `B` in `Module<B>`, and the same code runs on the reference backend, on AVX, on AVX-512, or on a future GPU or FPGA backend with no change.
-A new backend implements the `Backend` trait and the `oep` traits, and inherits every algorithm from `reference` for free, so it is correct from the first day.
-It then overrides only its hot paths by implementing the relevant `oep` trait directly instead of taking the `reference`, and each override is independent per operation and per layer.
+A new backend implements the `Backend` trait and the `oep` traits, and runs every algorithm from `reference`, which is the implementation, so it is correct from the first day.
+It then overrides only its hot paths by implementing the relevant `oep` trait directly instead of taking the `reference`; each override is independent per operation and per layer, and each is a faster route to the same result, pinned to the `reference` by the parity suites.
 This is what lets the portable reference prove correctness once while the accelerated backends add speed incrementally without ever forking the scheme logic.
 `poulpy-hal` has no `reference` folder.
 A backend implements the basis operations of each `oep` family, and the derived operations (the shifts, the small-operand big products, `vmp_apply_dft`, the convolution composites, ...) are default bodies on the `oep` traits themselves, written only in terms of the backend's own basis and overridable one method at a time; `test_suite::derived` pins every default body against the api on every backend.

@@ -120,10 +120,10 @@ To implement your own Poulpy backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `reference` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and the parity suites hold each of them to the reference.
 
 Your backend will automatically integrate with the backend-generic layers:
 
@@ -131,7 +131,7 @@ Your backend will automatically integrate with the backend-generic layers:
 * `poulpy-core`
 * `poulpy-ckks`
 
-No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides; everything else is inherited from the `reference` layer for free.
+No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides, and each override must reproduce the `reference` result; everything else runs the `reference` layer, which is the implementation.
 
 ---
 

@@ -49,10 +49,11 @@ cargo run -p poulpy-cpu-ref --example ckks_poly2 --features enable-ckks
 ```
 
 Like the rest of Poulpy, the public API is backend-agnostic. `poulpy-ckks`
-does not depend on any concrete backend crate. Default dispatches and fallback
-implementations flow through `poulpy-hal` and `poulpy-core`, while
-`poulpy-ckks` remains free to override behavior at the scheme level when
-CKKS-specific semantics require it. Concrete execution comes from backend
+does not depend on any concrete backend crate. Its `reference` module is the
+implementation of every CKKS operation, composed from `poulpy-core` and
+`poulpy-hal`; a backend may override an operation through its `oep` trait with
+a faster route to the same result, never with a different behaviour, and the
+parity suite pins the override to the reference. Concrete execution comes from backend
 crates such as `poulpy-cpu-ref` and `poulpy-cpu-avx`.
 
 ## Design Notes
@@ -101,8 +102,8 @@ the other evaluator methods update it automatically.
 Another important design point is that cryptographic and arithmetic operations
 are invoked through traits on `Module<BE>`, not through methods on the
 ciphertext/plaintext types themselves. This matches the rest of Poulpy: data
-lives in layouts, behavior lives in module traits, and backend-specific
-overrides remain possible. Data-management methods (`.set_meta_checked()`,
+lives in layouts, behavior lives in module traits, and a backend may override
+an operation with a faster route to the same result. Data-management methods (`.set_meta_checked()`,
 `.to_host_owned()`) and typestate transitions (`.normalize()`) are the
 exceptions: they live on the struct because they are inherently tied to the
 type, not to the backend.
@@ -119,10 +120,12 @@ that follow the same pattern used throughout the Poulpy workspace:
    └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
 ```
 
-**Overriding a method**: a backend replaces the default behavior for any
-operation by implementing the corresponding `oep` trait directly instead
-of relying on the blanket wiring to `reference`.  Only hot-path operations
-need explicit overrides; everything else is inherited for free.
+**Overriding a method**: `reference` is the implementation of every operation,
+not a fallback. A backend overrides an operation by implementing the
+corresponding `oep` trait directly instead of the blanket wiring to `reference`,
+with a faster route to the same result; an override that computes anything
+else is a defect. Only hot-path operations need explicit overrides; everything
+else runs `reference`.
 
 ### Layer descriptions
 
@@ -131,7 +134,7 @@ need explicit overrides; everything else is inherited for free.
 | `api` | public | Typed, ergonomic evaluator traits (`CKKSAddOps`, `CKKSMulOps`, `CKKSAffineOps`, …) that `Module<BE>` implements. These are what user code calls. |
 | `delegates` | crate-private | Implements each `api` trait on `Module<BE>` by delegating to `oep`. Also owns composite operations (affine, mul-add, dot-product, etc.) that are built from two or more primitives and therefore live above the OEP layer. |
 | `oep` | public | Operation Exposition Pattern. Each `CKKS*Impl<BE>` unsafe trait defines the raw dispatch surface: static methods taking `&Module<BE>` directly. A blanket `impl` wires every backend that satisfies the HAL bounds to the corresponding `reference` method. Macros (`impl_ckks_*_reference!`) are the only thing a backend crate needs to call to opt in. `CKKSImpl<BE>` is the aggregate supertrait required by composite ops. |
-| `reference` | public | One trait per operation family (e.g. `CKKSAddReference<BE>`) holding the reference implementations as regular methods on `Module<BE>`. Backends that need to override an operation implement the corresponding `oep` trait directly instead of relying on this layer. |
+| `reference` | public | One trait per operation family (e.g. `CKKSAddReference<BE>`) holding the implementation of every operation as regular methods on `Module<BE>`: the definition of what each operation computes and the only validated circuit. A backend that overrides an operation implements the corresponding `oep` trait directly with a faster route to the same result. |
 | `layouts` | public | CKKS-level data wrappers: `CKKSCiphertext<D>`, `CKKSPlaintext<D>`, `UnnormalizedCKKSCiphertext<D>`, allocation helpers (`CKKSModuleAlloc`), and the `CKKSPlaintextVecHostCodec<F>` encoding trait. |
 | `encoding` | public | Scheme-level encoding definitions shared by backends (e.g. the PaCo and SHIP host references `paco_coeff_encodings_host` / `ship_coeff_encodings_host`). Slot/coefficient encoding itself is a backend-resident operation exposed by `api::CKKSEncodingOps` and dispatched through `oep::CKKSEncodingImpl`. |
 | `test_suite` | public (feature `test-utils`) | Backend-agnostic test suite. Enable the `test-utils` feature (backend crates do so in dev-dependencies) and invoke `ckks_backend_test_suite!` in a backend crate's test module to run the full suite against that backend without duplicating test logic. |

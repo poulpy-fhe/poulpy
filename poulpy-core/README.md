@@ -20,8 +20,9 @@ cargo test -p poulpy-cpu-ref --features enable-core
 
 `poulpy-core` is backend-agnostic. Concrete execution lives in backend crates such as
 `poulpy-cpu-ref`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
-`poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-ref`
-hosts the reference implementations, while accelerated backends override selected methods.
+`poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy_core::reference` is the
+implementation of every operation, `poulpy-cpu-ref` runs it unchanged, and accelerated backends
+override selected methods with faster routes to the same result.
 
 The canonical public traits live under `poulpy_core::api::*`:
 
@@ -62,10 +63,10 @@ For a runnable end-to-end example using a concrete backend, see
 |--------|------|
 | `api` | Public traits for Module-LWE operations (`GLWEEncryptSk`, `GLWEAutomorphism`, `GLWETensoring`, …). Trait bounds reference `oep` for the backend capabilities they need. |
 | `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. Macros (`impl_*_reference_full!`) are what a backend crate calls to opt in. |
-| `reference` | The reference implementation of every operation: portable compositions of the HAL as safe trait methods, what every backend gets for free. |
+| `reference` | The implementation of every operation: portable compositions of the HAL as safe trait methods, the definition of what each operation computes and the only validated circuit. Every backend runs it unless it overrides an operation with a faster route to the same result. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. |
 
-**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of relying on the blanket wiring to `reference`. Only the operations that need a faster or device-native implementation require an override; everything else is inherited automatically.
+**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of the blanket wiring to `reference`. An override is a faster route to the same result, never a different behaviour: `core_parity_test_suite!` pins it to the reference. Only the operations that need a faster or device-native implementation require an override; everything else runs `reference`.
 
 ## Layouts
 
