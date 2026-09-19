@@ -5,7 +5,7 @@
 //!
 //! # Wiring patterns
 //!
-//! Most families follow the **opt-in marker** pattern: the family's blanket `unsafe impl<BE> CKKS*Impl for BE` is gated on `Module<BE>: CKKS*Reference<BE>`, and a backend opts in with the family's one-line `impl_ckks_*_reference!` macro (or implements the OEP trait natively with a faster route to the same result; the reference body is the implementation and the parity suite pins the override to it).
+//! Most families follow the **opt-in marker** pattern: the family's blanket `unsafe impl<BE> CKKS*Impl for BE` is gated on `Module<BE>: CKKS*Reference<BE>`, and a backend opts in with the family's one-line `impl_ckks_*_reference!` macro (or implements the OEP trait natively with a faster route to the same result; the reference body is the implementation and the override is correct only when its parity test against that body passes).
 //! Three kinds of family are deliberate exceptions:
 //!
 //! - **Unconditional blankets** — [`CKKSEvalModImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.

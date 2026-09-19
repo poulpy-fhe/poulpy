@@ -101,7 +101,7 @@ pub unsafe trait GGSWExternalProductImpl: Backend {
 /// Override surface for the GLWE external-product sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::external_product::glwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
+/// [`crate::reference::external_product::glwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GLWEExternalProductReference<BE: Backend> {
     fn glwe_external_product_dft_fill_tmp_bytes_reference<A, G>(&self, a_infos: &A, ggsw_infos: &G) -> usize
     where

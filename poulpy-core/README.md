@@ -66,7 +66,7 @@ For a runnable end-to-end example using a concrete backend, see
 | `reference` | The implementation of every operation: portable compositions of the HAL as safe trait methods, the definition of what each operation computes and the only validated circuit. Every backend runs it unless it overrides an operation with a faster route to the same result. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. |
 
-**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of the blanket wiring to `reference`. An override is a faster route to the same result, never a different behaviour: `core_parity_test_suite!` pins it to the reference. Only the operations that need a faster or device-native implementation require an override; everything else runs `reference`.
+**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of the blanket wiring to `reference`. An override is a faster route to the same result, never a different behaviour, and it is validated rather than trusted: `core_parity_test_suite!` runs every overridden method and its `reference` body on the same inputs and requires the same result, and the override is correct only when that test passes on the overriding backend. Only the operations that need a faster or device-native implementation require an override; everything else runs `reference`.
 
 ## Layouts
 

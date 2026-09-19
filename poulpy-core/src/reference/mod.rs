@@ -5,8 +5,9 @@
 //! circuit: a backend runs them through the `impl_*_reference_full!` macros of
 //! [`crate::oep`], or overrides a family through its `oep` trait with a faster
 //! route to the same result (a fused kernel, device-native code, another
-//! layout), which the parity suite pins to these bodies. An override that
-//! computes anything else is a defect, not a variant.
+//! layout), which the parity suite validates against these bodies: it runs the
+//! override and the reference body on the same inputs and requires the same
+//! result, and the override is correct only when that test passes.
 
 pub mod automorphism;
 pub mod conversion;

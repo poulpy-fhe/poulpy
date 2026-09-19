@@ -67,7 +67,7 @@ pub unsafe trait DecryptionImpl: Backend {
 /// Override surface for the decryption family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::decryption`]
-/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
+/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait DecryptionReference<BE: Backend> {
     fn glwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

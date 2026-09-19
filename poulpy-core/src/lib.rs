@@ -8,8 +8,8 @@
 //! backend extension points in [`oep`]. This makes the crate portable
 //! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
 //! implementation of every operation, the only validated circuit; a backend
-//! override is a faster route to the same result, pinned to it by the parity
-//! suite.
+//! override is a faster route to the same result, validated by the parity
+//! suite against it and correct only when that test passes.
 //!
 //! # Architecture
 //!

@@ -248,7 +248,7 @@ pub trait GLWEAutomorphismReference<BE: Backend> {
 /// Override surface for the GGSW-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::ggsw`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
+/// [`crate::reference::automorphism::ggsw`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GGSWAutomorphismReference<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
         &self,
@@ -287,7 +287,7 @@ pub trait GGSWAutomorphismReference<BE: Backend> {
 /// Override surface for the GGLWE key-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::gglwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
+/// [`crate::reference::automorphism::gglwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 pub trait GGLWEAutomorphismReference<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

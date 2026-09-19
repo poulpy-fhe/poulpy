@@ -4,8 +4,10 @@
 //! These compositions define what the operations compute and are the only
 //! validated circuit: a backend runs them through the `impl_ckks_*_reference!`
 //! macros of [`crate::oep`], or overrides a family through its `oep` trait
-//! with a faster route to the same result, which the parity suite pins to
-//! these bodies. An override that computes anything else is a defect.
+//! with a faster route to the same result, which the parity suite validates
+//! against these bodies: it runs the override and the reference body on the
+//! same inputs and requires the same result, and the override is correct only
+//! when that test passes.
 
 pub mod add;
 pub mod bootstrapping;

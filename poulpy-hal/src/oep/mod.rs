@@ -13,8 +13,8 @@
 //! implements the basis and inherits the rest, then overrides where a fused
 //! kernel is worth it, overriding a body and its `_tmp_bytes` together. The
 //! default body is the definition of the operation and `test_suite::derived`
-//! pins every override to it: an override is a faster route to the same
-//! result, never a different one.
+//! validates every override against it: an override is a faster route to the
+//! same result, correct only when that test passes.
 //!
 //! The exception is a `_tmp_bytes` that sizes a whole family rather than one
 //! body, `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and

@@ -238,7 +238,7 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
 /// Override surface for the GLWE key-switching sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::keyswitching::glwe`]
-/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly.
+/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
 ///
 /// # Gadget-digit width contract
 ///
