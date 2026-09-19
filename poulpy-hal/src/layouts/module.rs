@@ -30,6 +30,20 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Operation-specific input and accumulation bounds still apply.
     const MAX_BASE2K: usize;
 
+    /// Whether a DFT vector stores each limb as one contiguous block containing
+    /// every column, and a range of those blocks is itself a valid DFT vector.
+    ///
+    /// Opting in requires `bytes_of_vec_znx_dft(n, cols, size)` to equal
+    /// `size * bytes_of_vec_znx_dft(n, cols, 1)`, including zero at `size == 0`.
+    /// Blocks have no size-dependent headers, strides or padding between them.
+    /// This permits [`VecZnxDftBackendMut::with_limb_range_mut`](crate::layouts::VecZnxDftBackendMut::with_limb_range_mut)
+    /// to reborrow a partial range without copying or changing its representation.
+    ///
+    /// The default makes no such promise. Column-major, tiled or other layouts
+    /// remain valid, but cannot use that partial-range helper; their backend
+    /// overrides must implement computations that would otherwise require it.
+    const DFT_LIMBS_CONTIGUOUS: bool = false;
+
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;
     /// Word type for coefficient-domain (small) polynomial representations.

@@ -1,13 +1,19 @@
 Implementors must uphold all of the following for **every** call:
 
-* **Memory domains**: Pointers produced by to_ref() / to_mut() must be valid
-  in the target execution domain for Self (e.g., CPU host memory for CPU,
-  device memory for a specific GPU). If host↔device transfers are required,
-  perform them inside the implementation; do not assume the caller synchronized.
+* **Memory domains**: Backend-native borrows must be valid in the target
+  execution domain for `Self` (e.g., CPU host memory or a specific GPU).
+  Host-view helpers such as `to_ref()` / `to_mut()` require host-accessible
+  storage. If host/device transfers are required, perform them through the
+  backend transfer hooks; do not assume the caller synchronized.
 
 * **Alignment & layout**: All data must match the layout, stride, and element
-  size expected by the kernel. size(), rows(), cols_in(), cols_out(),
-  n(), etc... must be interpreted identically to the reference CPU implementation.
+  size expected by the kernel. `size()`, `rows()`, `cols_in()`, `cols_out()` and
+  `n()` describe the logical shape defined by the HAL contracts; prepared and
+  DFT storage may use a backend-specific representation. Declare
+  `Backend::DFT_LIMBS_CONTIGUOUS` only when each DFT limb is one contiguous block
+  containing every column and a range of blocks is a valid independent DFT
+  vector with the same encoding. Partial `with_limb_range_mut` / `with_size_mut`
+  views require that capability; whole-buffer reborrows preserve every layout.
 
 * **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
   valid for the duration of the call; it may be reused by the caller

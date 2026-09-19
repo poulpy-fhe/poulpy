@@ -166,10 +166,12 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     /// The returned view addresses the same allocation, but HAL
     /// kernels see `size` as the active limb count. Dropping the view leaves
     /// `self`'s metadata unchanged.
+    /// Narrowing requires [`Backend::DFT_LIMBS_CONTIGUOUS`].
     ///
     /// # Panics
     ///
-    /// Panics if `size > self.size()`.
+    /// Panics if `size > self.size()`, or if narrowing a layout that does not
+    /// declare contiguous DFT limbs.
     pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
         self.with_limb_range_mut(0, size)
     }
@@ -178,11 +180,14 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// The returned view contains limbs `start..end` for every column and
     /// renumbers `start` as limb zero. Dropping it leaves `self` unchanged.
-    /// This is the typed alternative to manually slicing the backend buffer.
+    /// Partial ranges require [`Backend::DFT_LIMBS_CONTIGUOUS`]: each limb must
+    /// occupy one contiguous block containing every column. The full range
+    /// reborrows the buffer unchanged and supports every backend layout.
     ///
     /// # Panics
     ///
-    /// Panics unless `start <= end <= self.size()`.
+    /// Panics unless `start <= end <= self.size()`, or if a partial range is
+    /// requested from a layout that does not declare contiguous DFT limbs.
     pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
         crate::layouts::assert_dense(self, "VecZnxDft::with_limb_range_mut");
         assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
@@ -194,6 +199,17 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
 
         let n = self.n();
         let cols = self.cols();
+        if start == 0 && end == self.size() {
+            return VecZnxDft {
+                data: B::view_mut_ref(&mut self.data),
+                shape: self.shape,
+                _phantom: PhantomData,
+            };
+        }
+        assert!(
+            B::DFT_LIMBS_CONTIGUOUS,
+            "VecZnxDft::with_limb_range_mut: partial ranges require contiguous DFT limbs"
+        );
         let offset = B::bytes_of_vec_znx_dft(n, cols, start);
         let len = B::bytes_of_vec_znx_dft(n, cols, end - start);
         VecZnxDft {
@@ -500,6 +516,198 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
 mod limb_range_tests {
     use super::*;
     use crate::layouts::{HostBytesBackend, VecZnxDftToBackendMut};
+
+    // A host buffer whose DFT representation keeps all limbs of each column
+    // together. It deliberately inherits the default range capability.
+    #[derive(PartialEq, Eq)]
+    struct ColumnMajorDft;
+
+    impl Backend for ColumnMajorDft {
+        const MAX_BASE2K: usize = 62;
+
+        type TaskExecutor = crate::execution::SerialTaskExecutor;
+        type ZnxWord = i64;
+        type BigWord = i128;
+        type DftWord = i64;
+        type OwnedBuf = AlignedBuf;
+        type BufRef<'a> = &'a [u8];
+        type BufMut<'a> = &'a mut [u8];
+        type Handle = ();
+        type Location = crate::layouts::Host;
+
+        fn alloc_bytes(len: usize) -> Self::OwnedBuf {
+            crate::alloc_aligned::<u8>(len)
+        }
+
+        fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
+            crate::alloc_aligned::<u8>(len)
+        }
+
+        fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
+            AlignedBuf::from(bytes)
+        }
+
+        fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
+            buf.to_vec()
+        }
+
+        fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
+            assert!(
+                buf.len() >= dst.len(),
+                "backend buffer length {} is smaller than destination host slice length {}",
+                buf.len(),
+                dst.len()
+            );
+            dst.copy_from_slice(&buf[..dst.len()]);
+        }
+
+        fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+            assert!(
+                buf.len() >= src.len(),
+                "backend buffer length {} is smaller than source host slice length {}",
+                buf.len(),
+                src.len()
+            );
+            let src_len = src.len();
+            buf[..src_len].copy_from_slice(src);
+            buf[src_len..].fill(0);
+        }
+
+        fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+            assert!(
+                buf.len() >= dst.len(),
+                "backend view length {} is smaller than destination host slice length {}",
+                buf.len(),
+                dst.len()
+            );
+            dst.copy_from_slice(&buf[..dst.len()]);
+        }
+
+        fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+            assert!(
+                buf.len() >= src.len(),
+                "backend view length {} is smaller than source host slice length {}",
+                buf.len(),
+                src.len()
+            );
+            let src_len = src.len();
+            buf[..src_len].copy_from_slice(src);
+            buf[src_len..].fill(0);
+        }
+
+        fn len_bytes(buf: &Self::OwnedBuf) -> usize {
+            buf.len()
+        }
+
+        fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+            buf.len()
+        }
+
+        fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+            buf.len()
+        }
+
+        fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
+            buf.as_slice()
+        }
+
+        fn view_ref<'a, 'b>(buf: &'a Self::BufRef<'b>) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>) -> Self::BufMut<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_mut(buf: &mut Self::OwnedBuf) -> Self::BufMut<'_> {
+            buf.as_mut_slice()
+        }
+
+        fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> Self::BufRef<'_> {
+            &buf[offset..offset + len]
+        }
+
+        fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
+            &mut buf[offset..offset + len]
+        }
+
+        fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            &buf[offset..offset + len]
+        }
+
+        fn region_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            &buf[offset..offset + len]
+        }
+
+        fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
+        where
+            Self: 'b,
+        {
+            &mut buf[offset..offset + len]
+        }
+
+        unsafe fn destroy(_handle: std::ptr::NonNull<Self::Handle>) {}
+    }
+
+    #[test]
+    fn column_major_partial_range_is_rejected_before_mutation() {
+        let (n, cols, size) = (4, 2, 4);
+        let bytes = ColumnMajorDft::bytes_of_vec_znx_dft(n, cols, size);
+        let mut dft = VecZnxDft::<AlignedBuf, i64, ColumnMajorDft>::from_shape(
+            AlignedBuf::from(vec![0xA5; bytes]),
+            VecZnxShape::new(n, cols, size),
+        );
+        for (index, byte) in dft.data.iter_mut().enumerate() {
+            *byte = index as u8;
+        }
+        let original = dft.data.clone();
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut backend = dft.to_backend_mut();
+            let middle = backend.with_limb_range_mut(1, 3);
+            middle.data.fill(0);
+        }));
+        assert!(rejected.is_err());
+        assert_eq!(dft.data, original);
+        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
+    }
+
+    #[test]
+    fn column_major_full_range_preserves_native_storage() {
+        let (n, cols, size) = (4, 2, 4);
+        let bytes = ColumnMajorDft::bytes_of_vec_znx_dft(n, cols, size);
+        let mut dft = VecZnxDft::<AlignedBuf, i64, ColumnMajorDft>::from_shape(
+            AlignedBuf::from(vec![0xA5; bytes]),
+            VecZnxShape::new(n, cols, size),
+        );
+        let column_bytes = n * size * size_of::<i64>();
+        {
+            let mut backend = dft.to_backend_mut();
+            let full = backend.with_size_mut(size);
+            assert_eq!((full.n(), full.cols(), full.size()), (n, cols, size));
+            full.data[column_bytes..2 * column_bytes].fill(0);
+        }
+        assert!(dft.data[..column_bytes].iter().all(|byte| *byte == 0xA5));
+        assert!(dft.data[column_bytes..2 * column_bytes].iter().all(|byte| *byte == 0));
+    }
 
     #[test]
     fn mutable_limb_range_rebases_a_nonzero_start() {

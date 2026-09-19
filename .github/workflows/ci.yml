@@ -236,16 +236,13 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
           cargo test -p poulpy-cpu-ref --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
-  # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
-  # so this lane builds and lints the AVX-512F + IFMA configuration on every
-  # push to keep the poulpy-cpu-avx512 crate buildable. Tests are NOT run here
-  # (no AVX-512 silicon to execute on); a self-hosted runner is required to
-  # actually run the AVX-512 test suite.
+  # Intel SDE executes HAL tests even when the hosted CPU lacks AVX-512/IFMA.
   avx512:
-    name: AVX-512 backend (typecheck only)
-    runs-on: ubuntu-latest
+    name: AVX-512 backend (HAL tests under SDE)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
-    # GitHub-hosted runners do not expose AVX-512, so we MUST keep AVX-512 flags
+    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
     # off the host toolchain (build scripts, proc-macros). We pin --target and
     # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
     # artifacts stay portable while the workspace itself builds for AVX-512.
@@ -253,6 +250,13 @@ jobs:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      # Update the archive and its published SHA256 together from Intel's download page:
+      # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+      SDE_ARCHIVE: sde-external-10.13.1-2026-07-28-lin.tar.xz
+      SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+      SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+      # Exercise the Rayon overrides with a bounded pool under emulation.
+      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -284,6 +288,29 @@ jobs:
 
       - name: Clippy AVX-512 backend
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
+      - name: Install Intel SDE
+        run: |
+          curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
+          printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/intel-sde"
+          tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
+          # Pin/SDE may need to attach to its parent on Ubuntu; this hosted VM is ephemeral.
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+          # Only target executables run under SDE; Cargo and build scripts remain native.
+          # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
+
+      - name: Test AVX-512 and IFMA HAL operations
+        # These filters cover HAL parity, derived bodies and shape/window tests.
+        # Gaussian sampling belongs to core and is excluded from this HAL lane.
+        run: >-
+          cargo test -p poulpy-cpu-avx512 --lib --profile ci
+          --features "enable-ifma,enable-rayon" --
+          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
+          raw_transform_matches_contract
+          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
+          --test-threads=2
 
   neon:
     name: NEON backend (aarch64 native)

@@ -165,6 +165,7 @@ pub struct HostBytesBackend;
 impl Backend for HostBytesBackend {
     // Storage/normalization only; this backend does not perform products.
     const MAX_BASE2K: usize = 62;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = crate::execution::SerialTaskExecutor;
     type ZnxWord = i64;
@@ -516,6 +517,7 @@ macro_rules! impl_backend_from {
         impl poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
             const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
+            const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;

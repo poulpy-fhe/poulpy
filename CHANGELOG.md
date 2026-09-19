@@ -6,6 +6,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- The AVX-512 CI lane executes HAL conformance tests, including IFMA and Rayon, under a pinned and checksum-verified Intel SDE on hosted runners. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
+- HAL conformance now pins uniform sampling's seeded output and caller-stream advancement, registers DFT-copy parity on every accelerated CPU backend and its Rayon variant, and checks inverse-transform limbs and poisoned destinations at independently varied widths.
+- **Breaking, behaviour:** `Backend::DFT_LIMBS_CONTIGUOUS` explicitly opts a backend into partial DFT limb-range views; it defaults to false and is forwarded by `impl_backend_from!`. Existing CPU layouts opt in. Whole-buffer reborrows work for every layout, while incompatible partial ranges panic before touching storage.
+
 - `PrimeSet::MAX_LOG_N` describes the supported negacyclic NTT degree and root order.
   It defaults to 16 for compatibility with existing custom prime sets.
 
