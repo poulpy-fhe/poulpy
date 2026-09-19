@@ -301,7 +301,7 @@ where
         let mut twin_prep = module.glwe_automorphism_key_prepared_alloc_from_infos(&twin);
         module.glwe_automorphism_key_prepare(&mut key_prep, &key, &mut prep.borrow());
         module.glwe_automorphism_key_prepare(&mut twin_prep, &key_twin, &mut prep.borrow());
-        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &twin, &key_prep.with_dsize(effective).unwrap()));
+        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &key_prep.with_dsize(effective).unwrap()));
 
         keys.insert(*gal_el, key_prep);
         twins.insert(*gal_el, twin_prep);

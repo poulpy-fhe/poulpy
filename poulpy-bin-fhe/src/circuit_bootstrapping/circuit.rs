@@ -67,6 +67,7 @@ impl<D: Data> CircuitBootstrappingPlan<D> {
             + GLWEBytesOf<BE>
             + BlindRotationExecute<BRA, BE>
             + GLWETrace<BE>
+            + GLWECopy<BE>
             + GLWEPacking<BE>
             + GGSWExpandRows<BE>
             + GLWERotate<BE>
@@ -477,6 +478,7 @@ where
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
+        + GLWECopy<BE>
         + GLWEPacking<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
@@ -521,8 +523,12 @@ where
         rank_out: atk_infos.rank,
         stride: 1,
     };
-    let trace_atk = module.glwe_trace_tmp_bytes(&glwe_atk_layout, &glwe_atk_layout, &atk_key_infos);
-    let trace_res = module.glwe_trace_tmp_bytes(&res_glwe_layout, &glwe_atk_layout, &atk_key_infos);
+    let trace_atk = module
+        .glwe_copy_tmp_bytes(&glwe_atk_layout, &glwe_atk_layout)
+        .max(module.glwe_trace_tmp_bytes(&glwe_atk_layout, &atk_key_infos));
+    let trace_res = module
+        .glwe_copy_tmp_bytes(&res_glwe_layout, &glwe_atk_layout)
+        .max(module.glwe_trace_tmp_bytes(&res_glwe_layout, &atk_key_infos));
     let rotate = module.glwe_rotate_tmp_bytes();
     let row_phase = match config.output {
         CircuitBootstrappingOutput::Constant => aligned(module.glwe_bytes_of_from_infos(&res_glwe_layout)) + trace_res,
@@ -771,7 +777,8 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
                 ),
                 CircuitBootstrappingOutput::Constant => {
                     let (mut tmp_row, mut op_scratch) = scratch_1.borrow().take_glwe_scratch(&res_row);
-                    module.glwe_trace(&mut tmp_row, 0, &res_glwe_atk_layout, &key.atk, &mut op_scratch);
+                    module.glwe_copy(&mut tmp_row, &res_glwe_atk_layout, &mut op_scratch);
+                    module.glwe_trace_assign(&mut tmp_row, 0, &key.atk, &mut op_scratch);
                     module.glwe_copy(&mut res_row, &tmp_row, &mut op_scratch);
                 }
             }
@@ -811,10 +818,10 @@ fn post_process<R, A, M, H, BE>(
         let (mut packed, scratch_2) = scratch_1.take_glwe_scratch(res);
         let (mut cts_vec, mut op_scratch) = scratch_2.take_glwe_slice_scratch(steps, a);
 
-        module.glwe_trace(
+        module.glwe_copy(&mut a_trace, a, &mut op_scratch.borrow());
+        module.glwe_trace_assign(
             &mut a_trace,
             module.log_n() - log_gap_in + 1,
-            a,
             auto_keys,
             &mut op_scratch.borrow(),
         );
@@ -836,7 +843,8 @@ fn post_process<R, A, M, H, BE>(
         module.glwe_copy(res, &packed, &mut op_scratch);
     } else {
         let (mut traced, mut op_scratch) = scratch.borrow().take_glwe_scratch(res);
-        module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, &mut op_scratch);
+        module.glwe_copy(&mut traced, a, &mut op_scratch);
+        module.glwe_trace_assign(&mut traced, module.log_n() - log_gap_in + 1, auto_keys, &mut op_scratch);
         module.glwe_copy(res, &traced, &mut op_scratch);
     }
 }

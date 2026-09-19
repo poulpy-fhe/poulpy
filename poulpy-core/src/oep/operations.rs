@@ -276,23 +276,10 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
 pub unsafe trait GLWETraceImpl: Backend {
-    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
         K: GGLWEInfos;
-
-    fn glwe_trace<R, A, H>(
-        module: &Module<Self>,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>;
 
     fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
     where
@@ -691,23 +678,12 @@ unsafe impl<BE: Backend> GLWETraceImpl for BE
 where
     Module<BE>: crate::reference::glwe_trace::GLWETraceReference<BE>,
 {
-    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, K>(module: &Module<BE>, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_trace_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn glwe_trace<R, A, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        let mut scratch_local = scratch.borrow();
-        module.glwe_trace_reference(res, skip, a, keys, &mut scratch_local)
+        module.glwe_trace_assign_tmp_bytes_reference(res_infos, key_infos)
     }
 
     fn glwe_trace_assign<R, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -750,7 +726,7 @@ where
     }
 }
 /// Implements [`GLWETraceReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_trace_reference`] free function.
+/// the corresponding [`glwe_trace_assign_reference`] free function.
 #[macro_export]
 macro_rules! impl_glwe_trace_reference_full {
     ($be:ty) => {
@@ -762,34 +738,6 @@ macro_rules! impl_glwe_trace_reference_full {
             {
                 $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_tmp_bytes_reference::<$be, _, _, _>(
                     self, a_infos, key_infos,
-                )
-            }
-
-            fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-            where
-                R: $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
-                )
-            }
-
-            fn glwe_trace_reference<R, A, H>(
-                &self,
-                res: &mut R,
-                skip: usize,
-                a: &A,
-                keys: &H,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetAutomorphismKey<$be>,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_reference::<$be, _, _, _, _>(
-                    self, res, skip, a, keys, scratch,
                 )
             }
 

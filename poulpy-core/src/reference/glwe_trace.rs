@@ -24,7 +24,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
+    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
 };
 
 #[inline(always)]
@@ -127,18 +127,6 @@ pub trait GLWETraceReference<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos;
-
-    fn glwe_trace_reference<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
-
     fn glwe_trace_assign_reference<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -184,95 +172,6 @@ pub mod glwe_trace_reference_impl {
         module
             .glwe_shift_tmp_bytes(a_infos.size())
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
-    }
-
-    pub fn glwe_trace_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        BE: Backend,
-        M: GLWEBytesOf<BE>
-            + GLWETraceReference<BE>
-            + ModuleLogN
-            + GaloisElement
-            + GLWEAutomorphism<BE>
-            + GLWEShift<BE>
-            + GLWECopy<BE>
-            + CyclotomicOrder
-            + GLWENormalize<BE>,
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        assert_eq!(module.n() as u32, res_infos.n());
-        assert_eq!(module.n() as u32, a_infos.n());
-        assert_eq!(module.n() as u32, key_infos.n());
-
-        let tmp_infos: GLWELayout = GLWELayout {
-            n: res_infos.n(),
-            base2k: key_infos.base2k(),
-            k: a_infos.k().max(res_infos.k()),
-            rank: res_infos.rank(),
-        };
-        let lvl_0: usize = module.glwe_bytes_of_from_infos(&tmp_infos);
-        let lvl_1 = module.glwe_copy_tmp_bytes(&tmp_infos, a_infos);
-        let lvl_2: usize = module.glwe_trace_assign_tmp_bytes_reference(&tmp_infos, key_infos);
-        let lvl_3 = module.glwe_copy_tmp_bytes(res_infos, &tmp_infos);
-
-        lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
-    }
-
-    pub fn glwe_trace_reference<BE, M, R, A, H>(
-        module: &M,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        BE: Backend,
-        M: GLWEBytesOf<BE>
-            + GLWETraceReference<BE>
-            + ModuleLogN
-            + GaloisElement
-            + GLWEAutomorphism<BE>
-            + GLWEShift<BE>
-            + GLWECopy<BE>
-            + CyclotomicOrder
-            + GLWENormalize<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        let Some(first) = trace_rotations(module, skip).next() else {
-            return;
-        };
-        let atk_layout = keys
-            .get_automorphism_key(first, a.k().max(res.k()))
-            .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
-        assert!(
-            scratch.available() >= module.glwe_trace_tmp_bytes_reference(res, a, &atk_layout),
-            "scratch.available(): {} < GLWETrace::glwe_trace_tmp_bytes: {}",
-            scratch.available(),
-            module.glwe_trace_tmp_bytes_reference(res, a, &atk_layout)
-        );
-
-        let scratch_local = scratch.borrow();
-        let (mut tmp, scratch_1) = scratch_local.take_glwe_scratch(&GLWELayout {
-            n: res.n(),
-            base2k: atk_layout.base2k(),
-            k: a.k().max(res.k()),
-            rank: res.rank(),
-        });
-        let mut scratch_1 = scratch_1;
-
-        module.glwe_copy(&mut tmp, a, &mut scratch_1);
-
-        {
-            scratch_1 = scratch_1.apply_mut(|scratch| {
-                trace_assign_internal::<M, H, _, BE>(module, &mut tmp, skip, keys, scratch);
-            });
-        }
-
-        module.glwe_copy(res, &tmp, &mut scratch_1);
     }
 
     pub fn glwe_trace_assign_reference<BE, M, R, H>(

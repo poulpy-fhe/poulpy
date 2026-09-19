@@ -110,7 +110,8 @@ pub mod glwe_packing_reference_impl {
             + GLWERotate<BE>
             + GLWEShift<BE>
             + GLWENormalize<BE>
-            + GLWETrace<BE>,
+            + GLWETrace<BE>
+            + GLWECopy<BE>,
         R: GLWEInfos,
         K: GGLWEInfos,
     {
@@ -124,7 +125,11 @@ pub mod glwe_packing_reference_impl {
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_automorphism_tmp_bytes(res, res, key));
 
-        (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
+        (lvl_0 + lvl_1).max(
+            module
+                .glwe_copy_tmp_bytes(res, res)
+                .max(module.glwe_trace_tmp_bytes(res, key)),
+        )
     }
 
     pub fn glwe_pack_reference<BE, M, R, A, H>(
@@ -188,8 +193,10 @@ pub mod glwe_packing_reference_impl {
             }
         }
 
+        let a0: &mut A = a.remove(&0).unwrap();
         scratch_local.apply_mut(|scratch| {
-            module.glwe_trace(res, log_n - log_gap_out, *a.get_mut(&0).unwrap(), keys, scratch);
+            module.glwe_copy(res, &*a0, scratch);
+            module.glwe_trace_assign(res, log_n - log_gap_out, keys, scratch);
         });
     }
 }

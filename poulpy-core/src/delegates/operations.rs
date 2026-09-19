@@ -327,21 +327,12 @@ impl_operations_delegate!(
     GLWETrace<BE>,
     GLWETraceImpl,
     GLWETraceReference<BE>,
-    fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, key_infos)
-    },
-    fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        BE::glwe_trace(self, res, skip, a, keys, scratch)
+        BE::glwe_trace_tmp_bytes(self, res_infos, key_infos)
     },
     fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where

@@ -11,9 +11,9 @@
 //! unit circle, i.e. the EvalMod replacement.
 //!
 //! The trace fold uses the same fused primitive as the core
-//! [`glwe_trace`](poulpy_core::GLWETrace) cascade
+//! [`glwe_trace_assign`](poulpy_core::GLWETrace) cascade
 //! (`glwe_automorphism_add_assign`, `ct += σ(ct)` with no temporary
-//! ciphertext), but is deliberately **not** `glwe_trace` itself: that op
+//! ciphertext), but is deliberately **not** `glwe_trace_assign` itself: that op
 //! always folds to the top of the automorphism tower and halves per level
 //! (the normalized subring trace), whereas PaCo's folds need an arbitrary
 //! upper bound `a` (its truncated mid-pipeline folds are not subgroup traces

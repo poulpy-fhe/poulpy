@@ -5,18 +5,16 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 
+/// The trace of a GLWE ciphertext, in place: `res` holds the operand and
+/// receives the sum of its Galois conjugates. To trace into another
+/// ciphertext, copy first ([`GLWECopy`]). The automorphism keys are indexed by
+/// the Galois elements of [`crate::trace_galois_elements`].
 pub trait GLWETrace<BE: Backend> {
-    fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    /// Scratch bytes for [`Self::glwe_trace_assign`] on `res_infos` under `key_infos`.
+    fn glwe_trace_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
         K: GGLWEInfos;
-
-    fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
 
     fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where

@@ -573,7 +573,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Stores this byte (everything else zeroed) into tmp_trace
         let mut tmp_trace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
-        module.glwe_trace(&mut tmp_trace, trace_start, self, keys, scratch);
+        module.glwe_copy(&mut tmp_trace, self, scratch);
+        module.glwe_trace_assign(&mut tmp_trace, trace_start, keys, scratch);
 
         // Subtracts to self to zero it
         module.glwe_sub_assign(self, &tmp_trace);
