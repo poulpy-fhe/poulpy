@@ -8,6 +8,7 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
+use crate::api::CKKSModuleInfos;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -101,7 +102,9 @@ where
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-    module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+    module
+        .ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch)
+        .unwrap();
     prepared
 }
 
@@ -148,6 +151,7 @@ where
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
 
+    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let ct = ckks_encrypt(
         &params,
         module,
@@ -303,10 +307,14 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
         keys.entry(p)
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let keys = QueryLog {
-        keys,
-        seen: RefCell::new(Vec::new()),
-    };
+    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+    let keys = crate::layouts::CKKSKey::from_raw_provider(
+        QueryLog {
+            keys: crate::layouts::CKKSKey::from_keys(keys, ring).unwrap().into_core(),
+            seen: RefCell::new(Vec::new()),
+        },
+        ring,
+    );
 
     let ct = ckks_encrypt(
         &params,
@@ -402,11 +410,15 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let stored_infos = key_params.atk_layout();
     let coarse_dsize = Dsize(2 * key_params.dsize as u32);
     let coarse_infos = stored_infos.gglwe_layout().at_dsize(coarse_dsize).unwrap();
-    let keys = MixedDsize::<BE> {
-        keys,
-        coarse: coarse_dsize,
-        coarse_ps,
-    };
+    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+    let keys = crate::layouts::CKKSKey::from_raw_provider(
+        MixedDsize::<BE> {
+            keys: crate::layouts::CKKSKey::from_keys(keys, ring).unwrap().into_core(),
+            coarse: coarse_dsize,
+            coarse_ps,
+        },
+        ring,
+    );
 
     let ct = ckks_encrypt(
         &params,

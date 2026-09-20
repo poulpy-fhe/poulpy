@@ -19,6 +19,7 @@ use crate::{CKKSLayout, CKKSMeta};
 /// Shared CKKS parameter set for test instantiation.
 #[derive(Clone, Copy)]
 pub struct CKKSTestParams {
+    pub ring_kind: crate::layouts::CKKSRingKind,
     pub n: usize,
     pub base2k: usize,
     pub k: usize,
@@ -40,6 +41,7 @@ impl CKKSTestParams {
     /// `base2k`, and the `log_delta + log_budget` sum.
     pub fn prec(&self) -> CKKSLayout {
         CKKSLayout {
+            ring_kind: self.ring_kind,
             glwe_layout: GLWELayout {
                 n: Degree(self.n as u32),
                 base2k: Base2K(self.base2k as u32),
@@ -122,6 +124,7 @@ impl CKKSTestParams {
 
 /// NTT4x30 parameter set.
 pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+    ring_kind: crate::layouts::CKKSRingKind::Standard,
     n: 256,
     base2k: 52,
     k: 8 * 40,
@@ -138,6 +141,7 @@ pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
 
 /// FFT64 parameter set.
 pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+    ring_kind: crate::layouts::CKKSRingKind::Standard,
     n: 256,
     base2k: 19,
     k: 8 * 19,
@@ -154,6 +158,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
 
 /// NTT4x30 parameter set.
 pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
+    ring_kind: crate::layouts::CKKSRingKind::Standard,
     n: 256,
     base2k: 52,
     k: 8 * 80,
@@ -1044,3 +1049,5 @@ pub mod ship;
 pub mod slots_kind;
 pub mod sub;
 pub mod sub_unsafe;
+
+pub mod conjugate_invariant;

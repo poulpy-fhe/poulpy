@@ -6,6 +6,7 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
+use crate::api::CKKSModuleInfos;
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
@@ -56,7 +57,7 @@ pub struct BootstrappingPresetRun<BE: Backend> {
     scratch: ScratchOwned<BE>,
     input: CKKSCiphertextOwned<BE>,
     output: CKKSCiphertextOwned<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk: crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
     want_re: Vec<f64>,
     want_im: Vec<f64>,
 }
@@ -113,7 +114,9 @@ where
         module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut source_sk);
         let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
         module.glwe_secret_prepare(&mut sk, &sk_raw);
+        let sk = crate::layouts::CKKSKey::from_raw_parts(sk, module.ckks_ring()).unwrap();
 
+        let sk_raw = crate::layouts::CKKSKey::from_raw_parts(sk_raw, module.ckks_ring()).unwrap();
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
         let keys = context
             .generate_keys(
@@ -126,7 +129,8 @@ where
                 &mut scratch.borrow(),
             )
             .unwrap()
-            .prepare(&module, &mut scratch.borrow());
+            .prepare(&module, &mut scratch.borrow())
+            .unwrap();
 
         let (want_re, want_im) = test_vector_1::<f64>(n / 2);
         let mut input_pt = module.ckks_pt_vec_alloc(base2k.into(), input_layout.k());

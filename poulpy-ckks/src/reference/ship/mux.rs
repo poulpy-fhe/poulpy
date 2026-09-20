@@ -91,7 +91,7 @@ where
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
     let a_size = ct.size();
     let key_size = keys[0].key.size();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &keys[0].key, keys.len());
+    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, keys[0].key.as_core(), keys.len());
     let base2k = ct.base2k().as_usize();
     ckks_ensure!(
         keys[0].key.base2k().as_usize() == base2k,

@@ -240,6 +240,7 @@ impl BootstrappingPreset {
 
     fn ciphertext_layout(&self, k: usize) -> CKKSLayout {
         CKKSLayout {
+            ring_kind: crate::layouts::CKKSRingKind::Standard,
             glwe_layout: GLWELayout {
                 n: Degree(self.n as u32),
                 base2k: Base2K(self.spec.base2k as u32),

@@ -4,10 +4,7 @@ use std::f64::consts::TAU;
 
 use poulpy_core::{
     GLWEZero, TransferInto,
-    layouts::{
-        BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
-        prepared::GLWESecretPrepared,
-    },
+    layouts::{BackendGLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared},
     reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
@@ -68,9 +65,9 @@ fn gen_sk_with_host<BE>(
     host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
 ) -> (
-    BackendGLWESecret<HostBytesBackend>,
+    crate::layouts::CKKSKey<BackendGLWESecret<HostBytesBackend>>,
     BackendGLWESecret<BE>,
-    GLWESecretPrepared<BE::OwnedBuf, BE>,
+    crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
 )
 where
     BE: TestContextBackend,
@@ -85,6 +82,8 @@ where
     sk_raw.transfer_into(&mut sk_host);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
+    let sk = crate::layouts::CKKSKey::from_raw_parts(sk, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap();
+    let sk_host = crate::layouts::CKKSKey::from_raw_parts(sk_host, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap();
     (sk_host, sk_raw, sk)
 }
 
@@ -310,8 +309,7 @@ where
             &mut scratch.borrow(),
         )
         .unwrap();
-        let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key.key());
-        module.glwe_switching_key_prepare(&mut prepared, key.key(), &mut scratch.borrow());
+        let prepared = key.key().prepare_switching(module, &mut scratch.borrow()).unwrap();
         HMuxRotKeyPrepared {
             key: prepared,
             gal_el: key.gal_el(),
@@ -329,7 +327,7 @@ where
     let mux_bytes = crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
         module,
         &alloc_ct(&params, module, k),
-        &group_rot[0].key,
+        group_rot[0].key.as_core(),
         group_rot.len(),
     );
     let plans = crate::reference::ship::mux::ship_mux_plans(

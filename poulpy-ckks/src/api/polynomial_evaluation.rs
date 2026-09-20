@@ -15,7 +15,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -34,7 +34,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -51,7 +51,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         dst: &mut R,
         src: &S,
         bsgs: &B,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -69,7 +69,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         dst: &mut R,
         src: &S,
         poly: &ComplexBSGSPolynomial<C>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

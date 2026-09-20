@@ -73,9 +73,11 @@ where
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
 /// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
 /// has no single existing API equivalent.
-struct CKKSBSGSOps;
+struct CKKSBSGSOps<'a, H> {
+    key: &'a crate::layouts::CKKSKey<H>,
+}
 
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
+impl<BE: Backend, V, P, A, R, K: GetTensorKey<BE>> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps<'_, K>
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSMulOps<BE>
@@ -303,14 +305,14 @@ where
         module: &Module<BE>,
         dst: &mut V,
         prepared: &Self::Prepared,
-        tsk: &H,
+        _tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()>
     where
         H: GetTensorKey<BE>,
     {
         module
-            .ckks_mul_prepared_assign(dst, prepared, tsk, scratch)
+            .ckks_mul_prepared_assign(dst, prepared, self.key, scratch)
             .map_err(::anyhow::Error::from)
     }
 
@@ -330,7 +332,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -356,7 +358,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -384,7 +386,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -406,6 +408,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("polynomial evaluation", tsk.key_ring())?;
         ckks_ensure!(
             poly.baby_steps() > 0,
             "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
@@ -432,7 +435,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSOps;
+        let precision = CKKSBSGSOps { key: tsk };
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
@@ -447,7 +450,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
             res,
             &mut baby_steps,
             power_basis,
-            tsk,
+            tsk.as_core(),
             &mut scratch.borrow(),
         )?;
 
@@ -464,7 +467,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -486,6 +489,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("polynomial evaluation", tsk.key_ring())?;
         let poly_re = &poly.re;
         let poly_im = &poly.im;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
@@ -527,7 +531,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSOps;
+        let precision = CKKSBSGSOps { key: tsk };
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
@@ -570,7 +574,7 @@ impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
             res,
             &mut baby_steps,
             power_basis,
-            tsk,
+            tsk.as_core(),
             &mut scratch.borrow(),
         )?;
 

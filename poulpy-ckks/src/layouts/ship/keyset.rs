@@ -82,13 +82,13 @@ impl ShipKeyParameters {
 /// applying `X -> X^g` to the keyswitch output realizes `beta * Rot_rot`
 /// under `s`.
 pub struct HMuxRotKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GLWESwitchingKey<D, W>,
+    pub(crate) key: crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>,
     pub(crate) gal_el: i64,
 }
 
 impl<D: Data, W: ZnxWord> HMuxRotKey<D, W> {
     /// The underlying rank-2 -> 1 switching key.
-    pub fn key(&self) -> &GLWESwitchingKey<D, W> {
+    pub fn key(&self) -> &crate::layouts::CKKSKey<GLWESwitchingKey<D, W>> {
         &self.key
     }
 
@@ -100,7 +100,7 @@ impl<D: Data, W: ZnxWord> HMuxRotKey<D, W> {
 
 /// Prepared form of [`HMuxRotKey`].
 pub struct HMuxRotKeyPrepared<D: Data, BE: Backend> {
-    pub(crate) key: GLWESwitchingKeyPrepared<D, BE>,
+    pub(crate) key: crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>,
     pub(crate) gal_el: i64,
 }
 
@@ -144,18 +144,18 @@ impl<D: Data, BE: Backend> ShipIndexKeysPrepared<D, BE> {
 pub struct ShipKeySet<D: Data, W: ZnxWord> {
     parameters: ShipKeyParameters,
     index_keys: Vec<ShipIndexKeys<D, W>>,
-    dense_to_sparse: GLWESwitchingKey<D, W>,
-    tensor_key: GLWETensorKey<D, W>,
-    conjugation_key: GLWEAutomorphismKey<D, W>,
+    dense_to_sparse: crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>,
+    tensor_key: crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
+    conjugation_key: crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>,
 }
 
 /// Eagerly prepared SHIP key material ready for a backend pipeline.
 pub struct ShipKeysPrepared<D: Data, BE: Backend> {
     parameters: ShipKeyParameters,
     index_keys: Vec<ShipIndexKeysPrepared<D, BE>>,
-    dense_to_sparse: GLWESwitchingKeyPrepared<D, BE>,
-    tensor_key: GLWETensorKeyPrepared<D, BE>,
-    conjugation_key: GLWEAutomorphismKeyPrepared<D, BE>,
+    dense_to_sparse: crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>,
+    tensor_key: crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>>,
+    conjugation_key: crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<D, BE>>,
 }
 
 /// Gadget layouts of the keys produced by [`ShipKeySet::generate`].
@@ -201,9 +201,9 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
         base2k: Base2K,
         complex: bool,
         index_keys: Vec<ShipIndexKeys<D, W>>,
-        dense_to_sparse: GLWESwitchingKey<D, W>,
-        tensor_key: GLWETensorKey<D, W>,
-        conjugation_key: GLWEAutomorphismKey<D, W>,
+        dense_to_sparse: crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>,
+        tensor_key: crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
+        conjugation_key: crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>,
     ) -> Result<Self> {
         let parameters = ShipKeyParameters::from_plan(plan, base2k, complex);
         validate_material(&parameters, &index_keys, &dense_to_sparse, &tensor_key, &conjugation_key)?;
@@ -243,19 +243,34 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             + CnvPVecAlloc<BE>
             + CnvPVecBytesOf,
     {
+        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+        ring.check(
+            "SHIP key preparation",
+            crate::layouts::CKKSRing {
+                kind: crate::layouts::CKKSRingKind::Standard,
+                n: self.parameters.plan.n().into(),
+            },
+        )?;
+        validate_material(
+            &self.parameters,
+            &self.index_keys,
+            &self.dense_to_sparse,
+            &self.tensor_key,
+            &self.conjugation_key,
+        )?;
         let base2k = self.parameters.base2k;
         let kk = self.parameters.plan.raised_k(base2k);
         let mask_size = kk.div_ceil(base2k);
 
         let mut required = module
-            .glwe_switching_key_prepare_tmp_bytes(&self.dense_to_sparse)
-            .max(module.prepare_tensor_key_tmp_bytes(&self.tensor_key))
-            .max(module.glwe_automorphism_key_prepare_tmp_bytes(&self.conjugation_key))
+            .glwe_switching_key_prepare_tmp_bytes(self.dense_to_sparse.as_core())
+            .max(module.prepare_tensor_key_tmp_bytes(self.tensor_key.as_core()))
+            .max(module.glwe_automorphism_key_prepare_tmp_bytes(self.conjugation_key.as_core()))
             .max(module.cnv_prepare_left_tmp_bytes(mask_size, mask_size));
         for ik in &self.index_keys {
             for group in &ik.mux_keys {
                 for mux in group {
-                    required = required.max(module.glwe_switching_key_prepare_tmp_bytes(&mux.key));
+                    required = required.max(module.glwe_switching_key_prepare_tmp_bytes(mux.key.as_core()));
                 }
             }
         }
@@ -292,9 +307,13 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                     group
                         .iter()
                         .map(|mux| {
-                            let mut key = module.glwe_switching_key_prepared_alloc_from_infos(&mux.key);
-                            module.glwe_switching_key_prepare(&mut key, &mux.key, scratch);
-                            HMuxRotKeyPrepared { key, gal_el: mux.gal_el }
+                            let mut key = module.glwe_switching_key_prepared_alloc_from_infos(mux.key.as_core());
+                            module.glwe_switching_key_prepare(&mut key, mux.key.as_core(), scratch);
+                            HMuxRotKeyPrepared {
+                                key: crate::layouts::CKKSKey::from_raw_parts(key, crate::api::CKKSModuleInfos::ckks_ring(module))
+                                    .unwrap(),
+                                gal_el: mux.gal_el,
+                            }
                         })
                         .collect()
                 })
@@ -302,19 +321,25 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             index_keys.push(ShipIndexKeysPrepared { mux_keys, masks, masks2 });
         }
 
-        let mut dense_to_sparse = module.glwe_switching_key_prepared_alloc_from_infos(&self.dense_to_sparse);
-        module.glwe_switching_key_prepare(&mut dense_to_sparse, &self.dense_to_sparse, scratch);
-        let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
-        module.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch);
-        let mut conjugation_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&self.conjugation_key);
-        module.glwe_automorphism_key_prepare(&mut conjugation_key, &self.conjugation_key, scratch);
+        let mut dense_to_sparse = module.glwe_switching_key_prepared_alloc_from_infos(self.dense_to_sparse.as_core());
+        module.glwe_switching_key_prepare(&mut dense_to_sparse, self.dense_to_sparse.as_core(), scratch);
+        let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(self.tensor_key.as_core());
+        module.prepare_tensor_key(&mut tensor_key, self.tensor_key.as_core(), scratch);
+        let mut conjugation_key = module.glwe_automorphism_key_prepared_alloc_from_infos(self.conjugation_key.as_core());
+        module.glwe_automorphism_key_prepare(&mut conjugation_key, self.conjugation_key.as_core(), scratch);
 
         Ok(ShipKeysPrepared {
             parameters: self.parameters,
             index_keys,
-            dense_to_sparse,
-            tensor_key,
-            conjugation_key,
+            dense_to_sparse: crate::layouts::CKKSKey::from_raw_parts(
+                dense_to_sparse,
+                crate::api::CKKSModuleInfos::ckks_ring(module),
+            )?,
+            tensor_key: crate::layouts::CKKSKey::from_raw_parts(tensor_key, crate::api::CKKSModuleInfos::ckks_ring(module))?,
+            conjugation_key: crate::layouts::CKKSKey::from_raw_parts(
+                conjugation_key,
+                crate::api::CKKSModuleInfos::ckks_ring(module),
+            )?,
         })
     }
 }
@@ -331,17 +356,17 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
     }
 
     /// Dense -> sparse encapsulation key (bottom modulus).
-    pub fn dense_to_sparse(&self) -> &GLWESwitchingKeyPrepared<D, BE> {
+    pub fn dense_to_sparse(&self) -> &crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>> {
         &self.dense_to_sparse
     }
 
     /// Relinearization key of the product tree.
-    pub fn tensor_key(&self) -> &GLWETensorKeyPrepared<D, BE> {
+    pub fn tensor_key(&self) -> &crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>> {
         &self.tensor_key
     }
 
     /// Conjugation (Galois element `-1`) automorphism key.
-    pub fn conjugation_key(&self) -> &GLWEAutomorphismKeyPrepared<D, BE> {
+    pub fn conjugation_key(&self) -> &crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<D, BE>> {
         &self.conjugation_key
     }
 }
@@ -352,7 +377,7 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
 pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    sk_dense_host: &GLWESecret<AlignedBuf, i64>,
+    sk_dense_host: &crate::layouts::CKKSKey<GLWESecret<AlignedBuf, i64>>,
     beta: bool,
     rot: usize,
     k_ct: usize,
@@ -368,6 +393,11 @@ where
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
     Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
+    crate::api::CKKSModuleInfos::ckks_ring(module).check("SHIP key generation", sk_dense_host.key_ring())?;
+    anyhow::ensure!(
+        !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
+        "SHIP keys require a standard ring"
+    );
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
     let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
@@ -410,7 +440,10 @@ where
     })?;
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, &ksk_infos, source_xe, source_xa, scratch);
-    Ok(HMuxRotKey { key, gal_el })
+    Ok(HMuxRotKey {
+        key: crate::layouts::CKKSKey::from_raw_parts(key, crate::api::CKKSModuleInfos::ckks_ring(module))?,
+        gal_el,
+    })
 }
 
 // Generation is word-pinned, not by choice: `generate` stages its key material
@@ -433,7 +466,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         plan: &ShipPlan,
         base2k: Base2K,
         spec: &ShipSecretSpec,
-        sk_dense_host: &GLWESecret<AlignedBuf, i64>,
+        sk_dense_host: &crate::layouts::CKKSKey<GLWESecret<AlignedBuf, i64>>,
         layout: &ShipKeysLayout,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -456,6 +489,11 @@ impl<D: Data> ShipKeySet<D, i64> {
         CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(module).check("SHIP key generation", sk_dense_host.key_ring())?;
+        anyhow::ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
+            "SHIP keys require a standard ring"
+        );
         let n = sk_dense_host.n();
         ensure!(
             n.as_usize() == plan.n(),
@@ -489,10 +527,12 @@ impl<D: Data> ShipKeySet<D, i64> {
             rank: Rank(1),
         })?;
 
-        let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host);
+        let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host.as_core());
         sk_dense_host.transfer_into(&mut sk_dense);
         let mut sk_dense_prepared = module.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
         module.glwe_secret_prepare(&mut sk_dense_prepared, &sk_dense);
+        let sk_dense_prepared =
+            crate::layouts::CKKSKey::from_raw_parts(sk_dense_prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap();
 
         let mut index_keys = Vec::with_capacity(h);
         for (slot, &(j, s_j)) in spec.support().iter().enumerate() {
@@ -580,9 +620,9 @@ impl<D: Data> ShipKeySet<D, i64> {
             base2k,
             layout.complex,
             index_keys,
-            dense_to_sparse,
-            tensor_key,
-            conjugation_key,
+            crate::layouts::CKKSKey::from_raw_parts(dense_to_sparse, crate::api::CKKSModuleInfos::ckks_ring(module))?,
+            crate::layouts::CKKSKey::from_raw_parts(tensor_key, crate::api::CKKSModuleInfos::ckks_ring(module))?,
+            crate::layouts::CKKSKey::from_raw_parts(conjugation_key, crate::api::CKKSModuleInfos::ckks_ring(module))?,
         )
     }
 }
@@ -591,10 +631,27 @@ impl<D: Data> ShipKeySet<D, i64> {
 fn validate_material<D: Data, W: ZnxWord>(
     parameters: &ShipKeyParameters,
     index_keys: &[ShipIndexKeys<D, W>],
-    dense_to_sparse: &GLWESwitchingKey<D, W>,
-    tensor_key: &GLWETensorKey<D, W>,
-    conjugation_key: &GLWEAutomorphismKey<D, W>,
+    dense_to_sparse: &crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>,
+    tensor_key: &crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
+    conjugation_key: &crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>,
 ) -> Result<()> {
+    let ring = crate::layouts::CKKSRing {
+        kind: crate::layouts::CKKSRingKind::Standard,
+        n: parameters.plan.n().into(),
+    };
+    ring.check("SHIP key material", dense_to_sparse.key_ring())?;
+    ring.check("SHIP key material", tensor_key.key_ring())?;
+    ring.check("SHIP key material", conjugation_key.key_ring())?;
+    for ik in index_keys {
+        for ct in ik.masks.iter().chain(&ik.masks2) {
+            ring.check_ciphertext("SHIP key material", ct)?;
+        }
+        for group in &ik.mux_keys {
+            for mux in group {
+                ring.check("SHIP key material", mux.key.key_ring())?;
+            }
+        }
+    }
     let plan = &parameters.plan;
     let n = plan.n();
     let base2k = parameters.base2k;

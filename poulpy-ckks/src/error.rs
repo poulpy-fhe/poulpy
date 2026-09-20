@@ -101,6 +101,12 @@ type Result<T> = CKKSResult<T>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CKKSCompositionError {
+    /// Operands must belong to the executing module's ring.
+    RingMismatch {
+        op: &'static str,
+        expected: crate::layouts::CKKSRing,
+        actual: crate::layouts::CKKSRing,
+    },
     /// Shrinking a ciphertext buffer would drop required semantic bits.
     LimbReallocationShrinksBelowMetadata {
         max_k: usize,
@@ -174,6 +180,7 @@ pub enum CKKSCompositionError {
 impl fmt::Display for CKKSCompositionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::RingMismatch { op, expected, actual } => write!(f, "{op} requires ring {expected:?}, got {actual:?}"),
             Self::LimbReallocationShrinksBelowMetadata {
                 max_k,
                 log_delta,

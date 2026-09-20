@@ -50,7 +50,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -62,7 +62,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -80,7 +80,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<Self>,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -90,7 +90,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -100,7 +100,7 @@ pub unsafe trait CKKSMulImpl: Backend {
     fn ckks_square_assign_impl<Dst, T>(
         module: &Module<Self>,
         dst: &mut Dst,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -207,7 +207,7 @@ where
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -223,7 +223,7 @@ where
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -245,7 +245,7 @@ where
         module: &Module<BE>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -259,7 +259,7 @@ where
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -273,7 +273,7 @@ where
     fn ckks_square_assign_impl<Dst, T>(
         module: &Module<BE>,
         dst: &mut Dst,
-        tsk: &T,
+        tsk: &crate::layouts::CKKSKey<T>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

@@ -28,6 +28,8 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pow2_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pow2_into", src)?;
         BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
@@ -35,6 +37,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pow2_assign", dst)?;
         BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)
     }
 
@@ -53,6 +56,8 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_pow2_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_pow2_into", src)?;
         BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
@@ -60,6 +65,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_pow2_assign", dst)?;
         BE::ckks_div_pow2_assign_impl(self, dst, bits)
     }
 }

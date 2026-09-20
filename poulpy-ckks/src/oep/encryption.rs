@@ -32,7 +32,7 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         module: &Module<Self>,
         ct: &mut Dct,
         pt: &Pt,
-        sk: &S,
+        sk: &crate::layouts::CKKSKey<S>,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -52,7 +52,7 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         module: &Module<Self>,
         pt: &mut Pt,
         ct: &Dct,
-        sk: &S,
+        sk: &crate::layouts::CKKSKey<S>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -93,7 +93,7 @@ where
         module: &Module<BE>,
         ct: &mut Dct,
         pt: &Pt,
-        sk: &S,
+        sk: &crate::layouts::CKKSKey<S>,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -119,7 +119,7 @@ where
         module: &Module<BE>,
         pt: &mut Pt,
         ct: &Dct,
-        sk: &S,
+        sk: &crate::layouts::CKKSKey<S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

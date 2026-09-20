@@ -63,6 +63,12 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "SHIP requires a standard ring"
+        );
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_tmp_bytes", output)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_tmp_bytes", input)?;
         ship_bootstrap_tmp_bytes::<BE, F, _>(self, output, input, keys)
     }
 
@@ -81,6 +87,11 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "SHIP requires a standard ring"
+        );
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_coeff_encodings", ciphertext)?;
         let required = BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)?;
         ckks_ensure!(
             scratch.available() >= required,
@@ -100,6 +111,12 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "SHIP requires a standard ring"
+        );
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_into", output)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_into", input)?;
         ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)
     }
 
@@ -113,6 +130,12 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "SHIP requires a standard ring"
+        );
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_complex_into", output)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_ship_bootstrap_complex_into", input)?;
         ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)
     }
 }

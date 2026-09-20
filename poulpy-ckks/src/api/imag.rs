@@ -6,6 +6,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Multiplication and division of a ciphertext by the imaginary unit `i`.
 ///
+/// These operations require the standard CKKS ring.
+///
 /// In the CKKS slot layout each pair of conjugate slots `(z_j, z̄_j)` is
 /// mapped to real and imaginary interleaved coefficients of the underlying
 /// polynomial.  Multiplying by `i` rotates every complex slot value by 90

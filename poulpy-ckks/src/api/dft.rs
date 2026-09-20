@@ -6,9 +6,10 @@
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
 use crate::CKKSResult as Result;
+use crate::layouts::LinearTransformation;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -39,7 +40,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         &self,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
@@ -48,39 +49,39 @@ pub trait CKKSDFTOps<BE: Backend> {
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
     fn ckks_coeffs_to_slots<P, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place).
     fn ckks_slots_to_coeffs<P, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
@@ -90,14 +91,14 @@ pub trait CKKSDFTOps<BE: Backend> {
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -106,14 +107,14 @@ pub trait CKKSDFTOps<BE: Backend> {
         ct_real: &Src,
         ct_imag: &Src,
         dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
@@ -122,14 +123,14 @@ pub trait CKKSDFTOps<BE: Backend> {
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -137,14 +138,14 @@ pub trait CKKSDFTOps<BE: Backend> {
         op_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 }
 
 /// Homomorphic DFT matrix generation at scalar precision `F`.

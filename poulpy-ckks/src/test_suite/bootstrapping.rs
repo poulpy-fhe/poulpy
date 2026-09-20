@@ -169,6 +169,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let tp = CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n,
         base2k,
         k: k_boot,
@@ -246,7 +247,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
     // form); `prepare` preprocesses the whole set up front for this CPU path.
-    let bsk = ctx
+    let mut bsk = ctx
         .generate_keys(
             &module,
             &sk_raw,
@@ -257,7 +258,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, &mut scratch.borrow())
+        .unwrap();
     println!("KeyGen: {:?}", now.elapsed());
 
     // Encrypt z at the input ("level 0") modulus.
@@ -365,6 +367,35 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     //    message ratio: `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let original = ct.to_host_owned::<BE>();
+    let (dense_to_sparse, sparse_to_dense) = bsk.encapsulation_keys.take().unwrap();
+    let ring = sparse_to_dense.key_ring();
+    let wrong_ring = crate::layouts::CKKSRing {
+        kind: crate::layouts::CKKSRingKind::ConjugateInvariant,
+        ..ring
+    };
+    bsk.encapsulation_keys = Some((
+        dense_to_sparse,
+        crate::layouts::CKKSKey::from_raw_parts(sparse_to_dense.into_core(), wrong_ring).unwrap(),
+    ));
+    let error = module
+        .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
+        .unwrap_err();
+    assert!(matches!(
+        error.composition(),
+        Some(crate::CKKSCompositionError::RingMismatch { .. })
+    ));
+    assert_eq!(ct.meta(), original.meta());
+    assert_eq!(ct.k(), original.k());
+    assert_eq!(
+        ct.to_host_owned::<BE>().data().data().as_ref(),
+        original.data().data().as_ref()
+    );
+    let (dense_to_sparse, sparse_to_dense) = bsk.encapsulation_keys.take().unwrap();
+    bsk.encapsulation_keys = Some((
+        dense_to_sparse,
+        crate::layouts::CKKSKey::from_raw_parts(sparse_to_dense.into_core(), ring).unwrap(),
+    ));
     module
         .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
         .unwrap();
@@ -623,6 +654,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let tp = CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n,
         base2k,
         k: k_boot,
@@ -701,7 +733,8 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, &mut scratch.borrow())
+        .unwrap();
 
     let (re, im) = test_vector_1::<F>(m);
 
@@ -1013,6 +1046,7 @@ where
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let tp = CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n,
         base2k,
         k: k_boot,
@@ -1090,7 +1124,8 @@ where
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, &mut scratch.borrow())
+        .unwrap();
 
     let (re, im) = test_vector_1::<F>(m);
     let ct0 = ckks_encrypt_with_prec(
@@ -1180,7 +1215,7 @@ fn decrypt<BE: Backend<ZnxWord = i64> + TestContextBackend, F, E, S>(
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &S,
+    sk: &crate::layouts::CKKSKey<S>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (Vec<F>, Vec<F>)
 where
@@ -1210,7 +1245,7 @@ where
 fn decrypt_coeffs<BE, S>(
     module: &Module<BE>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &S,
+    sk: &crate::layouts::CKKSKey<S>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Vec<f64>
 where

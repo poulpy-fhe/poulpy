@@ -44,7 +44,11 @@ where
     // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
     // coefficient `1 << log_delta`, so the limb bytes are built with the integer
     // codec and uploaded as raw bytes — no float codec or backend transfer op.
-    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
+    let mut host_pt = CKKSPlaintext::from_inner(
+        GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()),
+        meta,
+        module.ckks_ring().kind,
+    );
     let max_k = host_pt.encoded_k();
     host_pt.encode_vec_i64(&[1i64 << meta.log_delta], max_k);
 

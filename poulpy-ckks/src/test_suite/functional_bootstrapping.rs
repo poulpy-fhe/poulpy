@@ -335,6 +335,7 @@ fn run_case<BE, F, E>(
     let boot_tmp = module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, &backend_luts, &keys_layout);
     if backend_luts.iter().any(|lut| lut.requires_eval_mod()) {
         let boot_layout = crate::CKKSLayout {
+            ring_kind: crate::layouts::CKKSRingKind::Standard,
             glwe_layout: output_spec.glwe_layout,
             meta: CKKSMeta::default(),
         };
@@ -359,7 +360,8 @@ fn run_case<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(module, &mut scratch.borrow());
+        .prepare(module, &mut scratch.borrow())
+        .unwrap();
 
     let mut op_scratch = ScratchOwned::<BE>::alloc(boot_tmp);
 

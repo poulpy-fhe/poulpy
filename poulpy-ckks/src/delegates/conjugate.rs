@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::GetAutomorphismKey;
+use crate::{api::CKKSModuleInfos, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
@@ -29,14 +29,21 @@ where
         dst: &mut Dst,
         src: &Src,
         k: i64,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_conjugate_rotate_into", keys.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", src)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "conjugation requires the standard CKKS ring"
+        );
         let p: i64 = conj_rotate_galois_element(k, self.cyclotomic_order());
         let key = keys
             .get_automorphism_key(p, src.k())
@@ -48,11 +55,22 @@ where
         BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)
     }
 
-    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        keys: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_conjugate_assign", keys.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_assign", dst)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "conjugation requires the standard CKKS ring"
+        );
         let key = keys
             .get_automorphism_key(-1, dst.k())
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {

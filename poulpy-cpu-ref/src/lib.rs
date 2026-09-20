@@ -99,3 +99,19 @@ crate::conjugate_invariant_core_test_suite!(
     crate::NTT4x30Ref,
     crate::NTTModuleConfig::conjugate_invariant()
 );
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64ref,
+    crate::FFT64Ref,
+    crate::FFT64ModuleConfig::conjugate_invariant(),
+    poulpy_ckks::test_suite::FFT64_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30ref,
+    crate::NTT4x30Ref,
+    crate::NTTModuleConfig::conjugate_invariant(),
+    poulpy_ckks::test_suite::NTT4X30_PARAMS_F64
+);

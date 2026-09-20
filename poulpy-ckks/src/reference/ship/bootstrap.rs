@@ -40,6 +40,10 @@ where
     Src: CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap";
+    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+    ring.check_ciphertext(OP, output)?;
+    ring.check_ciphertext(OP, input)?;
+    ring.check(OP, (keys.tensor_key()).key_ring())?;
     let params = keys.parameters();
     let plan = params.plan();
     let base2k = params.base2k();
@@ -126,6 +130,9 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap";
+    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+    ring.check_ciphertext(OP, input)?;
+    ring.check(OP, (keys.tensor_key()).key_ring())?;
     let params = keys.parameters();
     let plan = *params.plan();
     let base2k = params.base2k();

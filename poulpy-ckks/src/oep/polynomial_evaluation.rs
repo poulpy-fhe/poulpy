@@ -28,7 +28,7 @@ fn polynomial_input<BE, S, H>(
     module: &Module<BE>,
     src: &S,
     transform: PolynomialInputTransform,
-    tsk: &H,
+    tsk: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
@@ -72,7 +72,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl: Backend {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -88,7 +88,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl: Backend {
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -103,7 +103,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl: Backend {
         dst: &mut R,
         src: &S,
         bsgs: &B,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -119,7 +119,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl: Backend {
         dst: &mut R,
         src: &S,
         poly: &ComplexBSGSPolynomial<C>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -158,7 +158,7 @@ where
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -177,7 +177,7 @@ where
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -201,7 +201,7 @@ where
         dst: &mut R,
         src: &S,
         bsgs: &B,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -231,7 +231,7 @@ where
         dst: &mut R,
         src: &S,
         poly: &ComplexBSGSPolynomial<C>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

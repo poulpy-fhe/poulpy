@@ -158,6 +158,7 @@ fn run_eval_mod_case<BE, F, E>(
     let input_log_delta = 40;
     let dsize = 2;
     let test_params = CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n: params.n,
         base2k: params.base2k,
         // Budget for the evaluation (charged at `f_mod_log_delta`) + head-room,

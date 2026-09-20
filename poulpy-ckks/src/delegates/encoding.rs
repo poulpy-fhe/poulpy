@@ -5,8 +5,8 @@ use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef,
-    api::{CKKSEncodingOps, CKKSEncodingScalar},
-    layouts::{CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef},
+    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos},
+    layouts::{CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef},
     oep::CKKSEncodingImpl,
 };
 
@@ -38,11 +38,58 @@ where
     BE: Backend + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
 {
+    fn ckks_encode_slots_assign_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
+        C: CKKSEncodingBufferToBackendMut<BE, F>,
+    {
+        self.ckks_ring().check_plaintext("ckks_encode_slots_assign_into", pt)?;
+        validate_transform(2 * self.ckks_max_slots(), slots.len())?;
+        let count = if self.ckks_is_conjugate_invariant() {
+            slots.len() / 2
+        } else {
+            slots.len()
+        };
+        validate_coefficients(self.max_n(), pt, count)?;
+        self.ckks_slots_to_coeffs_assign(slots)?;
+        let slots = slots.to_backend_ref();
+        let coeffs = CKKSEncodingBuffer::from_data(
+            BE::region_ref(&slots.data, 0, CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(count)),
+            count,
+        );
+        BE::ckks_encode_coeffs_into_impl(self, pt, &coeffs)
+    }
+
+    fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        C: CKKSEncodingBufferToBackendMut<BE, F>,
+    {
+        self.ckks_ring().check_plaintext("ckks_decode_slots_into", pt)?;
+        validate_transform(2 * self.ckks_max_slots(), slots.len())?;
+        let count = if self.ckks_is_conjugate_invariant() {
+            slots.len() / 2
+        } else {
+            slots.len()
+        };
+        validate_coefficients(self.max_n(), pt, count)?;
+        {
+            let mut slots = slots.to_backend_mut();
+            let mut coeffs = CKKSEncodingBuffer::from_data(
+                BE::region_mut_ref(&mut slots.data, 0, CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(count)),
+                count,
+            );
+            BE::ckks_decode_coeffs_into_impl(self, pt, &mut coeffs)?;
+        }
+        self.ckks_coeffs_to_slots_assign(slots)
+    }
+
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>,
     {
+        self.ckks_ring().check_coefficients("ckks_encode_coeffs_into", pt)?;
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
         BE::ckks_encode_coeffs_into_impl(self, pt, &coeffs.to_backend_ref())
     }
@@ -52,6 +99,7 @@ where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
+        self.ckks_ring().check_coefficients("ckks_decode_coeffs_into", pt)?;
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
         BE::ckks_decode_coeffs_into_impl(self, pt, &mut coeffs.to_backend_mut())
     }
@@ -60,7 +108,7 @@ where
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
-        validate_transform(self.max_n(), values.len())?;
+        validate_transform(2 * self.ckks_max_slots(), values.len())?;
         let mut values = values.to_backend_mut();
         BE::ckks_encoding_plan_cache_impl(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
             || BE::ckks_encoding_plans_create_impl(self).map_err(::anyhow::Error::from),
@@ -72,7 +120,7 @@ where
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
-        validate_transform(self.max_n(), values.len())?;
+        validate_transform(2 * self.ckks_max_slots(), values.len())?;
         let mut values = values.to_backend_mut();
         BE::ckks_encoding_plan_cache_impl(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
             || BE::ckks_encoding_plans_create_impl(self).map_err(::anyhow::Error::from),

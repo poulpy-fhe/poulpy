@@ -365,7 +365,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let coeff_meta = crate::CoeffsMeta::from_delta_budget(40, 8);
     let bsgs = poly
-        .encode_bsgs(host_module, params.base2k.into(), coeff_meta)
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), coeff_meta)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
     let tolerance = (-F::from_usize(coeff_meta.meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
 
@@ -425,7 +425,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
 
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for cubic monomial polynomial");
     let poly = upload_bsgs(module, &bsgs_host);
 
@@ -507,7 +507,7 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
 
     let poly_ref = Polynomial::new(Basis::Monomial, vec![0.125f64, -0.25, 0.0625]);
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for monomial polynomial");
     let bsgs = upload_bsgs(module, &bsgs_host);
 
@@ -588,7 +588,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
 
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-7 monomial polynomial");
     let bsgs = upload_bsgs(module, &bsgs_host);
 
@@ -676,7 +676,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     assert_eq!(poly_ref.parity, Parity::Even, "polynomial should be detected as even");
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed");
     assert_eq!(bsgs_host.parity(), Parity::Even, "BSGSPolynomial should carry Even parity");
     let bsgs = upload_bsgs(module, &bsgs_host);
@@ -772,7 +772,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     assert_eq!(poly_ref.parity, Parity::Odd, "polynomial should be detected as odd");
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed");
     assert_eq!(bsgs_host.parity(), Parity::Odd, "BSGSPolynomial should carry Odd parity");
     let bsgs = upload_bsgs(module, &bsgs_host);
@@ -855,7 +855,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let bsgs_host = poly
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
     let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs(&bsgs_host, x)).collect();
     let want_im = vec![F::zero(); x_re.len()];
@@ -940,7 +940,13 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let bsgs_host = poly
-        .encode_bsgs_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinMult)
+        .encode_bsgs_with(
+            host_module,
+            params.ring_kind,
+            params.base2k.into(),
+            PT_PREC.into(),
+            SplitStrategy::MinMult,
+        )
         .expect("encode_bsgs_with MinMult should succeed for degree-31 Chebyshev polynomial");
     let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs(&bsgs_host, x)).collect();
     let want_im = vec![F::zero(); x_re.len()];
@@ -1034,11 +1040,23 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
         })
         .collect();
     let chebyshev_even = Polynomial::new_with_parity(Basis::Chebyshev, even_coeffs.clone(), Parity::Even)
-        .encode_bsgs_folded_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinDepth)
+        .encode_bsgs_folded_with(
+            host_module,
+            params.ring_kind,
+            params.base2k.into(),
+            PT_PREC.into(),
+            SplitStrategy::MinDepth,
+        )
         .expect("even Chebyshev T₂ encoding should succeed");
     assert_eq!(chebyshev_even.input_transform(), PolynomialInputTransform::ChebyshevT2);
     let monomial_even = Polynomial::new_with_parity(Basis::Monomial, even_coeffs, Parity::Even)
-        .encode_bsgs_folded_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinDepth)
+        .encode_bsgs_folded_with(
+            host_module,
+            params.ring_kind,
+            params.base2k.into(),
+            PT_PREC.into(),
+            SplitStrategy::MinDepth,
+        )
         .expect("even monomial square encoding should succeed");
     assert_eq!(monomial_even.input_transform(), PolynomialInputTransform::Square);
 
@@ -1052,14 +1070,26 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
         })
         .collect();
     let chebyshev_odd = Polynomial::new_with_parity(Basis::Chebyshev, odd_coeffs.clone(), Parity::Odd)
-        .encode_bsgs_folded_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinMult)
+        .encode_bsgs_folded_with(
+            host_module,
+            params.ring_kind,
+            params.base2k.into(),
+            PT_PREC.into(),
+            SplitStrategy::MinMult,
+        )
         .expect("odd Chebyshev T₂ encoding should succeed");
     assert_eq!(
         chebyshev_odd.input_transform(),
         PolynomialInputTransform::ChebyshevT2TimesInput
     );
     let monomial_odd = Polynomial::new_with_parity(Basis::Monomial, odd_coeffs, Parity::Odd)
-        .encode_bsgs_folded_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinMult)
+        .encode_bsgs_folded_with(
+            host_module,
+            params.ring_kind,
+            params.base2k.into(),
+            PT_PREC.into(),
+            SplitStrategy::MinMult,
+        )
         .expect("odd monomial square encoding should succeed");
     assert_eq!(monomial_odd.input_transform(), PolynomialInputTransform::SquareTimesInput);
 
@@ -1173,7 +1203,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for complex cubic monomial polynomial");
     let poly = upload_complex_bsgs(module, &bsgs_host);
 
@@ -1287,7 +1317,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Chebyshev, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for complex degree-7 Chebyshev polynomial");
     let poly = upload_complex_bsgs(module, &bsgs_host);
 
@@ -1431,7 +1461,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for even complex monomial polynomial");
     assert_eq!(bsgs_host.re.parity(), Parity::Even, "BSGS real part should carry Even parity");
     assert_eq!(bsgs_host.im.parity(), Parity::Even, "BSGS imag part should carry Even parity");
@@ -1543,7 +1573,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for odd complex monomial polynomial");
     assert_eq!(bsgs_host.re.parity(), Parity::Odd, "BSGS real part should carry Odd parity");
     assert_eq!(bsgs_host.im.parity(), Parity::Odd, "BSGS imag part should carry Odd parity");
@@ -1659,7 +1689,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
+        .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-8 complex monomial polynomial");
     assert_eq!(bsgs_host.re.degree(), 8, "fold test requires degree 8");
     let n_baby = bsgs_host.re.baby_steps().len();
@@ -1752,6 +1782,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     // Budget comfortably above the worst-case consumption (degree 511, MinMult).
     let k = (input_log_delta + 12 * input_log_delta + 16).next_multiple_of(base2k);
     let params = CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n,
         base2k,
         k,
@@ -1792,7 +1823,13 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 .map(|i| F::from_f64(((i % 7) + 1) as f64 / 16.0).unwrap())
                 .collect();
             let bsgs_host = Polynomial::new(Basis::Monomial, coeffs)
-                .encode_bsgs_with(&host_module, base2k.into(), coeff_meta.into(), strategy)
+                .encode_bsgs_with(
+                    &host_module,
+                    crate::layouts::CKKSRingKind::Standard,
+                    base2k.into(),
+                    coeff_meta.into(),
+                    strategy,
+                )
                 .expect("encode_bsgs_with");
             let bsgs = upload_bsgs(&module, &bsgs_host);
 

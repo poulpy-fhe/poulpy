@@ -24,7 +24,13 @@ pub trait PowerBasisInsert<D: Data, W: ZnxWord> {
 /// CKKS computation of the power basis entries used by BSGS evaluation.
 pub trait PowerBasisGen<BE: Backend> {
     /// Recursively computes and stores X^`n` (monomial basis).
-    fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn gen_power<H>(
+        &mut self,
+        n: usize,
+        module: &Module<BE>,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -35,7 +41,7 @@ pub trait PowerBasisGen<BE: Backend> {
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -51,7 +57,7 @@ pub trait PowerBasisGen<BE: Backend> {
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -72,6 +78,11 @@ impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D
             let x = self
                 .get_stored(1)
                 .expect("PowerBasis::new always stores the degree-one power");
+            crate::layouts::CKKSRing {
+                kind: x.ring_kind(),
+                n: x.n(),
+            }
+            .check_ciphertext("power-basis insertion", &value)?;
             (x.n(), x.base2k(), x.rank())
         };
         ensure!(
@@ -99,12 +110,25 @@ impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D
 }
 
 impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
-    fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn gen_power<H>(
+        &mut self,
+        n: usize,
+        module: &Module<BE>,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
+        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+        ring.check("power-basis generation", tsk.key_ring())?;
+        for power in 1..=n.max(1) {
+            if let Some(value) = self.get_stored(power) {
+                ring.check_ciphertext("power-basis generation", value)?;
+            }
+        }
         ensure!(
             self.basis() == Basis::Monomial,
             "PowerBasis::gen_power only supports the monomial basis; use gen_power_chebyshev for Chebyshev"
@@ -133,12 +157,25 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         Ok(())
     }
 
-    fn gen_power_chebyshev<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn gen_power_chebyshev<H>(
+        &mut self,
+        n: usize,
+        module: &Module<BE>,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
+        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+        ring.check("power-basis generation", tsk.key_ring())?;
+        for power in 1..=n.max(1) {
+            if let Some(value) = self.get_stored(power) {
+                ring.check_ciphertext("power-basis generation", value)?;
+            }
+        }
         ensure!(
             self.basis() == Basis::Chebyshev,
             "gen_power_chebyshev requires a Chebyshev PowerBasis"
@@ -195,7 +232,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -203,6 +240,13 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
+        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+        ring.check("power-basis generation", tsk.key_ring())?;
+        for power in 1..=degree.max(1) {
+            if let Some(value) = self.get_stored(power) {
+                ring.check_ciphertext("power-basis generation", value)?;
+            }
+        }
         ensure!(degree >= 1, "populate: degree must be ≥ 1");
 
         let log_degree = (usize::BITS - degree.leading_zeros()) as usize;

@@ -6,14 +6,12 @@
 //! `docs/linear_transformation.md`.
 
 use crate::SlotsKind;
+use crate::layouts::{LinearTransformationBabySteps, LinearTransformationPrepared};
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
-    LinearTransformationPrepared,
-    layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
-    },
+    GLWECopy, GLWELinearTransformations, LinearTransformationGiantStep,
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::PreparedDiagonal},
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
 };
 use poulpy_hal::{
@@ -23,7 +21,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
+    api::{CKKSCopyOps, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalScale},
     layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
     reference::mul::mul_pt_params_raw,
 };
@@ -45,7 +43,7 @@ where
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &poulpy_core::LinearTransformationBabySteps<BE>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -123,32 +121,45 @@ where
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Stash the plaintext scale exponent while filling the diagonals so eval
-        // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
-        // must share one scale/width (the crate's compilers always produce
-        // uniform diagonals; the unprepared eval path rejects heterogeneous
-        // hand-built inputs via `ensure_uniform_diagonal_scale` — this
-        // infallible prepare stashes the first diagonal's scale for all).
+        self.ckks_ring().check("ckks_prepare_linear_transformation_rhs", lt.ring)?;
+        self.ckks_ring()
+            .check("ckks_prepare_linear_transformation_rhs", prepared.ring)?;
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
+            for step in &lt.giant_steps {
+                for diagonal in &step.diagonals {
+                    ckks_ensure!(
+                        diagonal.plaintext.log_delta() == first_pt.log_delta()
+                            && diagonal.plaintext.encoded_k() == first_pt.encoded_k(),
+                        "linear transformation diagonals must share scale and width"
+                    );
+                }
+            }
             prepared.set_log_scale(first_pt.log_delta());
         }
-        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        self.glwe_prepare_linear_transformation_rhs(&mut prepared.inner, &lt.inner, scratch);
+        Ok(())
     }
 
     fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_prepare_linear_transformation_baby_steps", keys.key_ring())?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_prepare_linear_transformation_baby_steps", src)?;
+        self.ckks_ring()
+            .check("ckks_prepare_linear_transformation_baby_steps", babies.ring)?;
         let cyclotomic_order = self.cyclotomic_order();
         let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
@@ -164,7 +175,7 @@ where
                 .into());
             }
         }
-        self.glwe_prepare_linear_transformation_baby_steps(babies, src, keys, scratch);
+        self.glwe_prepare_linear_transformation_baby_steps(&mut babies.inner, src, keys.as_core(), scratch);
         Ok(())
     }
 
@@ -176,15 +187,22 @@ where
         src: &Src,
         babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_linear_transformation_into", keys.key_ring())?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_into", src)?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_into", dst)?;
+        self.ckks_ring().check("ckks_eval_linear_transformation_into", lt.ring)?;
+        self.ckks_ring().check("ckks_eval_linear_transformation_into", babies.ring)?;
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
@@ -210,10 +228,12 @@ where
         check_required_keys(lt, babies, keys, self.cyclotomic_order(), res_k)?;
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
-        // Diagonals are complex in general, so a transformed value leaves the
-        // reals unless the caller can prove otherwise.
-        dst.set_slots(SlotsKind::Complex);
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys.as_core(), scratch);
+        dst.set_slots(if self.ckks_is_conjugate_invariant() {
+            SlotsKind::Real
+        } else {
+            SlotsKind::Complex
+        });
         Ok(())
     }
 
@@ -222,14 +242,20 @@ where
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_linear_transformation_assign", keys.key_ring())?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_assign", dst)?;
+        self.ckks_ring().check("ckks_eval_linear_transformation_assign", lt.ring)?;
+        self.ckks_ring()
+            .check("ckks_eval_linear_transformation_assign", babies.ring)?;
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {
@@ -248,15 +274,21 @@ where
         dst: &mut Dst,
         src: &Src,
         lt: &LinearTransformation<P>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_linear_transformation_self_into", keys.key_ring())?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_self_into", src)?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_self_into", dst)?;
+        self.ckks_ring().check("ckks_eval_linear_transformation_self_into", lt.ring)?;
         // Only the (small) input baby cache is materialized here; with a plaintext
         // `lt` the matrix RHS itself is streamed inside the eval.
         let mut babies = LinearTransformationBabySteps::alloc(self, lt.baby_steps(), src);
@@ -268,14 +300,19 @@ where
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_linear_transformation_self_assign", keys.key_ring())?;
+        self.ckks_ring()
+            .check_ciphertext("ckks_eval_linear_transformation_self_assign", dst)?;
+        self.ckks_ring()
+            .check("ckks_eval_linear_transformation_self_assign", lt.ring)?;
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {
@@ -293,12 +330,12 @@ where
 fn check_required_keys<BE: Backend, P, H>(
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     cyclotomic_order: i64,
     giant_k: TorusPrecision,
 ) -> Result<()>
 where
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     for rotation in lt.baby_steps().iter().copied() {
         ckks_ensure!(

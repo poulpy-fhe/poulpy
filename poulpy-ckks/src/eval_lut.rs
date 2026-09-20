@@ -6,7 +6,6 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
-use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -71,14 +70,14 @@ pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
     ct: &C,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     lut: &ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
-    conj_key: &K,
-    tsk: &H,
+    conj_key: &crate::layouts::CKKSKey<K>,
+    tsk: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: GetAutomorphismKey<BE>,
+    K: poulpy_core::layouts::GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
@@ -95,12 +94,12 @@ where
         rank: res.rank(),
     };
     scratch.scope(|scratch| {
-        let (mut e_x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
+        let (mut e_x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
         module.ckks_eval_mod(&mut e_x, ct, eval_exp, tsk, &mut scratch)?;
         module.ckks_eval_poly_complex_const_coeffs(res, &e_x, lut, tsk, &mut scratch)
     })?;
     scratch.scope(|scratch| {
-        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
+        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
@@ -122,7 +121,7 @@ pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
     layout: &GLWELayout,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
-    tsk: &H,
+    tsk: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PowerBasis<CKKSCiphertextOwned<BE>>>
 where
@@ -169,14 +168,14 @@ pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
     res: &mut R,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
-    conj_key: &K,
-    tsk: &H,
+    conj_key: &crate::layouts::CKKSKey<K>,
+    tsk: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: GetAutomorphismKey<BE>,
+    K: poulpy_core::layouts::GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
@@ -197,7 +196,7 @@ where
         rank: res.rank(),
     };
     scratch.scope(|scratch| {
-        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
+        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
@@ -238,7 +237,7 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
     cos_bsgs: &BSGSPolynomial<CKKSPlaintextOwned<BE>>,
     log_interval_reduction: usize,
     affine: &CKKSPlaintextOwned<BE>,
-    tsk: &H,
+    tsk: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where

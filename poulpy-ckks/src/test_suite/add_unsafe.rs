@@ -59,7 +59,7 @@ where
         .ckks_add_into_unnormalized(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
         .unwrap();
     assert_binary_output_meta("add_ct_aligned_unsafe", &ct_res, &ct1, &ct2);
-    let ct_res = ct_res.normalize(module, &mut scratch.borrow());
+    let ct_res = ct_res.normalize(module, &mut scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "add_ct_aligned_unsafe",
         &params,
@@ -122,7 +122,7 @@ pub fn test_add_ct_assign_aligned_unsafe<BE, F, E>(
         .ckks_add_assign_unnormalized(&mut ct1, &ct2, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("add_ct_assign_aligned_unsafe", &ct1, expected_log_delta, expected_log_budget);
-    let ct1 = ct1.normalize(module, &mut scratch.borrow());
+    let ct1 = ct1.normalize(module, &mut scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "add_ct_assign_aligned_unsafe",
         &params,
@@ -179,7 +179,7 @@ pub fn test_add_pt_vec_into_aligned_unsafe<BE, F, E>(
         .ckks_add_pt_vec_into_unnormalized(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("add_pt_vec_unsafe", &ct_res, &ct1);
-    let ct_res = ct_res.normalize(module, &mut scratch.borrow());
+    let ct_res = ct_res.normalize(module, &mut scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "add_pt_vec_unsafe",
         &params,
@@ -233,7 +233,7 @@ pub fn test_add_const_into_aligned_unsafe<BE, F, E>(
         .ckks_add_pt_const_assign_unnormalized(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("add_const_into_aligned_unsafe", &ct_res, &ct);
-    let ct_res = ct_res.normalize(module, &mut scratch.borrow());
+    let ct_res = ct_res.normalize(module, &mut scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "add_const_into_aligned_unsafe",
         &params,

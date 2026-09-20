@@ -84,13 +84,24 @@ where
         BE::ckks_mul_pt_const_tmp_bytes_impl(self, res, a, b.k())
     }
 
-    fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_into<Dst, A, B, H>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_into", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", a)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", b)?;
         let k = mul_k(a, b);
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
@@ -100,12 +111,21 @@ where
         BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
     }
 
-    fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_assign<Dst, A, H>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_assign", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_assign", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_assign", a)?;
         let k = mul_k(dst, a);
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
@@ -119,6 +139,7 @@ where
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_prepare_right", a)?;
         BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
@@ -126,13 +147,16 @@ where
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_prepared_assign", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_prepared_assign", prepared.ring)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_prepared_assign", dst)?;
         let k = prepared_mul_k_checked(dst, prepared.k)?;
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
@@ -142,12 +166,21 @@ where
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
     }
 
-    fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_into<Dst, A, H>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_square_into", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_into", a)?;
         let k = square_k(a);
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
@@ -157,11 +190,18 @@ where
         BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
     }
 
-    fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        tsk: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_square_assign", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_assign", dst)?;
         let k = square_k(dst);
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
@@ -177,6 +217,9 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_into", a)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_pt_vec_into", pt)?;
         BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
 
@@ -185,6 +228,8 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_assign", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_pt_vec_assign", pt)?;
         BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)
     }
 
@@ -201,6 +246,9 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_into", a)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_pt_const_into", pt)?;
         BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)
     }
 
@@ -215,6 +263,8 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_assign", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_pt_const_assign", pt)?;
         BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
     }
 }

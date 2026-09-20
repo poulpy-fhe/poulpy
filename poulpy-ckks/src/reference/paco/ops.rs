@@ -35,7 +35,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::{
     GLWEAutomorphism,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
     api::ModuleN,
@@ -93,12 +93,12 @@ pub trait PaCoSlotOps<BE: Backend> {
         ct: &mut Dst,
         a: usize,
         b: usize,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)` (indices mod `N/2`). Rotate-and-multiply with
@@ -108,13 +108,13 @@ pub trait PaCoSlotOps<BE: Backend> {
         ct: &mut Dst,
         a: usize,
         b: usize,
-        keys: &H,
-        tsk: &TH,
+        keys: &crate::layouts::CKKSKey<H>,
+        tsk: &crate::layouts::CKKSKey<TH>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
         TH: GetTensorKey<BE>;
 }
 
@@ -128,12 +128,12 @@ where
         ct: &mut Dst,
         a: usize,
         b: usize,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
         let order = self.cyclotomic_order();
         for rot in checked_fold_rotations(self, a, b)? {
@@ -154,13 +154,13 @@ where
         ct: &mut Dst,
         a: usize,
         b: usize,
-        keys: &H,
-        tsk: &TH,
+        keys: &crate::layouts::CKKSKey<H>,
+        tsk: &crate::layouts::CKKSKey<TH>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
         TH: GetTensorKey<BE>,
     {
         let rotations = checked_fold_rotations(self, a, b)?;

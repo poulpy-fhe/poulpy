@@ -1,12 +1,13 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GGLWEInfos;
-use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic complex conjugation.
+///
+/// These operations require the standard CKKS ring.
 ///
 /// Applies the automorphism `X ↦ X^(2n−1)` to the Module-LWE ciphertext, which
 /// maps every complex slot value `z_j` to its conjugate `z̄_j`.
@@ -39,22 +40,27 @@ pub trait CKKSConjugateOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         src: &Src,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
         self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
     }
 
     /// Computes `dst = conj(dst)` in-place. Metadata is unchanged.
-    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        keys: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 
     /// Computes `dst = conj(rot_k(src))`: conjugation composed with a rotation
     /// of `k` slots, as one key switch under the Galois element
@@ -65,11 +71,11 @@ pub trait CKKSConjugateOps<BE: Backend> {
         dst: &mut Dst,
         src: &Src,
         k: i64,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
 }

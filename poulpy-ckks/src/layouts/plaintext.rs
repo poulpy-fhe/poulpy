@@ -22,11 +22,16 @@ pub struct CKKSPlaintext<D: Data, W: ZnxWord> {
     pub(crate) inner: GLWEPlaintext<D, W>,
     /// Semantic CKKS metadata associated with `inner`.
     pub(crate) meta: CKKSMeta,
+    ring_kind: super::CKKSRingKind,
 }
 
 impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
-    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: CKKSMeta, ring_kind: super::CKKSRingKind) -> Self {
+        Self {
+            inner,
+            meta: meta.for_ring(ring_kind),
+            ring_kind,
+        }
     }
 
     /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, i64>`].
@@ -34,7 +39,7 @@ impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSPlaintext::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSPlaintext::from_inner(self.inner.to_host_owned::<BE>(), self.meta, self.ring_kind)
     }
 
     /// Formats this backend-owned plaintext through the existing host [`fmt::Display`] implementation.
@@ -60,7 +65,7 @@ impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
                 requested_limbs: self.max_size(),
             }
         );
-        self.meta = meta;
+        self.meta = meta.for_ring(self.ring_kind);
         Ok(())
     }
 }
@@ -173,7 +178,7 @@ impl<D: Data, W: ZnxWord> GLWEInfos for CKKSPlaintext<D, W> {
 
 impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSPlaintext<D, W> {
     fn set_meta(&mut self, meta: CKKSMeta) {
-        self.meta = meta;
+        self.meta = meta.for_ring(self.ring_kind);
     }
 
     fn set_k(&mut self, k: TorusPrecision) {
@@ -209,6 +214,10 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for CKKSPlaintext<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> CKKSInfos for CKKSPlaintext<D, W> {
+    fn ring_kind(&self) -> super::CKKSRingKind {
+        self.ring_kind
+    }
+
     fn meta(&self) -> CKKSMeta {
         self.meta
     }

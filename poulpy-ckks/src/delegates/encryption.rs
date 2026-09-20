@@ -31,7 +31,7 @@ where
         &self,
         ct: &mut Dct,
         pt: &Dpt,
-        sk: &S,
+        sk: &crate::layouts::CKKSKey<S>,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -42,6 +42,9 @@ where
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_encrypt_sk", sk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_encrypt_sk", ct)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_encrypt_sk", pt)?;
         BE::ckks_encrypt_sk_impl(self, ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 }
@@ -67,12 +70,21 @@ where
         BE::ckks_decrypt_tmp_bytes_impl(self, ct_infos)
     }
 
-    fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_decrypt<Dpt, Dct, S>(
+        &self,
+        pt: &mut Dpt,
+        ct: &Dct,
+        sk: &crate::layouts::CKKSKey<S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_decrypt", sk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_decrypt", pt)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_decrypt", ct)?;
         BE::ckks_decrypt_impl(self, pt, ct, sk, scratch)
     }
 }

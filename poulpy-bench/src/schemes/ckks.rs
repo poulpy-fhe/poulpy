@@ -114,9 +114,13 @@ pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    let tsk = poulpy_ckks::layouts::CKKSKey::from_raw_parts(
+        module.alloc_tensor_key_prepared_from_infos(&tsk_layout),
+        poulpy_ckks::api::CKKSModuleInfos::ckks_ring(&module),
+    )
+    .unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, tsk.as_core()));
 
     bencher.iter(|| {
         module
@@ -147,8 +151,12 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     let ak = module.alloc_tensor_key_prepared_from_infos(&atk_layout);
     let mut rotate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     rotate_key.set_p(module.galois_element(ROTATION));
-    atks.insert(module.galois_element(ROTATION), rotate_key);
+    atks.insert(
+        module.galois_element(ROTATION),
+        poulpy_ckks::layouts::CKKSKey::from_raw_parts(rotate_key, poulpy_ckks::api::CKKSModuleInfos::ckks_ring(&module)).unwrap(),
+    );
 
+    let atks = poulpy_ckks::layouts::CKKSKey::from_keys(atks, poulpy_ckks::api::CKKSModuleInfos::ckks_ring(&module)).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &ak));
 
     bencher.iter(|| {
@@ -178,8 +186,11 @@ pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i
 
     let mut conjugate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     conjugate_key.set_p(CONJUGATE);
+    let conjugate_key =
+        poulpy_ckks::layouts::CKKSKey::from_raw_parts(conjugate_key, poulpy_ckks::api::CKKSModuleInfos::ckks_ring(&module))
+            .unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_conjugate_tmp_bytes(&ct_a, &conjugate_key));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_conjugate_tmp_bytes(&ct_a, conjugate_key.as_core()));
 
     bencher.iter(|| {
         module
@@ -426,9 +437,13 @@ pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    let tsk = poulpy_ckks::layouts::CKKSKey::from_raw_parts(
+        module.alloc_tensor_key_prepared_from_infos(&tsk_layout),
+        poulpy_ckks::api::CKKSModuleInfos::ckks_ring(&module),
+    )
+    .unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_square_tmp_bytes(&ct_a, &ct_a, tsk.as_core()));
 
     bencher.iter(|| {
         module

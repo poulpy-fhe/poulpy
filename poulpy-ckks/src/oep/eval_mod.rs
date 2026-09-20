@@ -31,7 +31,7 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -57,7 +57,7 @@ where
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

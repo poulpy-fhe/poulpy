@@ -23,6 +23,7 @@
 //! the SlotToCoeff chain. Grouping radices `g ∈ {1, 2}` cover both the
 //! one-layer-per-factor and merged schedules.
 
+use crate::api::CKKSModuleInfos;
 use std::collections::HashMap;
 
 use anyhow::ensure;
@@ -73,6 +74,7 @@ fn noise_bound(log_delta: usize) -> f64 {
 fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
     let log_delta = base.prec().log_delta();
     CKKSTestParams {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n: base.n,
         base2k: base.base2k,
         k: (log_delta * (num_factors + 3)).next_multiple_of(base.base2k),
@@ -154,6 +156,7 @@ where
     }
 
     // Dense (non-periodic) input.
+    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (a_re, a_im) = test_vector_1::<F>(m_full);
     let mut ct = ckks_encrypt(
         &params,
@@ -196,7 +199,10 @@ where
         slots: SlotsKind::Complex,
     });
     encoder_full.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
-    let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();
+    let noise = module
+        .glwe_noise(&ct, &pt_want, sk.as_core(), &mut scratch.borrow())
+        .std()
+        .log2();
     let bound = noise_bound(log_delta);
     assert!(noise < bound, "{label}: noise log2={noise:.1} (bound {bound:.1})");
 }

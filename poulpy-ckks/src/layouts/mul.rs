@@ -17,6 +17,7 @@ use poulpy_hal::layouts::CnvPVecROwned;
 /// times (e.g. the same `X^{gsp}` across a BSGS giant-step level) hoists the
 /// forward transform out of the per-multiply path.
 pub struct CKKSPreparedRight<BE: Backend> {
+    pub(crate) ring: super::CKKSRing,
     /// Backend-resident prepared convolution operand.
     pub(crate) prep: CnvPVecROwned<BE>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.
@@ -33,4 +34,10 @@ pub struct CKKSPreparedRight<BE: Backend> {
     /// long-lived cached objects, so `ckks_mul_prepared_assign` validates this
     /// against the destination before use.
     pub(crate) layout: GLWELayout,
+}
+
+impl<BE: Backend> CKKSPreparedRight<BE> {
+    pub fn ring(&self) -> super::CKKSRing {
+        self.ring
+    }
 }

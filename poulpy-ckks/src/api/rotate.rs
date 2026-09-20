@@ -1,16 +1,17 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic cyclic slot rotation.
 ///
-/// Applies the automorphism `X ↦ X^(5^k mod 2n)` to the Module-LWE ciphertext,
-/// which corresponds to a cyclic shift of the CKKS complex slot vector by
-/// `k` positions: slot `j` moves to slot `(j + k) mod (n/2)`.
+/// Rotates the standard ring's `N/2` complex slots or the invariant ring's
+/// `N` real slots. Use [`super::CKKSModuleInfos::ckks_galois_element`] to obtain
+/// the evaluation-key identifier. Invariant rotations wrap modulo `N`;
+/// negative shifts rotate in the opposite direction.
 ///
-/// Rotation requires a set of automorphism evaluation keys (`keys`).  The
+/// Non-identity rotation requires a set of automorphism evaluation keys (`keys`).  The
 /// key collection `H` must contain the key for the Galois element
 /// corresponding to shift `k`.
 ///
@@ -34,7 +35,7 @@ pub trait CKKSRotateOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Computes `dst = rotate(src, k)`: shifts all complex slots by `k` positions.
+    /// Computes `dst = rotate(src, k)`: shifts all slots by `k` positions.
     ///
     /// `k` may be negative (shifts in the opposite direction).  The `keys`
     /// collection must contain the automorphism key for shift amount `k`.
@@ -43,17 +44,23 @@ pub trait CKKSRotateOps<BE: Backend> {
         dst: &mut Dst,
         src: &Src,
         k: i64,
-        keys: &H,
+        keys: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place.  Metadata is unchanged.
-    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rotate_assign<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        k: i64,
+        keys: &crate::layouts::CKKSKey<H>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

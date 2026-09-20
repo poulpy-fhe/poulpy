@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use crate::{api::CKKSModuleInfos, ckks_ensure};
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
@@ -23,6 +24,12 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_into", src)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_mul_i_into_impl(self, dst, src, scratch)
     }
 
@@ -30,6 +37,11 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_assign", dst)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_mul_i_assign_impl(self, dst, scratch)
     }
 
@@ -42,6 +54,12 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_into", dst)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_into", src)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_div_i_into_impl(self, dst, src, scratch)
     }
 
@@ -49,6 +67,11 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_assign", dst)?;
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_div_i_assign_impl(self, dst, scratch)
     }
 }

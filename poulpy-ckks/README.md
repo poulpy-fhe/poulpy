@@ -110,6 +110,27 @@ test. Data-management methods (`.set_meta_checked()`,
 exceptions: they live on the struct because they are inherently tied to the
 type, not to the backend.
 
+Ring identity is the pair `(CKKSRingKind, degree)`, separate from editable
+scale and slot metadata. `Standard` and `ConjugateInvariant` values cannot be
+combined by CKKS operations. A standard ciphertext with real slots still
+belongs to the standard ring; CI values always report real slots. Copies,
+host transfers, scratch views, and prepared operands retain their identity.
+Compact plaintexts must have a degree that embeds in the module; scalar
+coefficient banks need the same ring kind but may have arbitrary lengths.
+
+Secret and evaluation keys use `CKKSKey<K>`. Import a Core key with
+`CKKSKey::from_raw_parts(raw, module.ckks_ring())`, supplying the ring actually
+used to generate it. Prepare it through `prepare_secret`, `prepare_tensor`,
+`prepare_automorphism`, or `prepare_switching`; these validate the module and
+preserve the tag. Build a key collection with `CKKSKey::from_keys(keys, ring)`;
+this checks every member once and binds the immutable collection to that ring.
+Custom providers implement the Core lookup traits and are imported with
+`CKKSKey::from_raw_provider(provider, ring)`, asserting that every key they
+return, including lazy preparations, belongs to that ring. Prepared linear transformations and baby-step caches also
+retain their evaluation ring. CKKS operations reject incompatible operands,
+outputs, keys, and caches before changing their destination. Raw Core access
+and explicit imports rely on the caller to preserve the declared basis.
+
 ## Crate Organization
 
 The crate is arranged in four interdependent modules (plus supporting
@@ -393,19 +414,29 @@ The core leveled evaluator building blocks are now implemented:
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../docs/ship.md))
 
-Planned evaluator work:
-
-- conjugate invariant ring
-
 Higher-level functionality on top of that foundation:
 
 - scheme switching
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-The intent is to keep the low-level API modular and agnostic enough of the encoding
-(for example to easily support the conjugate invariant ring) while progressively adding
-these higher-level features without changing the backend-agnostic programming model.
+## Conjugate invariant leveled operations
+
+A CPU module built with `FFT64ModuleConfig::conjugate_invariant()` or
+`NTTModuleConfig::conjugate_invariant()` supports `N` real slots at degree `N`.
+`CKKSModuleInfos::ckks_max_slots` reports the capacity, and
+`ckks_galois_element` provides the identifiers for rotation keys.
+
+The slot encoder accepts planar real/imaginary buffers, discards imaginary
+inputs, and decodes with zero imaginary parts. Compact plaintexts use one
+coefficient per real slot, subject to the backend's minimum degree. Raw
+coefficient encoding uses the invariant basis directly.
+
+Leveled arithmetic, real polynomial evaluation, and real linear
+transformations use the module's invariant ring. Conjugation and multiplication
+by `i` require a standard module. Real linear transformations reject nonzero
+imaginary diagonals. Prepared plaintexts, ciphertexts, and evaluation keys must
+be used with their producing ring configuration.
 
 ## Where to Look Next
 

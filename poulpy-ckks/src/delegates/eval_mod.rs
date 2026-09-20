@@ -19,6 +19,7 @@ use crate::{
 
 #[derive(Clone, Copy)]
 struct EvalModWorkCtInfos {
+    ring_kind: crate::layouts::CKKSRingKind,
     n: Degree,
     base2k: Base2K,
     rank: Rank,
@@ -52,6 +53,9 @@ impl GLWEInfos for EvalModWorkCtInfos {
 }
 
 impl CKKSInfos for EvalModWorkCtInfos {
+    fn ring_kind(&self) -> crate::layouts::CKKSRingKind {
+        self.ring_kind
+    }
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
@@ -78,6 +82,7 @@ where
     {
         let work_k = ct.k().as_usize().max(ct.log_budget() + params.plan.f_mod_log_delta);
         let work = EvalModWorkCtInfos {
+            ring_kind: ct.ring_kind(),
             n: ct.n(),
             base2k: ct.base2k(),
             rank: ct.rank(),
@@ -148,7 +153,7 @@ where
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -157,6 +162,24 @@ where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
+        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_mod", tsk.key_ring())?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", res)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", ct)?;
+        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
+        match &params.f_mod_bsgs {
+            EvalModBsgs::Real(poly) => super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, poly)?,
+            EvalModBsgs::Complex(poly) => {
+                crate::ckks_ensure!(
+                    !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+                    "complex EvalMod requires the standard CKKS ring"
+                );
+                super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, &poly.re)?;
+                super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, &poly.im)?;
+            }
+        }
+        if let Some(poly) = &params.f_mod_inv_bsgs {
+            super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, poly)?;
+        }
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }

@@ -179,6 +179,26 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let plan = context.plan();
+    use crate::layouts::{CKKSRing, CKKSRingKind};
+    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
+    ring.check(
+        "PaCo module",
+        CKKSRing {
+            kind: CKKSRingKind::Standard,
+            n: plan.n().into(),
+        },
+    )?;
+    ring.check_ciphertext("PaCo input", input)?;
+    ring.check_ciphertext("PaCo output", output)?;
+    for ct in keys.bootstrapping_keys() {
+        ring.check_ciphertext("PaCo key material", ct)?;
+    }
+    ring.check("PaCo key material", keys.rotation_keys().key_ring())?;
+    ring.check("PaCo key material", keys.tensor_key().key_ring())?;
+    if let Some(key) = keys.encapsulation_key() {
+        ring.check("PaCo key material", key.key_ring())?;
+    }
+
     ckks_ensure!(
         keys.parameters() == PaCoKeyParameters::from_plan(plan),
         "PaCo key parameters {:?} do not match context plan {:?}",

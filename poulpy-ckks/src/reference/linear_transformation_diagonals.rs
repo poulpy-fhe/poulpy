@@ -15,12 +15,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CoeffsMeta,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, LinearTransformation},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
 fn validate_compile_inputs<F>(
-    module_n: usize,
+    full_slots: usize,
     base2k: Base2K,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
@@ -39,7 +39,6 @@ fn validate_compile_inputs<F>(
         !diagonals.indexes().is_empty(),
         "linear transformation must contain at least one diagonal"
     );
-    let full_slots = module_n / 2;
     ensure!(
         slots <= full_slots && full_slots.is_multiple_of(slots),
         "linear-transformation slot count {slots} must divide the ring's {full_slots} CKKS slots",
@@ -99,7 +98,18 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    validate_compile_inputs(module.n(), base2k, diagonals, strategy)?;
+    validate_compile_inputs(module.ckks_max_slots(), base2k, diagonals, strategy)?;
+    if module.ckks_is_conjugate_invariant() {
+        ensure!(
+            diagonals.im.indexes().iter().all(|&index| {
+                diagonals
+                    .im
+                    .get(index)
+                    .is_none_or(|values| values.iter().all(|value| value.is_zero()))
+            }),
+            "conjugate invariant linear transformations require real diagonals"
+        );
+    }
 
     encode_linear_transformation_from_diagonals(module, base2k, coeffs_meta, diagonals, strategy, transpose, scratch)
 }
@@ -164,10 +174,13 @@ where
             })
         })
         .collect::<Result<_>>()?;
-    Ok(LinearTransformation {
-        baby_steps: encoded.baby_steps,
-        giant_steps,
-    })
+    Ok(LinearTransformation::from_plaintexts(
+        module,
+        poulpy_core::LinearTransformation {
+            baby_steps: encoded.baby_steps,
+            giant_steps,
+        },
+    )?)
 }
 
 #[cfg(test)]

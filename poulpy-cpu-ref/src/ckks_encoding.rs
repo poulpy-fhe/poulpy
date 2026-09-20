@@ -348,23 +348,48 @@ where
 }
 
 #[doc(hidden)]
-pub fn slots_to_coeffs_assign<F, T, D>(plan: &CpuEncodingPlan, fft: &T, values: &mut CKKSEncodingBuffer<D, F>) -> Result<()>
+pub fn slots_to_coeffs_assign<F, T, D>(
+    plan: &CpuEncodingPlan,
+    fft: &T,
+    values: &mut CKKSEncodingBuffer<D, F>,
+    conjugate_invariant: bool,
+) -> Result<()>
 where
     F: CKKSEncodingScalar + NumCast,
     T: NegacyclicFFT<F>,
     D: HostDataMut,
 {
-    plan.slots_to_coeffs_assign(fft, values.as_mut_slice())
+    let values = values.as_mut_slice();
+    if conjugate_invariant {
+        values[plan.slots..].fill(F::zero());
+    }
+    plan.slots_to_coeffs_assign(fft, values)
 }
 
 #[doc(hidden)]
-pub fn coeffs_to_slots_assign<F, T, D>(plan: &CpuEncodingPlan, fft: &T, values: &mut CKKSEncodingBuffer<D, F>) -> Result<()>
+pub fn coeffs_to_slots_assign<F, T, D>(
+    plan: &CpuEncodingPlan,
+    fft: &T,
+    values: &mut CKKSEncodingBuffer<D, F>,
+    conjugate_invariant: bool,
+) -> Result<()>
 where
     F: CKKSEncodingScalar,
     T: NegacyclicFFT<F>,
     D: HostDataMut,
 {
-    plan.coeffs_to_slots_assign(fft, values.as_mut_slice())
+    let values = values.as_mut_slice();
+    if conjugate_invariant {
+        values[plan.slots] = F::zero();
+        for j in 1..plan.slots {
+            values[2 * plan.slots - j] = -values[j];
+        }
+    }
+    plan.coeffs_to_slots_assign(fft, values)?;
+    if conjugate_invariant {
+        values[plan.slots..].fill(F::zero());
+    }
+    Ok(())
 }
 
 /// Instantiates the generic CKKS encoder for a backend.
@@ -393,7 +418,8 @@ macro_rules! impl_ckks_encoding {
             fn ckks_encoding_plans_create_impl(
                 module: &::poulpy_hal::layouts::Module<$be>,
             ) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
-                $crate::ckks_encoding::OwnedEncodingPlanSet::new(module.max_n()).map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_encoding::OwnedEncodingPlanSet::new(2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_encode_coeffs_into_impl<P>(
@@ -425,7 +451,13 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                $crate::ckks_encoding::slots_to_coeffs_assign(map, fft, values).map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_encoding::slots_to_coeffs_assign(
+                    map,
+                    fft,
+                    values,
+                    ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module),
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_coeffs_to_slots_assign_impl(
@@ -435,7 +467,13 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                $crate::ckks_encoding::coeffs_to_slots_assign(map, fft, values).map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_encoding::coeffs_to_slots_assign(
+                    map,
+                    fft,
+                    values,
+                    ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module),
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
         }
     };

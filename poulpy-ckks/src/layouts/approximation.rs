@@ -9,7 +9,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
@@ -34,6 +34,7 @@ impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
         coeff_meta: M,
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
+        ring_kind: super::CKKSRingKind,
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
@@ -42,13 +43,13 @@ impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
     {
         let coeff_meta = coeff_meta.into();
         let bsgs = poly
-            .encode_bsgs_with(module, base2k, coeff_meta, strategy)
+            .encode_bsgs_with(module, ring_kind, base2k, coeff_meta, strategy)
             .map_err(|e| anyhow!("polynomial approximation: {e}"))?;
         let (scale, offset) = poly.change_of_basis();
         let affine = if scale == F::one() && offset == F::zero() {
             None
         } else {
-            let mut pt = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k);
+            let mut pt = crate::polynomial::alloc_coefficients(module, ring_kind, 2, base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(&[offset, scale])
                 .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;
@@ -142,6 +143,7 @@ mod tests {
             CoeffsMeta::from_delta_budget(30, 19),
             SplitStrategy::MinDepth,
             &module,
+            super::super::CKKSRingKind::Standard,
         )
         .unwrap()
     }

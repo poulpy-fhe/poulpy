@@ -29,7 +29,7 @@ pub trait CKKSApproximationOps<BE: Backend> {
         res: &mut R,
         input: &I,
         approximation: &PolynomialApproximation<P>,
-        tsk: &H,
+        tsk: &crate::layouts::CKKSKey<H>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

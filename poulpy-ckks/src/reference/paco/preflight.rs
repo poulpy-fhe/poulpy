@@ -11,8 +11,8 @@ use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWE
 use poulpy_core::{
     GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetAutomorphismKey,
-        GetTensorKey, LWEInfos, Rank, TorusPrecision,
+        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetTensorKey,
+        LWEInfos, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -40,6 +40,7 @@ use crate::{
 /// would understate the scratch needed when that buffer is reused.
 #[derive(Clone, Copy)]
 struct BranchScratchLayout {
+    ring_kind: crate::layouts::CKKSRingKind,
     glwe_layout: GLWELayout,
     max_size: usize,
     meta: CKKSMeta,
@@ -70,18 +71,21 @@ impl GLWEInfos for BranchScratchLayout {
 }
 
 impl CKKSInfos for BranchScratchLayout {
+    fn ring_kind(&self) -> crate::layouts::CKKSRingKind {
+        self.ring_kind
+    }
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
 fn automorphism_layout_for<'a, BE: Backend, H>(
-    keys: &'a H,
+    keys: &'a crate::layouts::CKKSKey<H>,
     element: i64,
     k: TorusPrecision,
 ) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'a, BE>>
 where
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     keys.get_automorphism_key(element, k)
         .with_context(|| format!("PaCo rotation-key layout is missing Galois element {element} at precision {k}"))
@@ -89,7 +93,10 @@ where
 }
 
 /// The relinearization key layout the helper resolves at `k`.
-fn relinearization_layout_for<BE: Backend, H>(keys: &H, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>
+fn relinearization_layout_for<BE: Backend, H>(
+    keys: &crate::layouts::CKKSKey<H>,
+    k: TorusPrecision,
+) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>
 where
     H: GetTensorKey<BE>,
 {
@@ -138,6 +145,7 @@ where
     let working_k = super::bootstrap::branch_working_k(plan, output.k().as_usize())?;
     let working_precision = TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?);
     let branch_layout = BranchScratchLayout {
+        ring_kind: canonical.ring_kind(),
         glwe_layout: GLWELayout {
             n: canonical.n(),
             base2k: canonical.base2k(),
@@ -154,6 +162,7 @@ where
     let degree = u32::try_from(plan.n()).context("PaCo degree does not fit the layout type")?;
     let beta_k = u32::try_from(beta_k).context("PaCo coefficient-encoding width does not fit the layout type")?;
     let beta_layout = CKKSLayout {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: poulpy_core::layouts::GLWELayout {
             n: Degree(degree),
             base2k: context.base2k(),
@@ -184,6 +193,7 @@ where
         );
     let factor_k = u32::try_from(factor_k).context("PaCo factor width does not fit the layout type")?;
     let factor_layout = CKKSLayout {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: poulpy_core::layouts::GLWELayout {
             n: Degree(degree),
             base2k: context.base2k(),
@@ -381,10 +391,10 @@ where
     );
     ckks_ensure!(input.rank().as_usize() == 1, "PaCo encapsulation input must have rank 1");
     let structured_size = input.k().as_usize().div_ceil(context.base2k().as_usize());
-    let switching_key_view = GGLWEPreparedToBackendRef::to_backend_ref(switching_key);
+    let switching_key_view = GGLWEPreparedToBackendRef::to_backend_ref(switching_key.as_core());
     validate_gadget_backend_view(
         "PaCo encapsulation key",
-        switching_key,
+        switching_key.as_core(),
         &switching_key_view,
         context.plan().n(),
         context.base2k(),
@@ -413,6 +423,7 @@ fn encapsulated_input_layout<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoSca
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {
     CKKSLayout {
+        ring_kind: input.ring_kind(),
         glwe_layout: GLWELayout {
             n: input.n(),
             base2k: context.base2k(),

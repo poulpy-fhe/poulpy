@@ -53,6 +53,7 @@ macro_rules! impl_ckks_infos {
     };
     (inner_meta $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {
+            fn ring_kind(&self) -> $crate::layouts::CKKSRingKind { $crate::CKKSInfos::ring_kind(&self.inner) }
             fn meta(&self) -> $crate::CKKSMeta {
                 $crate::CKKSInfos::meta(&self.inner)
             }
@@ -96,6 +97,7 @@ macro_rules! impl_ckks_infos {
         }
 
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {
+            fn ring_kind(&self) -> $crate::layouts::CKKSRingKind { self.ring_kind }
             fn meta(&self) -> $crate::CKKSMeta {
                 self.meta
             }
@@ -179,3 +181,11 @@ pub trait CKKSScalar: Float + FromPrimitive + ToPrimitive + Debug {}
 impl<T> CKKSScalar for T where T: Float + FromPrimitive + ToPrimitive + Debug {}
 
 pub use plaintext::CKKSPlaintextVecHostCodec;
+
+pub use crate::{CKKSRing, CKKSRingKind};
+
+mod key;
+pub use key::CKKSKey;
+
+mod linear_transformation;
+pub use linear_transformation::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};

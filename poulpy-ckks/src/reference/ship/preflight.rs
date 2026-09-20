@@ -76,6 +76,7 @@ where
         rank: Rank(1),
     };
     let raised = CKKSLayout {
+        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout { k: kk.into(), ..bottom },
         meta: CKKSMeta {
             log_delta: plan.log_delta_work(),
@@ -84,7 +85,7 @@ where
         },
     };
 
-    let mut bytes = module.glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse());
+    let mut bytes = module.glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse().as_core());
     bytes = bytes.max(BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(
         module,
         plan,
@@ -96,12 +97,12 @@ where
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
             if let Some(mux) = group.first() {
-                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
+                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, mux.key.as_core(), group.len()));
             }
         }
     }
-    bytes = bytes.max(module.ckks_mul_tmp_bytes(&raised, &raised, &raised, keys.tensor_key()));
-    bytes = bytes.max(module.ckks_conjugate_tmp_bytes(&raised, keys.conjugation_key()));
+    bytes = bytes.max(module.ckks_mul_tmp_bytes(&raised, &raised, &raised, keys.tensor_key().as_core()));
+    bytes = bytes.max(module.ckks_conjugate_tmp_bytes(&raised, keys.conjugation_key().as_core()));
     bytes = bytes.max(module.ckks_add_tmp_bytes(raised.size()));
     bytes = bytes.max(module.ckks_sub_tmp_bytes(raised.size()));
     bytes = bytes.max(module.ckks_mul_i_tmp_bytes(raised.size()));

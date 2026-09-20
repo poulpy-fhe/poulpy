@@ -20,12 +20,11 @@
 //! packing (imag packed into the right half) through `coeffs_to_slots_repack` /
 //! `slots_to_coeffs_repack`.
 
+use crate::layouts::LinearTransformation;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{
-        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
-    },
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, LinearTransformationStrategy},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::{
@@ -131,7 +130,7 @@ pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
     module: &Module<BE>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> DFTMatrixPrepared<BE, Dir, Fmt>
+) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
 where
     BE: Backend,
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE>,
@@ -144,12 +143,12 @@ where
     for lt in &inner.factors {
         let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch)?;
         factors.push(prepared);
     }
 
     // Same direction/format as the input; only `R` changes.
-    DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors))
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors)))
 }
 
 /// Builds the backend-owned, unprepared homomorphic (I)DFT for direction `Dir` and
@@ -247,7 +246,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -255,7 +254,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -273,7 +272,7 @@ fn eval_factor<BE, P, Dst, H>(
     module: &Module<BE>,
     running: &mut Dst,
     factor: &LinearTransformation<P>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -281,7 +280,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
@@ -298,7 +297,7 @@ pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -306,7 +305,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -318,7 +317,7 @@ pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -326,7 +325,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -347,7 +346,7 @@ pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
     ct_imag: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -363,7 +362,7 @@ where
         + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
@@ -394,7 +393,7 @@ pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
     ct_real: &Src,
     ct_imag: &Src,
     dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -403,7 +402,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
@@ -424,7 +423,7 @@ pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
     ct_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -441,7 +440,7 @@ where
         + CKKSRotateOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     let slots = 1i64 << dft.plan().log_slots();
 
@@ -481,7 +480,7 @@ pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
     op_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
-    keys: &H,
+    keys: &crate::layouts::CKKSKey<H>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -490,7 +489,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
 {
     module.ckks_copy(op_out, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, op_out, dft, keys, scratch)?;

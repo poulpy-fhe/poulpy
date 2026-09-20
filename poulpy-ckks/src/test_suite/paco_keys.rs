@@ -21,6 +21,7 @@
 //!    packing relation: `b'_{λ_v}` coefficients in natural order.
 
 use crate::api::CKKSEncodingOps;
+use crate::api::CKKSModuleInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -124,6 +125,7 @@ where
     sk_host.transfer_into(&mut sk_raw);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
+    let sk = crate::layouts::CKKSKey::from_raw_parts(sk, module.ckks_ring()).unwrap();
 
     // ── bsk_t = Enc(σ_t) (Algorithm 2) + decrypt gate ───────────────────────
     let sigma: Vec<Vec<Cpx<F>>> = (0..4)
@@ -261,6 +263,7 @@ where
     }
 
     // ── Lines 4–7: blind rotation, trace, partial CoeffToSlot ──────────────
+    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let mut acc = alloc_ct(&params, &module, params.k);
     module
         .ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], &mut scratch.borrow())

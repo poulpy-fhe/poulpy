@@ -46,6 +46,8 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
         P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos;
 
     /// In-place planar slots → polynomial coefficients (permutation + IFFT).
+    /// Invariant modules discard imaginary slots and store the independent
+    /// coefficients in the first half of the buffer.
     fn ckks_slots_to_coeffs_assign_impl(
         module: &Module<Self>,
         plans: &Self::Plans,
@@ -53,6 +55,8 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     ) -> Result<()>;
 
     /// In-place polynomial coefficients → planar slots (FFT + permutation).
+    /// Invariant modules read independent coefficients from the first half
+    /// and return zero imaginary parts.
     fn ckks_coeffs_to_slots_assign_impl(
         module: &Module<Self>,
         plans: &Self::Plans,
