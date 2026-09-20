@@ -787,7 +787,6 @@ mod ifma_impl {
     }
 
     use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
-    use poulpy_hal::layouts::{DataView, DataViewMut};
 
     unsafe impl HalVecZnxBigImpl for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
@@ -884,38 +883,8 @@ mod ifma_impl {
             let arena = scratch.borrow();
             let (tmp, arena) = take_host_typed::<Self, u64>(arena, 3 * n);
             let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
-            crate::ntt3x42_ifma::vec_znx_dft::idft_compact_in_place_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
-                module,
-                a,
-                a_col,
-                addend.filter(|(add, _)| add.n() == n),
-                tmp,
-            );
-            let a_shape = a.shape();
-            if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
-                let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
-                    poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
-                let mut big_ref = &mut big;
-                poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
-                    &mut big_ref,
-                    a_col,
-                    &add,
-                    add_col,
-                );
-            }
-            let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
-                poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
-            let mut res_ref = &mut *res;
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
-                &mut res_ref,
-                res_base2k,
-                res_k,
-                0,
-                res_col,
-                &&big_ref,
-                a_base2k,
-                a_col,
-                carry,
+            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                module, res, res_base2k, res_k, 0, res_col, a, a_col, a_base2k, addend, tmp, carry,
             );
         }
         fn vec_znx_dft_apply(

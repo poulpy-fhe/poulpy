@@ -7,12 +7,15 @@
 
 #![allow(dead_code)]
 
+mod digits4;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m512i, _MM_HINT_T0, _mm_prefetch, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512,
     _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64,
     _mm512_srli_epi64, _mm512_storeu_si512, _mm512_stream_si512,
 };
+use std::arch::x86_64::{_mm256_loadu_si256, _mm512_cvtepu32_epi64, _mm512_permutexvar_epi64};
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
@@ -935,10 +938,99 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
+    if E::is_parallel()
+        && a.n() >= 8
+        && dsize == 4
+        && product_limbs >= 3
+        && a.cols() == 1
+        && res.cols() == 2
+        && pmat.cols_in() == 1
+        && pmat.cols_out() == 2
+        && pmat.rows() <= 8
+        && a.size() >= 16
+        && res.size() <= 64
+    {
+        return digits4::apply::<E>(res, a, pmat, zero_prefix, tmp);
+    }
     if E::is_parallel() && res.n() >= 65536 && dsize > 1 && a.size() >= 24 && (32..=128).contains(&(res.cols() * res.size())) {
         vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, true>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
     } else {
         vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
+    }
+}
+
+pub(crate) struct RotatedOutput<'a> {
+    pub(crate) plan: &'a poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    pub(crate) body: VecZnxDftBackendRef<'a, crate::NTT3x42Ifma>,
+    pub(crate) output_size: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_rotate_add<E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    tmp: &mut [u64],
+    rotated: &RotatedOutput<'_>,
+) {
+    assert_eq!(res.n(), a.n());
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(res.n(), rotated.body.n());
+    assert_eq!(rotated.plan.perm.len(), res.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert!(rotated.output_size * res.cols() <= 128);
+    assert!(res.size() >= rotated.output_size);
+    vmp_digits_loop::<E, true, true>(res, a, dsize, product_limbs, pmat, None, tmp, Some(rotated));
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn emit_rotated(
+    dst: *mut u64,
+    n: usize,
+    cols: usize,
+    output_size: usize,
+    dest_bq: usize,
+    tile: &[u64],
+    rotated: &RotatedOutput<'_>,
+    pc: &[PrimeConsts512; 3],
+) {
+    unsafe {
+        // An odd Galois multiplier preserves aligned eight-frequency groups in bit-reversed order.
+        let perm = &rotated.plan.perm[8 * dest_bq..8 * dest_bq + 8];
+        let bq = perm[0] as usize / 8;
+        debug_assert!(perm.iter().all(|p| *p as usize / 8 == bq));
+        let lanes = _mm512_cvtepu32_epi64(_mm256_loadu_si256(perm.as_ptr().cast()));
+        let m42 = _mm512_set1_epi64((1i64 << 42) - 1);
+        let m20 = _mm512_set1_epi64((1i64 << 20) - 1);
+        let body: &[u64] = cast_slice(rotated.body.data());
+        for col in 0..output_size * cols {
+            let source = tile.as_ptr().add(16 * col);
+            let mut y = unpack_y(
+                _mm512_loadu_si512(source.cast()),
+                _mm512_loadu_si512(source.add(8).cast()),
+                m42,
+                m20,
+            );
+            if col % cols == 0 && col / cols < rotated.body.size() {
+                let body = body.as_ptr().add(2 * n * rotated.body.cols() * (col / cols) + 16 * bq);
+                let b = unpack_y(
+                    _mm512_loadu_si512(body.cast()),
+                    _mm512_loadu_si512(body.add(8).cast()),
+                    m42,
+                    m20,
+                );
+                for p in 0..3 {
+                    y[p] = cond_sub_2q_si512(_mm512_add_epi64(y[p], b[p]), pc[p].q);
+                }
+            }
+            for v in &mut y {
+                *v = _mm512_permutexvar_epi64(lanes, *v);
+            }
+            save_planar_add(dst.add(col * 2 * n), dest_bq, pc, y[0], y[1], y[2]);
+        }
     }
 }
 
@@ -952,8 +1044,22 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<E: TaskExecutor, const TILED: b
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
+    vmp_digits_loop::<E, TILED, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vmp_digits_loop<E: TaskExecutor, const TILED: bool, const ROTATE: bool>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: Option<usize>,
+    tmp: &mut [u64],
+    rotated: Option<&RotatedOutput<'_>>,
+) {
     let n = res.n();
-    let output_size = res.size();
+    let output_size = if ROTATE { rotated.unwrap().output_size } else { res.size() };
 
     if dsize == 0 || n < 2 {
         return;
@@ -1004,21 +1110,27 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<E: TaskExecutor, const TILED: b
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     let res_flat = res_cols * output_size;
-    if row_maxs[0] == 0 {
-        res_u64.fill(0);
-    } else {
-        for col in col_maxs[0] as usize..res_flat {
-            res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
+    if !ROTATE {
+        if row_maxs[0] == 0 {
+            res_u64.fill(0);
+        } else {
+            for col in col_maxs[0] as usize..res_flat {
+                res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
+            }
         }
     }
-
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
     let row_max_all = row_maxs.iter().copied().max().unwrap_or(0) as usize;
     let x_words = 3 * 8 * row_max_all;
     let rhs_count = if dsize >= 2 { 2 } else { 1 };
     let task_tmp_len = rhs_count * x_words;
     let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    let process_bq = |task_tmp: &mut [u64], bq: usize| {
+    let process_bq = |task_tmp: &mut [u64], dest_bq: usize| {
+        let bq = if ROTATE {
+            rotated.unwrap().plan.perm[8 * dest_bq] as usize / 8
+        } else {
+            dest_bq
+        };
         let tiled = TILED;
         // Accumulate locally, then stream each output cache line only once.
         let mut output_tile = if tiled { Some([0u64; 16 * 128]) } else { None };
@@ -1124,7 +1236,20 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<E: TaskExecutor, const TILED: b
             }
             di += 1;
         }
-        if tiled {
+        if ROTATE {
+            unsafe {
+                emit_rotated(
+                    dst_ptr.get(),
+                    n,
+                    res_cols,
+                    output_size,
+                    dest_bq,
+                    output_tile.as_ref().unwrap(),
+                    rotated.unwrap(),
+                    &pc,
+                );
+            }
+        } else if tiled {
             for col in 0..res_flat {
                 unsafe {
                     let src = output_tile.as_ref().unwrap().as_ptr().add(16 * col);
@@ -1292,5 +1417,119 @@ mod tests {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod rotated_tests {
+    use super::*;
+    use poulpy_hal::{api::*, execution::SerialTaskExecutor, layouts::*};
+
+    #[test]
+    fn rotated_product_matches_product_body_and_automorphism() {
+        let n = 64;
+        let module = Module::<crate::NTT3x42Ifma>::new(n as u64);
+        #[cfg(feature = "enable-rayon")]
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        let mut seed = 0xabc8712934_u64;
+        for dsize in [2, 3, 4] {
+            for input_size in [5, 16, 27] {
+                for key_size in [3, 33] {
+                    for output_size in [2, 9, 33] {
+                        let output_size = output_size.min(key_size);
+                        let mut a = module.vec_znx_dft_alloc(n, 1, input_size);
+                        let mut key = module.vmp_pmat_alloc(n, 8, 1, 2, key_size, PrepareHint::Reuse);
+                        let mut body = module.vec_znx_dft_alloc(n, 2, 5);
+                        let mut initial = module.vec_znx_dft_alloc(n, 2, output_size + 2);
+                        for bytes in [
+                            a.data.as_mut_slice(),
+                            key.data_mut().as_mut(),
+                            body.data.as_mut_slice(),
+                            initial.data.as_mut_slice(),
+                        ] {
+                            for group in cast_slice_mut::<_, u64>(bytes).chunks_exact_mut(16) {
+                                for lane in 0..8 {
+                                    let y: [u64; 3] = std::array::from_fn(|p| {
+                                        seed ^= seed << 13;
+                                        seed ^= seed >> 7;
+                                        seed ^= seed << 17;
+                                        if lane == 0 {
+                                            Primes42::Q[p] - 1
+                                        } else {
+                                            seed % Primes42::Q[p]
+                                        }
+                                    });
+                                    group[lane] = y[0] | ((y[1] & ((1 << 22) - 1)) << 42);
+                                    group[8 + lane] = (y[1] >> 22) | (y[2] << 20);
+                                }
+                            }
+                        }
+                        a.data.as_mut_slice()[..2 * n * size_of::<u64>()].fill(0);
+                        let mut product = module.vec_znx_dft_alloc(n, 2, output_size);
+                        let mut tmp = vec![0u64; 16 * 1024];
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<SerialTaskExecutor, false>(
+                            &mut product.to_backend_mut(),
+                            &a.to_backend_ref(),
+                            dsize,
+                            3,
+                            &key.to_backend_ref(),
+                            None,
+                            &mut tmp,
+                        );
+                        module.vec_znx_dft_add_assign(&mut product.to_backend_mut(), 0, &body.to_backend_ref(), 0);
+                        for p in [1, 5, -3] {
+                            let plan = module.vec_znx_dft_automorphism_plan(n, p);
+                            let mut reference = module.vec_znx_dft_alloc(n, 2, output_size + 2);
+                            let mut fused = module.vec_znx_dft_alloc(n, 2, output_size + 2);
+                            reference.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
+                            fused.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
+                            for col in 0..2 {
+                                crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(
+                                    &plan,
+                                    &mut reference.to_backend_mut(),
+                                    col,
+                                    &product.to_backend_ref(),
+                                    col,
+                                );
+                            }
+                            let rotated = RotatedOutput {
+                                plan: &plan,
+                                body: body.to_backend_ref(),
+                                output_size,
+                            };
+                            vmp_rotate_add::<SerialTaskExecutor>(
+                                &mut fused.to_backend_mut(),
+                                &a.to_backend_ref(),
+                                dsize,
+                                3,
+                                &key.to_backend_ref(),
+                                &mut tmp,
+                                &rotated,
+                            );
+                            assert!(
+                                reference.data.as_slice() == fused.data.as_slice(),
+                                "dsize={dsize} input={input_size} key={key_size} output={output_size} p={p}"
+                            );
+                            #[cfg(feature = "enable-rayon")]
+                            {
+                                fused.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
+                                pool.install(|| {
+                                    vmp_rotate_add::<poulpy_cpu_rayon::RayonTaskExecutor>(
+                                        &mut fused.to_backend_mut(),
+                                        &a.to_backend_ref(),
+                                        dsize,
+                                        3,
+                                        &key.to_backend_ref(),
+                                        &mut tmp,
+                                        &rotated,
+                                    )
+                                });
+                                assert!(reference.data.as_slice() == fused.data.as_slice());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

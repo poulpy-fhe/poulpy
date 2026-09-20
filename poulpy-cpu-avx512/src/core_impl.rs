@@ -18,6 +18,8 @@ use poulpy_core::{
     reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_output_size},
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
+#[cfg(feature = "enable-ifma")]
+use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -27,8 +29,8 @@ use poulpy_hal::{
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint,
-        ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        ScratchArena, VecZnxBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
     },
 };
 
@@ -40,6 +42,43 @@ impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
 impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
 
 trait RankOneTensorDft: Backend {
+    fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
+    where
+        Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    {
+        module.bytes_of_vec_znx_big(n, 1, size) + module.vec_znx_big_normalize_tmp_bytes()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tensor_finish(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_k: usize,
+        offset: i64,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a_col: usize,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: VecZnxIdftApplyTmpA<Self> + VecZnxBigNormalize<Self>,
+    {
+        let (mut big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(a.n(), 1, a.size());
+        module.vec_znx_idft_apply_tmpa(&mut big, 0, a, a_col);
+        module.vec_znx_big_normalize(
+            res,
+            res_base2k,
+            res_k,
+            offset,
+            res_col,
+            &big.to_backend_ref(),
+            a_base2k,
+            0,
+            &mut scratch,
+        );
+    }
+
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     fn rank_one_tensor_dft(
@@ -50,6 +89,53 @@ trait RankOneTensorDft: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+}
+
+#[cfg(feature = "enable-ifma")]
+macro_rules! ifma_tensor_finish {
+    ($executor:ty, $cap:expr) => {
+        fn tensor_finish_tmp_bytes(module: &Module<Self>, _n: usize, _size: usize) -> usize {
+            module.vec_znx_idft_normalize_consume_tmp_bytes(0, 0)
+        }
+
+        fn tensor_finish(
+            module: &Module<Self>,
+            res: &mut VecZnxBackendMut<'_, Self>,
+            res_base2k: usize,
+            res_k: usize,
+            offset: i64,
+            res_col: usize,
+            a: &mut VecZnxDftBackendMut<'_, Self>,
+            a_col: usize,
+            a_base2k: usize,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let n = a.n();
+            let workers = poulpy_hal::execution::scratch_workers_within::<$executor>(
+                a.size().min($cap),
+                3 * n * size_of::<u64>(),
+                scratch.available().saturating_sub(3 * n * size_of::<i128>()),
+            );
+            let (tmp, arena) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
+            let (carry, _) = crate::hal_impl::take_host_typed::<Self, i128>(arena, 3 * n);
+            let shape = a.shape();
+            let mut a = VecZnxDft::from_shape(&mut **a.data_mut(), shape);
+            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<$executor>(
+                module.reinterpret(),
+                res,
+                res_base2k,
+                res_k,
+                offset,
+                res_col,
+                &mut a,
+                a_col,
+                a_base2k,
+                None,
+                tmp,
+                carry,
+            );
+        }
+    };
 }
 
 impl RankOneTensorDft for NTT4x30Avx512 {
@@ -106,6 +192,7 @@ impl RankOneTensorDft for NTT4x30Avx512Rayon {
 
 #[cfg(feature = "enable-ifma")]
 impl RankOneTensorDft for NTT3x42Ifma {
+    ifma_tensor_finish!(poulpy_hal::execution::SerialTaskExecutor, 1);
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
@@ -130,6 +217,10 @@ impl RankOneTensorDft for NTT3x42Ifma {
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl RankOneTensorDft for NTT3x42IfmaRayon {
+    ifma_tensor_finish!(
+        crate::NTT3x42IfmaRayonExecutor,
+        <Self as poulpy_hal::execution::ScratchWorkers>::IDFT
+    );
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
             * crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
@@ -190,11 +281,8 @@ where
     Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
-    let normalize = module.bytes_of_vec_znx_big(n, 1, dft_size)
-        + BE::bytes_of_vec_znx(n, 1, res_size)
-        + module
-            .vec_znx_big_normalize_tmp_bytes()
-            .max(module.vec_znx_normalize_tmp_bytes());
+    let normalize = BE::bytes_of_vec_znx(n, 1, res_size)
+        + BE::tensor_finish_tmp_bytes(module, n, dft_size).max(module.vec_znx_normalize_tmp_bytes());
     BE::bytes_of_vec_znx(n, 2, res_size) + module.bytes_of_vec_znx_dft(n, 3, dft_size) + kernel.max(normalize)
 }
 
@@ -299,38 +387,31 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     );
 
     for (dft_col, res_col) in [(0, 0), (2, 2)] {
-        let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(n, 1, dft_size);
-        module.vec_znx_idft_apply_tmpa(
-            &mut product_big.to_backend_mut(),
-            0,
-            &mut tensor_dft.to_backend_mut(),
-            dft_col,
-        );
-        module.vec_znx_big_normalize(
+        BE::tensor_finish(
+            module,
             res.to_backend_mut().data_mut(),
             res_base2k,
             res_k,
             cnv_offset_lo,
             res_col,
-            &product_big.to_backend_ref(),
+            &mut tensor_dft,
+            dft_col,
             in_base2k,
-            0,
-            &mut norm_scratch,
+            &mut work,
         );
     }
 
-    let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(n, 1, dft_size);
-    module.vec_znx_idft_apply_tmpa(&mut product_big.to_backend_mut(), 0, &mut tensor_dft.to_backend_mut(), 1);
-    let (mut pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(n, 1, res.size());
-    module.vec_znx_big_normalize(
-        &mut pairwise.to_backend_mut(),
+    let (mut pairwise, mut norm_scratch) = work.borrow().take_vec_znx_scratch(n, 1, res.size());
+    BE::tensor_finish(
+        module,
+        &mut pairwise,
         res_base2k,
         res_k,
         cnv_offset_lo,
         0,
-        &product_big.to_backend_ref(),
+        &mut tensor_dft,
+        1,
         in_base2k,
-        0,
         &mut norm_scratch,
     );
     {
@@ -852,7 +933,6 @@ mod ifma_rayon_defaults {
     impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_ggsw_external_product_reference_full!(NTT3x42IfmaRayon);
-    impl_linear_transformation_reference_full!(NTT3x42IfmaRayon);
 }
 
 #[cfg(all(test, feature = "enable-ifma"))]

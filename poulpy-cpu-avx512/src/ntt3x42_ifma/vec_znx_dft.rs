@@ -565,6 +565,56 @@ pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>
     });
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn idft_normalize_consume_ifma<E: poulpy_hal::execution::TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
+    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, NTT3x42Ifma>,
+    res_base2k: usize,
+    res_k: usize,
+    res_offset: i64,
+    res_col: usize,
+    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    a_col: usize,
+    a_base2k: usize,
+    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma>, usize)>,
+    tmp: &mut [u64],
+    carry: &mut [i128],
+) {
+    let n = a.n();
+    assert_eq!(res.n(), n);
+    idft_compact_in_place_ifma::<E>(module, a, a_col, addend.filter(|(add, _)| add.n() == n), tmp);
+    let shape = a.shape();
+    if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
+        let mut big: VecZnxBigBackendMut<'_, NTT3x42Ifma> =
+            poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), shape);
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
+            &mut &mut big,
+            a_col,
+            &add,
+            add_col,
+        );
+    }
+    let big: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42Ifma> =
+        poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), shape);
+    #[cfg(feature = "enable-rayon")]
+    if E::is_parallel() {
+        return poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT3x42Ifma, crate::NTT3x42IfmaRayon>(
+            res, res_base2k, res_k, res_offset, res_col, &big, a_base2k, a_col, carry,
+        );
+    }
+    poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, NTT3x42Ifma>(
+        &mut &mut *res,
+        res_base2k,
+        res_k,
+        res_offset,
+        res_col,
+        &&big,
+        a_base2k,
+        a_col,
+        carry,
+    );
+}
+
 /// `VecZnxIdftApplyTmpA` packed fast path.
 pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     module: &Module<crate::NTT3x42Ifma>,

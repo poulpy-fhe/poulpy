@@ -11,7 +11,7 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
+    traits::Ntt3x42IfmaFromZnx64,
 };
 use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
@@ -1282,31 +1282,53 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
 // Prepare paths
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pack one canonical planar NTT-domain limb (`[0, q)` residues) into the
+/// Reduce one lazy planar NTT-domain limb (`[0, 4q)` residues) into the
 /// packed 2-word rows of `(limb_row, group)` for every group.
 #[target_feature(enable = "avx512f")]
-unsafe fn pack_limb_packed(dst: &mut [u64], src: &[u64], n: usize, size: usize, limb_row: usize) {
+unsafe fn pack_limb_packed<const MIRROR: bool>(
+    dst: *mut u64,
+    src: &[u64],
+    n: usize,
+    size: usize,
+    limb_row: usize,
+    right: *mut u64,
+) {
     let n_groups = n / 8;
     // Prepared operands are re-read long after every cache level has turned
     // over; NT stores skip the write-allocate read of the destination lines.
     // Row offsets are multiples of 128 bytes, so base alignment suffices.
-    let streamable = dst.as_ptr().addr().is_multiple_of(64);
+    let streamable = dst.addr().is_multiple_of(64);
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q.map(|q| _mm512_set1_epi64(q as i64));
+    let q2 = q.map(|q| _mm512_add_epi64(q, q));
     let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
     for group in 0..n_groups {
         let src_off = 8 * group;
         unsafe {
             let p0 = _mm512_loadu_si512(src.as_ptr().add(src_off) as *const __m512i);
+            let p0 = cond_sub_2q_si512(cond_sub_2q_si512(p0, q2[0]), q[0]);
             let p1 = _mm512_loadu_si512(src.as_ptr().add(n + src_off) as *const __m512i);
+            let p1 = cond_sub_2q_si512(cond_sub_2q_si512(p1, q2[1]), q[1]);
             let p2 = _mm512_loadu_si512(src.as_ptr().add(2 * n + src_off) as *const __m512i);
+            let p2 = cond_sub_2q_si512(cond_sub_2q_si512(p2, q2[2]), q[2]);
             let w0 = _mm512_or_si512(p0, _mm512_slli_epi64::<42>(_mm512_and_si512(p1, m22)));
             let w1 = _mm512_or_si512(_mm512_srli_epi64::<22>(p1), _mm512_slli_epi64::<20>(p2));
             let dst_off = packed_row_offset(size, limb_row, group);
             if streamable {
-                _mm512_stream_si512(dst.as_mut_ptr().add(dst_off) as *mut __m512i, w0);
-                _mm512_stream_si512(dst.as_mut_ptr().add(dst_off + 8) as *mut __m512i, w1);
+                _mm512_stream_si512(dst.add(dst_off) as *mut __m512i, w0);
+                _mm512_stream_si512(dst.add(dst_off + 8) as *mut __m512i, w1);
             } else {
-                _mm512_storeu_si512(dst.as_mut_ptr().add(dst_off) as *mut __m512i, w0);
-                _mm512_storeu_si512(dst.as_mut_ptr().add(dst_off + 8) as *mut __m512i, w1);
+                _mm512_storeu_si512(dst.add(dst_off) as *mut __m512i, w0);
+                _mm512_storeu_si512(dst.add(dst_off + 8) as *mut __m512i, w1);
+            }
+            if MIRROR {
+                let dst = right.add(packed_row_offset(size, size - 1 - limb_row, group));
+                if streamable && right.addr().is_multiple_of(64) {
+                    _mm512_stream_si512(dst.cast(), w0);
+                    _mm512_stream_si512(dst.add(8).cast(), w1);
+                } else {
+                    _mm512_storeu_si512(dst.cast(), w0);
+                    _mm512_storeu_si512(dst.add(8).cast(), w1);
+                }
             }
         }
     }
@@ -1315,16 +1337,18 @@ unsafe fn pack_limb_packed(dst: &mut [u64], src: &[u64], n: usize, size: usize, 
     }
 }
 
-fn zero_limb_packed(dst: &mut [u64], size: usize, limb_row: usize, n_groups: usize) {
+unsafe fn zero_limb_packed(dst: *mut u64, size: usize, limb_row: usize, n_groups: usize) {
     for group in 0..n_groups {
         let off = packed_row_offset(size, limb_row, group);
-        dst[off..off + 16].fill(0);
+        unsafe {
+            std::slice::from_raw_parts_mut(dst.add(off), 16).fill(0);
+        }
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_left`]: NTT and canonical limbs.
+/// Scratch bytes required by [`cnv_prepare_left`]: one three-prime NTT limb.
 pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
-    6 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
@@ -1348,18 +1372,19 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
         let col_stride = 2 * n * res_size;
         let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
         let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
-        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+        E::for_each_chunked(task_count, worker_tmp, 3 * n, |tmp, task| {
             let col = task / res_size;
             let j = task % res_size;
-            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+            let limb_b = &mut tmp[..3 * n];
+            let dst = unsafe { res_ptr.get().add(col * col_stride) };
             if j < min_size {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
+                unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, j, std::ptr::null_mut()) };
             } else {
-                zero_limb_packed(dst, res_size, j, n / 8);
+                unsafe {
+                    zero_limb_packed(dst, res_size, j, n / 8);
+                }
             }
         });
         return;
@@ -1368,27 +1393,28 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
-    let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
+    let limb_b = &mut tmp_u64[..3 * n];
 
     let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
     for col in 0..cols {
-        let dst = col_slice_mut(res_raw, n, res_size, col);
+        let dst = col_slice_mut(res_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
             NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
+            // Packing also reduces the lazy transform output.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-            NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
+            unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, j, std::ptr::null_mut()) };
         }
         for j in min_size..res_size {
-            zero_limb_packed(dst, res_size, j, n / 8);
+            unsafe {
+                zero_limb_packed(dst, res_size, j, n / 8);
+            }
         }
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_right`]: NTT and canonical limbs.
+/// Scratch bytes required by [`cnv_prepare_right`]: one three-prime NTT limb.
 pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
-    6 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
@@ -1412,44 +1438,46 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
         let col_stride = 2 * n * res_size;
         let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
         let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
-        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+        E::for_each_chunked(task_count, worker_tmp, 3 * n, |tmp, task| {
             let col = task / res_size;
             let j = task % res_size;
-            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+            let limb_b = &mut tmp[..3 * n];
+            let dst = unsafe { res_ptr.get().add(col * col_stride) };
             if j < min_size {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
+                unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, res_size - 1 - j, std::ptr::null_mut()) };
             } else {
-                zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+                unsafe {
+                    zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+                }
             }
         });
         return;
     }
 
-    let (limb_b, limb_c) = tmp[..6 * n].split_at_mut(3 * n);
+    let limb_b = &mut tmp[..3 * n];
 
     let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
     for col in 0..cols {
-        let dst = col_slice_mut(res_raw, n, res_size, col);
+        let dst = col_slice_mut(res_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
             NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
+            // Packing also reduces the lazy transform output.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-            NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
+            unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, res_size - 1 - j, std::ptr::null_mut()) };
         }
         for j in min_size..res_size {
-            zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+            unsafe {
+                zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+            }
         }
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_self`]: NTT and canonical limbs.
+/// Scratch bytes required by [`cnv_prepare_self`]: one three-prime NTT limb.
 pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
-    6 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
@@ -1483,21 +1511,23 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
         let left_ptr = SendPtr(cast_slice_mut::<_, u64>(left.data_mut()).as_mut_ptr());
         let right_ptr = SendPtr(cast_slice_mut::<_, u64>(right.data_mut()).as_mut_ptr());
         let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
-        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+        E::for_each_chunked(task_count, worker_tmp, 3 * n, |tmp, task| {
             let col = task / res_size;
             let j = task % res_size;
-            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-            let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
-            let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
+            let limb_b = &mut tmp[..3 * n];
+            let dst_l = unsafe { left_ptr.get().add(col * col_stride) };
+            let dst_r = unsafe { right_ptr.get().add(col * col_stride) };
             if j < min_size {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
-                unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+                unsafe { pack_limb_packed::<true>(dst_l, limb_b, n, res_size, j, dst_r) };
             } else {
-                zero_limb_packed(dst_l, res_size, j, n / 8);
-                zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+                unsafe {
+                    zero_limb_packed(dst_l, res_size, j, n / 8);
+                }
+                unsafe {
+                    zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+                }
             }
         });
         return;
@@ -1506,24 +1536,26 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
-    let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
+    let limb_b = &mut tmp_u64[..3 * n];
 
     let left_raw: &mut [u64] = cast_slice_mut(left.data_mut());
     let right_raw: &mut [u64] = cast_slice_mut(right.data_mut());
     for col in 0..cols {
-        let dst_l = col_slice_mut(left_raw, n, res_size, col);
-        let dst_r = col_slice_mut(right_raw, n, res_size, col);
+        let dst_l = col_slice_mut(left_raw, n, res_size, col).as_mut_ptr();
+        let dst_r = col_slice_mut(right_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
             NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
+            // Packing also reduces the lazy transform output.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-            NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
-            unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+            unsafe { pack_limb_packed::<true>(dst_l, limb_b, n, res_size, j, dst_r) };
         }
         for j in min_size..res_size {
-            zero_limb_packed(dst_l, res_size, j, n / 8);
-            zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+            unsafe {
+                zero_limb_packed(dst_l, res_size, j, n / 8);
+            }
+            unsafe {
+                zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+            }
         }
     }
 }
@@ -1534,4 +1566,56 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
+}
+
+#[cfg(test)]
+mod prepare_pack_tests {
+    use super::*;
+    use poulpy_hal::layouts::PrimeSet;
+
+    #[test]
+    fn lazy_packing_reduces_and_mirrors_only_the_selected_rows() {
+        let (n, size) = (16, 3);
+        let mut source = vec![0u64; 3 * n];
+        for p in 0..3 {
+            let q = Primes42::Q[p];
+            for i in 0..n {
+                source[p * n + i] = [0, q - 1, q, 2 * q - 1, 2 * q, 3 * q, 4 * q - 1, 1][i % 8];
+            }
+        }
+        for shift in [0, 1] {
+            for row in 0..size {
+                let mut left = vec![u64::MAX; 2 * n * size + 16];
+                let mut right = left.clone();
+                let lo = (64 - left.as_ptr().addr() % 64) % 64 / 8 + shift;
+                let ro = (64 - right.as_ptr().addr() % 64) % 64 / 8 + shift;
+                unsafe {
+                    pack_limb_packed::<true>(left.as_mut_ptr().add(lo), &source, n, size, row, right.as_mut_ptr().add(ro));
+                }
+                for (data, offset, selected) in [(&left, lo, row), (&right, ro, size - 1 - row)] {
+                    for (i, &actual) in data.iter().enumerate() {
+                        let expected = if i >= offset && i < offset + 2 * n * size {
+                            let word = i - offset;
+                            let group = word / (size * 16);
+                            let r = word / 16 % size;
+                            let lane = word % 8;
+                            if r == selected {
+                                let x: [u64; 3] = std::array::from_fn(|p| source[p * n + group * 8 + lane] % Primes42::Q[p]);
+                                if word % 16 < 8 {
+                                    x[0] | ((x[1] & ((1 << 22) - 1)) << 42)
+                                } else {
+                                    (x[1] >> 22) | (x[2] << 20)
+                                }
+                            } else {
+                                u64::MAX
+                            }
+                        } else {
+                            u64::MAX
+                        };
+                        assert_eq!(actual, expected, "shift={shift} row={row} word={i}");
+                    }
+                }
+            }
+        }
+    }
 }
