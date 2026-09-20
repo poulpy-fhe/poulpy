@@ -15,7 +15,7 @@ use crate::{
         BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
         TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
 };
 
 /// Allocates an automorphism key on the reference module, filled with noise.
@@ -92,28 +92,44 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                 let mut res_ref = module_ref.glwe_alloc_from_infos(&res_infos);
                 let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
 
-                let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-                    module_ref
-                        .glwe_automorphism_key_prepare_tmp_bytes(&key_infos)
-                        .max(module_ref.glwe_automorphism_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-                );
-                let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-                    module_test
-                        .glwe_automorphism_key_prepare_tmp_bytes(&key_infos)
-                        .max(module_test.glwe_automorphism_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-                );
+                let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_automorphism_key_prepare_tmp_bytes(&key_infos));
+                let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_automorphism_key_prepare_tmp_bytes(&key_infos));
 
                 let mut key_ref = module_ref.glwe_automorphism_key_prepared_alloc_from_infos(&key_infos);
                 module_ref.glwe_automorphism_key_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
                 let mut key_test = module_test.glwe_automorphism_key_prepared_alloc_from_infos(&key_infos);
                 module_test.glwe_automorphism_key_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
 
-                module_ref.glwe_automorphism(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
-                module_test.glwe_automorphism(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
-
-                let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
-                res_test.transfer_into(&mut have);
-                assert_eq!(res_ref, have, "glwe_automorphism: rank={rank} dsize={dsize} p={p}");
+                // Every variant starts with the same independently uploaded accumulator.
+                let initial = ref_glwe(module_ref, &res_infos, &mut source);
+                macro_rules! check {
+                    ($method:ident, $assign:tt) => {{
+                        initial.transfer_into(&mut res_ref);
+                        initial.transfer_into(&mut res_test);
+                        let input_infos = if $assign { &res_infos } else { &a_infos };
+                        let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_automorphism_tmp_bytes(&res_infos, input_infos, &key_infos));
+                        let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_automorphism_tmp_bytes(&res_infos, input_infos, &key_infos));
+                        check!(@call module_ref, res_ref, a_ref, key_ref, scratch_ref, $method, $assign);
+                        check!(@call module_test, res_test, a_test, key_test, scratch_test, $method, $assign);
+                        let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                        res_test.transfer_into(&mut have);
+                        assert_eq!(res_ref, have, "{}: rank={rank} dsize={dsize} p={p}", stringify!($method));
+                    }};
+                    (@call $module:ident, $res:ident, $a:ident, $key:ident, $scratch:ident, $method:ident, false) => {
+                        $module.$method(&mut $res, &$a, &$key.to_backend_ref(), &mut $scratch.borrow());
+                    };
+                    (@call $module:ident, $res:ident, $a:ident, $key:ident, $scratch:ident, $method:ident, true) => {
+                        $module.$method(&mut $res, &$key.to_backend_ref(), &mut $scratch.borrow());
+                    };
+                }
+                check!(glwe_automorphism, false);
+                check!(glwe_automorphism_add, false);
+                check!(glwe_automorphism_sub, false);
+                check!(glwe_automorphism_sub_negate, false);
+                check!(glwe_automorphism_assign, true);
+                check!(glwe_automorphism_add_assign, true);
+                check!(glwe_automorphism_sub_assign, true);
+                check!(glwe_automorphism_sub_negate_assign, true);
             }
         }
     }

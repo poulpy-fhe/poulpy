@@ -7,11 +7,10 @@ use crate::{
     GetDistribution, GetDistributionMut,
     api::{
         EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
-        GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptPk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyGenerate,
-        GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptPk, GLWESwitchingKeyEncryptSk,
-        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
-        LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
+        GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
+        GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyGenerate,
+        GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
+        GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask, LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -25,7 +24,7 @@ use crate::{
 };
 
 macro_rules! impl_encryption_delegate {
-    ($trait:ty, $default:path, $($body:item),+ $(,)?) => {
+    ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
             BE: Backend + EncryptionImpl,
@@ -37,7 +36,6 @@ macro_rules! impl_encryption_delegate {
 
 impl_encryption_delegate!(
     GLWEMaskFill<BE>,
-    GLWEMaskFillReference<BE>,
     fn fill_glwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
@@ -54,7 +52,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     LWEFillMask<BE>,
-    LWEFillMaskReference<BE>,
     fn fill_lwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>,
@@ -71,7 +68,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     LWEEncryptSk<BE>,
-    LWEEncryptSkReference<BE>,
     fn lwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos,
@@ -99,7 +95,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEEncryptSk<BE>,
-    GLWEEncryptSkReference<BE>,
     fn glwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -142,7 +137,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEEncryptPk<BE>,
-    GLWEEncryptPkReference<BE>,
     fn glwe_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -185,7 +179,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEPublicKeyGenerate<BE>,
-    GLWEPublicKeyGenerateReference<BE>,
     fn glwe_public_key_generate<R, S, E>(
         &self,
         res: &mut R,
@@ -204,7 +197,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGLWEEncryptSk<BE>,
-    GGLWEEncryptSkReference<BE>,
     fn gglwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -232,7 +224,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGSWEncryptSk<BE>,
-    GGSWEncryptSkReference<BE>,
     fn ggsw_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
@@ -260,7 +251,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGLWEToGGSWKeyEncryptSk<BE>,
-    GGLWEToGGSWKeyEncryptSkReference<BE>,
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -286,7 +276,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWESwitchingKeyEncryptSk<BE>,
-    GLWESwitchingKeyEncryptSkReference<BE>,
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -313,19 +302,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GLWESwitchingKeyEncryptPk<BE>,
-    GLWESwitchingKeyEncryptPkReference<BE>,
-    fn glwe_switching_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_switching_key_encrypt_pk_tmp_bytes_reference(self, infos)
-    }
-);
-
-impl_encryption_delegate!(
     GLWETensorKeyEncryptSk<BE>,
-    GLWETensorKeyEncryptSkReference<BE>,
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -351,7 +328,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEToLWESwitchingKeyEncryptSk<BE>,
-    GLWEToLWESwitchingKeyEncryptSkReference<BE>,
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -379,7 +355,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     LWESwitchingKeyEncrypt<BE>,
-    LWESwitchingKeyEncryptReference<BE>,
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -407,7 +382,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     LWEToGLWESwitchingKeyEncryptSk<BE>,
-    LWEToGLWESwitchingKeyEncryptSkReference<BE>,
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -435,7 +409,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEAutomorphismKeyEncryptSk<BE>,
-    GLWEAutomorphismKeyEncryptSkReference<BE>,
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -461,19 +434,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GLWEAutomorphismKeyEncryptPk<BE>,
-    GLWEAutomorphismKeyEncryptPkReference<BE>,
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_automorphism_key_encrypt_pk_tmp_bytes_reference(self, infos)
-    }
-);
-
-impl_encryption_delegate!(
     GLWECompressedEncryptSk<BE>,
-    GLWECompressedEncryptSkReference<BE>,
     fn glwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -501,7 +462,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGLWECompressedEncryptSk<BE>,
-    GGLWECompressedEncryptSkReference<BE>,
     fn gglwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -529,7 +489,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGSWCompressedEncryptSk<BE>,
-    GGSWCompressedEncryptSkReference<BE>,
     fn ggsw_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
@@ -557,7 +516,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GGLWEToGGSWKeyCompressedEncryptSk<BE>,
-    GGLWEToGGSWKeyCompressedEncryptSkReference<BE>,
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -583,7 +541,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEAutomorphismKeyCompressedEncryptSk<BE>,
-    GLWEAutomorphismKeyCompressedEncryptSkReference<BE>,
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -610,7 +567,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWESwitchingKeyCompressedEncryptSk<BE>,
-    GLWESwitchingKeyCompressedEncryptSkReference<BE>,
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -638,7 +594,6 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWETensorKeyCompressedEncryptSk<BE>,
-    GLWETensorKeyCompressedEncryptSkReference<BE>,
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,

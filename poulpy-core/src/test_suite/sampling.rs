@@ -202,3 +202,93 @@ where
         assert_two_additions(&download_vec_znx::<BE>(&res), col_i, noise);
     }
 }
+
+/// Same-backend Gaussian reproducibility, source advancement and preservation.
+/// Random streams deliberately are not compared between distinct backends.
+fn gaussian_reproducibility<BE: TestBackend>(module: &Module<BE>)
+where
+    Module<BE>: VecZnxAddNormal<BE>
+        + VecZnxBigAddNormal<BE>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let noise = noise_infos();
+    for big in [false, true] {
+        let draw = |source: &mut Source| {
+            let mut result = module.vec_znx_alloc(module.n(), COLS, SIZE);
+            if big {
+                let mut a = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
+                module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), 1, noise, source);
+                let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
+                for col in 0..COLS {
+                    module.vec_znx_big_normalize(
+                        &mut vec_znx_backend_mut::<BE>(&mut result),
+                        BASE2K,
+                        SIZE * BASE2K,
+                        0,
+                        col,
+                        &a.to_backend_ref(),
+                        BASE2K,
+                        col,
+                        &mut scratch.borrow(),
+                    );
+                }
+            } else {
+                module.vec_znx_add_normal(BASE2K, &mut vec_znx_backend_mut::<BE>(&mut result), 1, noise, source);
+            }
+            download_vec_znx::<BE>(&result)
+        };
+        let mut first = Source::new([91; 32]);
+        let mut repeat = Source::new([91; 32]);
+        let a = draw(&mut first);
+        let b = draw(&mut repeat);
+        assert_eq!(a, b, "Gaussian same-backend reproducibility (big={big})");
+        assert_eq!(first.new_seed(), repeat.new_seed(), "Gaussian source consumption (big={big})");
+        assert_ne!(a, draw(&mut first), "Gaussian source did not advance (big={big})");
+        for limb in 0..SIZE {
+            assert!(a.at(0, limb).iter().all(|value| *value == 0));
+        }
+    }
+}
+
+/// Runs the distribution and seeded-stream contracts independently on each
+/// backend. A fresh degree-4096 module supplies enough samples for noise bounds.
+pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
+    params: &TestParams,
+    _: &crate::test_suite::parity::ParityShapes,
+    _: &Module<BR>,
+    _: &Module<BT>,
+) where
+    Module<BR>: poulpy_hal::api::ModuleNew<BR>
+        + ScalarZnxFillDistribution<BR>
+        + VecZnxAddNormal<BR>
+        + VecZnxBigAddNormal<BR>
+        + VecZnxAlloc<BR>
+        + VecZnxBigAlloc<BR>
+        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalizeTmpBytes,
+    Module<BT>: poulpy_hal::api::ModuleNew<BT>
+        + ScalarZnxFillDistribution<BT>
+        + VecZnxAddNormal<BT>
+        + VecZnxBigAddNormal<BT>
+        + VecZnxAlloc<BT>
+        + VecZnxBigAlloc<BT>
+        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let r = Module::<BR>::new(4096);
+    let t = Module::<BT>::new(4096);
+    test_scalar_znx_fill_distribution(params, &r);
+    test_scalar_znx_fill_distribution(params, &t);
+    test_vec_znx_add_normal(params, &r);
+    test_vec_znx_add_normal(params, &t);
+    test_vec_znx_big_add_normal(params, &r);
+    test_vec_znx_big_add_normal(params, &t);
+    gaussian_reproducibility(&r);
+    gaussian_reproducibility(&t);
+}

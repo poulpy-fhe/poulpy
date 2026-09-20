@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWETensorKeyEncryptSkReference<BE: Backend> {
     fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -33,11 +33,33 @@ pub trait GLWETensorKeyEncryptSkReference<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWETensorKeyEncryptSkReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWETensorKeyEncryptSkReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWETensorKeyEncryptSkComposition<BE: Backend> {
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    fn glwe_tensor_key_encrypt_sk_composition<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+}
+
+impl<BE: Backend> GLWETensorKeyEncryptSkComposition<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
 {
-    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -55,7 +77,7 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3_encrypt
     }
 
-    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk_composition<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -71,10 +93,10 @@ where
         assert_eq!(res.rank_out(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(
-            scratch.available() >= self.glwe_tensor_key_encrypt_sk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_tensor_key_encrypt_sk_tmp_bytes_composition(res),
             "scratch.available(): {} < GLWETensorKeyEncryptSk::glwe_tensor_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_tensor_key_encrypt_sk_tmp_bytes_reference(res)
+            self.glwe_tensor_key_encrypt_sk_tmp_bytes_composition(res)
         );
 
         let scratch = scratch.borrow();
@@ -96,4 +118,33 @@ where
             &mut enc_scratch,
         );
     }
+}
+
+/// Forwards every method of [`GLWETensorKeyEncryptSkReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_tensor_key_encrypt_sk_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GLWETensorKeyEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: $crate::layouts::GGLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWETensorKeyEncryptSkComposition<$be>>::glwe_tensor_key_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
+        }
+
+    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        source_xa: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWETensorKeyEncryptSkComposition<$be>>::glwe_tensor_key_encrypt_sk_composition::<R, S, E>(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        }
+        }
+    };
 }

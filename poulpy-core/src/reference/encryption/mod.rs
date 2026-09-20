@@ -3,20 +3,20 @@
 //! This module provides traits and implementations for encrypting various
 //! lattice-based cryptographic objects, including:
 //!
-//! - **Ciphertexts**: [`GLWEEncryptSk`], [`GLWEEncryptPk`], [`GGLWEEncryptSk`],
-//!   [`GGSWEncryptSk`], [`LWEEncryptSk`] for encrypting plaintexts under
+//! - **Ciphertexts**: [`GLWEEncryptSk`], [`GLWEEncryptPk`](crate::api::GLWEEncryptPk), [`GGLWEEncryptSk`],
+//!   [`GGSWEncryptSk`], [`LWEEncryptSk`](crate::api::LWEEncryptSk) for encrypting plaintexts under
 //!   GLWE, GGLWE, GGSW, and LWE schemes.
 //!
-//! - **Key-switching keys**: [`GLWESwitchingKeyEncryptSk`], [`LWESwitchingKeyEncrypt`],
-//!   [`GLWEToLWESwitchingKeyEncryptSk`], [`LWEToGLWESwitchingKeyEncryptSk`] for
+//! - **Key-switching keys**: [`GLWESwitchingKeyEncryptSk`], [`LWESwitchingKeyEncrypt`](crate::api::LWESwitchingKeyEncrypt),
+//!   [`GLWEToLWESwitchingKeyEncryptSk`](crate::api::GLWEToLWESwitchingKeyEncryptSk), [`LWEToGLWESwitchingKeyEncryptSk`](crate::api::LWEToGLWESwitchingKeyEncryptSk) for
 //!   generating keys that enable switching between different secret keys or
 //!   between LWE and GLWE domains.
 //!
-//! - **Evaluation keys**: [`GLWEAutomorphismKeyEncryptSk`], [`GLWETensorKeyEncryptSk`],
-//!   [`GGLWEToGGSWKeyEncryptSk`] for generating keys used in automorphism,
+//! - **Evaluation keys**: [`GLWEAutomorphismKeyEncryptSk`](crate::api::GLWEAutomorphismKeyEncryptSk), [`GLWETensorKeyEncryptSk`](crate::api::GLWETensorKeyEncryptSk),
+//!   [`GGLWEToGGSWKeyEncryptSk`](crate::api::GGLWEToGGSWKeyEncryptSk) for generating keys used in automorphism,
 //!   tensor product, and GGLWE-to-GGSW conversion operations.
 //!
-//! - **Public keys**: [`GLWEPublicKeyGenerate`] for generating GLWE public keys
+//! - **Public keys**: [`GLWEPublicKeyGenerate`](crate::api::GLWEPublicKeyGenerate) for generating GLWE public keys
 //!   from secret keys.
 //!
 //! Encryption methods follow a consistent pattern with PRNG sources:

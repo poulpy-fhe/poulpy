@@ -17,20 +17,13 @@ use crate::{
         GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
         GLWEZeroImpl,
     },
-    operations::{
-        GGSWRotateReference, GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference,
-        GLWEMulXpMinusOneReference, GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference,
-        GLWESubReference, GLWETensoringReference, GLWEZeroReference,
-    },
-    reference::{glwe_packing::GLWEPackingReference, glwe_trace::GLWETraceReference},
 };
 
 macro_rules! impl_operations_delegate {
-    ($trait:ty, $impl_trait:path, $default:path, $($body:item),+ $(,)?) => {
+    ($trait:ty, $impl_trait:path, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
             BE: Backend + $impl_trait,
-            Module<BE>: $default,
         {
             $($body)+
         }
@@ -40,7 +33,6 @@ macro_rules! impl_operations_delegate {
 impl_operations_delegate!(
     GLWEAdd<BE>,
     GLWEAddImpl,
-    GLWEAddReference<BE>,
     fn glwe_add_into<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
@@ -61,7 +53,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWENegate<BE>,
     GLWENegateImpl,
-    GLWENegateReference<BE>,
     fn glwe_negate<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
@@ -80,7 +71,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWESub<BE>,
     GLWESubImpl,
-    GLWESubReference<BE>,
     fn glwe_sub<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
@@ -108,7 +98,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEZero<BE>,
     GLWEZeroImpl,
-    GLWEZeroReference<BE>,
     fn glwe_zero<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
@@ -120,7 +109,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWECopy<BE>,
     GLWECopyImpl,
-    GLWECopyReference<BE>,
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
         BE::glwe_copy_tmp_bytes(self, res, a)
     },
@@ -136,7 +124,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEMulConst<BE>,
     GLWEMulConstImpl,
-    GLWEMulConstReference<BE>,
     fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -178,7 +165,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEMulPlain<BE>,
     GLWEMulPlainImpl,
-    GLWEMulPlainReference<BE>,
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -207,7 +193,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWETensoring<BE>,
     GLWETensoringImpl,
-    GLWETensoringReference<BE>,
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -259,7 +244,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWERotate<BE>,
     GLWERotateImpl,
-    GLWERotateReference<BE>,
     fn glwe_rotate_tmp_bytes(&self) -> usize {
         BE::glwe_rotate_tmp_bytes(self)
     },
@@ -281,7 +265,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GGSWRotate<BE>,
     GGSWRotateImpl,
-    GGSWRotateReference<BE>,
     fn ggsw_rotate_tmp_bytes(&self) -> usize {
         BE::ggsw_rotate_tmp_bytes(self)
     },
@@ -303,7 +286,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEMulXpMinusOne<BE>,
     GLWEMulXpMinusOneImpl,
-    GLWEMulXpMinusOneReference<BE>,
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
@@ -322,7 +304,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEShift<BE>,
     GLWEShiftImpl,
-    GLWEShiftReference<BE>,
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
         BE::glwe_shift_tmp_bytes(self, res_size)
     },
@@ -364,7 +345,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWENormalize<BE>,
     GLWENormalizeImpl,
-    GLWENormalizeReference<BE>,
     fn glwe_normalize_tmp_bytes(&self) -> usize {
         BE::glwe_normalize_tmp_bytes(self)
     },
@@ -386,7 +366,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWETrace<BE>,
     GLWETraceImpl,
-    GLWETraceReference<BE>,
     fn glwe_trace_galois_elements(&self) -> Vec<i64> {
         BE::glwe_trace_galois_elements(self)
     },
@@ -418,7 +397,6 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEPacking<BE>,
     GLWEPackImpl,
-    GLWEPackingReference<BE>,
     fn glwe_pack_galois_elements(&self) -> Vec<i64> {
         BE::glwe_pack_galois_elements(self)
     },

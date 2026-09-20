@@ -348,7 +348,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 /// Any lower limb can affect rounding through a sufficiently long carry chain.
 /// The retained window covers the live precision plus the worst-case norm
 /// growth of the signed polynomial products and VMP accumulation, on every
-/// backend; see [`gadget_product_output_size`].
+/// backend; see `gadget_product_output_size`.
 pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,

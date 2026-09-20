@@ -18,10 +18,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{
-    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
-    oep::PolynomialEvaluationReference,
-};
+use crate::layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper};
 
 /// HAL bounds required to run the hoisted prepared-right tensor product.
 ///
@@ -157,7 +154,7 @@ where
 /// computes the parity schedule, seeds the accumulator from the *highest* power
 /// (the lowest-budget operand, so every term writes at the final result width)
 /// and sequences the terms.
-pub(crate) fn eval_baby_step<BE: Backend, Ops, V, P, G, A>(
+pub fn eval_baby_step<BE: Backend, Ops, V, P, G, A>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut V,
@@ -213,7 +210,7 @@ where
 /// level via [`BSGSOps::prepare_right`] and reused across the level's
 /// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
 /// delegated to the scheme.
-pub(crate) fn eval_giant_steps<R, B, V, P, A, G, H, BE: Backend, Ops>(
+pub fn eval_giant_steps<R, B, V, P, A, G, H, BE: Backend, Ops>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut R,
@@ -305,47 +302,4 @@ where
 
 fn giant_step_power(degree: usize) -> usize {
     (degree + 1).next_power_of_two()
-}
-
-impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
-    fn glwe_eval_baby_step_reference<Ops, R, P, A, G>(
-        &self,
-        ops: &Ops,
-        res: &mut R,
-        parity: Parity,
-        coeffs: &P,
-        power_basis: &G,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Ops: BSGSOps<BE, R, P, A, R>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
-        G: PowerBasisHelper<BE, A>,
-    {
-        eval_baby_step::<BE, Ops, R, P, G, A>(self, ops, res, parity, coeffs, power_basis, scratch)
-    }
-
-    fn glwe_eval_giant_steps_reference<Ops, R, B, V, P, A, G, H>(
-        &self,
-        ops: &Ops,
-        res: &mut R,
-        baby_steps: &mut [B],
-        power_basis: &G,
-        tsk: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Ops: BSGSOps<BE, V, P, A, R>,
-        R: GLWEToBackendMut<BE>,
-        B: BabyStep<BE, Value = V>,
-        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE>,
-        A: GLWEToBackendRef<BE>,
-        G: PowerBasisHelper<BE, A>,
-        H: GetTensorKey<BE>,
-    {
-        eval_giant_steps::<R, B, V, P, A, G, H, BE, Ops>(self, ops, res, baby_steps, power_basis, tsk, scratch)
-    }
 }

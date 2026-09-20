@@ -8,6 +8,13 @@ use crate::layouts::{
     GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
+/// Normalized trace onto the subring selected by `skip`.
+///
+/// Each stage divides by two with the shift operation's rounding, then adds
+/// the corresponding Galois conjugate. `skip` must not exceed `log2(N)`.
+/// An empty trace (`skip == log2(N)`) copies the input using [`GLWECopy`]
+/// semantics; its assign form preserves the destination. Neither needs keys.
+/// Invalid skips panic before mutation.
 pub trait GLWETrace<BE: Backend> {
     fn glwe_trace_galois_elements(&self) -> Vec<i64>;
 
@@ -29,6 +36,12 @@ pub trait GLWETrace<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
+/// Packs the selected coefficients through a merge tree and normalized trace.
+///
+/// The input map must be nonempty, `log_gap_out <= log2(N)`, and every index
+/// must be below `N` and divisible by `2^log_gap_out`. Invalid maps or gaps
+/// panic before changing inputs or destination. Valid calls consume and mutate
+/// the input ciphertexts; their final values are not preserved.
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 

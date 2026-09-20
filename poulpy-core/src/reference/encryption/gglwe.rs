@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GGLWEEncryptSkReference<BE: Backend> {
     fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -36,7 +36,31 @@ pub trait GGLWEEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GGLWEEncryptSkReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GGLWEEncryptSkReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GGLWEEncryptSkComposition<BE: Backend> {
+    fn gglwe_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    fn gglwe_encrypt_sk_composition<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE>,
+        P: ScalarZnxToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
+}
+
+impl<BE: Backend> GGLWEEncryptSkComposition<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
@@ -48,7 +72,7 @@ where
         + VecZnxNormalizeAssign<BE>
         + VecZnxZero<BE>,
 {
-    fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn gglwe_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -61,7 +85,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_encrypt_sk_composition<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -97,10 +121,10 @@ where
         assert_eq!(res.n(), sk_ref.n());
         assert_eq!(pt_backend.n() as u32, sk_ref.n());
         assert!(
-            scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
+            scratch.available() >= GGLWEEncryptSkComposition::gglwe_encrypt_sk_tmp_bytes_composition(self, res),
             "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
+            GGLWEEncryptSkComposition::gglwe_encrypt_sk_tmp_bytes_composition(self, res)
         );
         assert!(
             res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
@@ -157,4 +181,35 @@ where
             }
         }
     }
+}
+
+/// Forwards every method of [`GGLWEEncryptSkReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_gglwe_encrypt_sk_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GGLWEEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: $crate::layouts::GGLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEEncryptSkComposition<$be>>::gglwe_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
+        }
+
+    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        source_xa: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GGLWEToBackendMut<$be>,
+        P: ::poulpy_hal::layouts::ScalarZnxToBackendRef<$be>,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEEncryptSkComposition<$be>>::gglwe_encrypt_sk_composition::<R, P, S, E>(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        }
+        }
+    };
 }

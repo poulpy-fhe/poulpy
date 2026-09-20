@@ -98,8 +98,12 @@ impl_lwe_keyswitch_reference_full!(FFT64Avx);
 impl_lwe_keyswitch_reference_full!(NTT4x30Avx);
 
 impl_encryption_reference_full!(FFT64Avx);
+poulpy_core::impl_operations_reference_full!(FFT64Avx);
+poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64Avx);
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx, fft64);
 impl_encryption_reference_full!(NTT4x30Avx);
+poulpy_core::impl_operations_reference_full!(NTT4x30Avx);
+poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30Avx);
 poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Avx);
@@ -128,6 +132,8 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_reference_full!(FFT64AvxRayon);
     impl_lwe_keyswitch_reference_full!(FFT64AvxRayon);
     impl_encryption_reference_full!(FFT64AvxRayon);
+    poulpy_core::impl_operations_reference_full!(FFT64AvxRayon);
+    poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64AvxRayon);
     poulpy_cpu_ref::impl_sampling_host!(FFT64AvxRayon, fft64);
     impl_glwe_external_product_reference_full!(FFT64AvxRayon);
     impl_gglwe_external_product_reference_full!(FFT64AvxRayon);
@@ -146,6 +152,8 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_reference_full!(NTT4x30AvxRayon);
     impl_lwe_keyswitch_reference_full!(NTT4x30AvxRayon);
     impl_encryption_reference_full!(NTT4x30AvxRayon);
+    poulpy_core::impl_operations_reference_full!(NTT4x30AvxRayon);
+    poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30AvxRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30AvxRayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT4x30AvxRayon);
     impl_gglwe_external_product_reference_full!(NTT4x30AvxRayon);

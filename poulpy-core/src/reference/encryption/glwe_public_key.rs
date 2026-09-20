@@ -9,7 +9,7 @@ use crate::{
     layouts::{GLWEInfos, GLWEToBackendMut, prepared::GLWESecretPreparedToBackendRef},
 };
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEPublicKeyGenerateReference<BE: Backend> {
     fn glwe_public_key_generate_reference<R, S, E>(
         &self,
@@ -24,12 +24,29 @@ pub trait GLWEPublicKeyGenerateReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
 
-impl<BE: Backend> GLWEPublicKeyGenerateReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEPublicKeyGenerateReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEPublicKeyGenerateComposition<BE: Backend> {
+    fn glwe_public_key_generate_composition<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+    ) where
+        R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
+}
+
+impl<BE: Backend> GLWEPublicKeyGenerateComposition<BE> for Module<BE>
 where
     Self: GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    fn glwe_public_key_generate_reference<R, S, E>(
+    fn glwe_public_key_generate_composition<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -62,4 +79,26 @@ where
         }
         *res.dist_mut() = *sk.dist();
     }
+}
+
+/// Forwards every method of [`GLWEPublicKeyGenerateReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_public_key_generate_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GLWEPublicKeyGenerateReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_public_key_generate_reference<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        source_xa: &mut ::poulpy_hal::source::Source,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::GetDistributionMut + $crate::layouts::GLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> + $crate::GetDistribution {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEPublicKeyGenerateComposition<$be>>::glwe_public_key_generate_composition::<R, S, E>(self, res, sk, enc_infos, source_xe, source_xa)
+        }
+        }
+    };
 }

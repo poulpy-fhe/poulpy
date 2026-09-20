@@ -96,7 +96,7 @@ impl_automorphism_delegate!(
 
 impl_automorphism_delegate!(
     GGSWAutomorphism<BE>,
-    [BE: Backend + AutomorphismImpl + crate::oep::ConversionImpl, Module<BE>: crate::oep::ConversionReference<BE>],
+    [BE: Backend + AutomorphismImpl],
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,

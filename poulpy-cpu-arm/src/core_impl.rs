@@ -53,8 +53,12 @@ impl_lwe_keyswitch_reference_full!(FFT64Neon);
 impl_lwe_keyswitch_reference_full!(NTT4x30Neon);
 
 impl_encryption_reference_full!(FFT64Neon);
+poulpy_core::impl_operations_reference_full!(FFT64Neon);
+poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64Neon);
 poulpy_cpu_ref::impl_sampling_host!(FFT64Neon, fft64);
 impl_encryption_reference_full!(NTT4x30Neon);
+poulpy_core::impl_operations_reference_full!(NTT4x30Neon);
+poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30Neon);
 poulpy_cpu_ref::impl_sampling_host!(NTT4x30Neon, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Neon);
@@ -85,6 +89,8 @@ mod rayon_defaults {
             impl_ggsw_keyswitch_reference_full!($backend);
             impl_lwe_keyswitch_reference_full!($backend);
             impl_encryption_reference_full!($backend);
+            poulpy_core::impl_operations_reference_full!($backend);
+            poulpy_core::impl_polynomial_evaluation_reference_full!($backend);
             impl_glwe_external_product_reference_full!($backend);
             impl_gglwe_external_product_reference_full!($backend);
             impl_ggsw_external_product_reference_full!($backend);

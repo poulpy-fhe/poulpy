@@ -42,8 +42,12 @@ impl_lwe_keyswitch_reference_full!(FFT64Ref);
 impl_lwe_keyswitch_reference_full!(NTT4x30Ref);
 
 impl_encryption_reference_full!(FFT64Ref);
+poulpy_core::impl_operations_reference_full!(FFT64Ref);
+poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64Ref);
 crate::impl_sampling_host!(FFT64Ref, fft64);
 impl_encryption_reference_full!(NTT4x30Ref);
+poulpy_core::impl_operations_reference_full!(NTT4x30Ref);
+poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30Ref);
 crate::impl_sampling_host!(NTT4x30Ref, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Ref);

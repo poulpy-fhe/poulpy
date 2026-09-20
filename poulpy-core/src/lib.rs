@@ -7,11 +7,10 @@
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
 //! backend extension points in [`oep`]. This makes the crate portable
 //! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
-//! implementation of every operation, the only validated circuit; a backend
-//! override is a faster route to the same result, validated by the parity
-//! suite against an attested backend (attestation is transitive back to the
-//! reference, so any attested backend serves as the oracle) and correct only when that
-//! test passes.
+//! home of portable operation compositions. Backend overrides preserve those
+//! semantics and are compared with an explicit portable CPU reference execution
+//! on identical logical inputs. Sampling has a distribution and reproducibility
+//! contract rather than a cross-backend seeded-byte equality requirement.
 //!
 //! # Architecture
 //!
@@ -31,11 +30,11 @@
 //!
 //! ## Scratch-space allocation
 //!
-//! Operations never allocate on the heap internally. Instead, callers
-//! supply a [`poulpy_hal::layouts::ScratchArena`] borrow from which temporaries are
-//! arena-allocated via [`ScratchArenaTakeCore`]. Every operation that needs
-//! scratch space has a companion `*_tmp_bytes` method returning the
-//! required byte count.
+//! Arithmetic operations accept a [`poulpy_hal::layouts::ScratchArena`] for
+//! their temporary backend storage, allocated via [`ScratchArenaTakeCore`].
+//! The corresponding `*_tmp_bytes` query advertises the required arena capacity.
+//! Higher-level planning and polynomial-evaluation policies can own collections
+//! and allocate separately; the arena contract does not prohibit those allocations.
 //!
 //! ## Parameter newtypes
 //!

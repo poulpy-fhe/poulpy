@@ -1,0 +1,5353 @@
+{
+  "schema": 1,
+  "exceptions": {
+    "sampling": "Backend-provided distribution sampling; no portable HAL composition. Statistics, reproducibility and source consumption form the oracle.",
+    "key_policy": "Caller-provided typed key lookup at the requested precision and automorphism element.",
+    "policy": "Caller-provided BSGS arithmetic policy; core defines scheduling, callback semantics and error propagation."
+  },
+  "backends": {
+    "FFT64Ref": {
+      "package": "poulpy-cpu-ref",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_cross_family::",
+      "encryption_prefix": "tests::core_encryption_fft64ref::"
+    },
+    "NTT4x30Ref": {
+      "package": "poulpy-cpu-ref",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_ntt4x30::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30ref::"
+    },
+    "FFT64Avx": {
+      "package": "poulpy-cpu-avx",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64::",
+      "encryption_prefix": "tests::core_encryption_fft64avx::"
+    },
+    "FFT64AvxRayon": {
+      "package": "poulpy-cpu-avx",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64_rayon::",
+      "encryption_prefix": "tests::core_encryption_fft64avxrayon::"
+    },
+    "NTT4x30Avx": {
+      "package": "poulpy-cpu-avx",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30avx::"
+    },
+    "NTT4x30AvxRayon": {
+      "package": "poulpy-cpu-avx",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30_rayon::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30avxrayon::"
+    },
+    "FFT64Avx512": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64::",
+      "encryption_prefix": "tests::core_encryption_fft64avx512::"
+    },
+    "NTT4x30Avx512": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30avx512::"
+    },
+    "NTT4x30Avx512Rayon": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30_rayon::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30avx512rayon::"
+    },
+    "NTT3x42Ifma": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt3x42_ifma::",
+      "encryption_prefix": "tests::core_encryption_ntt3x42ifma::"
+    },
+    "NTT3x42IfmaRayon": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt3x42_ifma_rayon::",
+      "encryption_prefix": "tests::core_encryption_ntt3x42ifmarayon::"
+    },
+    "FFT64Avx512Rayon": {
+      "package": "poulpy-cpu-avx512",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64_rayon::",
+      "encryption_prefix": "tests::core_encryption_fft64avx512rayon::"
+    },
+    "FFT64Neon": {
+      "package": "poulpy-cpu-arm",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64::",
+      "encryption_prefix": "tests::core_encryption_fft64neon::"
+    },
+    "FFT64NeonRayon": {
+      "package": "poulpy-cpu-arm",
+      "reference_backend": "FFT64Ref",
+      "test_prefix": "tests::core_parity_fft64_rayon::",
+      "encryption_prefix": "tests::core_encryption_fft64neonrayon::"
+    },
+    "NTT4x30Neon": {
+      "package": "poulpy-cpu-arm",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30neon::"
+    },
+    "NTT4x30NeonRayon": {
+      "package": "poulpy-cpu-arm",
+      "reference_backend": "NTT4x30Ref",
+      "test_prefix": "tests::core_parity_ntt4x30_rayon::",
+      "encryption_prefix": "tests::core_encryption_ntt4x30neonrayon::"
+    }
+  },
+  "tests": {
+    "gadget_conversion": {
+      "function": "poulpy-core/src/test_suite/parity/gadget.rs#test_gadget_conversion_parity",
+      "registration": "gadget_conversion",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "gadget_external_product": {
+      "function": "poulpy-core/src/test_suite/parity/gadget.rs#test_gadget_external_product_parity",
+      "registration": "gadget_external_product",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "gglwe_keyswitch": {
+      "function": "poulpy-core/src/test_suite/parity/keyswitch.rs#test_gglwe_keyswitch_parity",
+      "registration": "gglwe_keyswitch",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "gglwe_product_digits_strided": {
+      "function": "poulpy-core/src/test_suite/parity/digits.rs#test_gglwe_product_digits_strided_parity",
+      "registration": "gglwe_product_digits_strided",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "ggsw_rotate": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_ggsw_rotate_parity",
+      "registration": "ggsw_rotate",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_add": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_add_parity",
+      "registration": "glwe_add",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_automorphism": {
+      "function": "poulpy-core/src/test_suite/parity/automorphism.rs#test_glwe_automorphism_parity",
+      "registration": "glwe_automorphism",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_copy_zero": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_copy_zero_parity",
+      "registration": "glwe_copy_zero",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_encryption": {
+      "function": "poulpy-core/src/test_suite/parity/encryption.rs#test_glwe_encryption_parity",
+      "registration": "glwe_encryption",
+      "oracle": "portable CPU reference with injected realized backend samples",
+      "suite": "encryption"
+    },
+    "glwe_external_product": {
+      "function": "poulpy-core/src/test_suite/parity/external_product.rs#test_glwe_external_product_parity",
+      "registration": "glwe_external_product",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_keyswitch": {
+      "function": "poulpy-core/src/test_suite/parity/keyswitch.rs#test_glwe_keyswitch_parity",
+      "registration": "glwe_keyswitch",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_keyswitch_assign": {
+      "function": "poulpy-core/src/test_suite/parity/keyswitch.rs#test_glwe_keyswitch_assign_parity",
+      "registration": "glwe_keyswitch_assign",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_multiplication": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_multiplication_parity",
+      "registration": "glwe_multiplication",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_negate": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_negate_parity",
+      "registration": "glwe_negate",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_normalize": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_normalize_parity",
+      "registration": "glwe_normalize",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_rotate": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_rotate_parity",
+      "registration": "glwe_rotate",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_shift": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_shift_parity",
+      "registration": "glwe_shift",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_sub": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_sub_parity",
+      "registration": "glwe_sub",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "glwe_tensor": {
+      "function": "poulpy-core/src/test_suite/parity/operations.rs#test_glwe_tensor_parity",
+      "registration": "glwe_tensor",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "key_encryption": {
+      "function": "poulpy-core/src/test_suite/parity/encryption_keys.rs#test_key_encryption_parity",
+      "registration": "key_encryption",
+      "oracle": "portable CPU reference with injected realized backend samples",
+      "suite": "encryption"
+    },
+    "linear_transformation": {
+      "function": "poulpy-core/src/test_suite/parity/linear_transformation.rs#test_linear_transformation_parity",
+      "registration": "linear_transformation",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "lwe_conversion": {
+      "function": "poulpy-core/src/test_suite/parity/conversion.rs#test_lwe_conversion_parity",
+      "registration": "lwe_conversion",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "lwe_encryption": {
+      "function": "poulpy-core/src/test_suite/parity/encryption.rs#test_lwe_encryption_parity",
+      "registration": "lwe_encryption",
+      "oracle": "portable CPU reference with injected realized backend samples",
+      "suite": "encryption"
+    },
+    "polynomial_evaluation": {
+      "function": "poulpy-core/src/test_suite/parity/polynomial_evaluation.rs#test_polynomial_evaluation_parity",
+      "registration": "polynomial_evaluation",
+      "oracle": "exact integer policy and portable CPU reference scheduling"
+    },
+    "preparation": {
+      "function": "poulpy-core/src/test_suite/parity/preparation.rs#test_preparation_contract",
+      "registration": "preparation",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "sampling": {
+      "function": "poulpy-core/src/test_suite/sampling.rs#test_sampling_contract",
+      "registration": "sampling",
+      "oracle": "distribution bounds, same-backend reproducibility, source consumption and preserved columns"
+    },
+    "tensor_relinearize_decrypt": {
+      "function": "poulpy-core/src/test_suite/parity/structure.rs#test_tensor_relinearize_decrypt_parity",
+      "registration": "tensor_relinearize_decrypt",
+      "oracle": "explicit portable CPU reference execution"
+    },
+    "trace_packing": {
+      "function": "poulpy-core/src/test_suite/parity/structure.rs#test_trace_packing_parity",
+      "registration": "trace_packing",
+      "oracle": "explicit portable CPU reference execution"
+    }
+  },
+  "methods": {
+    "AutomorphismImpl::ggsw_automorphism": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::ggsw_automorphism_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::ggsw_automorphism_tmp_bytes": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_add": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_add"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_add_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_add_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_add_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_add_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_key_automorphism": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_key_automorphism_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_key_automorphism_tmp_bytes": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_sub": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_sub_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_sub_negate": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_negate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_negate_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_sub_negate_assign": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_negate_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "AutomorphismImpl::glwe_automorphism_tmp_bytes": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "BSGSOps::add_assign": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#add_assign"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::add_pt_const_assign": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#add_pt_const_assign"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::copy": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#copy"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::eval_baby_linear_combination": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#eval_baby_linear_combination"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::init_accumulator": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#init_accumulator"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::mul_add_pt_const": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#mul_add_pt_const"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::mul_prepared_assign": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#mul_prepared_assign"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::mul_pt_const": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#mul_pt_const"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "BSGSOps::prepare_right": {
+      "source": "poulpy-core/src/reference/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#prepare_right"
+      ],
+      "reference": [
+        "exception:policy"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "ConversionImpl::ggsw_expand_row": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_expand_row"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_expand_row_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionImpl::ggsw_expand_rows_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_expand_rows_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_expand_rows_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionImpl::ggsw_from_gglwe": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_from_gglwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_from_gglwe_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionImpl::ggsw_from_gglwe_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_from_gglwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_from_gglwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_expand_lwe": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_expand_lwe_matrix": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_matrix"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_matrix_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_expand_lwe_matrix_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_matrix_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_matrix_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_expand_lwe_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_from_lwe": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_from_lwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_from_lwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::glwe_from_lwe_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_from_lwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_from_lwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::lwe_from_glwe": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_from_glwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_from_glwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::lwe_from_glwe_tmp_bytes": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_from_glwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_from_glwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionImpl::lwe_sample_extract": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_sample_extract"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_sample_extract_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::ggsw_expand_row_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_expand_row"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_expand_row_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionReference::ggsw_expand_rows_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_expand_rows_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_expand_rows_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionReference::ggsw_from_gglwe_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_from_gglwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_from_gglwe_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionReference::ggsw_from_gglwe_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#ggsw_from_gglwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#ggsw_from_gglwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "ConversionReference::glwe_expand_lwe_matrix_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_matrix"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_matrix_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::glwe_expand_lwe_matrix_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_matrix_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_matrix_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::glwe_expand_lwe_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::glwe_expand_lwe_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_expand_lwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_expand_lwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::glwe_from_lwe_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_from_lwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_from_lwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::glwe_from_lwe_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#glwe_from_lwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#glwe_from_lwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::lwe_from_glwe_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_from_glwe"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_from_glwe_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::lwe_from_glwe_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_from_glwe_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_from_glwe_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "ConversionReference::lwe_sample_extract_reference": {
+      "source": "poulpy-core/src/oep/conversion.rs",
+      "dispatch": [
+        "poulpy-core/src/api/conversion.rs#lwe_sample_extract"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/conversion.rs#lwe_sample_extract_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "DecryptionImpl::glwe_decrypt": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe.rs#glwe_decrypt_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionImpl::glwe_decrypt_tmp_bytes": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe.rs#glwe_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionImpl::glwe_tensor_decrypt": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_tensor_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe_tensor.rs#glwe_tensor_decrypt_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "DecryptionImpl::glwe_tensor_decrypt_tmp_bytes": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_tensor_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe_tensor.rs#glwe_tensor_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "DecryptionImpl::lwe_decrypt": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe.rs#lwe_decrypt_reference"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "DecryptionImpl::lwe_decrypt_tmp_bytes": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe.rs#lwe_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "DecryptionImpl::lwe_matrix_decrypt": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_matrix_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe_matrix.rs#lwe_matrix_decrypt_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionImpl::lwe_matrix_decrypt_tmp_bytes": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_matrix_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe_matrix.rs#lwe_matrix_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionReference::glwe_decrypt_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe.rs#glwe_decrypt_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionReference::glwe_decrypt_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe.rs#glwe_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionReference::glwe_tensor_decrypt_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_tensor_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe_tensor.rs#glwe_tensor_decrypt_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "DecryptionReference::glwe_tensor_decrypt_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#glwe_tensor_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/glwe_tensor.rs#glwe_tensor_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "DecryptionReference::lwe_decrypt_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe.rs#lwe_decrypt_reference"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "DecryptionReference::lwe_decrypt_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe.rs#lwe_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "DecryptionReference::lwe_matrix_decrypt_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_matrix_decrypt"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe_matrix.rs#lwe_matrix_decrypt_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DecryptionReference::lwe_matrix_decrypt_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/decryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/decryption.rs#lwe_matrix_decrypt_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/decryption/lwe_matrix.rs#lwe_matrix_decrypt_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "DiagonalProd::accumulate_giant_prod": {
+      "source": "poulpy-core/src/reference/linear_transformation/prepared_giants.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/linear_transformation/prepared_giants.rs#accumulate_giant_prod"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepared_giants.rs#accumulate_giant_prod"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "EncryptionImpl::fill_glwe_mask_from_seed_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_glwe_mask_from_seed"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#fill_glwe_mask_from_seed_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::fill_glwe_mask_from_source_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_glwe_mask_from_source"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#fill_glwe_mask_from_source_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::fill_lwe_mask_from_seed_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_lwe_mask_from_seed"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#fill_lwe_mask_from_seed_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "EncryptionImpl::fill_lwe_mask_from_source_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_lwe_mask_from_source"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#fill_lwe_mask_from_source_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe.rs#gglwe_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe.rs#gglwe_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe.rs#gglwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe.rs#gglwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_to_ggsw_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_to_ggsw_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::ggsw_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/ggsw.rs#ggsw_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::ggsw_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/ggsw.rs#ggsw_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::ggsw_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/ggsw.rs#ggsw_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::ggsw_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/ggsw.rs#ggsw_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_automorphism_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs#glwe_automorphism_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs#glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_automorphism_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs#glwe_automorphism_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_automorphism_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs#glwe_automorphism_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs#glwe_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs#glwe_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_pk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_pk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_pk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_pk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_pk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_pk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_zero_pk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_zero_pk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_zero_pk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_encrypt_zero_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_zero_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_zero_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_public_key_generate_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_public_key_generate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_public_key.rs#glwe_public_key_generate_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_switching_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs#glwe_switching_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs#glwe_switching_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_switching_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_switching_key.rs#glwe_switching_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_switching_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_switching_key.rs#glwe_switching_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_tensor_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs#glwe_tensor_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs#glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_tensor_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_tensor_key.rs#glwe_tensor_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_tensor_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_tensor_key.rs#glwe_tensor_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_to_lwe_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_to_lwe_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs#glwe_to_lwe_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_to_lwe_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs#glwe_to_lwe_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#lwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#lwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_switching_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_switching_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_switching_key.rs#lwe_switching_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_switching_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_switching_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_switching_key.rs#lwe_switching_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_to_glwe_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_to_glwe_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs#lwe_to_glwe_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "EncryptionImpl::lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/encryption.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_to_glwe_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs#lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEAutomorphismReference::glwe_automorphism_key_automorphism_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGLWEAutomorphismReference::glwe_automorphism_key_automorphism_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGLWEAutomorphismReference::glwe_automorphism_key_automorphism_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_key_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/gglwe.rs#glwe_automorphism_key_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGLWECompressedEncryptSkReference::gglwe_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe.rs#gglwe_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWECompressedEncryptSkReference::gglwe_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe.rs#gglwe_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEDecompress::decompress_gglwe": {
+      "source": "poulpy-core/src/layouts/compressed/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/gglwe.rs#decompress_gglwe"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/gglwe.rs#decompress_gglwe"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEEncryptSkReference::gglwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe.rs#gglwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe.rs#gglwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEExternalProductImpl::gglwe_external_product": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEExternalProductImpl::gglwe_external_product_assign": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_assign_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEExternalProductImpl::gglwe_external_product_tmp_bytes": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEExternalProductReference::gglwe_external_product_assign_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_assign_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEExternalProductReference::gglwe_external_product_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEExternalProductReference::gglwe_external_product_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#gglwe_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/gglwe.rs#gglwe_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGLWEKeyswitchImpl::gglwe_keyswitch": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEKeyswitchImpl::gglwe_keyswitch_assign": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEKeyswitchImpl::gglwe_keyswitch_tmp_bytes": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEKeyswitchReference::gglwe_keyswitch_assign_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEKeyswitchReference::gglwe_keyswitch_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEKeyswitchReference::gglwe_keyswitch_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#gglwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/gglwe.rs#gglwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gglwe_keyswitch"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEPreparedFactory::gglwe_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe.rs#gglwe_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEProductDigitsStridedImpl::gglwe_product_digits_strided": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/oep/keyswitching.rs#gglwe_product_digits_strided"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_digits_strided_reference"
+      ],
+      "tests": [
+        "gglwe_product_digits_strided"
+      ]
+    },
+    "GGLWEProductDigitsStridedImpl::gglwe_product_digits_strided_tmp_bytes": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/oep/keyswitching.rs#gglwe_product_digits_strided_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_digits_strided_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gglwe_product_digits_strided"
+      ]
+    },
+    "GGLWEProductReference::gglwe_product_dft_reference": {
+      "source": "poulpy-core/src/reference/keyswitching/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_dft_reference"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_dft_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GGLWEProductReference::gglwe_product_dft_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/keyswitching/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_dft_tmp_bytes_reference"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#gglwe_product_dft_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GGLWEToGGSWKeyCompressedEncryptSkReference::gglwe_to_ggsw_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEToGGSWKeyCompressedEncryptSkReference::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEToGGSWKeyDecompress::decompress_gglwe_to_ggsw_key": {
+      "source": "poulpy-core/src/layouts/compressed/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/gglwe_to_ggsw_key.rs#decompress_gglwe_to_ggsw_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/gglwe_to_ggsw_key.rs#decompress_gglwe_to_ggsw_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEToGGSWKeyEncryptSkReference::gglwe_to_ggsw_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEToGGSWKeyEncryptSkReference::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#gglwe_to_ggsw_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::bytes_of_gglwe_to_ggsw": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#bytes_of_gglwe_to_ggsw"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#bytes_of_gglwe_to_ggsw"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::bytes_of_gglwe_to_ggsw_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#bytes_of_gglwe_to_ggsw_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#bytes_of_gglwe_to_ggsw_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/gglwe_to_ggsw_key.rs#gglwe_to_ggsw_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWAutomorphismReference::ggsw_automorphism_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWAutomorphismReference::ggsw_automorphism_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWAutomorphismReference::ggsw_automorphism_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#ggsw_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/ggsw.rs#ggsw_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWCompressedEncryptSkReference::ggsw_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/ggsw.rs#ggsw_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGSWCompressedEncryptSkReference::ggsw_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/ggsw.rs#ggsw_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGSWDecompress::decompress_ggsw": {
+      "source": "poulpy-core/src/layouts/compressed/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/ggsw.rs#decompress_ggsw"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/ggsw.rs#decompress_ggsw"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGSWEncryptSkReference::ggsw_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/ggsw.rs#ggsw_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGSWEncryptSkReference::ggsw_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#ggsw_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/ggsw.rs#ggsw_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GGSWExternalProductImpl::ggsw_external_product": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWExternalProductImpl::ggsw_external_product_assign": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_assign_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWExternalProductImpl::ggsw_external_product_tmp_bytes": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWExternalProductReference::ggsw_external_product_assign_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_assign_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWExternalProductReference::ggsw_external_product_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWExternalProductReference::ggsw_external_product_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#ggsw_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/ggsw.rs#ggsw_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWKeyswitchImpl::ggsw_keyswitch": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWKeyswitchImpl::ggsw_keyswitch_assign": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWKeyswitchImpl::ggsw_keyswitch_tmp_bytes": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWKeyswitchReference::ggsw_keyswitch_assign_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWKeyswitchReference::ggsw_keyswitch_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWKeyswitchReference::ggsw_keyswitch_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#ggsw_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/ggsw.rs#ggsw_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "gadget_conversion"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GGSWPreparedFactory::ggsw_zero": {
+      "source": "poulpy-core/src/layouts/prepared/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_zero"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/ggsw.rs#ggsw_zero"
+      ],
+      "tests": [
+        "gadget_external_product"
+      ]
+    },
+    "GGSWRotateImpl::ggsw_rotate": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GGSWRotateImpl::ggsw_rotate_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_assign_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GGSWRotateImpl::ggsw_rotate_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_tmp_bytes_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GGSWRotateReference::ggsw_rotate_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_assign_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GGSWRotateReference::ggsw_rotate_reference": {
+      "source": "poulpy-core/src/reference/operations/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GGSWRotateReference::ggsw_rotate_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/ggsw.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#ggsw_rotate_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/ggsw.rs#ggsw_rotate_tmp_bytes_composition"
+      ],
+      "tests": [
+        "ggsw_rotate"
+      ]
+    },
+    "GLWEAddImpl::glwe_add_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_add_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_add_assign_composition"
+      ],
+      "tests": [
+        "glwe_add"
+      ]
+    },
+    "GLWEAddImpl::glwe_add_into": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_add_into"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_add_into_composition"
+      ],
+      "tests": [
+        "glwe_add"
+      ]
+    },
+    "GLWEAddReference::glwe_add_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_add_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_add_assign_composition"
+      ],
+      "tests": [
+        "glwe_add"
+      ]
+    },
+    "GLWEAddReference::glwe_add_into_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_add_into"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_add_into_composition"
+      ],
+      "tests": [
+        "glwe_add"
+      ]
+    },
+    "GLWEAutomorphismKeyCompressedEncryptSkReference::glwe_automorphism_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs#glwe_automorphism_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEAutomorphismKeyCompressedEncryptSkReference::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_automorphism_key.rs#glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEAutomorphismKeyDecompress::decompress_automorphism_key": {
+      "source": "poulpy-core/src/layouts/compressed/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/glwe_automorphism_key.rs#decompress_automorphism_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/glwe_automorphism_key.rs#decompress_automorphism_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEAutomorphismKeyEncryptSkReference::glwe_automorphism_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs#glwe_automorphism_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEAutomorphismKeyEncryptSkReference::glwe_automorphism_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_automorphism_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_automorphism_key.rs#glwe_automorphism_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_automorphism_key.rs#glwe_automorphism_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_add_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_add_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_add_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_add_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_add"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_add_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_sub_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_sub_negate_assign_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_negate_assign_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_sub_negate_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub_negate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_negate_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_sub_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_sub_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWEAutomorphismReference::glwe_automorphism_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/automorphism.rs",
+      "dispatch": [
+        "poulpy-core/src/api/automorphism.rs#glwe_automorphism_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/automorphism/glwe.rs#glwe_automorphism_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GLWECompressedEncryptSkReference::glwe_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs#glwe_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWECompressedEncryptSkReference::glwe_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_ct.rs#glwe_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWECopyImpl::glwe_copy": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_copy"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_copy_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GLWECopyImpl::glwe_copy_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_copy_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_copy_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GLWECopyReference::glwe_copy_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_copy"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_copy_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GLWECopyReference::glwe_copy_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_copy_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_copy_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GLWEDecompress::decompress_glwe": {
+      "source": "poulpy-core/src/layouts/compressed/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/glwe.rs#decompress_glwe"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/glwe.rs#decompress_glwe"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptPkReference::glwe_encrypt_pk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_pk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_pk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptPkReference::glwe_encrypt_pk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_pk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_pk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptPkReference::glwe_encrypt_zero_pk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_zero_pk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_zero_pk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptSkReference::glwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptSkReference::glwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEEncryptSkReference::glwe_encrypt_zero_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_encrypt_zero_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#glwe_encrypt_zero_sk_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEExternalProductImpl::glwe_external_product": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEExternalProductImpl::glwe_external_product_assign": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_assign_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEExternalProductImpl::glwe_external_product_tmp_bytes": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEExternalProductReference::glwe_external_product_assign_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_assign_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEExternalProductReference::glwe_external_product_dft_fill_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/oep/external_product.rs#glwe_external_product_dft_fill_tmp_bytes_reference"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_dft_fill_tmp_bytes_reference"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEExternalProductReference::glwe_external_product_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEExternalProductReference::glwe_external_product_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/external_product.rs",
+      "dispatch": [
+        "poulpy-core/src/api/external_product.rs#glwe_external_product_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/external_product/glwe.rs#glwe_external_product_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_external_product"
+      ]
+    },
+    "GLWEKeyswitchImpl::glwe_keyswitch": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchImpl::glwe_keyswitch_assign": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch_assign"
+      ]
+    },
+    "GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchInternal::glwe_keyswitch_internal": {
+      "source": "poulpy-core/src/reference/keyswitching/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes": {
+      "source": "poulpy-core/src/reference/keyswitching/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal_tmp_bytes"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes_from_sizes": {
+      "source": "poulpy-core/src/reference/keyswitching/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal_tmp_bytes_from_sizes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_internal_tmp_bytes_from_sizes"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchReference::glwe_keyswitch_assign_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_assign_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch_assign"
+      ]
+    },
+    "GLWEKeyswitchReference::glwe_keyswitch_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEKeyswitchReference::glwe_keyswitch_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#glwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/glwe.rs#glwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_keyswitch"
+      ]
+    },
+    "GLWEMaskFillReference::fill_glwe_mask_from_seed_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_glwe_mask_from_seed"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#fill_glwe_mask_from_seed_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEMaskFillReference::fill_glwe_mask_from_source_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_glwe_mask_from_source"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe.rs#fill_glwe_mask_from_source_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEMulConstImpl::glwe_mul_const": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulConstImpl::glwe_mul_const_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulConstImpl::glwe_mul_const_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulConstReference::glwe_mul_const_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulConstReference::glwe_mul_const_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulConstReference::glwe_mul_const_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_const_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_const_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainImpl::glwe_mul_plain": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainImpl::glwe_mul_plain_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainImpl::glwe_mul_plain_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainReference::glwe_mul_plain_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainReference::glwe_mul_plain_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulPlainReference::glwe_mul_plain_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_plain_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_plain_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulXpMinusOneImpl::glwe_mul_xp_minus_one": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_xp_minus_one"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_xp_minus_one_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulXpMinusOneImpl::glwe_mul_xp_minus_one_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_xp_minus_one_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_xp_minus_one_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulXpMinusOneReference::glwe_mul_xp_minus_one_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_xp_minus_one_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_xp_minus_one_assign_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWEMulXpMinusOneReference::glwe_mul_xp_minus_one_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_mul_xp_minus_one"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_mul_xp_minus_one_composition"
+      ],
+      "tests": [
+        "glwe_multiplication"
+      ]
+    },
+    "GLWENegateImpl::glwe_negate": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_negate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_negate_composition"
+      ],
+      "tests": [
+        "glwe_negate"
+      ]
+    },
+    "GLWENegateImpl::glwe_negate_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_negate_assign_composition"
+      ],
+      "tests": [
+        "glwe_negate"
+      ]
+    },
+    "GLWENegateReference::glwe_negate_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_negate_assign_composition"
+      ],
+      "tests": [
+        "glwe_negate"
+      ]
+    },
+    "GLWENegateReference::glwe_negate_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_negate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_negate_composition"
+      ],
+      "tests": [
+        "glwe_negate"
+      ]
+    },
+    "GLWENormalizeImpl::glwe_normalize": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWENormalizeImpl::glwe_normalize_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_assign_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWENormalizeImpl::glwe_normalize_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWENormalizeReference::glwe_normalize_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_assign_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWENormalizeReference::glwe_normalize_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWENormalizeReference::glwe_normalize_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_normalize_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_normalize_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_normalize"
+      ]
+    },
+    "GLWEPackImpl::glwe_pack": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPackImpl::glwe_pack_galois_elements": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack_galois_elements"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_galois_elements_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPackImpl::glwe_pack_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_tmp_bytes_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPackingReference::glwe_pack_galois_elements_reference": {
+      "source": "poulpy-core/src/reference/glwe_packing.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack_galois_elements"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_galois_elements_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPackingReference::glwe_pack_reference": {
+      "source": "poulpy-core/src/reference/glwe_packing.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPackingReference::glwe_pack_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/glwe_packing.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_pack_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_packing.rs#glwe_pack_tmp_bytes_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEPreparedFactory::glwe_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPreparedFactory::glwe_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPreparedFactory::glwe_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPreparedFactory::glwe_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPreparedFactory::glwe_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe.rs#glwe_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPublicKeyGenerateReference::glwe_public_key_generate_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_public_key_generate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_public_key.rs#glwe_public_key_generate_composition"
+      ],
+      "tests": [
+        "glwe_encryption"
+      ]
+    },
+    "GLWEPublicKeyPreparedFactory::glwe_public_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPublicKeyPreparedFactory::glwe_public_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPublicKeyPreparedFactory::glwe_public_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPublicKeyPreparedFactory::glwe_public_key_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEPublicKeyPreparedFactory::glwe_public_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_public_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_public_key.rs#glwe_public_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWERotateImpl::glwe_rotate": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWERotateImpl::glwe_rotate_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_assign_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWERotateImpl::glwe_rotate_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWERotateReference::glwe_rotate_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_assign_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWERotateReference::glwe_rotate_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWERotateReference::glwe_rotate_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rotate_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rotate_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_rotate"
+      ]
+    },
+    "GLWESecretPreparedFactory::glwe_secret_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretPreparedFactory::glwe_secret_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretPreparedFactory::glwe_secret_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretPreparedFactory::glwe_secret_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretPreparedFactory::glwe_secret_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret.rs#glwe_secret_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretTensorFactory::glwe_secret_tensor_prepare": {
+      "source": "poulpy-core/src/layouts/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/glwe_secret_tensor.rs#glwe_secret_tensor_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/glwe_secret_tensor.rs#glwe_secret_tensor_prepare"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWESecretTensorFactory::glwe_secret_tensor_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/glwe_secret_tensor.rs#glwe_secret_tensor_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/glwe_secret_tensor.rs#glwe_secret_tensor_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWESecretTensorPreparedFactory::glwe_secret_tensor_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretTensorPreparedFactory::glwe_secret_tensor_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretTensorPreparedFactory::glwe_secret_tensor_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretTensorPreparedFactory::glwe_secret_tensor_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESecretTensorPreparedFactory::glwe_secret_tensor_prepared_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_secret_tensor.rs#glwe_secret_tensor_prepared_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEShiftImpl::glwe_lsh": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftImpl::glwe_lsh_add": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_add"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_add_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftImpl::glwe_lsh_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_assign_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftImpl::glwe_lsh_sub": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_sub_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftImpl::glwe_rsh": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rsh"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rsh_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftImpl::glwe_shift_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_shift_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_shift_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_lsh_add_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_add"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_add_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_lsh_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_assign_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_lsh_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_lsh_sub_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_lsh_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_lsh_sub_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_rsh_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_rsh"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_rsh_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWEShiftReference::glwe_shift_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_shift_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_shift_tmp_bytes_composition"
+      ],
+      "tests": [
+        "glwe_shift"
+      ]
+    },
+    "GLWESubImpl::glwe_sub": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESubImpl::glwe_sub_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_assign_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESubImpl::glwe_sub_negate_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_negate_assign_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESubReference::glwe_sub_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_assign_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESubReference::glwe_sub_negate_assign_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub_negate_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_negate_assign_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESubReference::glwe_sub_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_sub"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_sub_composition"
+      ],
+      "tests": [
+        "glwe_sub"
+      ]
+    },
+    "GLWESwitchingKeyCompressedEncryptSkReference::glwe_switching_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs#glwe_switching_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWESwitchingKeyCompressedEncryptSkReference::glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_switching_key.rs#glwe_switching_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWESwitchingKeyDecompress::decompress_glwe_switching_key": {
+      "source": "poulpy-core/src/layouts/compressed/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/glwe_switching_key.rs#decompress_glwe_switching_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/glwe_switching_key.rs#decompress_glwe_switching_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_switching_key.rs#glwe_switching_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_switching_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_switching_key.rs#glwe_switching_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::bytes_of_glwe_key_prepared": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#bytes_of_glwe_key_prepared"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#bytes_of_glwe_key_prepared"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_switching_key.rs#glwe_switching_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyCompressedEncryptSkReference::glwe_tensor_key_compressed_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_compressed_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs#glwe_tensor_key_compressed_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETensorKeyCompressedEncryptSkReference::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_compressed_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/compressed/glwe_tensor_key.rs#glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETensorKeyDecompress::decompress_tensor_key": {
+      "source": "poulpy-core/src/layouts/compressed/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/glwe_tensor_key.rs#decompress_tensor_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/glwe_tensor_key.rs#decompress_tensor_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETensorKeyEncryptSkReference::glwe_tensor_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_tensor_key.rs#glwe_tensor_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETensorKeyEncryptSkReference::glwe_tensor_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_tensor_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_tensor_key.rs#glwe_tensor_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::alloc_tensor_key_prepared": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#alloc_tensor_key_prepared"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#alloc_tensor_key_prepared"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::alloc_tensor_key_prepared_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#alloc_tensor_key_prepared_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#alloc_tensor_key_prepared_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::bytes_of_tensor_key_prepared": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#bytes_of_tensor_key_prepared"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#bytes_of_tensor_key_prepared"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::bytes_of_tensor_key_prepared_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#bytes_of_tensor_key_prepared_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#bytes_of_tensor_key_prepared_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::prepare_tensor_key": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#prepare_tensor_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#prepare_tensor_key"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensorKeyPreparedFactory::prepare_tensor_key_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#prepare_tensor_key_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_tensor_key.rs#prepare_tensor_key_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_apply": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_apply"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_apply_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_apply_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_apply_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_apply_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_relinearize": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_relinearize"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_relinearize_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_relinearize_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_relinearize_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_relinearize_tmp_bytes_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_square_apply": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_square_apply"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_square_apply_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringImpl::glwe_tensor_square_apply_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_square_apply_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_square_apply_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_apply_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_apply"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_apply_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_apply_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_apply_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_apply_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_relinearize_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_relinearize"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_relinearize_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_relinearize_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_relinearize_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_relinearize_tmp_bytes_reference"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_square_apply_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_square_apply"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_square_apply_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWETensoringReference::glwe_tensor_square_apply_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_tensor_square_apply_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_tensor_square_apply_tmp_bytes_reference"
+      ],
+      "tests": [
+        "glwe_tensor"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWEKeyPreparedFactory::glwe_to_lwe_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/glwe_to_lwe_key.rs#glwe_to_lwe_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "GLWEToLWESwitchingKeyDecompress::decompress_glwe_to_lwe_key": {
+      "source": "poulpy-core/src/layouts/compressed/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/glwe_to_lwe_key.rs#decompress_glwe_to_lwe_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/glwe_to_lwe_key.rs#decompress_glwe_to_lwe_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEToLWESwitchingKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_to_lwe_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs#glwe_to_lwe_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWEToLWESwitchingKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#glwe_to_lwe_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/glwe_to_lwe_key.rs#glwe_to_lwe_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "GLWETraceImpl::glwe_trace": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceImpl::glwe_trace_assign": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_assign_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceImpl::glwe_trace_galois_elements": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_galois_elements"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_galois_elements_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceImpl::glwe_trace_tmp_bytes": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_tmp_bytes_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceReference::glwe_trace_assign_reference": {
+      "source": "poulpy-core/src/reference/glwe_trace.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_assign"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_assign_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceReference::glwe_trace_assign_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/glwe_trace.rs",
+      "dispatch": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_assign_tmp_bytes_reference"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_assign_tmp_bytes_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceReference::glwe_trace_galois_elements_reference": {
+      "source": "poulpy-core/src/reference/glwe_trace.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_galois_elements"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_galois_elements_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceReference::glwe_trace_reference": {
+      "source": "poulpy-core/src/reference/glwe_trace.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWETraceReference::glwe_trace_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/glwe_trace.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_trace_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/glwe_trace.rs#glwe_trace_tmp_bytes_reference"
+      ],
+      "tests": [
+        "trace_packing"
+      ]
+    },
+    "GLWEZeroImpl::glwe_zero": {
+      "source": "poulpy-core/src/oep/operations.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_zero"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_zero_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GLWEZeroReference::glwe_zero_reference": {
+      "source": "poulpy-core/src/reference/operations/glwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/operations.rs#glwe_zero"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/operations/glwe.rs#glwe_zero_composition"
+      ],
+      "tests": [
+        "glwe_copy_zero"
+      ]
+    },
+    "GetAutomorphismKey::get_automorphism_key": {
+      "source": "poulpy-core/src/layouts/key_helpers.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/key_helpers.rs#get_automorphism_key"
+      ],
+      "reference": [
+        "exception:key_policy"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GetAutomorphismKey::lookup_automorphism_key": {
+      "source": "poulpy-core/src/layouts/key_helpers.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/key_helpers.rs#lookup_automorphism_key"
+      ],
+      "reference": [
+        "exception:key_policy"
+      ],
+      "tests": [
+        "glwe_automorphism"
+      ]
+    },
+    "GetTensorKey::get_tensor_key": {
+      "source": "poulpy-core/src/layouts/key_helpers.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/key_helpers.rs#get_tensor_key"
+      ],
+      "reference": [
+        "exception:key_policy"
+      ],
+      "tests": [
+        "tensor_relinearize_decrypt"
+      ]
+    },
+    "LWEDecompress::decompress_lwe": {
+      "source": "poulpy-core/src/layouts/compressed/lwe.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/lwe.rs#decompress_lwe"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/lwe.rs#decompress_lwe"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "LWEEncryptSkReference::lwe_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#lwe_encrypt_sk_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "LWEEncryptSkReference::lwe_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#lwe_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "LWEFillMaskReference::fill_lwe_mask_from_seed_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_lwe_mask_from_seed"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#fill_lwe_mask_from_seed_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "LWEFillMaskReference::fill_lwe_mask_from_source_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#fill_lwe_mask_from_source"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe.rs#fill_lwe_mask_from_source_composition"
+      ],
+      "tests": [
+        "lwe_encryption"
+      ]
+    },
+    "LWEKeyswitchImpl::lwe_keyswitch": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#lwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/lwe.rs#lwe_keyswitch_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "LWEKeyswitchImpl::lwe_keyswitch_tmp_bytes": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#lwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/lwe.rs#lwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "LWEKeyswitchReference::lwe_keyswitch_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#lwe_keyswitch"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/lwe.rs#lwe_keyswitch_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "LWEKeyswitchReference::lwe_keyswitch_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/keyswitching.rs",
+      "dispatch": [
+        "poulpy-core/src/api/keyswitching.rs#lwe_keyswitch_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/keyswitching/lwe.rs#lwe_keyswitch_tmp_bytes_reference"
+      ],
+      "tests": [
+        "lwe_conversion"
+      ]
+    },
+    "LWESwitchingKeyDecompress::decompress_lwe_switching_key": {
+      "source": "poulpy-core/src/layouts/compressed/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/lwe_switching_key.rs#decompress_lwe_switching_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/lwe_switching_key.rs#decompress_lwe_switching_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LWESwitchingKeyEncryptReference::lwe_switching_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_switching_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_switching_key.rs#lwe_switching_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LWESwitchingKeyEncryptReference::lwe_switching_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_switching_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_switching_key.rs#lwe_switching_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWESwitchingKeyPreparedFactory::lwe_switching_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_switching_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_switching_key.rs#lwe_switching_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyDecompress::decompress_lwe_to_glwe_key": {
+      "source": "poulpy-core/src/layouts/compressed/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/compressed/lwe_to_glwe_key.rs#decompress_lwe_to_glwe_key"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/compressed/lwe_to_glwe_key.rs#decompress_lwe_to_glwe_key"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepare": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepare"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepare"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepare_tmp_bytes": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepare_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepare_tmp_bytes"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepared_alloc": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_alloc"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_alloc"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepared_alloc_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_alloc_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_alloc_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepared_bytes_of": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_bytes_of"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_bytes_of"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepared_bytes_of_from_infos": {
+      "source": "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_bytes_of_from_infos"
+      ],
+      "reference": [
+        "poulpy-core/src/layouts/prepared/lwe_to_glwe_key.rs#lwe_to_glwe_key_prepared_bytes_of_from_infos"
+      ],
+      "tests": [
+        "preparation"
+      ]
+    },
+    "LWEToGLWESwitchingKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_to_glwe_key_encrypt_sk"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs#lwe_to_glwe_key_encrypt_sk_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LWEToGLWESwitchingKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference": {
+      "source": "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs",
+      "dispatch": [
+        "poulpy-core/src/api/encryption.rs#lwe_to_glwe_key_encrypt_sk_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/encryption/lwe_to_glwe_key.rs#lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition"
+      ],
+      "tests": [
+        "key_encryption"
+      ]
+    },
+    "LinearTransformationImpl::glwe_eval_linear_transformation_into": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_into"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_into_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_eval_linear_transformation_tmp_bytes": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_prepare_linear_transformation_baby_steps": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_baby_steps"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/baby_steps.rs#glwe_prepare_linear_transformation_baby_steps"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_prepare_linear_transformation_baby_steps_tmp_bytes": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_baby_steps_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/baby_steps.rs#glwe_prepare_linear_transformation_baby_steps_tmp_bytes"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_prepare_linear_transformation_rhs": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_rhs"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepare.rs#glwe_prepare_linear_transformation_rhs_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationImpl::glwe_prepare_linear_transformation_rhs_tmp_bytes": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_rhs_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepare.rs#glwe_prepare_linear_transformation_rhs_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_eval_linear_transformation_into_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_into"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_into_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_eval_linear_transformation_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/eval.rs#glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_prepare_linear_transformation_baby_steps_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_baby_steps"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/baby_steps.rs#glwe_prepare_linear_transformation_baby_steps"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_baby_steps_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/baby_steps.rs#glwe_prepare_linear_transformation_baby_steps_tmp_bytes"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_prepare_linear_transformation_rhs_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_rhs"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepare.rs#glwe_prepare_linear_transformation_rhs_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "LinearTransformationReference::glwe_prepare_linear_transformation_rhs_tmp_bytes_reference": {
+      "source": "poulpy-core/src/oep/linear_transformation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/linear_transformations.rs#glwe_prepare_linear_transformation_rhs_tmp_bytes"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepare.rs#glwe_prepare_linear_transformation_rhs_tmp_bytes_reference"
+      ],
+      "tests": [
+        "linear_transformation"
+      ]
+    },
+    "PolynomialEvaluationImpl::glwe_eval_baby_step": {
+      "source": "poulpy-core/src/oep/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/polynomial_evaluation.rs#glwe_eval_baby_step"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#eval_baby_step"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "PolynomialEvaluationImpl::glwe_eval_giant_steps": {
+      "source": "poulpy-core/src/oep/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/polynomial_evaluation.rs#glwe_eval_giant_steps"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepared_giants.rs#glwe_eval_giant_steps"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "PolynomialEvaluationReference::glwe_eval_baby_step_reference": {
+      "source": "poulpy-core/src/oep/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/polynomial_evaluation.rs#glwe_eval_baby_step"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/polynomial_evaluation.rs#eval_baby_step"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "PolynomialEvaluationReference::glwe_eval_giant_steps_reference": {
+      "source": "poulpy-core/src/oep/polynomial_evaluation.rs",
+      "dispatch": [
+        "poulpy-core/src/api/polynomial_evaluation.rs#glwe_eval_giant_steps"
+      ],
+      "reference": [
+        "poulpy-core/src/reference/linear_transformation/prepared_giants.rs#glwe_eval_giant_steps"
+      ],
+      "tests": [
+        "polynomial_evaluation"
+      ]
+    },
+    "SamplingImpl::scalar_znx_fill_distribution": {
+      "source": "poulpy-core/src/oep/sampling.rs",
+      "dispatch": [
+        "poulpy-core/src/api/sampling.rs#scalar_znx_fill_distribution"
+      ],
+      "reference": [
+        "exception:sampling"
+      ],
+      "tests": [
+        "sampling"
+      ]
+    },
+    "SamplingImpl::vec_znx_add_normal": {
+      "source": "poulpy-core/src/oep/sampling.rs",
+      "dispatch": [
+        "poulpy-core/src/api/sampling.rs#vec_znx_add_normal"
+      ],
+      "reference": [
+        "exception:sampling"
+      ],
+      "tests": [
+        "sampling"
+      ]
+    },
+    "SamplingImpl::vec_znx_big_add_normal": {
+      "source": "poulpy-core/src/oep/sampling.rs",
+      "dispatch": [
+        "poulpy-core/src/api/sampling.rs#vec_znx_big_add_normal"
+      ],
+      "reference": [
+        "exception:sampling"
+      ],
+      "tests": [
+        "sampling"
+      ]
+    }
+  }
+}

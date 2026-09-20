@@ -10,12 +10,11 @@ use crate::{
     encryption::{
         GGLWECompressedEncryptSkReference, GGLWEEncryptSkReference, GGLWEToGGSWKeyCompressedEncryptSkReference,
         GGLWEToGGSWKeyEncryptSkReference, GGSWCompressedEncryptSkReference, GGSWEncryptSkReference,
-        GLWEAutomorphismKeyCompressedEncryptSkReference, GLWEAutomorphismKeyEncryptPkReference,
-        GLWEAutomorphismKeyEncryptSkReference, GLWECompressedEncryptSkReference, GLWEEncryptPkReference, GLWEEncryptSkReference,
-        GLWEMaskFillReference, GLWEPublicKeyGenerateReference, GLWESwitchingKeyCompressedEncryptSkReference,
-        GLWESwitchingKeyEncryptPkReference, GLWESwitchingKeyEncryptSkReference, GLWETensorKeyCompressedEncryptSkReference,
-        GLWETensorKeyEncryptSkReference, GLWEToLWESwitchingKeyEncryptSkReference, LWEEncryptSkReference, LWEFillMaskReference,
-        LWESwitchingKeyEncryptReference, LWEToGLWESwitchingKeyEncryptSkReference,
+        GLWEAutomorphismKeyCompressedEncryptSkReference, GLWEAutomorphismKeyEncryptSkReference, GLWECompressedEncryptSkReference,
+        GLWEEncryptPkReference, GLWEEncryptSkReference, GLWEMaskFillReference, GLWEPublicKeyGenerateReference,
+        GLWESwitchingKeyCompressedEncryptSkReference, GLWESwitchingKeyEncryptSkReference,
+        GLWETensorKeyCompressedEncryptSkReference, GLWETensorKeyEncryptSkReference, GLWEToLWESwitchingKeyEncryptSkReference,
+        LWEEncryptSkReference, LWEFillMaskReference, LWESwitchingKeyEncryptReference, LWEToGLWESwitchingKeyEncryptSkReference,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -230,10 +229,6 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
     fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -325,10 +320,6 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWEToBackendMut<Self> + SetGaloisElement + GGLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
-
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -470,13 +461,11 @@ pub trait EncryptionReference<BE: Backend>:
     + GGSWEncryptSkReference<BE>
     + GGLWEToGGSWKeyEncryptSkReference<BE>
     + GLWESwitchingKeyEncryptSkReference<BE>
-    + GLWESwitchingKeyEncryptPkReference<BE>
     + GLWETensorKeyEncryptSkReference<BE>
     + GLWEToLWESwitchingKeyEncryptSkReference<BE>
     + LWESwitchingKeyEncryptReference<BE>
     + LWEToGLWESwitchingKeyEncryptSkReference<BE>
     + GLWEAutomorphismKeyEncryptSkReference<BE>
-    + GLWEAutomorphismKeyEncryptPkReference<BE>
     + GLWECompressedEncryptSkReference<BE>
     + GGLWECompressedEncryptSkReference<BE>
     + GGSWCompressedEncryptSkReference<BE>
@@ -751,13 +740,6 @@ where
         module.glwe_switching_key_encrypt_sk_reference(res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        module.glwe_switching_key_encrypt_pk_tmp_bytes_reference(infos)
-    }
-
     fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -878,13 +860,6 @@ where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
         module.glwe_automorphism_key_encrypt_sk_reference(res, p, sk, enc_infos, source_xe, source_xa, scratch)
-    }
-
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        module.glwe_automorphism_key_encrypt_pk_tmp_bytes_reference(infos)
     }
 
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
@@ -1058,13 +1033,36 @@ where
     }
 }
 
-/// Marker opt-in for [`EncryptionReference`] on `Module<$be>`.
+/// Forwards all encryption subfamilies to their portable compositions.
 ///
-/// Equivalent to writing `impl EncryptionReference<$be> for Module<$be> {}`. The aggregator's
-/// supertrait chain auto-derives all 22 encryption sub-defaults from their HAL bounds.
+/// To replace one subfamily, implement its `*Reference` trait manually, invoke
+/// the other per-family forwarding macros, and implement the empty
+/// [`EncryptionReference`] aggregator explicitly.
 #[macro_export]
 macro_rules! impl_encryption_reference_full {
     ($be:ty) => {
+        $crate::impl_lwe_switching_key_encrypt_reference_full!($be);
+        $crate::impl_glwe_to_lwe_switching_key_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_public_key_generate_reference_full!($be);
+        $crate::impl_glwe_tensor_key_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_switching_key_encrypt_sk_reference_full!($be);
+        $crate::impl_ggsw_encrypt_sk_reference_full!($be);
+        $crate::impl_lwe_to_glwe_switching_key_encrypt_sk_reference_full!($be);
+        $crate::impl_lwe_mask_fill_reference_full!($be);
+        $crate::impl_lwe_encrypt_sk_reference_full!($be);
+        $crate::impl_gglwe_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_mask_fill_reference_full!($be);
+        $crate::impl_glwe_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_encrypt_pk_reference_full!($be);
+        $crate::impl_gglwe_to_ggsw_key_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_automorphism_key_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_tensor_key_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_switching_key_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_ggsw_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_gglwe_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_gglwe_to_ggsw_key_compressed_encrypt_sk_reference_full!($be);
+        $crate::impl_glwe_automorphism_key_compressed_encrypt_sk_reference_full!($be);
         impl $crate::oep::EncryptionReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }

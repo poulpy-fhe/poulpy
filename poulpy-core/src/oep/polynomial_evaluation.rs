@@ -1,5 +1,8 @@
 use crate::layouts::GetTensorKey;
 use anyhow::Result;
+
+/// Error result used by the portable BSGS schedule and its backend implementations.
+pub use anyhow::Result as PolynomialEvaluationResult;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -134,4 +137,68 @@ where
     {
         module.glwe_eval_giant_steps_reference::<Ops, R, B, V, P, A, G, H>(ops, res, baby_steps, power_basis, tsk, scratch)
     }
+}
+
+/// Forwards the BSGS phases to the portable schedule, leaving scheme arithmetic in `BSGSOps`.
+#[macro_export]
+macro_rules! impl_polynomial_evaluation_reference_full {
+    ($be:ty) => {
+        impl $crate::oep::PolynomialEvaluationReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn glwe_eval_baby_step_reference<Ops, R, P, A, G>(
+                &self,
+                ops: &Ops,
+                res: &mut R,
+                parity: $crate::layouts::Parity,
+                coeffs: &P,
+                power_basis: &G,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) -> $crate::oep::PolynomialEvaluationResult<()>
+            where
+                Ops: $crate::reference::polynomial_evaluation::BSGSOps<$be, R, P, A, R>,
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEToBackendRef<$be>,
+                P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be>,
+                G: $crate::layouts::PowerBasisHelper<$be, A>,
+            {
+                $crate::reference::polynomial_evaluation::eval_baby_step::<$be, Ops, R, P, G, A>(
+                    self,
+                    ops,
+                    res,
+                    parity,
+                    coeffs,
+                    power_basis,
+                    scratch,
+                )
+            }
+            fn glwe_eval_giant_steps_reference<Ops, R, B, V, P, A, G, H>(
+                &self,
+                ops: &Ops,
+                res: &mut R,
+                baby_steps: &mut [B],
+                power_basis: &G,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) -> $crate::oep::PolynomialEvaluationResult<()>
+            where
+                Ops: $crate::reference::polynomial_evaluation::BSGSOps<$be, V, P, A, R>,
+                R: $crate::layouts::GLWEToBackendMut<$be>,
+                B: $crate::layouts::BabyStep<$be, Value = V>,
+                V: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEToBackendRef<$be>,
+                P: $crate::layouts::GLWEToBackendRef<$be>,
+                A: $crate::layouts::GLWEToBackendRef<$be>,
+                G: $crate::layouts::PowerBasisHelper<$be, A>,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                $crate::reference::polynomial_evaluation::eval_giant_steps::<R, B, V, P, A, G, H, $be, Ops>(
+                    self,
+                    ops,
+                    res,
+                    baby_steps,
+                    power_basis,
+                    tsk,
+                    scratch,
+                )
+            }
+        }
+    };
 }

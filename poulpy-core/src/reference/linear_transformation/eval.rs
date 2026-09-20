@@ -82,9 +82,11 @@ where
     // rather than their meta-derived `size()`.
     let a_size = a.max_size();
     let pt_size = pt.max_size();
-    let cnv_offset_hi = pt_size.saturating_sub(1);
-    let prod_size = a_size + pt_size - cnv_offset_hi;
-    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, cnv_offset_hi, a_size, pt_size);
+    // The query has no conversion-offset argument: offset zero retains the
+    // widest product, so reserve that working set for every supported offset.
+    let min_cnv_offset = 0;
+    let prod_size = a_size + pt_size;
+    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, min_cnv_offset, a_size, pt_size);
     let prod_col_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
     let prod_dft = module.bytes_of_vec_znx_dft(module.n(), cols, prod_size);
     let lazy_size = key.size().max(prod_size);
@@ -93,8 +95,10 @@ where
     let rot_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
+    // The fallback first normalizes each product into the destination layout,
+    // then rotates that accumulator in place (both operands therefore use res).
     let fallback_work = inner_dft
-        .max(module.glwe_automorphism_tmp_bytes(res, a, key))
+        .max(module.glwe_automorphism_tmp_bytes(res, res, key))
         .max(module.vec_znx_normalize_tmp_bytes());
     let fallback_path = prod_dft + prod_col_big + fallback_work;
     let lazy_dft_rot = rot_dft + lazy_dft;

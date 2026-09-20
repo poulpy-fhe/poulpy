@@ -692,11 +692,19 @@ impl_lwe_keyswitch_reference_full!(NTT4x30Avx512);
 impl_lwe_keyswitch_reference_full!(NTT3x42Ifma);
 
 impl_encryption_reference_full!(FFT64Avx512);
+poulpy_core::impl_operations_reference_full!(FFT64Avx512);
+poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64Avx512);
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512, fft64);
 impl_encryption_reference_full!(NTT4x30Avx512);
+poulpy_core::impl_operations_reference_full!(NTT4x30Avx512);
+poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30Avx512);
 poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 impl_encryption_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+poulpy_core::impl_operations_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+poulpy_core::impl_polynomial_evaluation_reference_full!(NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_ref::impl_sampling_host!(NTT3x42Ifma, ntt4x30);
 
@@ -745,6 +753,10 @@ impl_lwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_encryption_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+poulpy_core::impl_operations_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+poulpy_core::impl_polynomial_evaluation_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_external_product_reference_full!(FFT64Avx512Rayon);
@@ -771,6 +783,8 @@ mod ntt4x30_rayon_defaults {
     impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512Rayon);
     impl_lwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
     impl_encryption_reference_full!(NTT4x30Avx512Rayon);
+    poulpy_core::impl_operations_reference_full!(NTT4x30Avx512Rayon);
+    poulpy_core::impl_polynomial_evaluation_reference_full!(NTT4x30Avx512Rayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512Rayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT4x30Avx512Rayon);
     impl_gglwe_external_product_reference_full!(NTT4x30Avx512Rayon);
@@ -794,6 +808,8 @@ mod ifma_rayon_defaults {
     impl_ggsw_keyswitch_reference_full!(NTT3x42IfmaRayon);
     impl_lwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
     impl_encryption_reference_full!(NTT3x42IfmaRayon);
+    poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
+    poulpy_core::impl_polynomial_evaluation_reference_full!(NTT3x42IfmaRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);

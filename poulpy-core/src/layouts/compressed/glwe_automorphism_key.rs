@@ -25,7 +25,7 @@ pub struct GLWEAutomorphismKeyCompressed<D: Data, W: ZnxWord> {
     pub(crate) p: i64,
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
     fn p(&self) -> i64 {
         self.p
     }
@@ -180,19 +180,19 @@ impl_gglwe_compressed_to_backend_for_field!(
     GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>
 );
 
-impl<D: HostDataMut, W: ZnxWord> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.key.seed
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.key.seed
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }

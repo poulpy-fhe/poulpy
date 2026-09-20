@@ -185,7 +185,7 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
 /// Secret-key sampling.
 ///
 /// Each distribution is drawn in place by the backend, one seed per column,
-/// through [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution).
+/// through [`crate::ScalarZnxFillDistribution`].
 /// A fixed `source` therefore gives a per-backend secret, not a cross-backend one.
 ///
 /// Each entry point fills every one of the secret's `rank` polynomials and

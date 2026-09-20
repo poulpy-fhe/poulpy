@@ -1,15 +1,16 @@
-//! The implementation of every `poulpy-core` operation.
+//! Portable implementations of core operation semantics.
 //!
-//! Each module composes one operation family from the HAL operations. These
-//! compositions define what the operations compute and are the only validated
-//! circuit: a backend runs them through the `impl_*_reference_full!` macros of
-//! [`crate::oep`], or overrides a family through its `oep` trait with a faster
-//! route to the same result (a fused kernel, device-native code, another
-//! layout), which the parity suite validates against an attested backend: it runs the
-//! override and that backend on the same inputs and requires the same result.
-//! Attestation is transitive back to these bodies: the portable backend runs
-//! them directly, and any backend already attested serves as the oracle for
-//! the next; an override is correct only when that test passes.
+//! Bodies compose HAL operations and other core contracts. They are independently
+//! callable free functions or `*Composition` methods, selected for a backend through
+//! the explicit forwarding macros in [`crate::oep`]. Abstract `*Reference` traits
+//! are override contracts; the separately documented tensoring reference trait is
+//! a composition helper behind its directly implemented backend extension point.
+//!
+//! An optimized implementation is checked against an explicit portable
+//! `poulpy-cpu-ref` execution on identical logical inputs. Tests compare canonical
+//! results and metadata rather than backend-dependent prepared storage. Randomized
+//! compositions additionally require controlled samples, because backend random
+//! streams are not required to match.
 
 pub mod automorphism;
 pub mod conversion;

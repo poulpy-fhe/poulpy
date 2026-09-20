@@ -1,20 +1,18 @@
-//! GLWE trace operation (sum of Galois automorphisms).
+//! Normalized GLWE trace (projection by Galois averaging).
 //!
-//! The trace maps a GLWE ciphertext encrypting a polynomial `m(X)` to one
-//! encrypting the sum of its Galois conjugates:
+//! Each visited level right-shifts the ciphertext by one bit, then adds its
+//! Galois conjugate. Ignoring finite-precision rounding and key-switch noise,
+//! the message action is the average of the selected conjugates, not their sum:
+//! `NormalizedTrace(ct) = 2^(-(log_n - skip)) * sum_{i in S} phi_i(ct)`.
 //!
-//! `Trace(ct) = sum_{i in S} phi_i(ct)`
+//! `skip` omits the initial automorphism levels and must lie in `0..=log_n`.
+//! With `skip == log_n`, the out-of-place operation copies the input at the
+//! destination's layout and the assign operation leaves the input unchanged;
+//! neither path needs an automorphism key. Each nonempty level rounds according
+//! to the core right-shift contract before its automorphism and addition.
 //!
-//! where `phi_i` are the Galois automorphisms `X -> X^{g^i}`.
-//! This is the dual operation of slot packing: it projects a ciphertext
-//! onto a smaller subspace of plaintext slots, effectively replicating
-//! a single slot value across multiple positions.
-//!
-//! The `skip` parameter controls how many initial automorphism levels
-//! are skipped, allowing partial traces that project onto larger subspaces.
-//!
-//! Requires automorphism keys indexed by the Galois elements returned
-//! from [`GLWETrace::glwe_trace_galois_elements`].
+//! Automorphism keys are indexed by the Galois elements returned from
+//! [`GLWETrace::glwe_trace_galois_elements`](crate::api::GLWETrace::glwe_trace_galois_elements).
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -120,7 +118,7 @@ where
     (skip..module.log_n()).map(|i| if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) })
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWETraceReference<BE: Backend> {
     fn glwe_trace_assign_tmp_bytes_reference<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
     where
@@ -227,7 +225,9 @@ pub mod glwe_trace_reference_impl {
         let lvl_2: usize = module.glwe_trace_assign_tmp_bytes_reference(&tmp_infos, key_infos);
         let lvl_3 = module.glwe_copy_tmp_bytes(res_infos, &tmp_infos);
 
-        lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
+        // An empty trace copies directly without consulting a key; a backend's
+        // direct-copy scratch requirement may differ from the two-stage path.
+        (lvl_0 + lvl_1.max(lvl_2).max(lvl_3)).max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
     }
 
     pub fn glwe_trace_reference<BE, M, R, A, H>(
@@ -252,7 +252,11 @@ pub mod glwe_trace_reference_impl {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
+        assert_eq!(res.n(), module.n() as u32);
+        assert_eq!(a.n(), module.n() as u32);
+        assert!(skip <= module.log_n(), "trace skip exceeds log_n");
         let Some(first) = trace_rotations(module, skip).next() else {
+            module.glwe_copy(res, a, scratch);
             return;
         };
         let atk_layout = keys

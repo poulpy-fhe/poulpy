@@ -36,7 +36,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEMulConstReference<BE: Backend> {
     fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -69,12 +69,47 @@ pub trait GLWEMulConstReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEMulConstReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEMulConstReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEMulConstComposition<BE: Backend> {
+    fn glwe_mul_const_tmp_bytes_composition<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos;
+
+    fn glwe_mul_const_composition<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_mul_const_assign_composition<R, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+impl<BE: Backend> GLWEMulConstComposition<BE> for Module<BE>
 where
     Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
     Self: VecZnxCopy<BE>,
 {
-    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_mul_const_tmp_bytes_composition<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -94,7 +129,7 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_mul_const_reference<R, A, B>(
+    fn glwe_mul_const_composition<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -111,10 +146,10 @@ where
         assert_eq!(res.rank(), a.rank());
         let b_size = b.size();
         assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, a, b),
+            scratch.available() >= self.glwe_mul_const_tmp_bytes_composition(res, a, b),
             "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_const_tmp_bytes_reference(res, a, b)
+            self.glwe_mul_const_tmp_bytes_composition(res, a, b)
         );
 
         let cols: usize = res.rank().as_usize() + 1;
@@ -162,7 +197,7 @@ where
         }
     }
 
-    fn glwe_mul_const_assign_reference<R, B>(
+    fn glwe_mul_const_assign_composition<R, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -175,10 +210,10 @@ where
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
+            scratch.available() >= self.glwe_mul_const_tmp_bytes_composition(res, res, b),
             "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_const_tmp_bytes_reference(res, res, b)
+            self.glwe_mul_const_tmp_bytes_composition(res, res, b)
         );
 
         let cols: usize = res.rank().as_usize() + 1;
@@ -224,7 +259,7 @@ where
     }
 }
 
-impl<BE: Backend> GLWEMulPlainReference<BE> for Module<BE>
+impl<BE: Backend> GLWEMulPlainComposition<BE> for Module<BE>
 where
     Self: Sized
         + ModuleN
@@ -236,7 +271,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>,
 {
-    fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_mul_plain_tmp_bytes_composition<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -277,8 +312,14 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_reference<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_mul_plain_composition<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
@@ -286,10 +327,10 @@ where
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
         assert!(
-            scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, a, b),
+            scratch.available() >= self.glwe_mul_plain_tmp_bytes_composition(res, a, b),
             "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_plain_tmp_bytes_reference(res, a, b)
+            self.glwe_mul_plain_tmp_bytes_composition(res, a, b)
         );
 
         let a_k = a.k().as_usize();
@@ -358,17 +399,17 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_plain_assign_composition<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, res, a),
+            scratch.available() >= self.glwe_mul_plain_tmp_bytes_composition(res, res, a),
             "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_plain_tmp_bytes_reference(res, res, a)
+            self.glwe_mul_plain_tmp_bytes_composition(res, res, a)
         );
 
         let res_k = res.k().as_usize();
@@ -437,7 +478,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEMulPlainReference<BE: Backend> {
     fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -458,7 +499,36 @@ pub trait GLWEMulPlainReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
-#[doc(hidden)]
+/// Independently callable portable composition for [`GLWEMulPlainReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEMulPlainComposition<BE: Backend> {
+    fn glwe_mul_plain_tmp_bytes_composition<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_plain_composition<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+
+    fn glwe_mul_plain_assign_composition<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+}
+
+/// Portable tensor composition helper; specialize [`crate::oep::GLWETensoringImpl`] to replace it.
 pub trait GLWETensoringReference<BE: Backend> {
     fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -1223,7 +1293,7 @@ where
 
 /// Tensor product reusing a caller-prepared right operand `b_prep`.
 ///
-/// Prepares only `a` into a scratch `CnvPVecL` and runs [`glwe_tensor_apply_loop`]
+/// Prepares only `a` into a scratch `CnvPVecL` and runs `glwe_tensor_apply_loop`
 /// against the supplied `b_prep`. `a_k` masks `a`'s bottom limb and
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
@@ -1359,7 +1429,7 @@ pub fn normalize_input_limb_bound_with_offset(
     normalize_input_limb_bound(full_size, res_size, res_base2k, in_base2k, offset_bits as usize)
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEAddReference<BE: Backend> {
     fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
@@ -1373,11 +1443,27 @@ pub trait GLWEAddReference<BE: Backend> {
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEAddReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEAddReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEAddComposition<BE: Backend> {
+    fn glwe_add_into_composition<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>,
+        B: GLWEToBackendRef<BE>;
+
+    fn glwe_add_assign_composition<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWEAddComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxAdd<BE> + VecZnxCopy<BE> + VecZnxAddAssign<BE> + VecZnxZero<BE>,
 {
-    fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    fn glwe_add_into_composition<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1425,7 +1511,7 @@ where
         }
     }
 
-    fn glwe_add_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_add_assign_composition<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1443,7 +1529,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWESubReference<BE: Backend> {
     fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
@@ -1462,7 +1548,28 @@ pub trait GLWESubReference<BE: Backend> {
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWESubReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWESubReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWESubComposition<BE: Backend> {
+    fn glwe_sub_composition<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>,
+        B: GLWEToBackendRef<BE>;
+
+    fn glwe_sub_assign_composition<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_sub_negate_assign_composition<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWESubComposition<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxSub<BE>
@@ -1472,7 +1579,7 @@ where
         + VecZnxNegate<BE>
         + VecZnxZero<BE>,
 {
-    fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    fn glwe_sub_composition<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1519,7 +1626,7 @@ where
         }
     }
 
-    fn glwe_sub_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_assign_composition<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1536,7 +1643,7 @@ where
         }
     }
 
-    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_negate_assign_composition<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1554,7 +1661,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWENegateReference<BE: Backend> {
     fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -1566,11 +1673,25 @@ pub trait GLWENegateReference<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWENegateReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWENegateReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWENegateComposition<BE: Backend> {
+    fn glwe_negate_composition<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_negate_assign_composition<R>(&self, res: &mut R)
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWENegateComposition<BE> for Module<BE>
 where
     Self: VecZnxNegate<BE> + VecZnxNegateAssign<BE> + ModuleN,
 {
-    fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_negate_composition<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1588,7 +1709,7 @@ where
         res.base2k = a.base2k;
     }
 
-    fn glwe_negate_assign_reference<R>(&self, res: &mut R)
+    fn glwe_negate_assign_composition<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1602,18 +1723,27 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEZeroReference<BE: Backend> {
     fn glwe_zero_reference<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEZeroReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEZeroReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEZeroComposition<BE: Backend> {
+    fn glwe_zero_composition<R>(&self, res: &mut R)
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWEZeroComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxZero<BE>,
 {
-    fn glwe_zero_reference<R>(&self, res: &mut R)
+    fn glwe_zero_composition<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1627,7 +1757,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWERotateReference<BE: Backend> {
     fn glwe_rotate_tmp_bytes_reference(&self) -> usize;
 
@@ -1641,15 +1771,31 @@ pub trait GLWERotateReference<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWERotateReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWERotateReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWERotateComposition<BE: Backend> {
+    fn glwe_rotate_tmp_bytes_composition(&self) -> usize;
+
+    fn glwe_rotate_composition<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_rotate_assign_composition<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWERotateComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxRotate<BE> + VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes + VecZnxZero<BE>,
 {
-    fn glwe_rotate_tmp_bytes_reference(&self) -> usize {
+    fn glwe_rotate_tmp_bytes_composition(&self) -> usize {
         self.vec_znx_rotate_assign_tmp_bytes()
     }
 
-    fn glwe_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn glwe_rotate_composition<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1672,17 +1818,17 @@ where
         }
     }
 
-    fn glwe_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rotate_assign_composition<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_rotate_tmp_bytes_reference(self),
+            scratch.available() >= Self::glwe_rotate_tmp_bytes_composition(self),
             "scratch.available(): {} < GLWERotate::glwe_rotate_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_rotate_tmp_bytes_reference(self)
+            Self::glwe_rotate_tmp_bytes_composition(self)
         );
 
         for i in 0..(res.rank() + 1).into() {
@@ -1692,7 +1838,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEMulXpMinusOneReference<BE: Backend> {
     fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
@@ -1704,11 +1850,25 @@ pub trait GLWEMulXpMinusOneReference<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMulXpMinusOneReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEMulXpMinusOneReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEMulXpMinusOneComposition<BE: Backend> {
+    fn glwe_mul_xp_minus_one_composition<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_mul_xp_minus_one_assign_composition<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWEMulXpMinusOneComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE>,
 {
-    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn glwe_mul_xp_minus_one_composition<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1725,7 +1885,7 @@ where
         }
     }
 
-    fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_xp_minus_one_assign_composition<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1740,7 +1900,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWECopyReference<BE: Backend> {
     fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
 
@@ -1750,11 +1910,23 @@ pub trait GLWECopyReference<BE: Backend> {
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWECopyReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWECopyReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWECopyComposition<BE: Backend> {
+    fn glwe_copy_tmp_bytes_composition<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn glwe_copy_composition<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWECopyComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
+    fn glwe_copy_tmp_bytes_composition<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
         if res.base2k() == a.base2k() && res.k() >= a.k() {
             0
         } else {
@@ -1762,7 +1934,7 @@ where
         }
     }
 
-    fn glwe_copy_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_copy_composition<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1810,7 +1982,7 @@ fn shift_offset(k: usize, bound: usize) -> i64 {
     k.min(bound) as i64
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEShiftReference<BE: Backend> {
     fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize;
 
@@ -1838,7 +2010,37 @@ pub trait GLWEShiftReference<BE: Backend> {
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEShiftReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEShiftReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEShiftComposition<BE: Backend> {
+    fn glwe_shift_tmp_bytes_composition(&self, res_size: usize) -> usize;
+
+    fn glwe_rsh_composition<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>;
+
+    fn glwe_lsh_assign_composition<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>;
+
+    fn glwe_lsh_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_lsh_add_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_lsh_sub_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWEShiftComposition<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxRshAssign<BE>
@@ -1852,7 +2054,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxCopy<BE>,
 {
-    fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize {
+    fn glwe_shift_tmp_bytes_composition(&self, res_size: usize) -> usize {
         // The partial-width `glwe_rsh` path normalizes into a one-column
         // temporary, and `glwe_lsh_assign` normalizes in place after the
         // kernel; both need the normalization scratch on top of the kernels'.
@@ -1865,16 +2067,16 @@ where
             .max(normalize)
     }
 
-    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_composition<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let res = &mut res.to_backend_mut();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_composition(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_reference(self, res.size())
+            Self::glwe_shift_tmp_bytes_composition(self, res.size())
         );
         let base2k: usize = res.base2k().into();
         let res_k: usize = res.k().as_usize();
@@ -1909,17 +2111,17 @@ where
         }
     }
 
-    fn glwe_lsh_assign_reference<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_assign_composition<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let res = &mut res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_composition(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_reference(self, res.size())
+            Self::glwe_shift_tmp_bytes_composition(self, res.size())
         );
 
         let base2k: usize = res.base2k().into();
@@ -1941,7 +2143,7 @@ where
         }
     }
 
-    fn glwe_lsh_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1949,10 +2151,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_composition(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_reference(self, res.size())
+            Self::glwe_shift_tmp_bytes_composition(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1981,7 +2183,7 @@ where
         }
     }
 
-    fn glwe_lsh_add_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_add_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1989,10 +2191,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_composition(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_reference(self, res.size())
+            Self::glwe_shift_tmp_bytes_composition(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -2007,7 +2209,7 @@ where
         }
     }
 
-    fn glwe_lsh_sub_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_sub_composition<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -2015,10 +2217,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_composition(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_reference(self, res.size())
+            Self::glwe_shift_tmp_bytes_composition(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -2034,7 +2236,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWENormalizeReference<BE: Backend> {
     fn glwe_normalize_tmp_bytes_reference(&self) -> usize;
 
@@ -2048,16 +2250,32 @@ pub trait GLWENormalizeReference<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWENormalizeReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWENormalizeReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWENormalizeComposition<BE: Backend> {
+    fn glwe_normalize_tmp_bytes_composition(&self) -> usize;
+
+    fn glwe_normalize_composition<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_normalize_assign_composition<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWENormalizeComposition<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxNormalize<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_normalize_tmp_bytes_reference(&self) -> usize {
+    fn glwe_normalize_tmp_bytes_composition(&self) -> usize {
         let lvl_0: usize = self.vec_znx_normalize_tmp_bytes();
         lvl_0
     }
 
-    fn glwe_normalize_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_composition<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -2069,10 +2287,10 @@ where
         assert_eq!(a.n(), self.n() as u32);
         assert_eq!(res.rank(), a.rank());
         assert!(
-            scratch.available() >= Self::glwe_normalize_tmp_bytes_reference(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_composition(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_normalize_tmp_bytes_reference(self)
+            Self::glwe_normalize_tmp_bytes_composition(self)
         );
 
         let res_base2k = res.base2k().into();
@@ -2094,17 +2312,17 @@ where
         }
     }
 
-    fn glwe_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_assign_composition<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_normalize_tmp_bytes_reference(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_composition(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_normalize_tmp_bytes_reference(self)
+            Self::glwe_normalize_tmp_bytes_composition(self)
         );
         let res_base2k = res.base2k().as_usize();
         let res_k = res.k().as_usize();
@@ -2113,4 +2331,302 @@ where
             self.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
         }
     }
+}
+
+/// Forwards every method of [`GLWEMulConstReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_mul_const_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEMulConstReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstComposition<$be>>::glwe_mul_const_tmp_bytes_composition::<R, A, B>(self, res, a, b)
+        }
+
+    fn glwe_mul_const_reference<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstComposition<$be>>::glwe_mul_const_composition::<R, A, B>(self, cnv_offset, res, a, b, b_coeff, scratch)
+        }
+
+    fn glwe_mul_const_assign_reference<R, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstComposition<$be>>::glwe_mul_const_assign_composition::<R, B>(self, cnv_offset, res, b, b_coeff, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEMulPlainReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_mul_plain_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEMulPlainReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainComposition<$be>>::glwe_mul_plain_tmp_bytes_composition::<R, A, B>(self, res, a, b)
+        }
+
+    fn glwe_mul_plain_reference<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::IntPolyInfos + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainComposition<$be>>::glwe_mul_plain_composition::<R, A, B>(self, cnv_offset, res, a, b, scratch)
+        }
+
+    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::IntPolyInfos + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainComposition<$be>>::glwe_mul_plain_assign_composition::<R, A>(self, cnv_offset, res, a, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEAddReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_add_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEAddReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be>,
+        B: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEAddComposition<$be>>::glwe_add_into_composition::<R, A, B>(self, res, a, b)
+        }
+
+    fn glwe_add_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEAddComposition<$be>>::glwe_add_assign_composition::<R, A>(self, res, a)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWESubReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_sub_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWESubReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be>,
+        B: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWESubComposition<$be>>::glwe_sub_composition::<R, A, B>(self, res, a, b)
+        }
+
+    fn glwe_sub_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWESubComposition<$be>>::glwe_sub_assign_composition::<R, A>(self, res, a)
+        }
+
+    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWESubComposition<$be>>::glwe_sub_negate_assign_composition::<R, A>(self, res, a)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWENegateReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_negate_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWENegateReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENegateComposition<$be>>::glwe_negate_composition::<R, A>(self, res, a)
+        }
+
+    fn glwe_negate_assign_reference<R>(&self, res: &mut R)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENegateComposition<$be>>::glwe_negate_assign_composition::<R>(self, res)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEZeroReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_zero_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEZeroReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_zero_reference<R>(&self, res: &mut R)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEZeroComposition<$be>>::glwe_zero_composition::<R>(self, res)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWERotateReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_rotate_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWERotateReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_rotate_tmp_bytes_reference(&self) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateComposition<$be>>::glwe_rotate_tmp_bytes_composition(self)
+        }
+
+    fn glwe_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateComposition<$be>>::glwe_rotate_composition::<R, A>(self, k, res, a)
+        }
+
+    fn glwe_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateComposition<$be>>::glwe_rotate_assign_composition::<R>(self, k, res, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEMulXpMinusOneReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_mul_xp_minus_one_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEMulXpMinusOneReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulXpMinusOneComposition<$be>>::glwe_mul_xp_minus_one_composition::<R, A>(self, k, res, a)
+        }
+
+    fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulXpMinusOneComposition<$be>>::glwe_mul_xp_minus_one_assign_composition::<R>(self, k, res, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWECopyReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_copy_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWECopyReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_copy_tmp_bytes_reference<R: $crate::layouts::GLWEInfos, A: $crate::layouts::GLWEInfos>(&self, res: &R, a: &A) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWECopyComposition<$be>>::glwe_copy_tmp_bytes_composition::<R, A>(self, res, a)
+        }
+
+    fn glwe_copy_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWECopyComposition<$be>>::glwe_copy_composition::<R, A>(self, res, a, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEShiftReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_shift_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWEShiftReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_shift_tmp_bytes_composition(self, res_size)
+        }
+
+    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_rsh_composition::<R>(self, k, res, scratch)
+        }
+
+    fn glwe_lsh_assign_reference<R>(&self, res: &mut R, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_lsh_assign_composition::<R>(self, res, k, scratch)
+        }
+
+    fn glwe_lsh_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_lsh_composition::<R, A>(self, res, a, k, scratch)
+        }
+
+    fn glwe_lsh_add_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_lsh_add_composition::<R, A>(self, res, a, k, scratch)
+        }
+
+    fn glwe_lsh_sub_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftComposition<$be>>::glwe_lsh_sub_composition::<R, A>(self, res, a, k, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWENormalizeReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_normalize_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::operations::GLWENormalizeReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_normalize_tmp_bytes_reference(&self) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeComposition<$be>>::glwe_normalize_tmp_bytes_composition(self)
+        }
+
+    fn glwe_normalize_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeComposition<$be>>::glwe_normalize_composition::<R, A>(self, res, a, scratch)
+        }
+
+    fn glwe_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeComposition<$be>>::glwe_normalize_assign_composition::<R>(self, res, scratch)
+        }
+        }
+    };
 }

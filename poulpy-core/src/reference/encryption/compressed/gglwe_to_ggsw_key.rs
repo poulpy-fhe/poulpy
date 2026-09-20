@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -35,11 +35,33 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GGLWEToGGSWKeyCompressedEncryptSkReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GGLWEToGGSWKeyCompressedEncryptSkComposition<BE: Backend> {
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_composition<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+}
+
+impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkComposition<BE> for Module<BE>
 where
     Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretTensorFactory<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopy<BE>,
 {
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -58,7 +80,7 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3 + lvl_4_encrypt
     }
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_composition<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -74,10 +96,10 @@ where
         assert_eq!(res.rank(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(
-            scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res),
+            scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition(res),
             "scratch.available(): {} < GGLWEToGGSWKeyCompressedEncryptSk::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res)
+            self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition(res)
         );
 
         let mut res = res.to_backend_mut();
@@ -121,4 +143,33 @@ where
             );
         }
     }
+}
+
+/// Forwards every method of [`GGLWEToGGSWKeyCompressedEncryptSkReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_gglwe_to_ggsw_key_compressed_encrypt_sk_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: $crate::layouts::GGLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkComposition<$be>>::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
+        }
+
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GGLWEToGGSWKeyCompressedToBackendMut<$be> + $crate::layouts::GGLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkComposition<$be>>::gglwe_to_ggsw_key_compressed_encrypt_sk_composition::<R, S, E>(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
+        }
+        }
+    };
 }

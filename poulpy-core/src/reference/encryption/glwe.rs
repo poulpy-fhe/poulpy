@@ -22,7 +22,7 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEMaskFillReference<BE: Backend> {
     fn fill_glwe_mask_from_source_reference<R>(
         &self,
@@ -39,11 +39,30 @@ pub trait GLWEMaskFillReference<BE: Backend> {
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEMaskFillReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEMaskFillComposition<BE: Backend> {
+    fn fill_glwe_mask_from_source_composition<R>(
+        &self,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        source_xa: &mut Source,
+    ) where
+        R: GLWEToBackendMut<BE>;
+
+    fn fill_glwe_mask_from_seed_composition<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWEMaskFillComposition<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_glwe_mask_from_source_reference<R>(
+    fn fill_glwe_mask_from_source_composition<R>(
         &self,
         base2k: usize,
         res: &mut R,
@@ -65,16 +84,16 @@ where
         }
     }
 
-    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    fn fill_glwe_mask_from_seed_composition<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut source_xa = Source::new(seed_xa);
-        self.fill_glwe_mask_from_source_reference(base2k, res, res_col, rank, &mut source_xa);
+        self.fill_glwe_mask_from_source_composition(base2k, res, res_col, rank, &mut source_xa);
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEEncryptSkReference<BE: Backend> {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -109,7 +128,44 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEEncryptSkReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEEncryptSkReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEEncryptSkComposition<BE: Backend> {
+    fn glwe_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    fn glwe_encrypt_sk_composition<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
+
+    fn glwe_encrypt_zero_sk_composition<R, E, S>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWEEncryptSkComposition<BE> for Module<BE>
 where
     Self: Sized
         + ModuleN
@@ -119,7 +175,7 @@ where
         + GLWEMaskFillReference<BE>
         + GLWEEncryptSkInternal<BE>,
 {
-    fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -138,7 +194,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_reference<R, P, S, E>(
+    fn glwe_encrypt_sk_composition<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -162,10 +218,10 @@ where
         assert_eq!(sk_ref.n(), self.n() as u32);
         assert_eq!(pt_backend.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_composition(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            self.glwe_encrypt_sk_tmp_bytes_composition(res)
         );
 
         let base2k = res.base2k().into();
@@ -185,7 +241,7 @@ where
         );
     }
 
-    fn glwe_encrypt_zero_sk_reference<R, E, S>(
+    fn glwe_encrypt_zero_sk_composition<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
@@ -205,10 +261,10 @@ where
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(sk_ref.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_composition(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            self.glwe_encrypt_sk_tmp_bytes_composition(res)
         );
 
         let base2k = res.base2k().into();
@@ -221,7 +277,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEEncryptPkReference<BE: Backend> {
     fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -256,11 +312,48 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
+/// Independently callable portable composition for [`GLWEEncryptPkReference`].
+///
+/// HAL bounds belong to this helper, not to the backend override contract.
+pub trait GLWEEncryptPkComposition<BE: Backend> {
+    fn glwe_encrypt_pk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    fn glwe_encrypt_pk_composition<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+
+    fn glwe_encrypt_zero_pk_composition<R, K, E>(
+        &self,
+        res: &mut R,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+}
+
+impl<BE: Backend> GLWEEncryptPkComposition<BE> for Module<BE>
 where
     Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -279,7 +372,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_reference<R, P, K, E>(
+    fn glwe_encrypt_pk_composition<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -295,10 +388,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_composition(res),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res)
+            self.glwe_encrypt_pk_tmp_bytes_composition(res)
         );
         self.glwe_encrypt_pk_internal(
             res,
@@ -311,7 +404,7 @@ where
         );
     }
 
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
+    fn glwe_encrypt_zero_pk_composition<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
@@ -325,10 +418,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_composition(res),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res)
+            self.glwe_encrypt_pk_tmp_bytes_composition(res)
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }
@@ -582,4 +675,122 @@ where
         }
         self.vec_znx_copy(res, 0, &c0.to_backend_ref(), 0);
     }
+}
+
+/// Forwards every method of [`GLWEMaskFillReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_mask_fill_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GLWEMaskFillReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn fill_glwe_mask_from_source_reference<R>(
+        &self,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        source_xa: &mut ::poulpy_hal::source::Source,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillComposition<$be>>::fill_glwe_mask_from_source_composition::<R>(self, base2k, res, res_col, rank, source_xa)
+        }
+
+    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillComposition<$be>>::fill_glwe_mask_from_seed_composition::<R>(self, base2k, res, res_col, rank, seed_xa)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEEncryptSkReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_encrypt_sk_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GLWEEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkComposition<$be>>::glwe_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
+        }
+
+    fn glwe_encrypt_sk_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        source_xa: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        P: $crate::layouts::GLWEToBackendRef<$be>,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkComposition<$be>>::glwe_encrypt_sk_composition::<R, P, S, E>(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        }
+
+    fn glwe_encrypt_zero_sk_reference<R, E, S>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        source_xa: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkComposition<$be>>::glwe_encrypt_zero_sk_composition::<R, E, S>(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEEncryptPkReference`] to its portable composition.
+#[macro_export]
+macro_rules! impl_glwe_encrypt_pk_reference_full {
+    ($be:ty) => {
+        impl $crate::reference::encryption::GLWEEncryptPkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkComposition<$be>>::glwe_encrypt_pk_tmp_bytes_composition::<A>(self, infos)
+        }
+
+    fn glwe_encrypt_pk_reference<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut ::poulpy_hal::source::Source,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        K: $crate::layouts::GLWEPreparedToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkComposition<$be>>::glwe_encrypt_pk_composition::<R, P, K, E>(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+        }
+
+    fn glwe_encrypt_zero_pk_reference<R, K, E>(
+        &self,
+        res: &mut R,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut ::poulpy_hal::source::Source,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        K: $crate::layouts::GLWEPreparedToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkComposition<$be>>::glwe_encrypt_zero_pk_composition::<R, K, E>(self, res, pk, enc_infos, source_xu, source_xe, scratch)
+        }
+        }
+    };
 }

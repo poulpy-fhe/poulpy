@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_neon_qemu:
-        description: Run additional NEON HAL tests under QEMU on x86
+        description: Run additional NEON HAL and core tests under QEMU on x86
         type: boolean
         default: false
 
@@ -94,7 +94,17 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
 
       - name: Test all non-AVX features
-        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
+        shell: bash
+        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES" | tee "$RUNNER_TEMP/core-portable.log"
+
+      - name: Test core contract inventory checker
+        run: python3 tools/test_check_core_contracts.py
+
+      - name: Verify portable core contract execution
+        run: bash tools/verify_core_execution.sh poulpy-cpu-ref "$RUNNER_TEMP/core-portable.log"
+
+      - name: Check core documentation
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-core
 
   avx:
     name: AVX backend
@@ -146,12 +156,17 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$AVX_FEATURES" -- -D warnings
 
       - name: Test AVX backend
+        shell: bash
         if: steps.avx.outputs.supported == 'true'
-        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES"
+        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES" | tee "$RUNNER_TEMP/core-avx.log"
+
+      - name: Verify AVX core contract execution
+        if: steps.avx.outputs.supported == 'true'
+        run: bash tools/verify_core_execution.sh poulpy-cpu-avx "$RUNNER_TEMP/core-avx.log"
 
       - name: Skip AVX backend
         if: steps.avx.outputs.supported != 'true'
-        run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
+        run: echo "Runner lacks AVX2/FMA; the native-or-SDE lane still executes all AVX core contracts."
 
   intel_macos_avx:
     name: Intel macOS AVX smoke
@@ -334,18 +349,31 @@ jobs:
           # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
           echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
 
-      - name: Test AVX-512 and IFMA HAL operations
-        # Enable the same CKKS wiring; profile ci still needs its own build.
-        # These filters cover HAL parity, derived bodies and shape/window tests.
-        # Core Gaussian sampling and CKKS runtime tests, including ModUp, are excluded.
-        # CKKS ModUp runtime coverage remains part of the separate CKKS follow-up to #234.
+      - name: Test AVX-512 and IFMA HAL and core operations
+        shell: bash
+        # Execute all core contract groups, including sampling and controlled-draw encryption.
+        # CKKS runtime coverage remains in its separate follow-up to #234.
         run: >-
           cargo test -p poulpy-cpu-avx512 --lib --profile ci
           --features "enable-ifma,enable-rayon,enable-ckks" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract
+          raw_transform_matches_contract core_parity core_encryption
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
-          --test-threads=2
+          --test-threads=2 | tee "$RUNNER_TEMP/core-avx512.log"
+
+      - name: Verify AVX-512 core contract execution
+        run: bash tools/verify_core_execution.sh poulpy-cpu-avx512 "$RUNNER_TEMP/core-avx512.log"
+
+      # Guarantee AVX core coverage even if its separate native runner lacks AVX2/FMA.
+      - name: Test AVX core operations natively or under SDE
+        shell: bash
+        run: >-
+          cargo test -p poulpy-cpu-avx --lib --profile ci
+          --features "enable-rayon" -- core_parity core_encryption
+          --test-threads=2 | tee "$RUNNER_TEMP/core-avx-guaranteed.log"
+
+      - name: Verify guaranteed AVX core contract execution
+        run: bash tools/verify_core_execution.sh poulpy-cpu-avx "$RUNNER_TEMP/core-avx-guaranteed.log"
 
   neon:
     name: NEON backend (aarch64 native)
@@ -381,11 +409,15 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$NEON_FEATURES" -- -D warnings
 
       - name: Test NEON backend
-        run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
+        shell: bash
+        run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES" | tee "$RUNNER_TEMP/core-neon.log"
+
+      - name: Verify NEON core contract execution
+        run: bash tools/verify_core_execution.sh poulpy-cpu-arm "$RUNNER_TEMP/core-neon.log"
 
   # Optional emulator validation; the required native neon job runs the full suite.
   neon_hal:
-    name: NEON HAL (manual QEMU)
+    name: NEON HAL and core (manual QEMU)
     if: github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -426,16 +458,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-
 
-      - name: Test NEON HAL operations
-        # Match the SDE HAL coverage and include constant-convolution kernel tests.
-        # Gaussian sampling belongs to core and is excluded from this HAL lane.
+      - name: Test NEON HAL and core operations
+        shell: bash
+        # Match the SDE contract coverage and include constant-convolution kernel tests.
         run: >-
           cargo test -p poulpy-cpu-arm --lib --profile ci
           --features "enable-neon,enable-rayon" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract convolution_by_const
+          raw_transform_matches_contract convolution_by_const core_parity core_encryption
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
-          --test-threads=2
+          --test-threads=2 | tee "$RUNNER_TEMP/core-neon-qemu.log"
+
+      - name: Verify emulated NEON core contract execution
+        run: bash tools/verify_core_execution.sh poulpy-cpu-arm "$RUNNER_TEMP/core-neon-qemu.log"
 
   miri:
     name: Miri (poulpy-hal unit tests)

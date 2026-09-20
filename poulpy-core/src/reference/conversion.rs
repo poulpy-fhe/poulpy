@@ -242,14 +242,15 @@ where
     assert_eq!(module.n() as u32, glwe_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let lvl_0: usize = module.glwe_bytes_of(
-        module.n().into(),
-        key_infos.base2k(),
-        lwe_infos.k().max(glwe_infos.k()),
-        1u32.into(),
-    );
-
-    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_reference(glwe_infos, glwe_infos, key_infos);
+    // Match the actual rank-one, key-radix temporary passed to keyswitching.
+    let lifted_infos = GLWELayout {
+        n: module.n().into(),
+        base2k: key_infos.base2k(),
+        k: lwe_infos.k(),
+        rank: Rank(1),
+    };
+    let lvl_0: usize = module.glwe_bytes_of_from_infos(&lifted_infos);
+    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_reference(glwe_infos, &lifted_infos, key_infos);
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
@@ -300,7 +301,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
 
     let scratch = scratch.borrow();
 
-    let (mut glwe, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
+    let (mut glwe, mut scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),
         base2k: ksk.base2k(),
         k: lwe.k(),
@@ -311,7 +312,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
 
     let n_lwe: usize = lwe.n().into();
 
-    let mut scratch_1 = if lwe.base2k() == ksk.base2k() {
+    if lwe.base2k() == ksk.base2k() {
         module.vec_znx_copy(
             &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data).window_coeffs(0, 1),
             0,
@@ -324,9 +325,8 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
             &lwe.mask,
             0,
         );
-        scratch_1
     } else {
-        let (mut a_conv, mut scratch_2) = scratch_1.take_vec_znx_scratch(module.n(), 1, lwe.size());
+        let (mut a_conv, mut scratch_2) = scratch_1.borrow().take_vec_znx_scratch(module.n(), 1, lwe.size());
         module.vec_znx_zero(&mut a_conv, 0);
         module.vec_znx_copy(&mut a_conv.to_backend_mut().window_coeffs(0, 1), 0, &lwe.body, 0);
 
@@ -356,9 +356,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
             0,
             &mut scratch_2.borrow(),
         );
-
-        scratch_2
-    };
+    }
 
     let mut res_backend = res.to_backend_mut();
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);

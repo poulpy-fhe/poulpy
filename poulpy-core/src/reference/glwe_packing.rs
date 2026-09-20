@@ -1,3 +1,10 @@
+//! GLWE coefficient packing through a binary merge tree and normalized trace.
+//!
+//! Input indices identify positions in the degree-`N` output ring. The map must
+//! be nonempty, `log_gap_out <= log2(N)`, and every index must be below `N` and
+//! divisible by `2^log_gap_out`. These conditions are checked before input or
+//! destination mutation. The input ciphertexts are consumed by valid calls.
+
 use crate::api::GLWEBytesOf;
 use std::collections::HashMap;
 
@@ -77,7 +84,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
     }
 }
 
-#[doc(hidden)]
+/// Backend override contract; opt into its portable body with the matching forwarding macro.
 pub trait GLWEPackingReference<BE: Backend> {
     fn glwe_pack_galois_elements_reference(&self) -> Vec<i64>;
 
@@ -162,7 +169,13 @@ pub mod glwe_packing_reference_impl {
         A: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        assert!(*a.keys().max().unwrap() < module.n());
+        assert!(log_gap_out <= module.log_n(), "packing log_gap_out exceeds log_n");
+        let gap = 1usize << log_gap_out;
+        assert!(!a.is_empty(), "packing requires at least one input");
+        assert!(
+            a.keys().all(|&index| index < module.n() && index % gap == 0),
+            "packing indices must be below N and divisible by 2^log_gap_out"
+        );
         // Keys may differ per rotation; the bound is read off the first one, as
         // on any path sized from a single key layout.
         let key_infos = keys

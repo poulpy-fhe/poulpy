@@ -378,7 +378,10 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
+impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE>
+where
+    Module<BE>: GLWEPolynomialEvaluation<BE>,
+{
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
         res: &mut R,
