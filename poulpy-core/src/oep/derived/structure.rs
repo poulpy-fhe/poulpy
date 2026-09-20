@@ -32,7 +32,7 @@ mod trace {
     };
 
     #[inline(always)]
-    pub fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
+    pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         (0..log_n)
             .map(|i| {
                 if i == 0 {
@@ -128,7 +128,7 @@ mod trace {
         (skip..module.log_n()).map(|i| if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) })
     }
 
-    pub fn glwe_trace_assign_tmp_bytes_derived<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
+    pub(crate) fn glwe_trace_assign_tmp_bytes_derived<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -165,15 +165,14 @@ mod trace {
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
     }
 
-    pub fn glwe_trace_galois_elements_derived<BE, M>(module: &M) -> Vec<i64>
+    pub(crate) fn glwe_trace_galois_elements_derived<M>(module: &M) -> Vec<i64>
     where
-        BE: Backend,
         M: ModuleLogN + CyclotomicOrder,
     {
         trace_galois_elements(module.log_n(), module.cyclotomic_order())
     }
 
-    pub fn glwe_trace_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    pub(crate) fn glwe_trace_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -209,7 +208,7 @@ mod trace {
         (lvl_0 + lvl_1.max(lvl_2).max(lvl_3)).max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
     }
 
-    pub fn glwe_trace_derived<BE, M, R, A, H>(
+    pub(crate) fn glwe_trace_derived<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -268,7 +267,7 @@ mod trace {
         module.glwe_copy(res, &tmp, &mut scratch_1);
     }
 
-    pub fn glwe_trace_assign_derived<BE, M, R, H>(
+    pub(crate) fn glwe_trace_assign_derived<BE, M, R, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -292,7 +291,7 @@ mod trace {
     }
 }
 
-pub use trace::{
+pub(crate) use trace::{
     glwe_trace_assign_derived, glwe_trace_assign_tmp_bytes_derived, glwe_trace_derived, glwe_trace_galois_elements_derived,
     glwe_trace_tmp_bytes_derived, trace_galois_elements,
 };
@@ -384,7 +383,7 @@ mod packing {
         }
     }
 
-    pub fn glwe_pack_galois_elements_derived<BE, M>(module: &M) -> Vec<i64>
+    pub(crate) fn glwe_pack_galois_elements_derived<BE, M>(module: &M) -> Vec<i64>
     where
         BE: Backend,
         M: GLWETrace<BE>,
@@ -392,7 +391,7 @@ mod packing {
         module.glwe_trace_galois_elements()
     }
 
-    pub fn glwe_pack_tmp_bytes_derived<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
+    pub(crate) fn glwe_pack_tmp_bytes_derived<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -418,7 +417,7 @@ mod packing {
         (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
     }
 
-    pub fn glwe_pack_derived<BE, M, R, A, H>(
+    pub(crate) fn glwe_pack_derived<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
         mut a: HashMap<usize, &mut A>,
@@ -491,4 +490,4 @@ mod packing {
     }
 }
 
-pub use packing::{glwe_pack_derived, glwe_pack_galois_elements_derived, glwe_pack_tmp_bytes_derived};
+pub(crate) use packing::{glwe_pack_derived, glwe_pack_galois_elements_derived, glwe_pack_tmp_bytes_derived};

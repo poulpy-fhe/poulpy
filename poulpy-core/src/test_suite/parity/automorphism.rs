@@ -35,7 +35,7 @@ where
     key
 }
 
-/// `glwe_automorphism` agrees with the reference backend byte-for-byte.
+/// `glwe_automorphism` agrees with the selected comparison backend byte-for-byte.
 pub fn test_glwe_automorphism_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,

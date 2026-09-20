@@ -22,7 +22,7 @@ use poulpy_hal::{
 };
 
 /// Reconstruct a mask using the backend's source-driven mask sampler.
-pub fn fill_glwe_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
+pub(crate) fn fill_glwe_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
     module: &Module<BE>,
     base2k: usize,
     res: &mut R,
@@ -34,7 +34,7 @@ pub fn fill_glwe_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<
 }
 
 /// Reconstruct an LWE mask using the backend's source-driven mask sampler.
-pub fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE>>(
+pub(crate) fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE>>(
     module: &Module<BE>,
     base2k: usize,
     res: &mut R,
@@ -43,7 +43,7 @@ pub fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE
     BE::fill_lwe_mask_from_source(module, base2k, res, &mut Source::new(seed_xa));
 }
 
-pub fn glwe_public_key_generate_derived<BE, R, S, E>(
+pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -77,7 +77,7 @@ pub fn glwe_public_key_generate_derived<BE, R, S, E>(
     *res.dist_mut() = *sk.dist();
 }
 
-pub fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     Module<BE>: GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
     BE: EncryptionImpl,
@@ -97,7 +97,7 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
 }
 
-pub fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
+pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -142,7 +142,7 @@ pub fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
     );
 }
 
-pub fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     Module<BE>: GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
     BE: EncryptionImpl,
@@ -162,7 +162,7 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
 }
 
-pub fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
+pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,

@@ -12,7 +12,12 @@ mod gglwe {
         },
     };
 
-    pub fn gglwe_external_product_tmp_bytes_derived<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    pub(crate) fn gglwe_external_product_tmp_bytes_derived<BE, M, R, A, B>(
+        module: &M,
+        res_infos: &R,
+        a_infos: &A,
+        b_infos: &B,
+    ) -> usize
     where
         BE: Backend,
         M: GLWEExternalProduct<BE>,
@@ -23,7 +28,7 @@ mod gglwe {
         module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
     }
 
-    pub fn gglwe_external_product_derived<BE, M, R, A>(
+    pub(crate) fn gglwe_external_product_derived<BE, M, R, A>(
         module: &M,
         res: &mut R,
         a: &A,
@@ -90,7 +95,7 @@ mod gglwe {
         }
     }
 
-    pub fn gglwe_external_product_assign_derived<BE, M, R>(
+    pub(crate) fn gglwe_external_product_assign_derived<BE, M, R>(
         module: &M,
         res: &mut R,
         a: &GGSWPreparedBackendRef<'_, BE>,
@@ -125,7 +130,7 @@ mod gglwe {
         }
     }
 }
-pub use gglwe::*;
+pub(crate) use gglwe::*;
 
 mod ggsw {
     use crate::api::GLWEZero;
@@ -143,7 +148,12 @@ mod ggsw {
         },
     };
 
-    pub fn ggsw_external_product_tmp_bytes_derived<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    pub(crate) fn ggsw_external_product_tmp_bytes_derived<BE, M, R, A, B>(
+        module: &M,
+        res_infos: &R,
+        a_infos: &A,
+        b_infos: &B,
+    ) -> usize
     where
         BE: Backend,
         M: GLWEExternalProduct<BE>,
@@ -154,7 +164,7 @@ mod ggsw {
         module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
     }
 
-    pub fn ggsw_external_product_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_external_product_derived<BE, M, R, A>(
         module: &M,
         res: &mut R,
         a: &A,
@@ -196,7 +206,7 @@ mod ggsw {
         }
     }
 
-    pub fn ggsw_external_product_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_external_product_assign_derived<BE, M, R>(
         module: &M,
         res: &mut R,
         a: &GGSWPreparedBackendRef<'_, BE>,
@@ -225,4 +235,4 @@ mod ggsw {
         }
     }
 }
-pub use ggsw::*;
+pub(crate) use ggsw::*;

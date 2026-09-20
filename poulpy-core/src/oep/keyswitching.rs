@@ -135,11 +135,11 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 ///
 /// Two properties are load-bearing:
 ///
-/// - `di == 0` runs at **full** width and is the overwriting pass. On CPU it is
-///   also what zeroes the limbs the accumulating digits add into, so the digits
-///   cannot be walked in reverse to widen the first pass. An implementation that
-///   writes each output limb exactly once needs no zeroing but must still match
-///   the arithmetic.
+/// - `di == 0` runs at **full** width and is the overwriting pass. The reference
+///   algorithm initializes the output before subsequent digits accumulate into
+///   it, so reversing the digit order requires a different initialization step.
+///   An implementation that writes each output limb exactly once needs no
+///   zeroing but must still match the arithmetic.
 /// - `product_limbs` is the two-limb elementary product plus the coefficient
 ///   accumulation growth. Pass `di` consumes `a`'s limbs at offset
 ///   `dsize - di - 1`; the product spill reaches further down according to the
@@ -147,7 +147,7 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 ///   shapes but truncates live limbs once the accumulation needs a third or
 ///   fourth limb.
 ///
-/// Assert parity against a reference backend, not only the noise bound.
+/// Validate with parity against a caller-selected comparison backend as well as the noise bound.
 pub unsafe trait GLWEKeyswitchImpl: Backend {
     fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

@@ -85,7 +85,7 @@ fn poison_compressed_ggsw<B: Backend, G: GGSWCompressedToBackendMut<B>>(value: &
 }
 
 /// Covers gadget encryption and every evaluation-key encryption method, including
-/// compressed forms. The reference backend replays the tested backend's realized
+/// compressed forms. The caller-selected pair receives identical realised
 /// samples, while all preparation and arithmetic execute independently.
 pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionParityBackend>(
     params: &TestParams,

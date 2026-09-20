@@ -91,7 +91,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
     ///   into scratch instead of from a materialized
     ///   `LinearTransformation<PreparedDiagonal>` — lower peak memory, higher
-    ///   compute, for memory-bound backends (e.g. GPU).
+    ///   compute, for implementations constrained by memory bandwidth.
     ///
     /// Both paths share this single evaluator and give the same result. `lhs` may
     /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby

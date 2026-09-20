@@ -19,7 +19,7 @@ backend code. Core uses the same distinction as HAL:
 | `GLWERotate` | Public rotation API on `Module<BE>`. |
 | `GLWERotateImpl` | Backend hook, implemented directly for `BE`. |
 | `GLWERotateReference` | Reusable rotation algorithm built from HAL operations. |
-| `oep::derived` | Defaults built from other core operations, preserving their backend dispatch. |
+| `oep::derived` | Crate-private defaults built from other core operations, preserving their backend dispatch. |
 
 For example, rotating each GLWE polynomial with HAL's rotation operation is a
 **reference** implementation. Rotating a GGSW by calling core GLWE rotation on
@@ -40,12 +40,11 @@ poulpy_core::impl_glwe_rotate_reference_full!(MyBackend);
 This macro implements `GLWERotateImpl` for `MyBackend`. To replace one method,
 write that implementation yourself and forward unchanged methods to
 `GLWERotateReference`. The reference methods remain callable directly.
-The [compiled example](../../poulpy-cpu-ref/src/tests/delegating_backend.rs)
-checks both reference forwarding and dispatch through custom backend methods.
 
 Derived methods have default bodies on their `*Impl` traits. A backend can
 inherit those defaults or override them, including their scratch queries.
-A directly called helper checks its own budget; nested operations use their
+The derived helpers themselves are crate-private.
+A directly called reference helper checks its own budget; nested operations use their
 selected backend queries. An override can therefore reserve private workspace
 and pass the remaining arena to a helper.
 Trace, packing, gadget row operations and encryption wrappers reuse core
@@ -75,7 +74,7 @@ columns, storage and metadata that the operation says it leaves untouched.
 A `*_tmp_bytes` query must return enough scratch for the matching operation and
 input layouts. Scratch may contain arbitrary bytes on entry. For example, if a
 backend reports 1,024 bytes, its test must run with that budget even if the
-reference backend reports 4,096 bytes. Giving both implementations 4,096 bytes
+comparison backend reports 4,096 bytes. Giving both implementations 4,096 bytes
 would hide an underestimate.
 
 Prepared keys and transformed buffers can have different layouts across
@@ -94,7 +93,7 @@ are rejected at compile time.
 
 Select the comparison backend with `backend_ref` and the backend under test
 with `backend_test` in `core_parity_test_suite!` or
-`core_encryption_parity_test_suite!`. Neither suite is tied to `poulpy-cpu-ref`.
+`core_encryption_parity_test_suite!`.
 A validated backend can bootstrap another: parity is transitive for the
 operations and parameter ranges covered by the tests.
 
@@ -104,17 +103,14 @@ random streams can be compared directly; otherwise use the optional
 
 ## Running the tests
 
-Run the portable core parity and encryption suites with the pinned toolchain:
+The shared suites are generic over their backend types. Register and run them
+in the crate that supplies those implementations, with its supported parameters.
+
+Run core's own unit tests with:
 
 ```sh
-cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-core -- \
-  core_parity core_encryption --test-threads=2
+cargo test -p poulpy-core
 ```
-
-Backend crates register these suites for portable FFT/NTT, AVX, AVX-512/IFMA,
-NEON and supported Rayon variants. CI runs them on native CPUs or under Intel
-SDE, with an additional optional NEON run under QEMU. New operations need tests
-and registrations for each supported backend.
 
 Check public documentation with:
 

@@ -11,17 +11,12 @@ crates own the feature flags that wire concrete implementations into that API.
 cargo test -p poulpy-core
 ```
 
-The backend conformance tests are instantiated by backend crates. To run the
-portable reference backend core suite:
-
-```sh
-cargo test -p poulpy-cpu-ref --features enable-core
-```
+The backend conformance tests are instantiated and run by the crates that
+provide the implementations.
 
 `poulpy-core` is backend-agnostic. Backend crates provide the `BE` used by
 `poulpy_hal::layouts::Module<BE>` and select reference implementations or derived defaults
-one operation family at a time. The public traits live in `poulpy_core::api`;
-`poulpy-cpu-ref/examples/core_encryption.rs` is a runnable example.
+one operation family at a time. The public traits live in `poulpy_core::api`.
 
 ## Crate organization
 
@@ -45,11 +40,11 @@ GGSW rotation is derived from GLWE rotation on each row, so it uses the backend'
 selected GLWE rotation.
 
 Backends implement `*Impl` traits directly. Family macros can supply the
-reference methods; derived methods already have default bodies. Reusing a
+reference methods; derived methods already have default bodies. Derived helpers
+are crate-private and are selected through those defaults. Reusing a
 reference helper does not automatically select it for public dispatch. A backend
 can replace one method and forward its companions to the reference helper.
-See the [OEP rustdoc](src/oep/mod.rs), [backend guide](docs/core-contracts.md), and
-[compiled override example](../poulpy-cpu-ref/src/tests/delegating_backend.rs).
+See the [OEP rustdoc](src/oep/mod.rs) and [backend guide](docs/core-contracts.md).
 
 Backend-specific fusion and representations belong in backend crates. Some
 reference digit-product/external-product bodies require
@@ -160,8 +155,8 @@ Concrete backend crates instantiate the noise/sampling suite through
 `core_encryption_parity_test_suite!`. Both parity macros accept explicit
 `backend_ref` and `backend_test` types. Core also supplies optional
 [controlled-sampling support](src/test_suite/parity/controlled_sampling.rs) for
-comparisons between backends with different random streams. The CPU reference
-crate provides one sampling adapter; core has no concrete backend dependencies.
+comparisons between backends with different random streams. Callers supply any
+sampling adapters needed by their selected pair.
 The [backend guide](docs/core-contracts.md) describes the implementation and
 testing requirements.
 
@@ -169,5 +164,4 @@ Useful commands:
 
 ```sh
 cargo test -p poulpy-core
-cargo test -p poulpy-cpu-ref --features enable-core
 ```

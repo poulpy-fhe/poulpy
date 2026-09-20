@@ -12,7 +12,7 @@ use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, ScratchArena},
 };
-pub fn ggsw_from_gglwe_tmp_bytes_derived<BE, M, R, A, T>(module: &M, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
+pub(crate) fn ggsw_from_gglwe_tmp_bytes_derived<BE, M, R, A, T>(module: &M, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
 where
     BE: Backend,
     M: GGSWExpandRows<BE> + GLWECopy<BE>,
@@ -25,7 +25,7 @@ where
         .max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
 }
 
-pub fn ggsw_from_gglwe_derived<BE, M, R, A>(
+pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -62,7 +62,7 @@ pub fn ggsw_from_gglwe_derived<BE, M, R, A>(
     module.ggsw_expand_row(&mut res_backend, tsk, scratch)
 }
 
-pub fn lwe_from_glwe_tmp_bytes_derived<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
+pub(crate) fn lwe_from_glwe_tmp_bytes_derived<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + GLWERotate<BE>,
@@ -87,7 +87,7 @@ where
     BE::scratch_aligned(lvl_0) + lvl_1.max(lvl_2)
 }
 
-pub fn lwe_from_glwe_derived<BE, M, R, A>(
+pub(crate) fn lwe_from_glwe_derived<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,

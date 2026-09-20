@@ -5,10 +5,10 @@
 //! of the hardware-abstraction layer provided by [`poulpy_hal`].
 //! The public operation traits live in [`api`], while their blanket
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
-//! backend extension points in [`oep`]. This makes the crate portable
-//! across CPU, AVX, and future backends. [`reference`](mod@crate::reference)
-//! contains reusable algorithms built from HAL operations. [`oep::derived`]
-//! contains defaults built from other core operations, preserving their backend
+//! backend extension points in [`oep`]. The crate depends only on generic
+//! backend contracts. [`reference`](mod@crate::reference) contains reusable
+//! algorithms built from HAL operations. Crate-private derived helpers
+//! contain defaults built from other core operations, preserving their backend
 //! dispatch. Backends explicitly implement `*Impl` traits to select or replace
 //! these algorithms. Parity tests compare integer results and metadata between
 //! caller-selected backends, so an already validated backend can bootstrap another.

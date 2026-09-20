@@ -5,11 +5,11 @@ use crate::layouts::{
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
-pub fn ggsw_rotate_tmp_bytes_derived<BE: crate::oep::GLWERotateImpl>(module: &Module<BE>) -> usize {
+pub(crate) fn ggsw_rotate_tmp_bytes_derived<BE: crate::oep::GLWERotateImpl>(module: &Module<BE>) -> usize {
     BE::glwe_rotate_tmp_bytes(module)
 }
 
-pub fn ggsw_rotate_derived<BE: crate::oep::GLWERotateImpl, R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
+pub(crate) fn ggsw_rotate_derived<BE: crate::oep::GLWERotateImpl, R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
 where
     R: crate::layouts::GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
@@ -29,7 +29,7 @@ where
     }
 }
 
-pub fn ggsw_rotate_assign_derived<BE: crate::oep::GLWERotateImpl, R>(
+pub(crate) fn ggsw_rotate_assign_derived<BE: crate::oep::GLWERotateImpl, R>(
     module: &Module<BE>,
     k: i64,
     res: &mut R,
@@ -59,7 +59,7 @@ pub fn ggsw_rotate_assign_derived<BE: crate::oep::GLWERotateImpl, R>(
 
 /// `res = a - res`, with a rank-zero operand affecting the body only.
 /// The old ciphertext's mask is negated as part of negating the whole GLWE.
-pub fn glwe_sub_negate_assign_derived<BE, R, A>(module: &Module<BE>, res: &mut R, a: &A)
+pub(crate) fn glwe_sub_negate_assign_derived<BE, R, A>(module: &Module<BE>, res: &mut R, a: &A)
 where
     BE: crate::oep::GLWESubImpl,
     R: GLWEToBackendMut<BE>,
@@ -78,7 +78,7 @@ where
 }
 
 /// `res = (X^k - 1) * a`, preserving raw limbs and destination metadata.
-pub fn glwe_mul_xp_minus_one_derived<BE, R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
+pub(crate) fn glwe_mul_xp_minus_one_derived<BE, R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
 where
     BE: crate::oep::GLWEMulXpMinusOneImpl,
     R: GLWEToBackendMut<BE>,

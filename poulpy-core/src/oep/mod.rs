@@ -8,7 +8,7 @@
 //!
 //! - [`crate::reference`] contains algorithms built from HAL operations. Its
 //!   `*Reference` methods and free functions remain independently callable.
-//! - [`derived`] contains compositions of core operations. Their default bodies
+//! - Crate-private derived helpers compose core operations. Their default bodies
 //!   on `*Impl` traits preserve dispatch through the selected backend methods.
 //!   A backend may override a derived body and its scratch query together.
 //!
@@ -29,8 +29,6 @@
 //! required methods to reference helpers and inherit the derived defaults you
 //! want. Omit the corresponding family macro to avoid defining the trait twice.
 //! Satisfying a reference helper's HAL bounds alone never selects a backend hook.
-//! The compiled `poulpy-cpu-ref` example in `src/tests/delegating_backend.rs`
-//! exercises reference forwarding and public dispatch through backend overrides.
 //!
 //! # Layout requirements
 //!
@@ -58,7 +56,7 @@
 mod automorphism;
 mod conversion;
 mod decryption;
-pub mod derived;
+pub(crate) mod derived;
 mod encryption;
 mod external_product;
 mod keyswitching;

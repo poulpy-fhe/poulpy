@@ -160,7 +160,7 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
     }
 }
 
-/// `glwe_keyswitch` agrees with the reference backend byte-for-byte.
+/// `glwe_keyswitch` agrees with the selected comparison backend byte-for-byte.
 ///
 /// Sweeps `dsize` and both ranks, so every branch of the digit loop is compared:
 /// the `dsize == 1` short circuit, the `di == 0` overwriting pass, and the
@@ -242,7 +242,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     }
 }
 
-/// `glwe_keyswitch_assign` agrees with the reference backend byte-for-byte.
+/// `glwe_keyswitch_assign` agrees with the selected comparison backend byte-for-byte.
 pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -304,7 +304,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     }
 }
 
-/// `gglwe_keyswitch` agrees with the reference backend byte-for-byte.
+/// `gglwe_keyswitch` agrees with the selected comparison backend byte-for-byte.
 pub fn test_gglwe_keyswitch_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,

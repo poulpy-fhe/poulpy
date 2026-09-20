@@ -10,7 +10,12 @@ mod gglwe {
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     };
 
-    pub fn gglwe_keyswitch_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    pub(crate) fn gglwe_keyswitch_tmp_bytes_derived<BE, M, R, A, K>(
+        module: &M,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &K,
+    ) -> usize
     where
         BE: Backend,
         M: GLWEKeyswitch<BE>,
@@ -21,7 +26,7 @@ mod gglwe {
         module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
     }
 
-    pub fn gglwe_keyswitch_derived<BE, M, R, A>(
+    pub(crate) fn gglwe_keyswitch_derived<BE, M, R, A>(
         module: &M,
         res: &mut R,
         a: &A,
@@ -76,7 +81,7 @@ mod gglwe {
         }
     }
 
-    pub fn gglwe_keyswitch_assign_derived<BE, M, R>(
+    pub(crate) fn gglwe_keyswitch_assign_derived<BE, M, R>(
         module: &M,
         res: &mut R,
         a: &GGLWEPreparedBackendRef<'_, BE>,
@@ -110,7 +115,7 @@ mod gglwe {
         }
     }
 }
-pub use gglwe::*;
+pub(crate) use gglwe::*;
 
 mod ggsw {
     use crate::api::GLWEKeyswitch;
@@ -128,7 +133,7 @@ mod ggsw {
         },
     };
 
-    pub fn ggsw_keyswitch_tmp_bytes_derived<BE, M, R, A, K, T>(
+    pub(crate) fn ggsw_keyswitch_tmp_bytes_derived<BE, M, R, A, K, T>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -157,7 +162,7 @@ mod ggsw {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn ggsw_keyswitch_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_keyswitch_derived<BE, M, R, A>(
         module: &M,
         res: &mut R,
         a: &A,
@@ -193,7 +198,7 @@ mod ggsw {
         module.ggsw_expand_row(&mut res_backend, tsk, scratch)
     }
 
-    pub fn ggsw_keyswitch_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_keyswitch_assign_derived<BE, M, R>(
         module: &M,
         res: &mut R,
         key: &GGLWEPreparedBackendRef<'_, BE>,
@@ -222,4 +227,4 @@ mod ggsw {
         module.ggsw_expand_row(&mut res_backend, tsk, scratch)
     }
 }
-pub use ggsw::*;
+pub(crate) use ggsw::*;

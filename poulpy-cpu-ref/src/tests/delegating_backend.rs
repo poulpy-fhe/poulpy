@@ -1,17 +1,11 @@
 use poulpy_core::{
-    api::{GGSWRotate, GLWEAdd, GLWEMulXpMinusOne, GLWERotate, GLWETrace},
+    api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE, GLWEAutomorphismKeyLayout,
         GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank,
         SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
-    oep::{
-        GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl,
-        derived::{
-            operations::ggsw_rotate_assign_derived,
-            structure::{glwe_trace_assign_derived, glwe_trace_assign_tmp_bytes_derived},
-        },
-    },
+    oep::{GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl},
     reference::operations::{GLWEAddReference, GLWERotateReference},
 };
 use poulpy_hal::AlignedBuf;
@@ -159,7 +153,12 @@ unsafe impl GGSWRotateImpl for DelegatingFFT64Ref {
         R: GGSWToBackendMut<Self> + GGSWInfos,
     {
         GGSW_ASSIGN_CALLS.set(GGSW_ASSIGN_CALLS.get() + 1);
-        ggsw_rotate_assign_derived::<Self, _>(module, k, res, scratch);
+        let mut res = res.to_backend_mut();
+        for row in 0..res.dnum().as_usize() {
+            for col in 0..res.rank().as_usize() + 1 {
+                module.glwe_rotate_assign(k, &mut res.at_view_mut(row, col), &mut scratch.borrow());
+            }
+        }
     }
 }
 
@@ -171,9 +170,20 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Ref {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        Self::scratch_aligned(glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(
-            module, a_infos, key_infos,
-        )) + TRACE_EXTRA_SCRATCH
+        let layout = GLWELayout {
+            n: a_infos.n(),
+            base2k: key_infos.base2k(),
+            k: a_infos.k(),
+            rank: a_infos.rank(),
+        };
+        let mut bytes = module
+            .glwe_shift_tmp_bytes(layout.size())
+            .max(module.glwe_automorphism_tmp_bytes(&layout, &layout, key_infos));
+        if a_infos.base2k() != key_infos.base2k() {
+            // This test override allocates conversion storage on the heap.
+            bytes = bytes.max(module.glwe_normalize_tmp_bytes());
+        }
+        Self::scratch_aligned(bytes) + TRACE_EXTRA_SCRATCH
     }
 
     fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
@@ -184,7 +194,37 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Ref {
         TRACE_ASSIGN_CALLS.set(TRACE_ASSIGN_CALLS.get() + 1);
         let (marker, mut remaining) = scratch.borrow().take_region(TRACE_EXTRA_SCRATCH);
         marker.fill(0xB7);
-        glwe_trace_assign_derived::<Self, _, _, _>(module, res, skip, keys, &mut remaining);
+        let rotations = module.glwe_trace_galois_elements();
+        assert!(skip <= rotations.len());
+        if let Some(&first) = rotations.get(skip) {
+            let key = keys.get_automorphism_key(first, res.k()).unwrap();
+            let mut converted = (res.base2k() != key.base2k()).then(|| {
+                module.glwe_alloc_from_infos(&GLWELayout {
+                    n: res.n(),
+                    base2k: key.base2k(),
+                    k: res.k(),
+                    rank: res.rank(),
+                })
+            });
+            if let Some(converted) = &mut converted {
+                module.glwe_normalize(converted, res, &mut remaining.borrow());
+            }
+            {
+                let mut work = match &mut converted {
+                    Some(converted) => GLWEToBackendMut::<Self>::to_backend_mut(converted),
+                    None => res.to_backend_mut(),
+                };
+                let mut work = &mut work;
+                for &p in &rotations[skip..] {
+                    module.glwe_rsh(1, &mut work, &mut remaining.borrow());
+                    let key = keys.get_automorphism_key(p, work.k()).unwrap();
+                    module.glwe_automorphism_add_assign(&mut work, &key, &mut remaining.borrow());
+                }
+            }
+            if let Some(converted) = &converted {
+                module.glwe_normalize(res, converted, &mut remaining.borrow());
+            }
+        }
         assert!(marker.iter().all(|&byte| byte == 0xB7));
     }
 }

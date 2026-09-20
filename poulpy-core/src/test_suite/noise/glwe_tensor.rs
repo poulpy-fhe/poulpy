@@ -24,14 +24,9 @@ use crate::{
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
 /// tensoring noise, in bits.
 ///
-/// The model is an upper estimate but the realised noise depends on the secret
-/// draw far more than the sampled variance alone would suggest: over 32 secret
-/// seeds x 32 convolution offsets x ranks 1..3, `noise_have - noise_want` had
-/// mean -0.5 / standard deviation 0.3 and peaked at +1.1 on the FFT64 reference
-/// backend (`n = 256`, `base2k = 17`), and mean -0.1 / standard deviation 0.7
-/// peaking at +1.9 on the NTT4x30 one (`base2k = 52`). Two bits keeps every
-/// measured draw inside the bound while still catching a noise regression of
-/// 4x or more.
+/// Realised noise varies with the secret draw. This test allows a factor of
+/// four above the model's estimated standard deviation (two bits on the log2
+/// scale). The same margin applies to every implementation under test.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
 
 pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
@@ -815,9 +810,8 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
     let rank: usize = 1;
     let n: usize = module.n();
 
-    // Keep both radices inside the envelope selected by each backend suite. In
-    // particular, FFT64's configured radix is 17; the old hard-coded radix 30
-    // overflowed its i64 BIG accumulator before exercising this regression.
+    // Keep both radices inside the envelope selected by the caller. A fixed
+    // radix could exceed the accumulator range before exercising this regression.
     let hi: usize = params.base2k;
     let lo: usize = hi.checked_sub(1).expect("cross-radix test requires base2k >= 2");
 

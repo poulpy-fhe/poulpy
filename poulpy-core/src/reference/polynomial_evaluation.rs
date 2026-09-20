@@ -1,7 +1,7 @@
 //! Arithmetic policy and HAL bounds for polynomial evaluation.
 //!
-//! The derived schedule in [`crate::oep::derived::polynomial_evaluation`] owns the
-//! combinatorial structure of the evaluation. It has no concept of scale: every
+//! The crate-private derived schedule owns the combinatorial structure of the
+//! evaluation. It has no concept of scale: every
 //! arithmetic operation (the `ct×pt` baby-step terms, the hoisted `ct×ct`
 //! giant-step multiply, the `ct+ct` add, the accumulator seed and the final
 //! copy) is supplied by the scheme through [`BSGSOps`], which owns all precision

@@ -91,7 +91,7 @@ where
 /// [`glwe_accumulate_prepared_baby_steps_dft`] except each diagonal is prepared
 /// (`cnv_prepare_right`) on the fly into a single reused scratch `CnvPVecR` and
 /// discarded immediately, so the full prepared RHS is never materialized. Trades
-/// per-eval recompute for memory — for memory-bound backends (e.g. GPU). The
+/// per-eval recompute for memory when memory bandwidth is the limiting factor. The
 /// baby loop is the outer one so each diagonal is prepared exactly once per eval.
 pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     module: &M,

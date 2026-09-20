@@ -128,7 +128,7 @@ fn compare<BR, BT, FR, FT>(
     }
 }
 
-/// `glwe_add_into` agrees with the reference backend.
+/// `glwe_add_into` agrees with the selected comparison backend.
 pub fn test_glwe_add_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: ParityBackend,
@@ -163,7 +163,7 @@ where
     );
 }
 
-/// `glwe_sub` agrees with the reference backend.
+/// `glwe_sub` agrees with the selected comparison backend.
 pub fn test_glwe_sub_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: ParityBackend,
@@ -254,7 +254,7 @@ where
     }
 }
 
-/// `glwe_negate` agrees with the reference backend.
+/// `glwe_negate` agrees with the selected comparison backend.
 pub fn test_glwe_negate_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -293,7 +293,7 @@ pub fn test_glwe_negate_parity<BR, BT>(
     );
 }
 
-/// `glwe_normalize` agrees with the reference backend.
+/// `glwe_normalize` agrees with the selected comparison backend.
 ///
 /// The one keyless operation that carries limb-carry logic, so the one most
 /// worth comparing byte-for-byte.
@@ -336,7 +336,7 @@ pub fn test_glwe_normalize_parity<BR, BT>(
     );
 }
 
-/// `glwe_rotate` agrees with the reference backend.
+/// `glwe_rotate` agrees with the selected comparison backend.
 pub fn test_glwe_rotate_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -379,7 +379,7 @@ pub fn test_glwe_rotate_parity<BR, BT>(
     }
 }
 
-/// Checks tensor apply and square across ranks against the reference backend,
+/// Checks tensor apply and square across ranks against the selected comparison backend,
 /// including specializations selected by rank and ring degree.
 pub fn test_glwe_tensor_parity<BR, BT>(
     params: &TestParams,

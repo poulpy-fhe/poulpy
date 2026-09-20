@@ -25,7 +25,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-avx
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-avx/enable-avx
@@ -34,8 +33,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-avx
-    poulpy-core/enable-ifma
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-avx/enable-avx
@@ -47,7 +44,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-neon
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-arm/enable-ckks

@@ -148,11 +148,10 @@ where
 /// `shapes` is optional and defaults to the full sweep.
 ///
 /// The two modules are `Lazy` statics shared by every test in the generated
-/// module, and the test harness runs those tests in parallel. Sharing is fine
-/// for the in-tree backends, whose modules are read-only handles, and is what
-/// keeps setup off the per-test path. A backend whose module carries mutable
-/// state (a device stream or context, say) must make that state `Sync`, or
-/// declare one suite per test.
+/// module, and the test harness runs those tests in parallel. Their types must
+/// be `Sync`, and the backend must support concurrent use of each module.
+/// A backend that needs separate module state per test can call the test
+/// helpers directly with locally constructed modules.
 #[macro_export]
 macro_rules! core_parity_test_suite {
     (

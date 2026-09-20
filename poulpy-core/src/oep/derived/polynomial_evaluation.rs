@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// computes the parity schedule, seeds the accumulator from the *highest* power
 /// (the lowest-budget operand, so every term writes at the final result width)
 /// and sequences the terms.
-pub fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A>(
+pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut V,
@@ -73,7 +73,7 @@ where
 /// level via [`BSGSOps::prepare_right`] and reused across the level's
 /// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
 /// delegated to the scheme.
-pub fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Ops>(
+pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Ops>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut R,

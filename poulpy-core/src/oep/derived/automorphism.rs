@@ -11,7 +11,7 @@ mod ggsw {
         },
     };
 
-    pub fn ggsw_automorphism_tmp_bytes_derived<BE, M, R, A, K, T>(
+    pub(crate) fn ggsw_automorphism_tmp_bytes_derived<BE, M, R, A, K, T>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -32,7 +32,7 @@ mod ggsw {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn ggsw_automorphism_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_automorphism_derived<BE, M, R, A>(
         module: &M,
         res: &mut R,
         a: &A,
@@ -58,7 +58,7 @@ mod ggsw {
         module.ggsw_expand_row(&mut res.to_backend_mut(), tsk, scratch);
     }
 
-    pub fn ggsw_automorphism_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_automorphism_assign_derived<BE, M, R>(
         module: &M,
         res: &mut R,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
@@ -80,4 +80,4 @@ mod ggsw {
         module.ggsw_expand_row(&mut res.to_backend_mut(), tsk, scratch);
     }
 }
-pub use ggsw::*;
+pub(crate) use ggsw::*;

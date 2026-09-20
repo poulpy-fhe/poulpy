@@ -68,8 +68,8 @@ public API → delegates → backend *Impl
 
 The reference HAL kernels live in `poulpy-cpu-ref`. Core algorithms built from
 HAL operations live in `poulpy-core::reference`. Compositions of other core
-operations live in `poulpy-core::oep::derived` and inherit the selected backend
-implementations of their component operations.
+operations live in core's private `oep::derived` module and inherit the selected
+backend implementations of their component operations.
 
 ### Overriding at Any Level
 
@@ -99,7 +99,10 @@ validate its implementations with the shared conformance tests. The
 [core backend guide](poulpy-core/docs/core-contracts.md) explains reference
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
-See `poulpy-cpu-ref` for the reference implementation of all four steps.
+See `poulpy-cpu-ref` for the reference implementation of all four steps. Its
+[compiled override example](poulpy-cpu-ref/src/tests/delegating_backend.rs)
+checks reference forwarding and dispatch through custom core methods; the
+[encryption example](poulpy-cpu-ref/examples/core_encryption.rs) shows public API use.
 
 ### Testing a Backend
 
@@ -127,6 +130,17 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | Core parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
 
 The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
+
+Backend crates register the core suites for portable FFT/NTT, AVX,
+AVX-512/IFMA, NEON and supported Rayon variants. CI runs them on native CPUs or
+under Intel SDE, with an additional optional NEON run under QEMU.
+
+Run the portable core parity and encryption suites with:
+
+```sh
+cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-core -- \
+  core_parity core_encryption --test-threads=2
+```
 
 ## Bivariate Polynomial Representation
 

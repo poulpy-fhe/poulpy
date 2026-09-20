@@ -20,7 +20,7 @@ use crate::{
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
 };
 
-/// `glwe_external_product` agrees with the reference backend byte-for-byte.
+/// `glwe_external_product` agrees with the selected comparison backend byte-for-byte.
 pub fn test_glwe_external_product_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,

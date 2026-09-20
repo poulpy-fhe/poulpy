@@ -2,8 +2,8 @@
 //!
 //! The `*Reference` methods and free functions in this module are reusable
 //! implementations. Backend `*Impl` traits explicitly select them for public
-//! dispatch. Compositions of other core operations live in
-//! [`crate::oep::derived`] and provide defaults on those backend traits.
+//! dispatch. Crate-private compositions of other core operations provide
+//! defaults on those backend traits.
 //!
 //! Overrides must implement the same circuit. Parity tests use a caller-selected
 //! validated backend and compare integer results and metadata on identical
