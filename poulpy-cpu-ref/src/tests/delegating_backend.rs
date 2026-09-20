@@ -6,7 +6,7 @@ use poulpy_core::{
         SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
     oep::{
-        GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl,
+        GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl,
         derived::{
             operations::ggsw_rotate_assign_derived,
             structure::{glwe_trace_assign_derived, glwe_trace_assign_tmp_bytes_derived},
@@ -17,7 +17,9 @@ use poulpy_core::{
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, FillUniform, Module, ScratchArena, ScratchOwned},
+    layouts::{
+        Backend, FillUniform, Module, ScratchArena, ScratchOwned, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+    },
     source::Source,
 };
 
@@ -30,10 +32,13 @@ thread_local! {
     static ADD_IMPL_CALLS: Cell<usize> = const { Cell::new(0) };
     static GGSW_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
     static TRACE_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
+    static DIGIT_PRODUCT_CALLS: Cell<usize> = const { Cell::new(0) };
+    static DIGIT_PRODUCT_QUERY_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
 const ROTATE_EXTRA_SCRATCH: usize = 512;
 const TRACE_EXTRA_SCRATCH: usize = 4096;
+const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 
 // The backend can use reference helpers while overriding its public dispatch.
 unsafe impl GLWERotateImpl for DelegatingFFT64Ref {
@@ -91,7 +96,59 @@ poulpy_core::impl_glwe_copy_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_normalize_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Ref);
-poulpy_core::impl_gglwe_product_digits_strided_reference!(DelegatingFFT64Ref);
+// The pairwise suite must use a selected comparison backend's implementation
+// and its own scratch query, even when that backend delegates its arithmetic.
+unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Ref {
+    fn gglwe_product_digits_strided_tmp_bytes(
+        module: &Module<Self>,
+        res_size: usize,
+        a_cols: usize,
+        a_size: usize,
+        dsize: usize,
+        pmat_rows: usize,
+        pmat_cols_in: usize,
+        pmat_cols_out: usize,
+        pmat_size: usize,
+    ) -> usize {
+        DIGIT_PRODUCT_QUERY_CALLS.set(DIGIT_PRODUCT_QUERY_CALLS.get() + 1);
+        DIGIT_PRODUCT_EXTRA_SCRATCH
+            + poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
+                module,
+                res_size,
+                a_cols,
+                a_size,
+                dsize,
+                pmat_rows,
+                pmat_cols_in,
+                pmat_cols_out,
+                pmat_size,
+            )
+    }
+
+    fn gglwe_product_digits_strided(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        dsize: usize,
+        product_limbs: usize,
+        pmat: &VmpPMatBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        DIGIT_PRODUCT_CALLS.set(DIGIT_PRODUCT_CALLS.get() + 1);
+        let (marker, mut remaining) = scratch.borrow().take_region(DIGIT_PRODUCT_EXTRA_SCRATCH);
+        marker.fill(0x39);
+        poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
+            module,
+            res,
+            a,
+            dsize,
+            product_limbs,
+            pmat,
+            &mut remaining,
+        );
+        assert!(marker.iter().all(|&byte| byte == 0x39));
+    }
+}
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_automorphism_reference_full!(DelegatingFFT64Ref);
 
@@ -339,4 +396,24 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     assert_eq!(actual, expected);
     assert_eq!(input, saved_input);
     assert_eq!(key, saved_key);
+}
+
+#[test]
+fn core_parity_dispatches_comparison_backend_override_and_scratch() {
+    let comparison = Module::<DelegatingFFT64Ref>::new(64);
+    let tested = Module::<FFT64Ref>::new(64);
+    let calls = DIGIT_PRODUCT_CALLS.get();
+    let queries = DIGIT_PRODUCT_QUERY_CALLS.get();
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity(
+        &poulpy_hal::test_suite::TestParams {
+            size: 64,
+            n: 64,
+            base2k: 12,
+        },
+        &poulpy_core::test_suite::parity::ParityShapes::default(),
+        &comparison,
+        &tested,
+    );
+    assert!(DIGIT_PRODUCT_CALLS.get() > calls, "comparison backend override was bypassed");
+    assert_eq!(DIGIT_PRODUCT_QUERY_CALLS.get() - queries, DIGIT_PRODUCT_CALLS.get() - calls);
 }

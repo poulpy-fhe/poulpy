@@ -63,7 +63,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64_rayon,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::FFT64Avx,
     backend_test = crate::FFT64AvxRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
@@ -134,7 +135,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Avx,
     backend_test = crate::NTT4x30AvxRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
@@ -239,11 +241,27 @@ mod tuning {
             .print("NTT4x30AvxRayon");
     }
 }
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64avx, backend = crate::FFT64Avx);
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30avx, backend = crate::NTT4x30Avx);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avx,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Avx
+);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avx,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Avx
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64avxrayon, backend = crate::FFT64AvxRayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avxrayon,
+    backend_ref = crate::FFT64Avx,
+    backend_test = crate::FFT64AvxRayon
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avxrayon,
+    backend_ref = crate::NTT4x30Avx,
+    backend_test = crate::NTT4x30AvxRayon
+);

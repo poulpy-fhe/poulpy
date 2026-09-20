@@ -1,4 +1,4 @@
-//! An independent reference-backend oracle for the digit-product OEP.
+//! Pairwise backend parity for the digit-product OEP.
 use super::{ParityBackend, ParityShapes, poisoned_scratch};
 use crate::{
     layouts::{Base2K, gadget_product_limbs},
@@ -64,7 +64,6 @@ fn product<BE>(
     mat: &MatZnx<AlignedBuf, i64>,
     base2k: usize,
     dsize: usize,
-    reference: bool,
 ) -> VecZnx<AlignedBuf, i64>
 where
     BE: ParityBackend + GGLWEProductDigitsStridedImpl,
@@ -95,40 +94,16 @@ where
     BE::copy_from_host(&mut result.data, &vec![0x55; bytes]);
     let terms = module.n() * rows * dsize * cols_in;
     let limbs = gadget_product_limbs(Base2K(base2k as u32), terms);
-    if reference {
-        let tmp = crate::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
-            module,
-            size,
-            cols_in,
-            a.size(),
-            dsize,
-            rows,
-            cols_in,
-            cols_out,
-            size,
-        );
-        crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-            module,
-            &mut result.to_backend_mut(),
-            &input_dft.to_backend_ref(),
-            dsize,
-            limbs,
-            &key.to_backend_ref(),
-            &mut poisoned_scratch::<BE>(tmp).arena(),
-        );
-    } else {
-        let tmp =
-            BE::gglwe_product_digits_strided_tmp_bytes(module, size, cols_in, a.size(), dsize, rows, cols_in, cols_out, size);
-        BE::gglwe_product_digits_strided(
-            module,
-            &mut result.to_backend_mut(),
-            &input_dft.to_backend_ref(),
-            dsize,
-            limbs,
-            &key.to_backend_ref(),
-            &mut poisoned_scratch::<BE>(tmp).arena(),
-        );
-    }
+    let tmp = BE::gglwe_product_digits_strided_tmp_bytes(module, size, cols_in, a.size(), dsize, rows, cols_in, cols_out, size);
+    BE::gglwe_product_digits_strided(
+        module,
+        &mut result.to_backend_mut(),
+        &input_dft.to_backend_ref(),
+        dsize,
+        limbs,
+        &key.to_backend_ref(),
+        &mut poisoned_scratch::<BE>(tmp).arena(),
+    );
     let mut output = module.vec_znx_alloc(module.n(), cols_out, size);
     for col in 0..cols_out {
         module.vec_znx_idft_normalize_consume(
@@ -174,8 +149,8 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
             }
             let mut matrix = host.mat_znx_alloc(r.n(), size.div_ceil(dsize), cols_in, cols_out, size);
             matrix.fill_uniform(params.base2k, &mut source);
-            let want = product(r, &a, &matrix, params.base2k, dsize, true);
-            let have = product(t, &a, &matrix, params.base2k, dsize, false);
+            let want = product(r, &a, &matrix, params.base2k, dsize);
+            let have = product(t, &a, &matrix, params.base2k, dsize);
             assert_eq!(
                 want, have,
                 "digit product dsize={dsize} input={cols_in} output={cols_out} size={size} sparse={sparse}"

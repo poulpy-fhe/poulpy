@@ -109,7 +109,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
@@ -156,7 +157,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
     tests = {
@@ -199,7 +201,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
     tests = {
@@ -246,7 +249,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
@@ -326,25 +330,50 @@ mod tuning {
             .print("NTT3x42IfmaRayon");
     }
 }
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64avx512, backend = crate::FFT64Avx512);
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30avx512, backend = crate::NTT4x30Avx512);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avx512,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Avx512
+);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avx512,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Avx512
+);
 
 #[cfg(feature = "enable-ifma")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt3x42ifma, backend = crate::NTT3x42Ifma);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt3x42ifma,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT3x42Ifma
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64avx512rayon, backend = crate::FFT64Avx512Rayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avx512rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30avx512rayon, backend = crate::NTT4x30Avx512Rayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avx512rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon
+);
 
 #[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt3x42ifmarayon, backend = crate::NTT3x42IfmaRayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt3x42ifmarayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon
+);
 
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64_rayon,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::FFT64Avx512,
     backend_test = crate::FFT64Avx512Rayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },

@@ -38,7 +38,7 @@ paste = {workspace = true}
 rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
-# The core parity suites compare against the reference backend's impls.
+# Serial core parity suites select portable comparison backends.
 poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}

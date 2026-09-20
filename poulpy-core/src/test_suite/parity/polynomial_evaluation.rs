@@ -319,7 +319,7 @@ where
     );
     out
 }
-/// Both BSGS phases agree with an explicit CPU reference execution and exact
+/// Both BSGS phases agree with the selected comparison backend and exact
 /// integer expectations, including fused/fallback policies, parity, hoisting,
 /// metadata, zero scratch, missing powers and policy-error propagation.
 pub fn test_polynomial_evaluation_parity<BR: ParityBackend, BT: ParityBackend>(

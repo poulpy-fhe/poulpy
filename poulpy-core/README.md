@@ -58,8 +58,9 @@ to override when an alternate layout cannot provide partial limb views. Generic
 execution transfers logical inputs and outputs through the HAL; host-only noise
 diagnostics remain separate.
 
-Deterministic parity uses an explicit portable CPU reference execution on the
-same logical inputs. Each backend prepares its own keys and allocates its own
+Parity compares caller-selected backends on the same logical inputs. A validated
+backend can bootstrap another for the same operations and parameter ranges.
+Each backend prepares its own keys and allocates its own
 advertised scratch budget; tests compare integer results and metadata, never
 opaque prepared bytes. Sampling allows backend-specific random streams. Seeded
 reproducibility and statistical contracts are tested separately from encryption
@@ -155,10 +156,14 @@ module.ggsw_automorphism(...);
 Shared backend conformance suites are available in [`src/test_suite`](./src/test_suite).
 Concrete backend crates instantiate the noise/sampling suite through
 `core_backend_test_suite!` and deterministic parity through
-`core_parity_test_suite!`. The CPU reference crate supplies the controlled
-sampling fixture for randomized composition parity; `poulpy-core` itself remains
-free of concrete backend dependencies. The [operation contracts](docs/core-contracts.md)
-describe the tested semantics and backend coverage.
+`core_parity_test_suite!`. Encryption parity uses
+`core_encryption_parity_test_suite!`. Both parity macros accept explicit
+`backend_ref` and `backend_test` types. Core also supplies optional
+[controlled-sampling support](src/test_suite/parity/controlled_sampling.rs) for
+comparisons between backends with different random streams. The CPU reference
+crate provides one sampling adapter; core has no concrete backend dependencies.
+The [backend guide](docs/core-contracts.md) describes the implementation and
+testing requirements.
 
 Useful commands:
 

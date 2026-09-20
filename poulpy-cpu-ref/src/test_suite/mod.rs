@@ -5,7 +5,7 @@ pub mod normalization_i128;
 pub mod ntt;
 pub mod reim_conversion;
 
-/// Portable FFT backend whose sampling can be controlled by the core parity harness.
+/// Optional portable FFT comparison adapter for core encryption parity.
 #[cfg(feature = "enable-core")]
 pub use crate::hal_impl::delegating_backend::ControlledSamplingFFT64Ref;
 

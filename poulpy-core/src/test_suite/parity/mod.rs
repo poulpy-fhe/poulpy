@@ -1,22 +1,23 @@
 //! Cross-backend core contract tests.
 //!
-//! Deterministic operations run on an explicit portable CPU reference and a
-//! backend under test, with identical logical inputs and independently prepared
-//! objects. Comparisons include integer coefficients, live precision and other
+//! Operations run on a caller-selected comparison backend and a backend under
+//! test, with identical logical inputs and independently prepared objects.
+//! A validated backend can bootstrap another through transitive parity. Comparisons include integer coefficients, live precision and other
 //! metadata; opaque transform bytes are never compared across backend layouts.
 //!
 //! Arithmetic fixtures use arbitrary canonical coefficients to stress carries,
 //! widths and poisoned outputs. Mutation variants and each backend's advertised
-//! scratch are checked independently. Encryption tests use an injected sampling
-//! oracle so the reference composition receives the tested backend's realized
-//! draws; same-seed byte equality is not required by the sampling contract.
-//! Distribution and source-consumption checks remain separate.
+//! scratch are checked independently. Encryption tests require identical realized
+//! draws, using matching streams or an optional controlled-sampling adapter.
+//! Same-seed byte equality is not required by the sampling contract; distribution
+//! and source-consumption checks remain separate.
 //!
 //! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
 //! crates register these contract suites for their supported implementations.
 
 mod automorphism;
 mod coarsened;
+pub mod controlled_sampling;
 mod conversion;
 mod digits;
 mod encryption;
@@ -137,7 +138,11 @@ where
     gglwe
 }
 
-/// Declares a `poulpy-core` parity suite for a (reference, test) backend pair.
+/// Declares a `poulpy-core` parity suite for a caller-selected backend pair.
+///
+/// `backend_ref` selects the comparison backend; `backend_test` selects the
+/// backend under test. An already validated backend can serve as the comparison
+/// backend for the same operations and parameter ranges.
 ///
 /// Each test receives `(&TestParams, &ParityShapes, &Module<Ref>, &Module<Test>)`.
 /// `shapes` is optional and defaults to the full sweep.

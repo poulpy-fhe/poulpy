@@ -83,7 +83,8 @@ For example, a core reference rotation applies HAL rotation to each GLWE
 polynomial. Derived GGSW rotation calls core GLWE rotation on each row, so it
 reuses a custom GLWE rotation. Overrides must preserve the
 operation's documented results, mutation rules and scratch contract. Core parity
-tests compare them with an explicit portable CPU reference execution.
+tests compare caller-selected backends; an already validated backend can
+bootstrap another.
 
 ### Integrating a Backend
 
@@ -106,10 +107,13 @@ A new backend does not re-implement the tests. `poulpy-hal` and `poulpy-core` sh
 
 `poulpy-hal` covers the arithmetic primitives (`vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, convolution, serialization, word compatibility) through two macros. `backend_test_suite!` validates one backend against the specification; `cross_backend_test_suite!` runs the same operation on a reference backend and on the backend under test and compares.
 
-`poulpy-core` splits its suites by the question each answers, and neither subsumes the other:
+`poulpy-core` provides complementary checks:
 
-* `core_backend_test_suite!` (**noise**) encrypts, operates, decrypts, and compares the residual noise against the analytic bound: *does this backend implement the scheme?* Verification reads coefficients, so it is host-only.
-* `core_parity_test_suite!` (**parity**) runs one operation on a reference backend and on the backend under test over identical uniform inputs, and asserts byte equality: *does this backend agree with the reference?* It needs no secrets, encryption or noise model, so a device backend can run it.
+* `core_backend_test_suite!` checks scheme correctness by encrypting, operating, decrypting and comparing residual noise against the analytic bound. Verification reads coefficients, so it is host-only.
+* `core_parity_test_suite!` compares integer outputs and metadata from caller-selected `backend_ref` and `backend_test` implementations on identical inputs.
+* `core_encryption_parity_test_suite!` compares encryption and decryption for the selected pair with identical sampled inputs. Optional controlled-sampling support handles backends with different random streams.
+
+A validated backend can bootstrap another for the same operations and parameter ranges. The accelerated Rayon suites exercise this transitivity by comparing with their serial siblings.
 
 A bound is a weak oracle: a gadget-product accumulator one limb too narrow passes the key-switch noise sweep comfortably. Byte equality is not weak, but on its own it cannot tell you the reference is right.
 
@@ -120,9 +124,9 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | HAL, per backend | yes | yes | yes | yes |
 | HAL, cross backend | `NTT4x30Ref` vs `FFT64Ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` |
 | Core noise | `FFT64Ref`, `NTT4x30Ref` | — | — | — |
-| Core parity | reference side | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| Core parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
 
-The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, so an accelerated backend proves itself by byte-parity against the reference rather than by re-running the model.
+The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
 ## Bivariate Polynomial Representation
 

@@ -102,7 +102,7 @@ where
                     let mut have = r.$alloc(&$infos);
                     out_t.transfer_into(&mut have);
                     assert_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
-                    // Also compare assign with out-of-place semantics, in addition to CPU reference parity.
+                    // Also compare assign with out-of-place semantics, in addition to pairwise backend parity.
                     r.$assign(
                         &mut a_r,
                         &prep_r.to_backend_ref(),

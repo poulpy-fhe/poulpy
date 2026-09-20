@@ -48,8 +48,9 @@
 //! # Correctness
 //!
 //! Implementors of the unsafe `*Impl` traits are responsible for numerical,
-//! layout, aliasing and scratch contracts. Deterministic parity tests compare
-//! integer results and metadata with an explicit portable CPU reference execution.
+//! layout, aliasing and scratch contracts. Parity tests compare integer results
+//! and metadata with a caller-selected validated backend, allowing one backend
+//! to bootstrap another through transitive validation.
 //! Each backend prepares its own objects and uses its own advertised scratch
 //! budget. Sampling streams may differ between backends; randomized parity tests
 //! control sampled values separately.

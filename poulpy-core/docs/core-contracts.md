@@ -61,35 +61,9 @@ see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macro
 
 ## Matching the result
 
-A GLWE layout specifies its polynomial degree `n`, mask count `rank`, radix
-`base2k` and precision `k`. Storage can hold more bits than `k`. For example,
-`base2k = 17` and `k = 50` need three limbs, but only 50 bits are live. Copying
-that value into a 34-bit destination must apply the reference rounding rule.
-Simply dropping the last limb can give a different result.
-
-The required representation depends on the operation:
-
-- **Add, subtract, negate and monomial rotations** operate on the stored limbs.
-  They do not automatically propagate carries. Multiplication by `X^p - 1`
-  also leaves raw limb results.
-- **Normalize** propagates carries and rounds at the destination radix and
-  precision. Its output digits must match the reference exactly.
-- **Copy** preserves raw limbs when the radix matches and the destination has
-  enough precision. A changed radix or reduced precision uses normalization;
-  reducing precision also applies the reference rounding rule.
-- **Shifts, products and operations using prepared keys** must match their
-  reference algorithm's rounding, conversion offsets and output widths.
-  A mathematically equivalent value with different required digits is a failure.
-
-Trace divides by two before each automorphism-add stage, so it computes a
-normalized trace. An empty trace copies its input. Packing consumes its input
-ciphertexts and requires indices aligned to `2^log_gap_out`; its preconditions
-are described in the [public operation traits](../src/api/operations.rs).
-
-Reject incompatible dimensions, ranks and strides according to the operation's
-preconditions. Preserve errors returned by key lookup or arithmetic callbacks.
-For polynomial evaluation, the caller supplies arithmetic through `BSGSOps`;
-core provides the evaluation order and error propagation.
+Every OEP override must implement the same circuit as the reference
+implementation and pass the corresponding [parity tests](../src/test_suite/parity).
+The reference implementation defines the required behavior.
 
 ## Respecting storage and scratch
 
@@ -118,27 +92,15 @@ are rejected at compile time.
 
 ## Testing a replacement
 
-The shared [parity tests](../src/test_suite/parity) compare a backend with an
-explicit `poulpy-cpu-ref` execution:
+Select the comparison backend with `backend_ref` and the backend under test
+with `backend_test` in `core_parity_test_suite!` or
+`core_encryption_parity_test_suite!`. Neither suite is tied to `poulpy-cpu-ref`.
+A validated backend can bootstrap another: parity is transitive for the
+operations and parameter ranges covered by the tests.
 
-1. Give both implementations the same logical inputs.
-2. Prepare their keys and other backend-specific objects independently.
-3. Allocate each implementation's advertised scratch budget and fill scratch
-   and outputs with nonzero data to expose missing initialization.
-4. Compare the resulting integer coefficients and relevant metadata.
-
-Include assign and accumulation variants, boundary precisions, different ranks
-and digit sizes, and regions that must remain unchanged. The compiled override
-example also checks dispatch: matching output alone cannot show that a custom
-method was actually called.
-
-Sampling needs a separate check. The same seed may produce different samples on
-different backends. The [controlled-sampling fixture](../../poulpy-cpu-ref/src/test_suite/controlled_sampling.rs)
-feeds the tested backend's actual samples into the reference encryption
-algorithm. This lets tests compare the ciphertext calculations with identical
-random inputs. [Sampling tests](../src/test_suite/sampling.rs) separately check
-distributions, repeatability within a backend, seed consumption and untouched
-columns.
+Encryption parity requires identical sampled inputs. Backends with matching
+random streams can be compared directly; otherwise use the optional
+[controlled-sampling support](../src/test_suite/parity/controlled_sampling.rs).
 
 ## Running the tests
 

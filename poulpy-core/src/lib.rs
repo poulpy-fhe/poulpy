@@ -10,9 +10,10 @@
 //! contains reusable algorithms built from HAL operations. [`oep::derived`]
 //! contains defaults built from other core operations, preserving their backend
 //! dispatch. Backends explicitly implement `*Impl` traits to select or replace
-//! these algorithms. Tests compare integer results and metadata with a portable
-//! CPU reference execution. Sampling has a distribution and reproducibility
-//! contract; randomized parity uses controlled samples.
+//! these algorithms. Parity tests compare integer results and metadata between
+//! caller-selected backends, so an already validated backend can bootstrap another.
+//! Sampling has a distribution and reproducibility contract; randomized parity
+//! uses identical sampled inputs.
 //!
 //! # Architecture
 //!

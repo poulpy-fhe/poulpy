@@ -1,6 +1,7 @@
-//! Encryption parity with realized samples supplied by a test reference backend.
-//! Ordinary backends may use different streams for the same seed; registrations
-//! must install the sampling oracle before calling these tests.
+//! Encryption parity between caller-selected backends receiving identical draws.
+//! Backends with matching random streams can be compared directly. Otherwise,
+//! the caller supplies a sampling adapter using [`super::controlled_sampling`];
+//! seed equality alone does not imply identical samples across backends.
 use super::{ParityBackend, ParityShapes, poisoned_scratch};
 use crate::{
     Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,

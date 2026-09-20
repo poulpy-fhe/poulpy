@@ -47,7 +47,8 @@ poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend =
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64_rayon,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::FFT64Neon,
     backend_test = crate::FFT64NeonRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
@@ -118,7 +119,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Neon,
     backend_test = crate::NTT4x30NeonRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
@@ -186,11 +188,27 @@ mod tuning {
             .print("NTT4x30NeonRayon");
     }
 }
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64neon, backend = crate::FFT64Neon);
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30neon, backend = crate::NTT4x30Neon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64neon,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Neon
+);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30neon,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Neon
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_fft64neonrayon, backend = crate::FFT64NeonRayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64neonrayon,
+    backend_ref = crate::FFT64Neon,
+    backend_test = crate::FFT64NeonRayon
+);
 
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30neonrayon,
+    backend_ref = crate::NTT4x30Neon,
+    backend_test = crate::NTT4x30NeonRayon
+);

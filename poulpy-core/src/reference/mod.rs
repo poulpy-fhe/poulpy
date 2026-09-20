@@ -5,9 +5,9 @@
 //! dispatch. Compositions of other core operations live in
 //! [`crate::oep::derived`] and provide defaults on those backend traits.
 //!
-//! Optimized implementations are checked against an explicit portable CPU
-//! execution on identical logical inputs. Tests compare integer results and
-//! metadata; randomized operations additionally control the sampled values.
+//! Overrides must implement the same circuit. Parity tests use a caller-selected
+//! validated backend and compare integer results and metadata on identical
+//! inputs; randomized operations additionally control the sampled values.
 
 pub mod automorphism;
 pub mod conversion;

@@ -1344,10 +1344,18 @@ mod canonical_precision_tests {
 }
 
 #[cfg(feature = "enable-core")]
-crate::core_encryption_parity_test_suite!(mod core_encryption_fft64ref, backend = crate::FFT64Ref);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64ref,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Ref
+);
 
 #[cfg(feature = "enable-core")]
-crate::core_encryption_parity_test_suite!(mod core_encryption_ntt4x30ref, backend = crate::NTT4x30Ref);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30ref,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Ref
+);
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
