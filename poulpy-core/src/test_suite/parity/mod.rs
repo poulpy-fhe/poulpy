@@ -12,10 +12,8 @@
 //! draws; same-seed byte equality is not required by the sampling contract.
 //! Distribution and source-consumption checks remain separate.
 //!
-//! The [`super::noise`] suite additionally checks scheme noise bounds. The
-//! method inventory in `docs/core-contracts.json` maps these executable groups to
-//! the public and backend contracts and is checked against compiler metadata and
-//! actual CI test results.
+//! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
+//! crates register these contract suites for their supported implementations.
 
 mod automorphism;
 mod coarsened;

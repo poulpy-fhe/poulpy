@@ -1,14 +1,12 @@
-# Core operation contracts and executable inventory
+# Core operation contracts
 
 The normative portable computations are the callable bodies in `reference`.
-[`core-contracts.json`](core-contracts.json) records every trait method declared
-in `oep`, including scratch queries, and the reference, key-policy, preparation
-and decompression interfaces exposed elsewhere. Each record identifies its
-source, public or internal dispatch, portable body or explicit exception, and
-executable contract suite. Backend registrations identify the concrete portable
-CPU oracle and the libtest modules that must run.
+The `oep` traits define backend implementation contracts; preparation,
+decompression and caller-policy interfaces also contribute observable behavior.
+Shared conformance tests compare implementations against the portable CPU
+reference using independently prepared inputs and each backend's scratch budget.
 
-The inventory distinguishes implementation boundaries from conveniences:
+The architecture distinguishes implementation boundaries from conveniences:
 
 - Abstract `*Reference` traits are explicit backend choices. A backend can
   implement one family while forwarding the remaining families with macros.
@@ -18,8 +16,8 @@ The inventory distinguishes implementation boundaries from conveniences:
 - Sampling and strided gadget products are direct backend extension points.
   Tensoring has a direct `*Impl` boundary with callable reference compositions.
 - Prepared factories and decompression traits include blanket convenience
-  methods and metadata/size adapters. Their inclusion records required behavior;
-  it does not advertise those blanket methods as independent override points.
+  methods and metadata/size adapters. These have required behavior but are not
+  independent override points.
 - `BSGSOps` and key providers are caller policies. The BSGS engine owns sequencing;
   the policy owns arithmetic, precision accounting and key lookup. Data-view and
   metadata accessors (`*ToBackendRef`, `*Infos`, `BabyStep`, `PowerBasisHelper`,
@@ -82,49 +80,22 @@ host-oriented utilities where their bounds require host access.
 | Sampling | Respect distribution support/weight, Gaussian scale/precision, untouched columns and per-backend seeded reproducibility/source advancement. Cross-backend seeded bytes are deliberately unspecified. | Distribution bounds and replay/source-state checks on each backend separately. |
 | Preparation/allocation helpers | Preserve the source's relevant shape/key/distribution metadata; size queries describe actual allocated backend storage and preparation scratch is sufficient. | Direct/from-info allocation and byte counts; independently budgeted preparations; logical consumers compare against reference. |
 
-## Enforcing the inventory
+## Running contract tests
 
-Generate metadata with the repository's pinned nightly. Hidden/private items are
-included so contracts mentioned through public bounds cannot silently disappear
-from the inventory merely because a module is not reexported:
-
-```sh
-cargo rustdoc -p poulpy-core --lib --features enable-core -- \
-  --document-private-items --document-hidden-items -Z unstable-options --output-format json
-python3 tools/check_core_contracts.py
-```
-
-`--rustdoc-json` selects the JSON under a target-specific Cargo documentation
-directory when `CARGO_BUILD_TARGET` is set. The checker compares the explicit
-method set to rustc's resolved traits, validates dispatch and executable
-reference/test bodies, and rejects missing supported registrations. Adding a
-method requires reviewing and adding its contract mapping; metadata generation
-does not generate or automatically approve the manifest.
-
-Pass captured successful libtest output to also check execution. This rejects
-ignored, filtered, unregistered or failed contract tests:
+Run the portable CPU reference contract tests with the repository's pinned
+nightly:
 
 ```sh
-set -o pipefail
 cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-core -- \
-  core_parity core_encryption --test-threads=2 | tee /tmp/core-ref-tests.log
-python3 tools/check_core_contracts.py --run-package poulpy-cpu-ref /tmp/core-ref-tests.log
+  core_parity core_encryption --test-threads=2
 ```
 
-`bash tools/verify_core_execution.sh PACKAGE LOG` regenerates metadata in the
-active Cargo target directory and validates that package’s execution log.
-`python3 tools/test_check_core_contracts.py` tests rejection of inventory drift,
-missing registrations, wrong backend prefixes and skipped/failed tests.
-
-Use `--run BACKEND LOG` for selected backend combinations, or repeat
-`--run-package PACKAGE LOG` for a workspace log. The required matrix covers
-portable FFT/NTT, AVX, AVX-512 including IFMA, NEON and their supported Rayon
-variants. Native and emulator CI invocations must include core contract modules;
-HAL-only filters do not establish core coverage. The native/SDE lane also runs
-the AVX core groups, guaranteeing coverage if the separate AVX runner lacks
-AVX2/FMA. No core Rayon implementation is
-advertised by the portable CPU-reference crate. Unsupported combinations must be
-recorded with a reason in the test entry rather than silently omitted.
+Backend crates register suites for portable FFT/NTT, AVX, AVX-512 including IFMA,
+NEON and their supported Rayon variants. Native and emulator CI invocations
+include core contract modules; HAL-only filters do not establish core coverage.
+The native/SDE lane also runs the AVX core groups, providing coverage if the
+separate AVX runner lacks AVX2/FMA. No core Rayon implementation is advertised by
+the portable CPU-reference crate.
 
 Public documentation is validated separately, without private-item visibility:
 

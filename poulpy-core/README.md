@@ -48,7 +48,7 @@ that implementation through the corresponding `*Impl` trait. Composition traits
 collect the HAL operations needed to call a reference body; they do not grant an
 implementation automatically. Sampling and digit-product kernels are direct
 backend extension points. See the [OEP rustdoc](src/oep/mod.rs) and
-[contract inventory](docs/core-contracts.md) for the exact boundaries and
+[operation contracts](docs/core-contracts.md) for the exact boundaries and
 exceptions, including the caller-provided BSGS arithmetic policy. The
 [compiled backend example](../poulpy-cpu-ref/src/tests/delegating_backend.rs)
 replaces one operation, forwards its assign/scratch companions, and verifies
@@ -161,8 +161,8 @@ Concrete backend crates instantiate the noise/sampling suite through
 `core_backend_test_suite!` and deterministic parity through
 `core_parity_test_suite!`. The CPU reference crate supplies the controlled
 sampling fixture for randomized composition parity; `poulpy-core` itself remains
-free of concrete backend dependencies. The [contract inventory](docs/core-contracts.md)
-explains how CI enforces complete method and backend registrations.
+free of concrete backend dependencies. The [operation contracts](docs/core-contracts.md)
+describe the tested semantics and backend coverage.
 
 Useful commands:
 

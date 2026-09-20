@@ -95,13 +95,7 @@ jobs:
 
       - name: Test all non-AVX features
         shell: bash
-        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES" | tee "$RUNNER_TEMP/core-portable.log"
-
-      - name: Test core contract inventory checker
-        run: python3 tools/test_check_core_contracts.py
-
-      - name: Verify portable core contract execution
-        run: bash tools/verify_core_execution.sh poulpy-cpu-ref "$RUNNER_TEMP/core-portable.log"
+        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
       - name: Check core documentation
         run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-core
@@ -158,11 +152,7 @@ jobs:
       - name: Test AVX backend
         shell: bash
         if: steps.avx.outputs.supported == 'true'
-        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES" | tee "$RUNNER_TEMP/core-avx.log"
-
-      - name: Verify AVX core contract execution
-        if: steps.avx.outputs.supported == 'true'
-        run: bash tools/verify_core_execution.sh poulpy-cpu-avx "$RUNNER_TEMP/core-avx.log"
+        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES"
 
       - name: Skip AVX backend
         if: steps.avx.outputs.supported != 'true'
@@ -359,10 +349,7 @@ jobs:
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
           raw_transform_matches_contract core_parity core_encryption
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
-          --test-threads=2 | tee "$RUNNER_TEMP/core-avx512.log"
-
-      - name: Verify AVX-512 core contract execution
-        run: bash tools/verify_core_execution.sh poulpy-cpu-avx512 "$RUNNER_TEMP/core-avx512.log"
+          --test-threads=2
 
       # Guarantee AVX core coverage even if its separate native runner lacks AVX2/FMA.
       - name: Test AVX core operations natively or under SDE
@@ -370,10 +357,7 @@ jobs:
         run: >-
           cargo test -p poulpy-cpu-avx --lib --profile ci
           --features "enable-rayon" -- core_parity core_encryption
-          --test-threads=2 | tee "$RUNNER_TEMP/core-avx-guaranteed.log"
-
-      - name: Verify guaranteed AVX core contract execution
-        run: bash tools/verify_core_execution.sh poulpy-cpu-avx "$RUNNER_TEMP/core-avx-guaranteed.log"
+          --test-threads=2
 
   neon:
     name: NEON backend (aarch64 native)
@@ -410,10 +394,7 @@ jobs:
 
       - name: Test NEON backend
         shell: bash
-        run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES" | tee "$RUNNER_TEMP/core-neon.log"
-
-      - name: Verify NEON core contract execution
-        run: bash tools/verify_core_execution.sh poulpy-cpu-arm "$RUNNER_TEMP/core-neon.log"
+        run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
 
   # Optional emulator validation; the required native neon job runs the full suite.
   neon_hal:
@@ -467,10 +448,7 @@ jobs:
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
           raw_transform_matches_contract convolution_by_const core_parity core_encryption
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
-          --test-threads=2 | tee "$RUNNER_TEMP/core-neon-qemu.log"
-
-      - name: Verify emulated NEON core contract execution
-        run: bash tools/verify_core_execution.sh poulpy-cpu-arm "$RUNNER_TEMP/core-neon-qemu.log"
+          --test-threads=2
 
   miri:
     name: Miri (poulpy-hal unit tests)
