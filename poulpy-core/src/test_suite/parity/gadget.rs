@@ -337,6 +337,32 @@ where
                 auto_view_r,
                 auto_view_t
             );
+            // A destination with fewer gadget rows must only write its own rows.
+            let short = GGSWLayout { dnum: Dnum(2), ..g };
+            let mut short_r = r.ggsw_alloc_from_infos(&short);
+            short_r.fill_uniform(b, &mut source);
+            let mut short_t = t.ggsw_alloc_from_infos(&short);
+            short_r.transfer_into(&mut short_t);
+            r.ggsw_keyswitch(
+                &mut short_r,
+                &a_r,
+                &key_view_r,
+                &tensorp_r.to_backend_ref(),
+                &mut poisoned_scratch::<BR>(r.ggsw_keyswitch_tmp_bytes(&short, &g, &k, &tk)).borrow(),
+            );
+            t.ggsw_keyswitch(
+                &mut short_t,
+                &a_t,
+                &key_view_t,
+                &tensorp_t.to_backend_ref(),
+                &mut poisoned_scratch::<BT>(t.ggsw_keyswitch_tmp_bytes(&short, &g, &k, &tk)).borrow(),
+            );
+            let mut short_have = r.ggsw_alloc_from_infos(&short);
+            short_t.transfer_into(&mut short_have);
+            assert_eq!(
+                short_r, short_have,
+                "ggsw keyswitch shorter result: rank={rank} dsize={dsize}"
+            );
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
             let mut out_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
             out_r.key.fill_uniform(b, &mut source);
@@ -387,13 +413,13 @@ where
                 &mut out_r,
                 &a,
                 &tensorp_r.to_backend_ref(),
-                &mut poisoned_scratch::<BR>(r.ggsw_from_gglwe_tmp_bytes(&g, &tk)).borrow(),
+                &mut poisoned_scratch::<BR>(r.ggsw_from_gglwe_tmp_bytes(&g, &h, &tk)).borrow(),
             );
             t.ggsw_from_gglwe(
                 &mut out_t,
                 &a_t,
                 &tensorp_t.to_backend_ref(),
-                &mut poisoned_scratch::<BT>(t.ggsw_from_gglwe_tmp_bytes(&g, &tk)).borrow(),
+                &mut poisoned_scratch::<BT>(t.ggsw_from_gglwe_tmp_bytes(&g, &h, &tk)).borrow(),
             );
             let mut have = r.ggsw_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);

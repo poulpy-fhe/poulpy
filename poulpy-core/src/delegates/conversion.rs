@@ -133,12 +133,13 @@ impl_conversion_delegate!(
 impl_conversion_delegate!(
     GGSWFromGGLWE<BE>,
     [BE: Backend + ConversionImpl],
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    fn ggsw_from_gglwe_tmp_bytes<R, A, T>(&self, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        BE::ggsw_from_gglwe_tmp_bytes(self, res_infos, tsk_infos)
+        BE::ggsw_from_gglwe_tmp_bytes(self, res_infos, a_infos, tsk_infos)
     }
 
     fn ggsw_from_gglwe<R, A>(

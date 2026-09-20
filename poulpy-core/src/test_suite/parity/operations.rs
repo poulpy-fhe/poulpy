@@ -5,7 +5,7 @@
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
+    layouts::{HostDataMut, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -208,6 +208,50 @@ where
         |m, res, a, _, _| m.glwe_sub_negate_assign(res, a),
         |m, res, a, _, _| m.glwe_sub_negate_assign(res, a),
     );
+    // A rank-zero plaintext contributes to the body only, while a - ciphertext
+    // negates every mask column and every destination limb beyond the plaintext.
+    let mut source = Source::new([71; 32]);
+    for &rank in &shapes.ranks {
+        for plaintext_k in [params.base2k - 1, 3 * params.base2k + 1] {
+            let res_infos = GLWELayout {
+                n: (module_ref.n() as u32).into(),
+                base2k: (params.base2k as u32).into(),
+                k: (2 * params.base2k as u32 + 1).into(),
+                rank: (rank as u32).into(),
+            };
+            let pt_infos = GLWELayout {
+                rank: Rank(0),
+                k: (plaintext_k as u32).into(),
+                ..res_infos
+            };
+            let pt_ref = ref_glwe(module_ref, &pt_infos, &mut source);
+            let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+            let mut expected = module_ref.glwe_alloc_from_infos(&res_infos);
+            for col in 0..expected.data.cols() {
+                for limb in 0..expected.data.size() {
+                    let old = res_ref.data.at(col, limb);
+                    let pt = if col == 0 && limb < pt_ref.data.size() {
+                        Some(pt_ref.data.at(0, limb))
+                    } else {
+                        None
+                    };
+                    for (i, value) in expected.data.at_mut(col, limb).iter_mut().enumerate() {
+                        *value = pt.map_or(0, |coefficients| coefficients[i]) - old[i];
+                    }
+                }
+            }
+            let mut pt_test = module_test.glwe_alloc_from_infos(&pt_infos);
+            pt_ref.transfer_into(&mut pt_test);
+            let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+            res_ref.transfer_into(&mut res_test);
+            module_ref.glwe_sub_negate_assign(&mut res_ref, &pt_ref);
+            module_test.glwe_sub_negate_assign(&mut res_test, &pt_test);
+            let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+            res_test.transfer_into(&mut have);
+            assert_eq!(res_ref, expected, "plaintext minus GLWE: reference mask sign and limb tails");
+            assert_eq!(have, expected, "plaintext minus GLWE: backend mask sign and limb tails");
+        }
+    }
 }
 
 /// `glwe_negate` agrees with the reference backend.
@@ -581,6 +625,59 @@ pub fn test_glwe_shift_parity<BR, BT>(
             move |m, res, _, _, s| m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow()),
             move |m, res, _, _, s| m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow()),
         );
+    }
+    // Multiplication by X^p - 1 is raw-limb arithmetic, even when the two
+    // layouts label those limbs with different radices. Destination metadata
+    // and extension/truncation are checked against a direct polynomial oracle.
+    let mut source = Source::new([73; 32]);
+    let n = module_ref.n();
+    for &rank in &shapes.ranks {
+        let a_infos = GLWELayout {
+            n: (n as u32).into(),
+            base2k: (params.base2k as u32).into(),
+            k: (2 * params.base2k as u32 + 1).into(),
+            rank: (rank as u32).into(),
+        };
+        let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
+        let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
+        a_ref.transfer_into(&mut a_test);
+        for res_limbs in [1, 4] {
+            let radix = params.base2k - 1;
+            let res_infos = GLWELayout {
+                base2k: (radix as u32).into(),
+                k: ((res_limbs * radix) as u32).into(),
+                ..a_infos
+            };
+            for power in [-5_i64, 0, n as i64 + 1] {
+                let mut expected = module_ref.glwe_alloc_from_infos(&res_infos);
+                for col in 0..expected.data.cols() {
+                    for limb in 0..expected.data.size() {
+                        let out = expected.data.at_mut(col, limb);
+                        out.fill(0);
+                        if limb < a_ref.data.size() {
+                            for (i, &value) in a_ref.data.at(col, limb).iter().enumerate() {
+                                let j = (i as i64 + power).rem_euclid(2 * n as i64) as usize;
+                                out[j % n] += if j < n { value } else { -value };
+                                out[i] -= value;
+                            }
+                        }
+                    }
+                }
+                let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+                let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+                res_ref.transfer_into(&mut res_test);
+                module_ref.glwe_mul_xp_minus_one(power, &mut res_ref, &a_ref);
+                module_test.glwe_mul_xp_minus_one(power, &mut res_test, &a_test);
+                assert_eq!(res_ref.base2k(), res_infos.base2k);
+                assert_eq!(res_test.base2k(), res_infos.base2k);
+                assert_eq!(res_ref.k(), res_infos.k);
+                assert_eq!(res_test.k(), res_infos.k);
+                let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                res_test.transfer_into(&mut have);
+                assert_eq!(res_ref, expected, "raw X^p - 1: reference radix and limb tails");
+                assert_eq!(have, expected, "raw X^p - 1: backend radix and limb tails");
+            }
+        }
     }
 }
 

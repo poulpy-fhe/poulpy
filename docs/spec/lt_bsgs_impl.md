@@ -205,14 +205,14 @@ this final normalize.
 ## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs))
 
 These `*_reference` free functions are what a backend forwards to from its
-`crate::oep::LinearTransformationReference` impl (via `impl_linear_transformation_reference_full!`):
+`crate::oep::LinearTransformationImpl` impl (via `impl_linear_transformation_reference_full!`):
 
 | Function | Does |
 |---|---|
 | `glwe_prepare_linear_transformation_rhs_reference` | Setup §3.1 (prepare.rs). |
 | `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
 | `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
-| `glwe_eval_linear_transformation_unprepared_rhs_into_reference` | Streamed eval (§6). |
+| `glwe_eval_linear_transformation_into_reference` with unprepared diagonals | Streamed eval (§6). |
 | `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of

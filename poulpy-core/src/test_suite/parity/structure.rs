@@ -1,6 +1,5 @@
 //! Trace, packing, relinearization and tensor-secret parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
-use crate::reference::glwe_trace::GLWETraceReference;
 use crate::{
     Distribution, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
@@ -28,8 +27,8 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWETraceReference<BR>,
-    Module<BT>: GLWETrace<BT> + GLWEPacking<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWETraceReference<BT>,
+    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
+    Module<BT>: GLWETrace<BT> + GLWEPacking<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -108,13 +107,13 @@ where
                 &mut out_r,
                 skip,
                 &keys_r,
-                &mut poisoned_scratch::<BR>(r.glwe_trace_assign_tmp_bytes_reference(&g, &k)).borrow(),
+                &mut poisoned_scratch::<BR>(r.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             t.glwe_trace_assign(
                 &mut out_t,
                 skip,
                 &keys_t,
-                &mut poisoned_scratch::<BT>(t.glwe_trace_assign_tmp_bytes_reference(&g, &k)).borrow(),
+                &mut poisoned_scratch::<BT>(t.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             out_t.transfer_into(&mut have);
             assert_eq!(out_r, have, "trace assign rank={rank} skip={skip}");

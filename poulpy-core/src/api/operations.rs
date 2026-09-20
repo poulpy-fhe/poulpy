@@ -24,6 +24,12 @@ pub trait GLWETrace<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch required by the selected in-place trace implementation.
+    fn glwe_trace_assign_tmp_bytes<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
     fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -215,6 +221,7 @@ pub trait GLWESub<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
+    /// Replaces `res` with `a - res`. For a rank-zero `a`, the old mask is negated.
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
@@ -253,6 +260,11 @@ pub trait GGSWRotate<BE: Backend> {
         R: GGSWToBackendMut<BE> + GGSWInfos;
 }
 
+/// Multiplies stored polynomial limbs by `X^k - 1` in the negacyclic ring.
+///
+/// This is raw limb arithmetic: it preserves destination metadata and performs
+/// neither radix conversion nor normalization, even when source and destination
+/// radices differ. Their degrees and ranks must match.
 pub trait GLWEMulXpMinusOne<BE: Backend> {
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where

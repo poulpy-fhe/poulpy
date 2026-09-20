@@ -3,17 +3,9 @@ use std::collections::HashMap;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-    },
-    operations::{
-        GGSWRotateReference, GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference,
-        GLWEMulXpMinusOneReference, GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference,
-        GLWESubReference, GLWEZeroReference,
-    },
-    reference::{glwe_packing::GLWEPackingReference, glwe_trace::GLWETraceReference},
+use crate::layouts::{
+    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
 /// Backend-provided GLWE constant-multiplication operations.
@@ -177,7 +169,7 @@ pub unsafe trait GLWENegateImpl: Backend {
 ///
 /// # Safety
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
-pub unsafe trait GLWESubImpl: Backend {
+pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
     fn glwe_sub<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<Self>,
@@ -192,7 +184,10 @@ pub unsafe trait GLWESubImpl: Backend {
     fn glwe_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        A: GLWEToBackendRef<Self>,
+    {
+        crate::oep::derived::operations::glwe_sub_negate_assign_derived::<Self, _, _>(module, res, a)
+    }
 }
 
 /// Backend-provided GLWE zeroing operations.
@@ -243,17 +238,25 @@ pub unsafe trait GLWERotateImpl: Backend {
 /// # Safety
 /// Implementations must preserve the GGSW structure for the backend and may only use scratch space
 /// and in-place mutation in ways compatible with the advertised contracts.
-pub unsafe trait GGSWRotateImpl: Backend {
-    fn ggsw_rotate_tmp_bytes(module: &Module<Self>) -> usize;
+pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
+    fn ggsw_rotate_tmp_bytes(module: &Module<Self>) -> usize {
+        crate::oep::derived::operations::ggsw_rotate_tmp_bytes_derived::<Self>(module)
+    }
 
     fn ggsw_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos;
+        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos,
+    {
+        crate::oep::derived::operations::ggsw_rotate_derived::<Self, _, _>(module, k, res, a)
+    }
 
     fn ggsw_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+    {
+        crate::oep::derived::operations::ggsw_rotate_assign_derived::<Self, _>(module, k, res, scratch)
+    }
 }
 
 /// Backend-provided multiplication by `X^p - 1` operations.
@@ -261,11 +264,14 @@ pub unsafe trait GGSWRotateImpl: Backend {
 /// # Safety
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
-pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
+pub unsafe trait GLWEMulXpMinusOneImpl: GLWERotateImpl + GLWESubImpl {
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        A: GLWEToBackendRef<Self>,
+    {
+        crate::oep::derived::operations::glwe_mul_xp_minus_one_derived::<Self, _, _>(module, k, res, a)
+    }
 
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
@@ -327,31 +333,44 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// # Safety
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
-pub unsafe trait GLWETraceImpl: Backend {
-    fn glwe_trace_galois_elements(module: &Module<Self>) -> Vec<i64>;
+pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
+    fn glwe_trace_galois_elements(module: &Module<Self>) -> Vec<i64> {
+        crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module)
+    }
 
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos;
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
+    }
 
-    fn glwe_trace<R, A, H>(
-        module: &Module<Self>,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
+    fn glwe_trace_assign_tmp_bytes<A, K>(module: &Module<Self>, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
+    }
+
+    fn glwe_trace<R, A, H>(module: &Module<Self>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, Self>)
+    where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::structure::glwe_trace_derived::<Self, _, _, _, _>(module, res, skip, a, keys, scratch)
+    }
 
     fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::structure::glwe_trace_assign_derived::<Self, _, _, _>(module, res, skip, keys, scratch)
+    }
 }
 
 /// Backend-provided GLWE packing operations.
@@ -359,13 +378,18 @@ pub unsafe trait GLWETraceImpl: Backend {
 /// # Safety
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect
 /// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
-pub unsafe trait GLWEPackImpl: Backend {
-    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64>;
+pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GLWEAddImpl {
+    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64> {
+        crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
+    }
 
     fn glwe_pack_tmp_bytes<R, K>(module: &Module<Self>, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
-        K: GGLWEInfos;
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _>(module, res, key)
+    }
 
     fn glwe_pack<R, A, H>(
         module: &Module<Self>,
@@ -377,87 +401,9 @@ pub unsafe trait GLWEPackImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendMut<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>;
-}
-
-unsafe impl<BE: Backend> GLWEMulConstImpl for BE
-where
-    Module<BE>: GLWEMulConstReference<BE>,
-{
-    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos,
+        H: GetAutomorphismKey<Self>,
     {
-        module.glwe_mul_const_tmp_bytes_reference(res, a, b)
-    }
-
-    fn glwe_mul_const<R, A, B>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_mul_const_reference(cnv_offset, res, a, b, b_coeff, scratch)
-    }
-
-    fn glwe_mul_const_assign<R, B>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_mul_const_assign_reference(cnv_offset, res, b, b_coeff, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWEMulPlainImpl for BE
-where
-    Module<BE>: GLWEMulPlainReference<BE>,
-{
-    fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos,
-    {
-        module.glwe_mul_plain_tmp_bytes_reference(res, a, b)
-    }
-
-    fn glwe_mul_plain<R, A, B>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
-    {
-        module.glwe_mul_plain_reference(cnv_offset, res, a, b, scratch)
-    }
-
-    fn glwe_mul_plain_assign<R, A>(module: &Module<BE>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
-    {
-        module.glwe_mul_plain_assign_reference(cnv_offset, res, a, scratch)
+        crate::oep::derived::structure::glwe_pack_derived::<Self, _, _, _, _>(module, res, a, log_gap_out, keys, scratch)
     }
 }
 
@@ -565,425 +511,27 @@ macro_rules! impl_glwe_tensoring_reference {
     };
 }
 
-unsafe impl<BE: Backend> GLWEAddImpl for BE
-where
-    Module<BE>: GLWEAddReference<BE>,
-{
-    fn glwe_add_into<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>,
-    {
-        module.glwe_add_into_reference(res, a, b)
-    }
-
-    fn glwe_add_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_add_assign_reference(res, a)
-    }
-}
-
-unsafe impl<BE: Backend> GLWENegateImpl for BE
-where
-    Module<BE>: GLWENegateReference<BE>,
-{
-    fn glwe_negate<R, A>(module: &Module<BE>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_negate_reference(res, a)
-    }
-
-    fn glwe_negate_assign<R>(module: &Module<BE>, res: &mut R)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_negate_assign_reference(res)
-    }
-}
-
-unsafe impl<BE: Backend> GLWESubImpl for BE
-where
-    Module<BE>: GLWESubReference<BE>,
-{
-    fn glwe_sub<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>,
-    {
-        module.glwe_sub_reference(res, a, b)
-    }
-
-    fn glwe_sub_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_sub_assign_reference(res, a)
-    }
-
-    fn glwe_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_sub_negate_assign_reference(res, a)
-    }
-}
-
-unsafe impl<BE: Backend> GLWEZeroImpl for BE
-where
-    Module<BE>: GLWEZeroReference<BE>,
-{
-    fn glwe_zero<R>(module: &Module<BE>, res: &mut R)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_zero_reference(res)
-    }
-}
-
-unsafe impl<BE: Backend> GLWECopyImpl for BE
-where
-    Module<BE>: GLWECopyReference<BE>,
-{
-    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A) -> usize {
-        module.glwe_copy_tmp_bytes_reference(res, a)
-    }
-
-    fn glwe_copy<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_copy_reference(res, a, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWERotateImpl for BE
-where
-    Module<BE>: GLWERotateReference<BE>,
-{
-    fn glwe_rotate_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_rotate_tmp_bytes_reference()
-    }
-
-    fn glwe_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_rotate_reference(k, res, a)
-    }
-
-    fn glwe_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_rotate_assign_reference(k, res, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl for BE
-where
-    Module<BE>: GLWEMulXpMinusOneReference<BE>,
-{
-    fn glwe_mul_xp_minus_one<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_mul_xp_minus_one_reference(k, res, a)
-    }
-
-    fn glwe_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_mul_xp_minus_one_assign_reference(k, res, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWEShiftImpl for BE
-where
-    Module<BE>: GLWEShiftReference<BE>,
-{
-    fn glwe_shift_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
-        module.glwe_shift_tmp_bytes_reference(res_size)
-    }
-
-    fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_rsh_reference(k, res, scratch)
-    }
-
-    fn glwe_lsh_assign<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_lsh_assign_reference(res, k, scratch)
-    }
-
-    fn glwe_lsh<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_lsh_reference(res, a, k, scratch)
-    }
-
-    fn glwe_lsh_add<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_lsh_add_reference(res, a, k, scratch)
-    }
-
-    fn glwe_lsh_sub<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_lsh_sub_reference(res, a, k, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWENormalizeImpl for BE
-where
-    Module<BE>: GLWENormalizeReference<BE>,
-{
-    fn glwe_normalize_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_normalize_tmp_bytes_reference()
-    }
-
-    fn glwe_normalize<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_normalize_reference(res, a, scratch)
-    }
-
-    fn glwe_normalize_assign<R>(module: &Module<BE>, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        module.glwe_normalize_assign_reference(res, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GGSWRotateImpl for BE
-where
-    Module<BE>: GGSWRotateReference<BE>,
-{
-    fn ggsw_rotate_tmp_bytes(module: &Module<BE>) -> usize {
-        module.ggsw_rotate_tmp_bytes_reference()
-    }
-
-    fn ggsw_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-    where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-    {
-        module.ggsw_rotate_reference(k, res, a)
-    }
-
-    fn ggsw_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-    {
-        let mut res_backend = res.to_backend_mut();
-        module.ggsw_rotate_assign_reference(k, &mut res_backend, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GLWETraceImpl for BE
-where
-    Module<BE>: crate::reference::glwe_trace::GLWETraceReference<BE>,
-{
-    fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_trace_galois_elements_reference()
-    }
-
-    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.glwe_trace_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn glwe_trace<R, A, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        let mut scratch_local = scratch.borrow();
-        module.glwe_trace_reference(res, skip, a, keys, &mut scratch_local)
-    }
-
-    fn glwe_trace_assign<R, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        let mut scratch_local = scratch.borrow();
-        module.glwe_trace_assign_reference(res, skip, keys, &mut scratch_local)
-    }
-}
-
-unsafe impl<BE: Backend> GLWEPackImpl for BE
-where
-    Module<BE>: crate::reference::glwe_packing::GLWEPackingReference<BE>,
-    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
-{
-    fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_pack_galois_elements_reference()
-    }
-
-    fn glwe_pack_tmp_bytes<R, K>(module: &Module<BE>, res: &R, key: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.glwe_pack_tmp_bytes_reference(res, key)
-    }
-
-    fn glwe_pack<R, A, H>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: HashMap<usize, &mut A>,
-        log_gap_out: usize,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        let mut scratch_local = scratch.borrow();
-        module.glwe_pack_reference(res, a, log_gap_out, keys, &mut scratch_local)
-    }
-}
-/// Implements [`GLWETraceReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::glwe_trace`].
+/// Selects the core-derived trace defaults.
 #[macro_export]
-macro_rules! impl_glwe_trace_reference_full {
+macro_rules! impl_glwe_trace_derived_full {
     ($be:ty) => {
-        impl $crate::reference::glwe_trace::GLWETraceReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_trace_assign_tmp_bytes_reference<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
-            where
-                A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_tmp_bytes_reference::<$be, _, _, _>(
-                    self, a_infos, key_infos,
-                )
-            }
-
-            fn glwe_trace_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_galois_elements_reference::<$be, _>(self)
-            }
-
-            fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-            where
-                R: $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
-                )
-            }
-
-            fn glwe_trace_reference<R, A, H>(
-                &self,
-                res: &mut R,
-                skip: usize,
-                a: &A,
-                keys: &H,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetAutomorphismKey<$be>,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_reference::<$be, _, _, _, _>(
-                    self, res, skip, a, keys, scratch,
-                )
-            }
-
-            fn glwe_trace_assign_reference<R, H>(
-                &self,
-                res: &mut R,
-                skip: usize,
-                keys: &H,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetAutomorphismKey<$be>,
-            {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_reference::<$be, _, _, _>(
-                    self, res, skip, keys, scratch,
-                )
-            }
-        }
+        unsafe impl $crate::oep::GLWETraceImpl for $be {}
     };
 }
 
-/// Implements [`GLWEPackingReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::glwe_packing`].
+/// Selects the core-derived packing defaults.
 #[macro_export]
-macro_rules! impl_glwe_packing_reference_full {
+macro_rules! impl_glwe_packing_derived_full {
     ($be:ty) => {
-        impl $crate::reference::glwe_packing::GLWEPackingReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_pack_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
-                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_galois_elements_reference::<$be, _>(self)
-            }
+        unsafe impl $crate::oep::GLWEPackImpl for $be {}
+    };
+}
 
-            fn glwe_pack_tmp_bytes_reference<R, K>(&self, res: &R, key: &K) -> usize
-            where
-                R: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_tmp_bytes_reference::<$be, _, _, _>(
-                    self, res, key,
-                )
-            }
-
-            fn glwe_pack_reference<R, A, H>(
-                &self,
-                res: &mut R,
-                a: ::std::collections::HashMap<usize, &mut A>,
-                log_gap_out: usize,
-                keys: &H,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetAutomorphismKey<$be>,
-            {
-                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_reference::<$be, _, _, _, _>(
-                    self,
-                    res,
-                    a,
-                    log_gap_out,
-                    keys,
-                    scratch,
-                )
-            }
-        }
+/// Selects row-wise rotation through the backend's GLWE rotation methods.
+#[macro_export]
+macro_rules! impl_ggsw_rotate_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGSWRotateImpl for $be {}
     };
 }
 
@@ -993,7 +541,7 @@ macro_rules! impl_glwe_packing_reference_full {
 #[macro_export]
 macro_rules! impl_operations_reference_full {
     ($be:ty) => {
-        $crate::impl_ggsw_rotate_reference_full!($be);
+        $crate::impl_ggsw_rotate_derived_full!($be);
         $crate::impl_glwe_mul_const_reference_full!($be);
         $crate::impl_glwe_mul_plain_reference_full!($be);
         $crate::impl_glwe_add_reference_full!($be);

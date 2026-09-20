@@ -1,6 +1,6 @@
-//! Reference implementations of the [`LWEKeyswitchReference`] methods.
-//!
-//! Re-exported publicly through `crate::oep::lwe_keyswitch_reference`.
+//! Portable algorithms expressed with HAL operations.
+//! Inter-family core operations dispatch through the selected backend hooks.
+use crate::api::GLWEKeyswitch;
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -11,41 +11,39 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision, glwe_backend_ref_from_mut,
+        GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
-    oep::{GLWEKeyswitchReference, LWEKeyswitchReference},
+    oep::LWEKeyswitchReference,
 };
 
 pub fn lwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE>,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
 {
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let k: TorusPrecision = a_infos.k().max(res_infos.k());
-
     let glwe_a_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: a_infos.base2k(),
-        k,
+        k: a_infos.k(),
         rank: Rank(1),
     };
 
     let glwe_res_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: res_infos.base2k(),
-        k,
+        k: res_infos.k(),
         rank: Rank(1),
     };
 
     let lvl_0: usize = module.glwe_bytes_of_from_infos(&glwe_a_infos);
     let lvl_1: usize = module.glwe_bytes_of_from_infos(&glwe_res_infos);
-    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes_reference(&glwe_res_infos, &glwe_a_infos, key_infos);
+    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes(&glwe_res_infos, &glwe_a_infos, key_infos);
 
     lvl_0 + lvl_1 + lvl_2
 }
@@ -58,7 +56,7 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE> + LWEKeyswitchReference<BE> + ModuleN + GLWEKeyswitchReference<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
+    M: GLWEBytesOf<BE> + LWEKeyswitchReference<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
@@ -107,7 +105,7 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    module.glwe_keyswitch_reference(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
+    module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);

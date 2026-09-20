@@ -2,7 +2,7 @@
 //! methods.
 //!
 //! These free `*_reference` functions are the reference algorithms a backend
-//! forwards to from its [`crate::oep::LinearTransformationReference`] impl (see
+//! forwards to from its [`crate::oep::LinearTransformationImpl`] impl (see
 //! [`crate::impl_linear_transformation_reference_full`]). The prepared path
 //! follows docs/linear_transformation.md: hoisted baby rotations, DFT-domain inner
 //! products, lazy giant rotations, and one final BIG normalization.

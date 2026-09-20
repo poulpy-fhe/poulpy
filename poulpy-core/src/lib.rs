@@ -6,11 +6,13 @@
 //! The public operation traits live in [`api`], while their blanket
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
 //! backend extension points in [`oep`]. This makes the crate portable
-//! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
-//! home of portable operation compositions. Backend overrides preserve those
-//! semantics and are compared with an explicit portable CPU reference execution
-//! on identical logical inputs. Sampling has a distribution and reproducibility
-//! contract rather than a cross-backend seeded-byte equality requirement.
+//! across CPU, AVX, and future backends. [`reference`](mod@crate::reference)
+//! contains reusable algorithms built from HAL operations. [`oep::derived`]
+//! contains defaults built from other core operations, preserving their backend
+//! dispatch. Backends explicitly implement `*Impl` traits to select or replace
+//! these algorithms. Tests compare integer results and metadata with a portable
+//! CPU reference execution. Sampling has a distribution and reproducibility
+//! contract; randomized parity uses controlled samples.
 //!
 //! # Architecture
 //!
@@ -65,7 +67,7 @@
 //! | conversion | LWE / GLWE and GGLWE -> GGSW conversions |
 //! | glwe\_packer | On-the-fly GLWE packing with O(log N) memory |
 //! | glwe\_packing | HashMap-based GLWE slot packing |
-//! | glwe\_trace | GLWE trace (sum of automorphisms) |
+//! | glwe\_trace | Normalized GLWE trace (average of automorphisms) |
 //! | noise | Noise-variance estimation for parameter selection |
 //! | dist | Secret-key distribution descriptors |
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
@@ -99,9 +101,7 @@ pub(crate) mod encryption {
         pub(crate) use crate::reference::encryption::gglwe::*;
     }
 
-    pub(crate) mod glwe {
-        pub(crate) use crate::reference::encryption::glwe::*;
-    }
+    pub(crate) mod glwe {}
 
     pub(crate) mod glwe_switching_key {
         pub(crate) use crate::reference::encryption::glwe_switching_key::*;
@@ -118,9 +118,7 @@ pub(crate) mod noise {
     pub(crate) use crate::reference::noise::*;
 }
 
-pub(crate) mod operations {
-    pub(crate) use crate::reference::operations::*;
-}
+pub(crate) mod operations {}
 
 pub mod test_suite;
 

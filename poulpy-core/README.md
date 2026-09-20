@@ -19,41 +19,37 @@ cargo test -p poulpy-cpu-ref --features enable-core
 ```
 
 `poulpy-core` is backend-agnostic. Backend crates provide the `BE` used by
-`poulpy_hal::layouts::Module<BE>` and opt into portable reference compositions
+`poulpy_hal::layouts::Module<BE>` and select reference implementations or derived defaults
 one operation family at a time. The public traits live in `poulpy_core::api`;
 `poulpy-cpu-ref/examples/core_encryption.rs` is a runnable example.
 
 ## Crate organization
 
 ```text
-public api → delegates → OEP contract → backend implementation
-                               ↑
-                     portable reference composition
-                               ↓
-                          minimal HAL
+public API → delegates → backend *Impl
+                            ├─ reference → HAL operations
+                            └─ derived   → other core operations
 ```
 
 | Module | Role |
 |--------|------|
 | `api` | Safe public operations on ciphertexts, plaintexts and keys. |
-| `delegates` | Dispatches public operations through the appropriate OEP contract. |
-| `oep` | Defines backend implementation contracts and explicit reference opt-in macros. |
-| `reference` | Independently callable portable compositions of HAL operations. |
-| `test_suite` | Shared parity, sampling and scheme/noise contract tests instantiated by backend crates. |
+| `delegates` | Dispatches public operations through the backend's `*Impl` traits. |
+| `oep` | Defines backend hooks, derived defaults and explicit opt-in macros. |
+| `reference` | Reusable algorithms built from HAL operations. |
+| `test_suite` | Shared parity, sampling and scheme/noise tests instantiated by backend crates. |
 
-A backend implements an abstract `*Reference` family and forwards unchanged
-methods to their reference compositions. The `impl_*_reference_full!` macros
-provide the all-reference implementation of each family. Public dispatch reaches
-that implementation through the corresponding `*Impl` trait. Composition traits
-collect the HAL operations needed to call a reference body; they do not grant an
-implementation automatically. Sampling and digit-product kernels are direct
-backend extension points. See the [OEP rustdoc](src/oep/mod.rs) and
-[operation contracts](docs/core-contracts.md) for the exact boundaries and
-exceptions, including the caller-provided BSGS arithmetic policy. The
-[compiled backend example](../poulpy-cpu-ref/src/tests/delegating_backend.rs)
-replaces one operation, forwards its assign/scratch companions, and verifies
-that public dispatch reaches the override. It also exercises a direct `*Impl`
-implementation without opting into the matching reference trait.
+Core follows HAL's distinction between reference and derived implementations.
+`GLWERotateReference` rotates each ciphertext polynomial through HAL.
+GGSW rotation is derived from GLWE rotation on each row, so it uses the backend's
+selected GLWE rotation.
+
+Backends implement `*Impl` traits directly. Family macros can supply the
+reference methods; derived methods already have default bodies. Reusing a
+reference helper does not automatically select it for public dispatch. A backend
+can replace one method and forward its companions to the reference helper.
+See the [OEP rustdoc](src/oep/mod.rs), [backend guide](docs/core-contracts.md), and
+[compiled override example](../poulpy-cpu-ref/src/tests/delegating_backend.rs).
 
 Backend-specific fusion and representations belong in backend crates. Some
 reference digit-product/external-product bodies require

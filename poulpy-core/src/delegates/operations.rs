@@ -377,6 +377,13 @@ impl_operations_delegate!(
     {
         BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, key_infos)
     },
+    fn glwe_trace_assign_tmp_bytes<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::glwe_trace_assign_tmp_bytes(self, a_infos, key_infos)
+    },
     fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,

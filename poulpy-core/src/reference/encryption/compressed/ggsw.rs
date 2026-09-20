@@ -8,14 +8,16 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionInfos, GGSWNoise, ScratchArenaTakeCore,
-    encryption::{GGSWEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillReference},
+    encryption::{GGSWEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GGSWCompressedSeedMut, GGSWInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, compressed::GGSWCompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
 
-/// Backend override contract; opt into its portable body with the matching forwarding macro.
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GGSWCompressedEncryptSkReference<BE: Backend> {
     fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -37,43 +39,19 @@ pub trait GGSWCompressedEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-/// Independently callable portable composition for [`GGSWCompressedEncryptSkReference`].
-///
-/// HAL bounds belong to this helper, not to the backend override contract.
-pub trait GGSWCompressedEncryptSkComposition<BE: Backend> {
-    fn ggsw_compressed_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
-    where
-        A: GGSWInfos;
-
-    fn ggsw_compressed_encrypt_sk_composition<R, P, S, E>(
-        &self,
-        res: &mut R,
-        pt: &P,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
-        P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>;
-}
-
-impl<BE: Backend> GGSWCompressedEncryptSkComposition<BE> for Module<BE>
+impl<BE: Backend> GGSWCompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GGSWEncryptSk<BE>
         + GGSWNoise<BE>
-        + GLWEMaskFillReference<BE>
+        + GLWEMaskFill<BE>
         + VecZnxCopy<BE>
         + VecZnxAddScalarAssign<BE>
         + VecZnxNormalizeAssign<BE>
         + VecZnxZero<BE>,
 {
-    fn ggsw_compressed_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
@@ -82,7 +60,7 @@ where
         self.ggsw_encrypt_sk_tmp_bytes(infos) + full_ct
     }
 
-    fn ggsw_compressed_encrypt_sk_composition<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -110,10 +88,10 @@ where
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(sk_ref.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_composition(res),
+            scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GGSWCompressedEncryptSk::ggsw_compressed_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.ggsw_compressed_encrypt_sk_tmp_bytes_composition(res)
+            self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.dnum().as_usize() * (res.rank().as_usize() + 1)];
@@ -151,7 +129,7 @@ where
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_seed_reference(base2k, &mut full_ct, 1, rank, seed);
+                    self.fill_glwe_mask_from_seed(base2k, &mut full_ct, 1, rank, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,
@@ -170,35 +148,4 @@ where
 
         res.seed_mut().copy_from_slice(&seeds);
     }
-}
-
-/// Forwards every method of [`GGSWCompressedEncryptSkReference`] to its portable composition.
-#[macro_export]
-macro_rules! impl_ggsw_compressed_encrypt_sk_reference_full {
-    ($be:ty) => {
-        impl $crate::reference::encryption::GGSWCompressedEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-    fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: $crate::layouts::GGSWInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGSWCompressedEncryptSkComposition<$be>>::ggsw_compressed_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
-        }
-
-    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
-        &self,
-        res: &mut R,
-        pt: &P,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GGSWCompressedToBackendMut<$be> + $crate::layouts::GGSWCompressedSeedMut + $crate::layouts::GGSWInfos,
-        P: ::poulpy_hal::layouts::ScalarZnxToBackendRef<$be>,
-        E: $crate::api::EncryptionInfos,
-        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGSWCompressedEncryptSkComposition<$be>>::ggsw_compressed_encrypt_sk_composition::<R, P, S, E>(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
-        }
-        }
-    };
 }

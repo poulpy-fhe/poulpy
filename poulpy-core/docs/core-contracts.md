@@ -2,8 +2,8 @@
 
 This guide explains what a backend must preserve when it replaces a
 `poulpy-core` operation. The [public API](../src/api) defines the inputs and
-outputs. For deterministic operations, the [portable implementations](../src/reference)
-define the integer results, rounding and mutations that a replacement must
+outputs. For deterministic operations, the [HAL reference algorithms](../src/reference)
+and [core-derived defaults](../src/oep/derived) define the integer results, rounding and mutations that a replacement must
 reproduce.
 
 A backend can choose its own kernels, prepared-key storage and scratch size.
@@ -12,42 +12,52 @@ The caller should get the same result through the public API.
 ## Choosing an implementation
 
 OEP means **open extension point**: a trait through which the public API calls
-backend code. For GLWE rotation, the relevant traits are:
+backend code. Core uses the same distinction as HAL:
 
-| Trait | Purpose |
+| Component | Purpose |
 |---|---|
-| `GLWERotateImpl` | The backend implementation called by the public API. |
-| `GLWERotateReference` | Where a backend can select or replace the rotation methods. |
-| `GLWERotateComposition` | The shared rotation algorithm, built from HAL operations. |
+| `GLWERotate` | Public rotation API on `Module<BE>`. |
+| `GLWERotateImpl` | Backend hook, implemented directly for `BE`. |
+| `GLWERotateReference` | Reusable rotation algorithm built from HAL operations. |
+| `oep::derived` | Defaults built from other core operations, preserving their backend dispatch. |
 
-For most operation families, implementing `*Reference` supplies the matching
-`*Impl` automatically. The `Reference` suffix therefore also appears on traits
-that a backend implements with its own optimized code.
+For example, rotating each GLWE polynomial with HAL's rotation operation is a
+**reference** implementation. Rotating a GGSW by calling core GLWE rotation on
+each row is **derived**. A backend that overrides GLWE rotation also changes the
+rotation used by that derived GGSW operation.
+Reverse subtraction and out-of-place multiplication by `X^p - 1` also compose
+core operations. Some assign variants remain required HAL-based primitives
+because their scratch contracts do not provide room for a whole ciphertext
+copy.
 
-To use the shared rotation algorithm, a backend that provides its required HAL
+To select the HAL-based rotation algorithm, a backend with the required HAL
 operations can write:
 
 ```rust
 poulpy_core::impl_glwe_rotate_reference_full!(MyBackend);
 ```
 
-To replace one rotation method, implement `GLWERotateReference<MyBackend>` for
-`Module<MyBackend>` yourself. Put the replacement in that method and forward the
-remaining methods, including scratch queries, to `GLWERotateComposition`.
+This macro implements `GLWERotateImpl` for `MyBackend`. To replace one method,
+write that implementation yourself and forward unchanged methods to
+`GLWERotateReference`. The reference methods remain callable directly.
 The [compiled example](../../poulpy-cpu-ref/src/tests/delegating_backend.rs)
-shows this and checks that a public call reaches the replacement.
+checks both reference forwarding and dispatch through custom backend methods.
 
-`impl_core_reference_full!` selects all shared core families except sampling.
-Use the individual family macros when customizing a family, to avoid defining
-its implementation twice. A backend may also implement `*Impl` directly; in
-that case, omit the corresponding `*Reference` implementation.
+Derived methods have default bodies on their `*Impl` traits. A backend can
+inherit those defaults or override them, including their scratch queries.
+A directly called helper checks its own budget; nested operations use their
+selected backend queries. An override can therefore reserve private workspace
+and pass the remaining arena to a helper.
+Trace, packing, gadget row operations and encryption wrappers reuse core
+operations this way. Polynomial evaluation composes caller-supplied `BSGSOps`:
+the caller owns scheme arithmetic and precision, while the derived schedule
+chooses the order of those calls.
 
-Sampling, tensoring and strided gadget products use direct implementation
-traits: `SamplingImpl`, `GLWETensoringImpl` and `GGLWEProductDigitsStridedImpl`.
-The latter two have reference forwarding macros. Preparation and decompression
-helpers reuse backend operations; they do not each provide a separate override
-trait. See the [OEP documentation](../src/oep/mod.rs) for the full list of traits
-and macros.
+`impl_core_reference_full!` selects the available reference algorithms and
+derived defaults, except sampling. Use individual family macros when replacing
+a family, so its `*Impl` is defined only once. Sampling is supplied through
+`SamplingImpl`. Preparation and decompression helpers reuse selected operations;
+see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
 ## Matching the result
 
@@ -103,7 +113,7 @@ opaque buffers.
 The shared gadget-product and GLWE external-product algorithms need partial
 views of DFT limbs. They require `Backend::DFT_LIMBS_CONTIGUOUS = true`. A backend
 with another layout must provide its own `GGLWEProductDigitsStridedImpl` and
-`GLWEExternalProductReference` implementations. The incompatible shared bodies
+`GLWEExternalProductImpl` implementations. The incompatible shared bodies
 are rejected at compile time.
 
 ## Testing a replacement

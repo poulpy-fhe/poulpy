@@ -251,9 +251,7 @@ where
             assert_eq!(a.n(), self.n() as u32);
             assert!(
                 scratch.available() >= self.glwe_secret_tensor_prepare_tmp_bytes(a.rank()),
-                "scratch.available(): {} < GLWESecretTensorFactory::glwe_secret_tensor_prepare_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_secret_tensor_prepare_tmp_bytes(a.rank())
+                "insufficient scratch for GLWE secret tensor preparation"
             );
 
             let rank: usize = a.rank().into();

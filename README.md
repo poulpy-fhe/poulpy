@@ -51,33 +51,52 @@ Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy
 
 ### Layer Anatomy
 
-Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same internal four-module pattern:
+HAL and core separate the public API from backend dispatch:
 
-```
-   ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌────────────────┐
-   │   api   │────►│   oep   │────►│  delegates  │◄────│    default     │
-   └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
+```text
+public API → delegates → backend *Impl
+                            ├─ reference algorithm
+                            └─ derived default → other operations in the same layer
 ```
 
 | Module | Role |
 |--------|------|
-| `api` | Public traits user code calls. Bounds reference `oep` for the backend capabilities they need. |
-| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. |
-| `reference` | The implementation of every operation: portable compositions of the HAL as safe trait methods, the definition of what each operation computes and the only validated circuit. Every backend runs it unless it overrides an operation with a faster route to the same result. |
-| `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. Composite operations also live here. |
+| `api` | Public traits called by user code. |
+| `delegates` | Implements those traits on `Module<BE>` by calling backend hooks. |
+| `oep` | Backend `*Impl` traits and defaults for derived operations. |
+| `reference` | Reusable portable algorithms; core reference bodies build on HAL. |
+
+The reference HAL kernels live in `poulpy-cpu-ref`. Core algorithms built from
+HAL operations live in `poulpy-core::reference`. Compositions of other core
+operations live in `poulpy-core::oep::derived` and inherit the selected backend
+implementations of their component operations.
 
 ### Overriding at Any Level
 
-`reference` is not a fallback: it is the implementation, and an override is a faster route to the same result (a fused kernel, device-native code, another layout), never a different behaviour. A backend overrides an operation by implementing the corresponding `oep` trait directly instead of the blanket `reference` wiring. An override is validated, not trusted: the parity suite runs the operation on the backend under test and on an attested backend, on the same inputs, and requires the same result. Attestation is transitive: the oracle is `reference`, the portable backend runs it directly, and a backend attested against an attested backend is attested itself, so a new backend need not test against the oracle when an attested one is at hand (a GPU backend against an attested AVX-512 backend, for example). Every OEP method has such a test, and an override is correct only when its parity test passes. No passing parity test, no override. Only the hot-path operations need overrides; everything else runs the `reference` implementation. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
+A backend implements an operation family's `*Impl` trait. It can supply custom
+methods, forward methods to the reference algorithms, and inherit derived
+defaults. Core's forwarding macros provide the complete implementation of a
+family when no custom methods are needed. Reference helpers remain independently
+callable; their availability alone does not select them for public dispatch.
+
+For example, a core reference rotation applies HAL rotation to each GLWE
+polynomial. Derived GGSW rotation calls core GLWE rotation on each row, so it
+reuses a custom GLWE rotation. Overrides must preserve the
+operation's documented results, mutation rules and scratch contract. Core parity
+tests compare them with an explicit portable CPU reference execution.
 
 ### Integrating a Backend
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
-2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
+2. Implement each required HAL OEP method and inherit or override its derived defaults.
+3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and each one is accepted only with its parity test passing against an attested backend, attestation being transitive back to `reference` (`core_parity_test_suite!`, the CKKS and bin-fhe parity suites, `cross_backend_test_suite!` and `test_suite::derived` for the HAL).
+A family macro and a handwritten implementation of the same trait are mutually
+exclusive. Use individual family macros when customizing a core backend, and
+validate its implementations with the shared conformance tests. The
+[core backend guide](poulpy-core/docs/core-contracts.md) explains reference
+forwarding, derived defaults, scratch requirements and controlled sampling.
 
 See `poulpy-cpu-ref` for the reference implementation of all four steps.
 

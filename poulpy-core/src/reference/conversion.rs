@@ -1,8 +1,6 @@
-//! Reference implementations of the [`ConversionReference`] methods.
-//!
-//! Each free function carries the HAL bounds it actually needs in its own `where` clause.
-//!
-//! Re-exported publicly through `crate::oep::conversion_reference`.
+//! Portable algorithms expressed with HAL operations.
+//! Inter-family core operations dispatch through the selected backend hooks.
+use crate::api::GLWEKeyswitch;
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -12,24 +10,20 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxZero,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
         VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref,
     },
 };
 
 use crate::{
-    GLWERotate, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
-        LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef, Rank,
+        glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
-    oep::{ConversionReference, GLWEKeyswitchReference},
-    reference::{
-        keyswitching::{GGLWEProductReference, gglwe_product_output_size},
-        operations::GLWECopyReference,
-    },
+    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
 pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
@@ -234,7 +228,7 @@ where
 pub fn glwe_from_lwe_tmp_bytes_reference<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE> + VecZnxNormalizeTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -250,7 +244,7 @@ where
         rank: Rank(1),
     };
     let lvl_0: usize = module.glwe_bytes_of_from_infos(&lifted_infos);
-    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_reference(glwe_infos, &lifted_infos, key_infos);
+    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes(glwe_infos, &lifted_infos, key_infos);
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
@@ -273,7 +267,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     M: GLWEBytesOf<BE>
         + ConversionReference<BE>
         + ModuleN
-        + GLWEKeyswitchReference<BE>
+        + GLWEKeyswitch<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
         + VecZnxNormalize<BE>
@@ -362,138 +356,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch_reference(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
-}
-
-pub fn lwe_from_glwe_tmp_bytes_reference<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
-where
-    BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE>,
-    R: LWEInfos,
-    A: GLWEInfos,
-    K: GGLWEInfos,
-{
-    assert_eq!(module.n() as u32, glwe_infos.n());
-    assert_eq!(module.n() as u32, key_infos.n());
-
-    let res_infos: GLWELayout = GLWELayout {
-        n: module.n().into(),
-        base2k: lwe_infos.base2k(),
-        k: lwe_infos.k(),
-        rank: Rank(1),
-    };
-
-    let lvl_0: usize = module.glwe_bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
-    let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_reference(&res_infos, glwe_infos, key_infos);
-    let lvl_2: usize = module.glwe_bytes_of_from_infos(glwe_infos);
-
-    lvl_0 + lvl_1 + lvl_2
-}
-
-pub fn lwe_from_glwe_reference<BE, M, R, A>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    a_idx: usize,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEBytesOf<BE> + ConversionReference<BE> + ModuleN + GLWEKeyswitchReference<BE> + GLWERotate<BE> + VecZnxCopy<BE>,
-    R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-{
-    let a_backend = a.to_backend_ref();
-
-    assert_eq!(a.n(), module.n() as u32);
-    assert_eq!(key.n(), module.n() as u32);
-    assert!(res.n() <= module.n() as u32);
-    assert!(
-        scratch.available() >= module.lwe_from_glwe_tmp_bytes_reference(res, a, key),
-        "scratch.available(): {} < LWEFromGLWE::lwe_from_glwe_tmp_bytes: {}",
-        scratch.available(),
-        module.lwe_from_glwe_tmp_bytes_reference(res, a, key)
-    );
-
-    let glwe_layout: GLWELayout = GLWELayout {
-        n: module.n().into(),
-        base2k: res.base2k(),
-        k: res.k(),
-        rank: Rank(1),
-    };
-
-    let scratch = scratch.borrow();
-    let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
-
-    let a_backend_view = &a_backend;
-    module.glwe_keyswitch_reference(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
-    if a_idx != 0 {
-        module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
-    }
-
-    let mut res_backend = res.to_backend_mut();
-    let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe_rank_1);
-    let n: usize = res_backend.n().into();
-
-    module.vec_znx_copy(
-        &mut res_backend.body,
-        0,
-        &vec_znx_backend_ref_from_ref::<BE>(&tmp_glwe_rank_1_ref.data).window_coeffs(0, 1),
-        0,
-    );
-    module.vec_znx_copy(
-        &mut res_backend.mask,
-        0,
-        &vec_znx_backend_ref_from_ref::<BE>(&tmp_glwe_rank_1_ref.data).window_coeffs(0, n),
-        1,
-    );
-}
-
-pub fn ggsw_from_gglwe_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
-where
-    BE: Backend,
-    M: ConversionReference<BE>,
-    R: GGSWInfos,
-    A: GGLWEInfos,
-{
-    module.ggsw_expand_rows_tmp_bytes_reference(res_infos, tsk_infos)
-}
-
-pub fn ggsw_from_gglwe_reference<BE, M, R, A>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: ConversionReference<BE> + ModuleN + GLWECopyReference<BE>,
-    R: GGSWToBackendMut<BE> + GGSWInfos,
-    A: GGLWEToBackendRef<BE> + GGLWEInfos,
-{
-    let mut res_backend = res.to_backend_mut();
-    let a_backend = a.to_backend_ref();
-
-    assert_eq!(res_backend.rank(), a_backend.rank_out());
-    assert_eq!(res_backend.dnum(), a_backend.dnum());
-    assert_eq!(res_backend.n(), module.n() as u32);
-    assert_eq!(a_backend.n(), module.n() as u32);
-    assert_eq!(tsk.n(), module.n() as u32);
-    assert_eq!(res_backend.base2k(), a_backend.base2k());
-    assert!(
-        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk),
-        "scratch.available(): {} < GGSWFromGGLWE::ggsw_from_gglwe_tmp_bytes: {}",
-        scratch.available(),
-        module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk)
-    );
-
-    for row in 0..res_backend.dnum().into() {
-        let mut res_at = res_backend.at_view_mut(row, 0);
-        let a_at = a_backend.at_view(row, 0);
-        module.glwe_copy_reference(&mut res_at, &a_at, scratch);
-    }
-
-    module.ggsw_expand_row_reference(&mut res_backend, tsk, scratch)
+    module.glwe_keyswitch(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
 pub fn ggsw_expand_rows_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
@@ -681,5 +544,170 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
                 scratch_norm,
             );
         }
+    }
+}
+
+/// Portable HAL algorithm helpers. Available when their capabilities are present;
+/// backend dispatch is selected independently through the corresponding `*Impl` trait.
+pub trait ConversionReference<BE: Backend> {
+    fn lwe_sample_extract_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_from_lwe_tmp_bytes_reference<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: LWEInfos,
+        K: GGLWEInfos;
+
+    fn glwe_from_lwe_reference<R, A>(
+        &self,
+        res: &mut R,
+        lwe: &A,
+        ksk: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: LWEToBackendRef<BE> + LWEInfos;
+
+    fn glwe_expand_lwe_tmp_bytes_reference<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_reference<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_expand_lwe_matrix_tmp_bytes_reference<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_matrix_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn ggsw_expand_rows_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    where
+        R: GGSWInfos,
+        A: GGLWEInfos;
+
+    fn ggsw_expand_row_reference<R>(
+        &self,
+        res: &mut R,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos;
+}
+
+impl<BE: Backend> ConversionReference<BE> for ::poulpy_hal::layouts::Module<BE>
+where
+    Module<BE>: poulpy_hal::api::ModuleN
+        + poulpy_hal::api::VecZnxCopy<BE>
+        + poulpy_hal::api::VecZnxRotate<BE>
+        + poulpy_hal::api::VecZnxZero<BE>
+        + crate::api::GLWEBytesOf<BE>
+        + crate::api::GLWEKeyswitch<BE>
+        + poulpy_hal::api::VecZnxNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxNormalize<BE>
+        + crate::reference::keyswitching::GGLWEProductReference<BE>
+        + poulpy_hal::api::VecZnxBigBytesOf
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftBytesOf
+        + poulpy_hal::api::VecZnxIdftApplyTmpBytes
+        + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
+        + poulpy_hal::api::VecZnxBigNormalize<BE>
+        + poulpy_hal::api::VecZnxDftApply<BE>
+        + poulpy_hal::api::VecZnxDftZero<BE>
+        + poulpy_hal::api::VecZnxIdftApply<BE>,
+{
+    fn lwe_sample_extract_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: crate::layouts::LWEToBackendMut<BE> + crate::layouts::LWEInfos,
+        A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    {
+        crate::reference::conversion::lwe_sample_extract_reference::<BE, _, _, _>(self, res, a)
+    }
+
+    fn glwe_from_lwe_tmp_bytes_reference<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
+    where
+        R: crate::layouts::GLWEInfos,
+        A: crate::layouts::LWEInfos,
+        K: crate::layouts::GGLWEInfos,
+    {
+        crate::reference::conversion::glwe_from_lwe_tmp_bytes_reference::<BE, _, _, _, _>(self, glwe_infos, lwe_infos, key_infos)
+    }
+
+    fn glwe_from_lwe_reference<R, A>(
+        &self,
+        res: &mut R,
+        lwe: &A,
+        ksk: &crate::layouts::prepared::GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+    ) where
+        R: crate::layouts::GLWEToBackendMut<BE> + crate::layouts::GLWEInfos,
+        A: crate::layouts::LWEToBackendRef<BE> + crate::layouts::LWEInfos,
+    {
+        crate::reference::conversion::glwe_from_lwe_reference::<BE, _, _, _>(self, res, lwe, ksk, scratch)
+    }
+
+    fn glwe_expand_lwe_tmp_bytes_reference<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: crate::layouts::LWEInfos,
+        A: crate::layouts::GLWEInfos,
+    {
+        crate::reference::conversion::glwe_expand_lwe_tmp_bytes_reference::<BE, _, _, _>(self, lwe_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe_reference<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>)
+    where
+        R: crate::layouts::LWEToBackendMut<BE> + crate::layouts::LWEInfos,
+        A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    {
+        crate::reference::conversion::glwe_expand_lwe_reference::<BE, _, _, _>(self, res, a, scratch)
+    }
+
+    fn glwe_expand_lwe_matrix_tmp_bytes_reference<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: crate::layouts::LWEMatrixInfos,
+        A: crate::layouts::GLWEInfos,
+    {
+        crate::reference::conversion::glwe_expand_lwe_matrix_tmp_bytes_reference::<BE, _, _, _>(self, res_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe_matrix_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+    ) where
+        R: crate::layouts::LWEMatrixToBackendMut<BE> + crate::layouts::LWEMatrixInfos,
+        A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    {
+        crate::reference::conversion::glwe_expand_lwe_matrix_reference::<BE, _, _, _>(self, res, a, scratch)
+    }
+
+    fn ggsw_expand_rows_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    where
+        R: crate::layouts::GGSWInfos,
+        A: crate::layouts::GGLWEInfos,
+    {
+        crate::reference::conversion::ggsw_expand_rows_tmp_bytes_reference::<BE, _, _, _>(self, res_infos, tsk_infos)
+    }
+
+    fn ggsw_expand_row_reference<R>(
+        &self,
+        res: &mut R,
+        tsk: &crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+    ) where
+        R: crate::layouts::GGSWToBackendMut<BE> + crate::layouts::GGSWInfos,
+    {
+        crate::reference::conversion::ggsw_expand_row_reference::<BE, _, _>(self, res, tsk, scratch)
     }
 }

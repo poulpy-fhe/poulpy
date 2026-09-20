@@ -16,7 +16,9 @@ use crate::{
     },
 };
 
-/// Backend override contract; opt into its portable body with the matching forwarding macro.
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEToGLWESwitchingKeyEncryptSkReference<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -38,35 +40,11 @@ pub trait LWEToGLWESwitchingKeyEncryptSkReference<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
-/// Independently callable portable composition for [`LWEToGLWESwitchingKeyEncryptSkReference`].
-///
-/// HAL bounds belong to this helper, not to the backend override contract.
-pub trait LWEToGLWESwitchingKeyEncryptSkComposition<BE: Backend> {
-    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn lwe_to_glwe_key_encrypt_sk_composition<R, S1, S2, E>(
-        &self,
-        res: &mut R,
-        sk_lwe: &S1,
-        sk_glwe: &S2,
-        enc_infos: &E,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        S1: LWESecretToBackendRef<BE>,
-        S2: GLWESecretPreparedToBackendRef<BE>,
-        E: EncryptionInfos,
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
-}
-
-impl<BE: Backend> LWEToGLWESwitchingKeyEncryptSkComposition<BE> for Module<BE>
+impl<BE: Backend> LWEToGLWESwitchingKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxAutomorphism<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
 {
-    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition<A>(&self, infos: &A) -> usize
+    fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -85,7 +63,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_to_glwe_key_encrypt_sk_composition<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
@@ -104,10 +82,10 @@ where
 
         assert!(sk_lwe.n().0 <= self.n() as u32);
         assert!(
-            scratch.available() >= self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition(res),
+            scratch.available() >= self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWEToGLWESwitchingKeyEncryptSk::lwe_to_glwe_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition(res)
+            self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let scratch = scratch.borrow();
@@ -145,43 +123,4 @@ where
             &mut enc_scratch,
         );
     }
-}
-
-/// Forwards every method of [`LWEToGLWESwitchingKeyEncryptSkReference`] to its portable composition.
-#[macro_export]
-macro_rules! impl_lwe_to_glwe_switching_key_encrypt_sk_reference_full {
-    ($be:ty) => {
-        impl $crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-            where
-                A: $crate::layouts::GGLWEInfos,
-            {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkComposition<
-                    $be,
-                >>::lwe_to_glwe_key_encrypt_sk_tmp_bytes_composition::<A>(self, infos)
-            }
-
-            fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
-                &self,
-                res: &mut R,
-                sk_lwe: &S1,
-                sk_glwe: &S2,
-                enc_infos: &E,
-                source_xe: &mut ::poulpy_hal::source::Source,
-                source_xa: &mut ::poulpy_hal::source::Source,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                S1: $crate::layouts::LWESecretToBackendRef<$be>,
-                S2: $crate::layouts::GLWESecretPreparedToBackendRef<$be>,
-                E: $crate::api::EncryptionInfos,
-                R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
-            {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkComposition<
-                    $be,
-                >>::lwe_to_glwe_key_encrypt_sk_composition::<R, S1, S2, E>(
-                    self, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch,
-                )
-            }
-        }
-    };
 }
