@@ -885,10 +885,14 @@ mod ifma_impl {
             let (tmp, arena) = take_host_typed::<Self, u64>(arena, 3 * n);
             let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
             crate::ntt3x42_ifma::vec_znx_dft::idft_compact_in_place_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
-                module, a, a_col, tmp,
+                module,
+                a,
+                a_col,
+                addend.filter(|(add, _)| add.n() == n),
+                tmp,
             );
             let a_shape = a.shape();
-            if let Some((add, add_col)) = addend {
+            if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
                 let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
                     poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
                 let mut big_ref = &mut big;

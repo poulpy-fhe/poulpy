@@ -503,9 +503,18 @@ unsafe impl HalVecZnxDftImpl for NTT3x42IfmaRayon {
         let (tmp, arena) = crate::hal_impl::take_host_typed::<Self, u64>(arena, workers * 3 * n);
         let (carry, _) = crate::hal_impl::take_host_typed::<Self, i128>(arena, 3 * n);
         let mut a_base = base_dft_mut(a);
-        super::vec_znx_dft::idft_compact_in_place_ifma::<NTT3x42IfmaRayonExecutor>(base_module(module), &mut a_base, a_col, tmp);
+        let add_base = addend
+            .filter(|(add, _)| add.n() == n)
+            .map(|(add, col)| (poulpy_hal::layouts::VecZnx::from_shape(&**add.data(), add.shape()), col));
+        super::vec_znx_dft::idft_compact_in_place_ifma::<NTT3x42IfmaRayonExecutor>(
+            base_module(module),
+            &mut a_base,
+            a_col,
+            add_base.as_ref().map(|(add, col)| (add, *col)),
+            tmp,
+        );
         let a_shape = a.shape();
-        if let Some((add, add_col)) = addend {
+        if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, NTT3x42Ifma> =
                 VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;

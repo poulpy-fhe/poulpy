@@ -13,20 +13,22 @@ use poulpy_core::{
     impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
     impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
     impl_lwe_keyswitch_reference_full,
-    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     oep::GLWETensoringImpl,
+    reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_output_size},
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssign,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint,
         ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
     },
 };
 
@@ -442,7 +444,7 @@ fn rank_one_tensor_square<BE, R, A>(
 }
 
 macro_rules! impl_rank_one_tensoring {
-    ($be:ty) => {
+    ($be:ty, $consume:literal) => {
         unsafe impl GLWETensoringImpl for $be {
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
@@ -516,7 +518,49 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEToBackendRef<$be> + GLWEInfos,
                 T: poulpy_core::layouts::GetTensorKey<$be>,
             {
-                module.glwe_tensor_relinearize_reference(res, a, tsk, scratch)
+                if !$consume {
+                    return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
+                }
+                let key = tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
+                if a.base2k() != key.base2k() {
+                    return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
+                }
+                let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
+                assert_eq!(res.rank(), key.rank_out());
+                assert_eq!(a.rank(), key.rank_out());
+                let cols = key.rank_out().as_usize() + 1;
+                let pairs = key.rank_in().as_usize();
+                let a_size = a.k().div_ceil(key.base2k()) as usize;
+                let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, &key);
+                let res_base2k = res.base2k().as_usize();
+                let res_k = res.k().as_usize();
+                let (mut input, scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, pairs, a_size);
+                let (mut output, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols, output_size);
+                let a = a.to_backend_ref();
+                for i in 0..pairs {
+                    module.vec_znx_dft_apply(1, 0, &mut input, i, a.data(), cols + i);
+                }
+                module.gglwe_product_dft_reference(
+                    &mut output,
+                    &input.to_backend_ref(),
+                    &GGLWEPreparedToBackendRef::<$be>::to_backend_ref(&&key),
+                    1,
+                    &mut scratch,
+                );
+                let mut res = res.to_backend_mut();
+                for i in 0..cols {
+                    module.vec_znx_idft_normalize_consume(
+                        res.data_mut(),
+                        res_base2k,
+                        res_k,
+                        i,
+                        &mut output,
+                        i,
+                        key.base2k().as_usize(),
+                        Some((a.data(), i)),
+                        &mut scratch,
+                    );
+                }
             }
 
             fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, tsk: &B) -> usize
@@ -525,19 +569,29 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEInfos,
                 B: GGLWEInfos,
             {
-                module.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk)
+                if !$consume || a.base2k() != tsk.base2k() {
+                    return module.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk);
+                }
+                let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);
+                let a_size = a.k().div_ceil(tsk.base2k()) as usize;
+                let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, tsk);
+                module.bytes_of_vec_znx_dft(n, tsk.rank_in().as_usize(), a_size)
+                    + module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
+                    + module
+                        .gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk)
+                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size))
             }
         }
     };
 }
 
-impl_rank_one_tensoring!(NTT4x30Avx512);
+impl_rank_one_tensoring!(NTT4x30Avx512, false);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(NTT4x30Avx512Rayon);
+impl_rank_one_tensoring!(NTT4x30Avx512Rayon, false);
 #[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(NTT3x42Ifma);
+impl_rank_one_tensoring!(NTT3x42Ifma, true);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(NTT3x42IfmaRayon);
+impl_rank_one_tensoring!(NTT3x42IfmaRayon, true);
 
 unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
     fn gglwe_product_digits_strided_tmp_bytes(
@@ -799,4 +853,81 @@ mod ifma_rayon_defaults {
     impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_ggsw_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_linear_transformation_reference_full!(NTT3x42IfmaRayon);
+}
+
+#[cfg(all(test, feature = "enable-ifma"))]
+mod relinearize_tests {
+    use super::*;
+    use poulpy_core::{
+        GLWETensoring,
+        layouts::{GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc},
+    };
+    use poulpy_hal::{
+        api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+        layouts::{FillUniform, ScratchOwned},
+        source::Source,
+    };
+
+    macro_rules! check_relinearize {
+        ($name:ident, $be:ty) => {
+            #[test]
+            fn $name() {
+                for (n, rank) in [(256usize, 1usize), (256, 2), (65536, 1)] {
+                    let module = Module::<$be>::new(n as u64);
+                    let mut source = Source::new([41; 32]);
+                    for (base2k, key_base2k, dsize) in [(52usize, 52usize, 1usize), (52, 52, 4), (26, 52, 4)] {
+                        let layout = GLWELayout {
+                            n: n.into(),
+                            base2k: base2k.into(),
+                            k: 415usize.into(),
+                            rank: rank.into(),
+                        };
+                        let key_layout = GLWETensorKeyLayout {
+                            n: n.into(),
+                            base2k: key_base2k.into(),
+                            dsize: dsize.into(),
+                            dnum: 8usize.div_ceil(dsize).into(),
+                            k_aux: (key_base2k * dsize + n.ilog2() as usize).into(),
+                            rank: rank.into(),
+                        };
+                        let mut input = module.glwe_tensor_alloc_from_infos(&layout);
+                        input.fill_uniform(base2k, &mut source);
+                        let mut key = module.glwe_tensor_key_alloc_from_infos(&key_layout);
+                        key.fill_uniform(key_base2k, &mut source);
+                        let mut prepared = module.alloc_tensor_key_prepared_from_infos(&key_layout);
+                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.prepare_tensor_key_tmp_bytes(&key_layout));
+                        module.prepare_tensor_key(&mut prepared, &key, &mut prep_scratch.borrow());
+                        for (res_base2k, res_k) in [(52usize, 311usize), (26, 415)] {
+                            let output_layout = GLWELayout {
+                                base2k: res_base2k.into(),
+                                k: res_k.into(),
+                                ..layout
+                            };
+                            let mut got = module.glwe_alloc_from_infos(&output_layout);
+                            let mut expected = module.glwe_alloc_from_infos(&output_layout);
+                            let mut scratch =
+                                ScratchOwned::<$be>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&got, &input, &prepared));
+                            let mut reference_scratch = ScratchOwned::<$be>::alloc(
+                                module.glwe_tensor_relinearize_tmp_bytes_reference(&expected, &input, &prepared),
+                            );
+                            module.glwe_tensor_relinearize(&mut got, &input, &prepared, &mut scratch.borrow());
+                            module.glwe_tensor_relinearize_reference(
+                                &mut expected,
+                                &input,
+                                &prepared,
+                                &mut reference_scratch.borrow(),
+                            );
+                            assert_eq!(
+                                got, expected,
+                                "n={n}, rank={rank}, base2k={base2k}, dsize={dsize}, res_base2k={res_base2k}"
+                            );
+                        }
+                    }
+                }
+            }
+        };
+    }
+    check_relinearize!(consume_relinearize_serial, NTT3x42Ifma);
+    #[cfg(feature = "enable-rayon")]
+    check_relinearize!(consume_relinearize_parallel, NTT3x42IfmaRayon);
 }

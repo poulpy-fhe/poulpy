@@ -13,9 +13,9 @@ use crate::ntt3x42_ifma::{
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m512i, __mmask8, _MM_CMPINT_LT, _mm512_add_epi64, _mm512_and_si512, _mm512_cmp_epu64_mask, _mm512_cmpeq_epi64_mask,
-    _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_sub_epi64, _mm512_permutex2var_epi64,
-    _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
-    _mm512_sub_epi64,
+    _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_add_epi64, _mm512_mask_sub_epi64,
+    _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srai_epi64,
+    _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 use poulpy_hal::layouts::PrimeSet;
 use poulpy_hal::layouts::{
@@ -101,7 +101,7 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
 /// store them in native interleaved `[lo, hi]` memory order.
 #[target_feature(enable = "avx512f")]
 #[inline]
-unsafe fn store_symmetric_i128x8(dst: *mut i128, lo: __m512i, hi: __m512i) {
+unsafe fn store_symmetric_i128x8<const ADD: bool>(dst: *mut i128, lo: __m512i, hi: __m512i, add: *const i64) {
     unsafe {
         let half_lo = _mm512_set1_epi64(HALF_BIG_Q_LO as i64);
         let half_hi = _mm512_set1_epi64(HALF_BIG_Q_HI as i64);
@@ -120,6 +120,16 @@ unsafe fn store_symmetric_i128x8(dst: *mut i128, lo: __m512i, hi: __m512i) {
         let lo = _mm512_mask_sub_epi64(lo, subtract_q, lo, big_lo);
         let hi = _mm512_mask_sub_epi64(hi, subtract_q, hi, big_hi);
         let hi = _mm512_mask_sub_epi64(hi, borrow, hi, one);
+
+        let (lo, hi) = if ADD {
+            let add = _mm512_loadu_si512(add as *const __m512i);
+            let sum = _mm512_add_epi64(lo, add);
+            let carry = _mm512_cmp_epu64_mask(sum, lo, _MM_CMPINT_LT);
+            let hi = _mm512_add_epi64(hi, _mm512_srai_epi64::<63>(add));
+            (sum, _mm512_mask_add_epi64(hi, carry, hi, one))
+        } else {
+            (lo, hi)
+        };
 
         // [lo0..lo7] + [hi0..hi7] -> two native i128 store vectors.
         let interleave_lo = _mm512_set_epi64(11, 3, 10, 2, 9, 1, 8, 0);
@@ -143,8 +153,14 @@ unsafe fn store_symmetric_i128x8(dst: *mut i128, lo: __m512i, hi: __m512i) {
 /// - Caller must ensure AVX512-IFMA and AVX512-VL support.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
+    unsafe { crt_compact_ifma::<false>(nn, res, a, &[]) };
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn crt_compact_ifma<const ADD: bool>(nn: usize, res: &mut [i128], a: &[u64], add: &[i64]) {
     assert!(res.len() >= nn);
     assert!(a.len() >= 3 * nn);
+    assert!(!ADD || add.len() >= nn);
 
     unsafe {
         let q0 = _mm512_set1_epi64(Q0 as i64);
@@ -192,7 +208,7 @@ pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], 
             let a1 = _mm512_and_si512(a1, mask52);
             let lo = _mm512_add_epi64(a0, _mm512_slli_epi64::<52>(_mm512_and_si512(a1, mask12)));
             let hi = _mm512_add_epi64(_mm512_srli_epi64::<12>(a1), _mm512_slli_epi64::<40>(a2));
-            store_symmetric_i128x8(res.as_mut_ptr().add(c), lo, hi);
+            store_symmetric_i128x8::<ADD>(res.as_mut_ptr().add(c), lo, hi, add.as_ptr().wrapping_add(c));
 
             c += 8;
         }
@@ -201,7 +217,7 @@ pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], 
             let r0 = cond_sub_scalar(a[c], Q0);
             let r1 = cond_sub_scalar(a[nn + c], Q1);
             let r2 = cond_sub_scalar(a[2 * nn + c], Q2);
-            res[c] = garner_from_residues(r0, r1, r2);
+            res[c] = garner_from_residues(r0, r1, r2) + if ADD { add[c] as i128 } else { 0 };
             c += 1;
         }
     }
@@ -525,6 +541,7 @@ pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>
     module: &Module<NTT3x42Ifma>,
     a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     a_col: usize,
+    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma>, usize)>,
     tmp: &mut [u64],
 ) {
     let n = a.n();
@@ -538,7 +555,12 @@ pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>
         let slot = unsafe { packed_limb_raw_mut(data_ptr.get(), n, a_cols, a_col, j) };
         unsafe {
             unpack_limb_3x42(n, scratch, slot);
-            intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), slot.as_mut_ptr() as *mut i128, table);
+            if let Some((add, col)) = addend.filter(|(add, _)| j < add.size()) {
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(table, scratch);
+                crt_compact_ifma::<true>(n, cast_slice_mut(slot), scratch, add.at(col, j));
+            } else {
+                intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), slot.as_mut_ptr() as *mut i128, table);
+            }
         }
     });
 }
@@ -1062,7 +1084,7 @@ mod finish_tests {
                     let mut add = host.vec_znx_alloc(n, 2, add_size.max(1));
                     for j in 0..add.size() {
                         for (i, value) in add.at_mut(0, j).iter_mut().enumerate() {
-                            *value = [0, 1, -1, (1i64 << 62) - 1, -(1i64 << 62)][(i + j) % 5];
+                            *value = [0, 1, -1, (1i64 << 62) - 1, -(1i64 << 62), i64::MIN, i64::MAX][(i + j) % 7];
                         }
                     }
                     let add_ref: VecZnxBackendRef<'_, NTT3x42Ifma> = VecZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&add);
