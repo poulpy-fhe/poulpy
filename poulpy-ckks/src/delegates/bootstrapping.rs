@@ -179,6 +179,88 @@ where
         }
         BootstrappingReference::new(self).ckks_functional_bootstrap_reference(ct_outs, ct_in, ctx, luts, keys, scratch)
     }
+    fn ckks_ci_bootstrap_tmp_bytes<F>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        ct_out: &CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys_layout: &crate::layouts::CIBootstrappingKeysLayout,
+    ) -> usize {
+        crate::reference::ci_bootstrapping::ckks_ci_bootstrap_tmp_bytes_reference(
+            self,
+            ci_module,
+            ct_out,
+            ct_in,
+            ctx,
+            keys_layout,
+        )
+    }
+
+    fn ckks_ci_bootstrap<F, K, S>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys: &crate::layouts::CIBootstrappingKeys<K, S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: Backend<ZnxWord = i64>,
+        for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos,
+    {
+        check_key_rings::<BE, _>(
+            &keys.bootstrap_keys,
+            "ckks_ci_bootstrap",
+            crate::CKKSModuleInfos::ckks_ring(self),
+        )?;
+        crate::reference::ci_bootstrapping::ckks_ci_bootstrap_reference(
+            self, ci_module, ct_out, None, ct_in, None, ctx, keys, scratch,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_ci_bootstrap_pair<F, K, S>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        left_out: &mut CKKSCiphertextOwned<BE>,
+        right_out: &mut CKKSCiphertextOwned<BE>,
+        left_in: &CKKSCiphertextOwned<BE>,
+        right_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys: &crate::layouts::CIBootstrappingKeys<K, S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: Backend<ZnxWord = i64>,
+        for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos,
+    {
+        check_key_rings::<BE, _>(
+            &keys.bootstrap_keys,
+            "ckks_ci_bootstrap_pair",
+            crate::CKKSModuleInfos::ckks_ring(self),
+        )?;
+        crate::reference::ci_bootstrapping::ckks_ci_bootstrap_reference(
+            self,
+            ci_module,
+            left_out,
+            Some(right_out),
+            left_in,
+            Some(right_in),
+            ctx,
+            keys,
+            scratch,
+        )
+    }
 }
 
 fn check_key_rings<BE: Backend, K: BootstrappingKeys<BE>>(

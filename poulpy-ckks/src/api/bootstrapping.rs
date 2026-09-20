@@ -176,4 +176,61 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ) -> Result<()>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+    /// Scratch bound for the single and pair CI bootstraps. `self` is the
+    /// standard module of degree twice `ci_module`.
+    fn ckks_ci_bootstrap_tmp_bytes<F>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        ct_out: &CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys_layout: &crate::layouts::CIBootstrappingKeysLayout,
+    ) -> usize;
+
+    /// Refreshes one CI ciphertext through the degree-doubled standard ring.
+    /// S2C-first without EvalRound+ evaluates EvalMod once. Inputs and outputs
+    /// use the CI module; the context and evaluation keys use `self`.
+    /// The context must use full-slot standard transforms, including for sparse inputs.
+    /// Conversion is internal, and the input scale and slot count are preserved.
+    /// Reserve `plan.bootstrap_k(output_k, input.log_delta())` bits in the
+    /// output allocation and cover `output_k` bits with the return key.
+    fn ckks_ci_bootstrap<F, K, S>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys: &crate::layouts::CIBootstrappingKeys<K, S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: Backend<ZnxWord = i64>,
+        for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos;
+
+    /// Explicitly packs two CI ciphertexts into one standard bootstrap and
+    /// extracts the two real results. Inputs must share their layout and metadata;
+    /// outputs must share their layout. This evaluates both nonlinear branches.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_ci_bootstrap_pair<F, K, S>(
+        &self,
+        ci_module: &poulpy_hal::layouts::Module<BE>,
+        left_out: &mut CKKSCiphertextOwned<BE>,
+        right_out: &mut CKKSCiphertextOwned<BE>,
+        left_in: &CKKSCiphertextOwned<BE>,
+        right_in: &CKKSCiphertextOwned<BE>,
+        ctx: &crate::layouts::CIBootstrappingContext<BE, F>,
+        keys: &crate::layouts::CIBootstrappingKeys<K, S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: Backend<ZnxWord = i64>,
+        for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos;
 }

@@ -479,6 +479,40 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_bootstrap_s2c() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 0, false);
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_sparse() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 2, false);
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_without_encapsulation() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, true, false, 0, false,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_c2s() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, false, true, 0, false,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_eval_round() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 0, true);
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = ($config).new_module::<$backend>(params.n as u64);
@@ -740,4 +774,253 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     );
     assert!(!powers.contains_power(2));
     assert!(powers.gen_power(3, ci, &ci_tsk, &mut scratch.borrow()).is_err());
+}
+
+pub fn test_conjugate_invariant_bootstrapping<BE>(
+    mut params: CKKSTestParams,
+    ci: Module<BE>,
+    s2c_first: bool,
+    encapsulate: bool,
+    log_sparsity: usize,
+    eval_round: bool,
+) where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + crate::api::CKKSEncodingOps<BE, f64>
+        + crate::api::CKKSBootstrappingOps<BE>
+        + crate::api::CKKSDFTMatrixOps<BE, f64>,
+    Module<HostBytesBackend>: TestContextHostModule,
+{
+    use crate::{CoeffsMeta, api::CKKSBootstrappingOps, layouts::*, polynomial::SplitStrategy};
+    let layers = ci.n().ilog2() as usize;
+    let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
+    let log_delta = 35;
+    let log_msg_ratio = if s2c_first { 13 } else { 8 };
+    let plan = BootstrappingPlan::new(
+        if s2c_first {
+            BootstrappingPipeline::S2CFirst
+        } else {
+            BootstrappingPipeline::C2SFirst
+        },
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: eval_round.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan::new(
+                    DFTType::Encode,
+                    vec![(1, 1); layers],
+                    DFTOutputFormat::SplitRealAndImag,
+                    CoeffsMeta::from_delta_budget(96, 4),
+                )
+                .unwrap(),
+            }),
+        },
+        DFTPlan::new(
+            DFTType::Encode,
+            schedule.clone(),
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(48, 3),
+        )
+        .unwrap(),
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHKEven,
+            log_msg_ratio,
+            f_mod_degree: 30,
+            f_mod_interval: 16,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(42, 4),
+            f_mod_log_delta: 58,
+        },
+        DFTPlan::new(
+            DFTType::Decode,
+            schedule,
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(28, 2),
+        )
+        .unwrap()
+        .with_scaling(if s2c_first { 0.5 } else { 256.0 })
+        .unwrap(),
+    )
+    .unwrap();
+    let plan = if s2c_first {
+        plan.with_c2s_guard_bits(6).unwrap()
+    } else {
+        plan
+    };
+    let output_k = 200;
+    let input_k = plan.input_k(log_delta + log_msg_ratio);
+    params.n = ci.n();
+    params.k = plan.bootstrap_k(output_k, log_delta);
+    params.ring_kind = crate::CKKSRingKind::ConjugateInvariant;
+    params.prec_meta = crate::CKKSMeta {
+        log_delta,
+        log_sparsity,
+        slots: SlotsKind::Real,
+    };
+    params.prec_log_budget = 8;
+    params.dsize = if params.base2k < 40 { 7 } else { 3 };
+    params.hw = if encapsulate { 128 } else { 32 };
+    let standard_params = CKKSTestParams {
+        n: 2 * params.n,
+        ..params
+    };
+    let keys_layout = CIBootstrappingKeysLayout {
+        bootstrap_keys: BootstrappingKeysLayout {
+            automorphism_key: standard_params.atk_layout().layout,
+            tensor_key: standard_params.tsk_layout().layout,
+            encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
+                dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
+                sparse_to_dense: standard_params.ksk_layout(params.k).layout,
+            }),
+        },
+        ci_to_standard: standard_params.ksk_layout(input_k).layout,
+        standard_to_ci: standard_params.ksk_layout(output_k).layout,
+    };
+    let mut run = super::presets::CIBootstrappingRun::setup(ci, &plan, params, keys_layout, input_k, output_k);
+    for pair in [false, true] {
+        run.bootstrap(pair);
+        for stats in run.precision(pair) {
+            assert!(
+                stats.min_log2_prec > 17.0,
+                "CI bootstrap pair={pair} s2c={s2c_first} sparse={log_sparsity}: {stats:?}"
+            );
+        }
+    }
+    use poulpy_core::GLWENormalize;
+    for input in &mut run.inputs {
+        let mut converted = run.ci.ckks_ciphertext_alloc((params.base2k - 1).into(), input.k());
+        converted.set_meta(input.meta());
+        run.ci.glwe_normalize(&mut converted, input, &mut run.scratch.borrow());
+        *input = converted;
+    }
+    for output in &mut run.outputs {
+        *output = run.ci.ckks_ciphertext_alloc((params.base2k - 1).into(), params.k.into());
+    }
+    run.bootstrap(true);
+    for stats in run.precision(true) {
+        assert!(stats.min_log2_prec > 17.0, "{stats:?}");
+    }
+    for output in &mut run.outputs {
+        output.set_k(params.k.into());
+    }
+    let before = run.outputs[0].to_host_owned::<BE>();
+    let before_right = run.outputs[1].to_host_owned::<BE>();
+    let wrong = run.standard.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
+    let [left, right] = &mut run.outputs;
+    assert!(
+        run.standard
+            .ckks_ci_bootstrap_pair(
+                &run.ci,
+                left,
+                right,
+                &run.inputs[0],
+                &wrong,
+                &run.context,
+                &run.keys,
+                &mut run.scratch.borrow()
+            )
+            .is_err()
+    );
+    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
+    assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
+    assert_eq!(left.meta(), before.meta());
+    assert_eq!(right.meta(), before_right.meta());
+    let right_meta = run.inputs[1].meta();
+    run.inputs[1].set_log_delta(right_meta.log_delta + 1);
+    assert!(
+        run.standard
+            .ckks_ci_bootstrap_pair(
+                &run.ci,
+                left,
+                right,
+                &run.inputs[0],
+                &run.inputs[1],
+                &run.context,
+                &run.keys,
+                &mut run.scratch.borrow()
+            )
+            .is_err()
+    );
+    run.inputs[1].set_meta(right_meta);
+    assert!(
+        run.standard
+            .ckks_ci_bootstrap(
+                &run.standard,
+                left,
+                &run.inputs[0],
+                &run.context,
+                &run.keys,
+                &mut run.scratch.borrow()
+            )
+            .is_err()
+    );
+    assert!(
+        run.ci
+            .ckks_ci_bootstrap(
+                &run.ci,
+                left,
+                &run.inputs[0],
+                &run.context,
+                &run.keys,
+                &mut run.scratch.borrow()
+            )
+            .is_err()
+    );
+    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
+    assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
+    assert_eq!(left.k(), before.k());
+    assert_eq!(right.k(), before_right.k());
+    let short_schedule: Vec<_> = (0..layers - 1).step_by(2).map(|i| ((layers - 1 - i).min(2), 2)).collect();
+    let short_plan = BootstrappingPlan::new(
+        plan.pipeline(),
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: plan.techniques().sparse_secret_encapsulation,
+            eval_round_plus: None,
+        },
+        DFTPlan::new(
+            DFTType::Encode,
+            short_schedule.clone(),
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(48, 3),
+        )
+        .unwrap(),
+        *plan.eval_mod(),
+        DFTPlan::new(
+            DFTType::Decode,
+            short_schedule,
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(28, 2),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        CIBootstrappingContext::<BE, f64>::compile(&run.standard, params.base2k.into(), &short_plan, &mut run.scratch.borrow())
+            .is_err()
+    );
+    assert!(CIBootstrappingContext::<BE, f64>::compile(&run.ci, params.base2k.into(), &plan, &mut run.scratch.borrow()).is_err());
+    let raw = run.keys.standard_to_ci.into_core();
+    let wrong_ring = crate::CKKSRing {
+        kind: crate::CKKSRingKind::ConjugateInvariant,
+        n: run.standard.n().into(),
+    };
+    run.keys.standard_to_ci = crate::layouts::CKKSKey::from_raw_parts(raw, wrong_ring).unwrap();
+    assert!(
+        run.standard
+            .ckks_ci_bootstrap(
+                &run.ci,
+                left,
+                &run.inputs[0],
+                &run.context,
+                &run.keys,
+                &mut run.scratch.borrow()
+            )
+            .is_err()
+    );
+    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
+    assert_eq!(left.meta(), before.meta());
 }

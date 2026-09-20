@@ -283,3 +283,32 @@ A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message 
 ```sh
 cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```
+
+## Conjugate invariant ciphertexts
+
+`standard_module.ckks_ci_bootstrap(ci_module, out, input, context, keys, scratch)`
+refreshes one degree-`N` CI ciphertext through a degree-`2N` standard ring.
+The internal standard ciphertext carries real slots. With an S2C-first context
+without EvalRound+, this runs one EvalMod. The separate
+`ckks_ci_bootstrap_pair` entry point packs two inputs into the real and imaginary
+parts and evaluates both nonlinear branches.
+
+Compile a `CIBootstrappingContext` under the standard module with full-slot transforms
+(`log_slots = log2(N)`), including for sparsely packed inputs. The ordinary
+C2S-first and S2C-first recipes, scale accounting, and optional sparse-secret
+encapsulation apply. The output allocation uses `plan.bootstrap_k(output_k,
+input.log_delta())`; evaluation returns `output_k` at the input scale.
+
+Generate independent CI and standard secrets, then call
+`context.generate_keys` with a `CIBootstrappingKeysLayout` and prepare the
+result under the standard module. The bundle contains the ordinary bootstrap
+keys and two switching keys, all physically at degree `2N`. Size the
+CI-to-standard key for the input width and the standard-to-CI key for
+`output_k`. The context halves SlotsToCoeffs scaling to compensate for the
+return trace. The return key encrypts under the embedded CI secret, so its modulus,
+including auxiliary bits and limb rounding, must respect the CI secret's bound.
+
+`ckks_ci_bootstrap_tmp_bytes` sizes the shared scratch arena. The bridge also
+allocates its standard working ciphertexts. Both entry points return CI-tagged
+ciphertexts and preserve input scale and slot count; the pair requires matching
+input layouts and metadata and matching output layouts. Conversion is internal.

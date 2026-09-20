@@ -136,11 +136,12 @@ pub(crate) mod validation;
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
-    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
-    SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIBootstrappingContext,
+    EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CIBootstrappingKeySet,
+    CIBootstrappingKeys, CIBootstrappingKeysLayout, CIBootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,

@@ -14,6 +14,7 @@
 pub mod add;
 pub mod bootstrapping;
 pub(crate) mod carry_verb;
+pub(crate) mod ci_bootstrapping;
 pub mod conjugate;
 pub mod copy;
 pub mod dft;

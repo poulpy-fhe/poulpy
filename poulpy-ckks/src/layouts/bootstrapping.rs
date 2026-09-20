@@ -362,6 +362,20 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    pub(crate) fn output_consumed_bits(&self, input_log_delta: usize) -> usize {
+        let main = self.coeffs_to_slots().consumed_bits() + self.eval_mod().plan.consumed_bits();
+        let post = self
+            .coeffs_to_slots_bypass()
+            .map_or(main, |bypass| main.max(bypass.consumed_bits()));
+        match self.pipeline() {
+            BootstrappingPipeline::C2SFirst => {
+                post + self.slots_to_coeffs().consumed_bits()
+                    + self.eval_mod().plan.f_mod_log_delta.saturating_sub(input_log_delta)
+            }
+            BootstrappingPipeline::S2CFirst => post + self.c2s_guard_bits(),
+        }
+    }
+
     pub(crate) fn functional_message_modulus(&self) -> Option<usize> {
         self.functional_message_modulus
     }
@@ -448,6 +462,49 @@ where
             eval_mod,
             pipeline: plan.pipeline,
             sparse_secret_hamming_weight: plan.sparse_secret_hamming_weight(),
+        })
+    }
+}
+
+/// Compiled bootstrap with the normalization required by the CI return trace.
+pub struct CIBootstrappingContext<BE: Backend, F> {
+    pub(crate) standard: BootstrappingContext<BE, F>,
+}
+
+impl<BE: Backend, F: CKKSEncodingScalar> CIBootstrappingContext<BE, F> {
+    /// Compiles full-slot transforms under the degree-doubled standard module.
+    /// SlotsToCoeffs includes the factor one half needed by the return trace.
+    pub fn compile(
+        module: &Module<BE>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        use crate::{CKKSModuleInfos, CKKSRingKind};
+        ensure!(
+            module.ckks_ring().kind == CKKSRingKind::Standard,
+            "CI bootstrap compilation requires a standard module"
+        );
+        let log_slots = module.n().ilog2() as usize - 1;
+        ensure!(
+            plan.coeffs_to_slots().log_slots() == log_slots
+                && plan.slots_to_coeffs().log_slots() == log_slots
+                && plan.coeffs_to_slots_bypass().is_none_or(|dft| dft.log_slots() == log_slots),
+            "CI bootstrapping requires full-slot standard transforms"
+        );
+        ensure!(
+            plan.functional_message_modulus.is_none(),
+            "CI bootstrapping requires an identity recipe"
+        );
+        let mut plan = plan.clone();
+        let scaling = plan.slots_to_coeffs.scaling().unwrap_or(1.0) * 0.5;
+        plan.slots_to_coeffs = plan.slots_to_coeffs.with_scaling(scaling)?;
+        Ok(Self {
+            standard: BootstrappingContext::compile(module, base2k, &plan, scratch)?,
         })
     }
 }

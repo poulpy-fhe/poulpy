@@ -420,7 +420,7 @@ Higher-level functionality on top of that foundation:
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-## Conjugate invariant leveled operations
+## Conjugate invariant CKKS
 
 A CPU module built with `FFT64ModuleConfig::conjugate_invariant()` or
 `NTTModuleConfig::conjugate_invariant()` supports `N` real slots at degree `N`.
@@ -437,6 +437,13 @@ transformations use the module's invariant ring. Conjugation and multiplication
 by `i` require a standard module. Real linear transformations reject nonzero
 imaginary diagonals. Prepared plaintexts, ciphertexts, and evaluation keys must
 be used with their producing ring configuration.
+
+`ckks_ci_bootstrap` refreshes one CI ciphertext through an independent standard
+secret at degree `2N`. An S2C-first context without EvalRound+ evaluates EvalMod
+once. `ckks_ci_bootstrap_pair` explicitly packs two inputs and evaluates both
+nonlinear branches. Ring conversion stays internal; both return CI ciphertexts
+with the input scale and slot metadata. See [bootstrapping](../docs/bootstrapping.md#conjugate-invariant-ciphertexts)
+for key and context setup.
 
 ## Where to Look Next
 
