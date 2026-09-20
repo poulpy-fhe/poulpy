@@ -57,6 +57,13 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Residency of this backend's buffers — [`Host`](crate::layouts::Host)
     /// or [`Device`](crate::layouts::Device).
     type Location: Location;
+
+    /// Returns the ambient cyclotomic order at the module's maximum degree.
+    /// The default is `2N`, for the standard negacyclic ring.
+    fn cyclotomic_order(module: &Module<Self>) -> i64 {
+        2 * module.n() as i64
+    }
+
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;
     /// Allocates a zero-initialized backend-owned byte buffer of `len` bytes.
@@ -247,7 +254,7 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     unsafe fn destroy(handle: NonNull<Self::Handle>);
 }
 
-/// Primary entry point for all polynomial operations over `Z[X]/(X^N + 1)`.
+/// Primary entry point for polynomial operations in the backend-selected ring.
 ///
 /// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
@@ -404,12 +411,12 @@ impl<B: Backend> Module<B> {
     }
 }
 
-/// Returns the cyclotomic order `2N` for the ring `Z[X]/(X^N + 1)`.
+/// Returns the ambient cyclotomic order for the module's maximum degree `N`.
 pub trait CyclotomicOrder
 where
     Self: ModuleN,
 {
-    /// Returns `2N`, the order of the cyclotomic polynomial `X^N + 1`.
+    /// Defaults to `2N` for `Z[X]/(X^N + 1)`; a backend may select another ambient ring.
     fn cyclotomic_order(&self) -> i64 {
         (self.n() << 1) as _
     }
@@ -417,7 +424,11 @@ where
 
 impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
-impl<BE: Backend> CyclotomicOrder for Module<BE> where Self: ModuleN {}
+impl<BE: Backend> CyclotomicOrder for Module<BE> {
+    fn cyclotomic_order(&self) -> i64 {
+        BE::cyclotomic_order(self)
+    }
+}
 
 /// Asserts that a module of degree `module_n` serves operands of degree `n`.
 ///
@@ -472,21 +483,21 @@ pub fn galois_elements_from_rotations(rotations: impl IntoIterator<Item = i64>, 
     gal_els
 }
 
-/// Galois group operations on the cyclotomic ring `Z[X]/(X^N + 1)`.
+/// Galois group operations using the module's ambient cyclotomic order.
 ///
-/// The Galois group `(Z/2NZ)*` acts on polynomials via the automorphisms
+/// The ambient Galois group acts on polynomials via the automorphisms
 /// `X -> X^k` for odd `k`. This trait provides methods to compute
 /// Galois elements and their inverses from a signed generator exponent.
 pub trait GaloisElement
 where
     Self: CyclotomicOrder,
 {
-    /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod 2N`.
+    /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
     fn galois_element(&self, generator: i64) -> i64 {
         galois_element(generator, self.cyclotomic_order())
     }
 
-    /// Returns the inverse of `gal_el` in the Galois group `(Z/2NZ)*`.
+    /// Returns the inverse of `gal_el` modulo the ambient cyclotomic order.
     ///
     /// # Panics
     ///

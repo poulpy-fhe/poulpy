@@ -16,11 +16,11 @@ use std::ptr::NonNull;
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
+    vec_znx_dft::{NTTModuleConfig, NttHandleFactory, NttHandleProvider, NttModuleHandle, NttPlan, NttPlanSet},
 };
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, CrtWord},
+    layouts::{Backend, CrtWord, Module},
 };
 
 use super::NTT4x30Avx512;
@@ -55,6 +55,15 @@ impl Backend for NTT4x30Avx512 {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30Avx512Handle;
     type Location = poulpy_hal::layouts::Host;
+    fn cyclotomic_order(module: &Module<Self>) -> i64 {
+        module.n() as i64
+            * if module.get_ntt_plan(module.n()).is_conjugate_invariant() {
+                4
+            } else {
+                2
+            }
+    }
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -159,10 +168,10 @@ impl Backend for NTT4x30Avx512 {
 ///
 /// Panics if the runtime CPU does not support the AVX-512F instruction set.
 unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
-    fn create_ntt_handle(n: usize) -> Self {
+    fn create_ntt_handle(n: usize, config: NTTModuleConfig) -> Self {
         NTT4x30Avx512Handle {
             table_cache: Default::default(),
-            ring_plans: NttPlanSet::new(n),
+            ring_plans: NttPlanSet::new_with_config(n, config),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }

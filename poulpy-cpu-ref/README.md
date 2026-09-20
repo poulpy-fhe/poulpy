@@ -128,3 +128,19 @@ No modifications to those crates are necessary — the HAL provides the extensio
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Conjugate invariant rings
+
+`FFT64ModuleConfig::conjugate_invariant().new_module::<FFT64Ref>(n)` and
+`NTTModuleConfig::conjugate_invariant().new_module::<NTT4x30Ref>(n)` select
+an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
+The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
+cyclotomic order is `4n`. `Module::new` selects the standard negacyclic ring.
+The same constructors serve the corresponding accelerated CPU and Rayon backends.
+NTT modules support invariant degrees up to `2^17` with the current prime sets.
+
+Transforms, polynomial products, and automorphisms use this basis. Sparse
+operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
+not closed in this ring, so rotation and `X^p - 1` operations reject it.
+Prepared objects and keys must stay with the ring configuration that produced
+them; their layouts do not carry a ring tag.

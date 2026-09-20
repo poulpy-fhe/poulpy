@@ -6,6 +6,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- `Backend::cyclotomic_order` reports the module's ambient cyclotomic order, defaulting to `2N` for the standard negacyclic ring.
+
 - `PrimeSet::MAX_LOG_N` describes the supported negacyclic NTT degree and root order.
   It defaults to 16 for compatibility with existing custom prime sets.
 
@@ -77,6 +79,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
 
 ### CPU backends
+
+- Add conjugate invariant module constructors and ring arithmetic for FFT64, NTT4x30, and IFMA CPU backends, including Rayon wrappers. The `n`-coefficient basis has ambient order `4n`.
 
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.
   The scalar 29-bit and 31-bit prime sets also support this limit.

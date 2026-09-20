@@ -30,7 +30,7 @@ mod vec_znx_dft;
 pub(crate) mod delegating_backend;
 
 unsafe impl HalVecZnxImpl for FFT64Ref {
-    hal_impl_vec_znx!();
+    hal_impl_vec_znx!(fft64);
 }
 
 unsafe impl HalModuleImpl for FFT64Ref {

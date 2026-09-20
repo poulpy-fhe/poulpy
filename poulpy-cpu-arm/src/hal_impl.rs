@@ -37,7 +37,7 @@ where
 }
 
 unsafe impl HalVecZnxImpl for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 

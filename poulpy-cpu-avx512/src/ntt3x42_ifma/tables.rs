@@ -53,6 +53,7 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
     pub tail_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
     pub tail_quot: Vec<u64>,
+    pub ci: Option<[poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt; 3]>,
     _phantom: PhantomData<P>,
 }
 
@@ -69,6 +70,7 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
     pub inv_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
     pub inv_quot: Vec<u64>,
+    pub ci: Option<[poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt; 3]>,
     _phantom: PhantomData<P>,
 }
 
@@ -291,6 +293,22 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
+    pub fn new_with_config(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
+        let mut table = Self::new(n);
+        if config.is_conjugate_invariant() {
+            table.ci = Some(std::array::from_fn(|k| {
+                poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                    n,
+                    P::Q[k],
+                    P::OMEGA[k],
+                    P::MAX_LOG_N,
+                    false,
+                )
+            }));
+        }
+        table
+    }
+
     pub fn new(n: usize) -> Self {
         assert!(
             n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
@@ -334,6 +352,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
                 root_quot,
                 tail_root,
                 tail_quot,
+                ci: None,
                 _phantom: PhantomData,
             };
         }
@@ -383,6 +402,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
             root_quot,
             tail_root,
             tail_quot,
+            ci: None,
             _phantom: PhantomData,
         }
     }
@@ -393,6 +413,22 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
 // ──────────────────────────────────────────────────────────────────────────────
 
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
+    pub fn new_with_config(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
+        let mut table = Self::new(n);
+        if config.is_conjugate_invariant() {
+            table.ci = Some(std::array::from_fn(|k| {
+                poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                    n,
+                    P::Q[k],
+                    P::OMEGA[k],
+                    P::MAX_LOG_N,
+                    true,
+                )
+            }));
+        }
+        table
+    }
+
     pub fn new(n: usize) -> Self {
         assert!(
             n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
@@ -430,6 +466,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
                 powomega,
                 inv_root,
                 inv_quot,
+                ci: None,
                 _phantom: PhantomData,
             };
         }
@@ -478,6 +515,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
             powomega,
             inv_root,
             inv_quot,
+            ci: None,
             _phantom: PhantomData,
         }
     }

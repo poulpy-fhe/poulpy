@@ -45,6 +45,37 @@ use crate::{
 // NttModuleHandle trait + NttHandleProvider blanket impl
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Construction options for NTT-family modules.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NTTModuleConfig {
+    conjugate_invariant: bool,
+}
+
+impl NTTModuleConfig {
+    /// Selects the invariant coefficient basis.
+    pub const fn conjugate_invariant() -> Self {
+        Self {
+            conjugate_invariant: true,
+        }
+    }
+    /// Reports whether the invariant coefficient basis is selected.
+    pub const fn is_conjugate_invariant(self) -> bool {
+        self.conjugate_invariant
+    }
+
+    /// Constructs a module after checking its degree and runtime capabilities.
+    pub fn new_module<BE: Backend>(self, n: u64) -> Module<BE>
+    where
+        BE::Handle: NttHandleFactory,
+    {
+        assert!(n.is_power_of_two() && n >= BE::MIN_DEGREE as u64);
+        BE::Handle::assert_ntt_runtime_support();
+        let handle = BE::Handle::create_ntt_handle(n as usize, self);
+        let ptr = std::ptr::NonNull::from(Box::leak(Box::new(handle)));
+        unsafe { Module::from_nonnull(ptr, n) }
+    }
+}
+
 /// Forward and inverse NTT tables for one ring degree.
 pub struct NttPlan<P: PrimeSetCrt4> {
     ntt: NttTable<P>,
@@ -57,6 +88,21 @@ impl<P: PrimeSetCrt4> NttPlan<P> {
             ntt: NttTable::new(n),
             intt: NttTableInv::new(n),
         }
+    }
+
+    pub fn new_with_config(n: usize, config: NTTModuleConfig) -> Self {
+        if config.conjugate_invariant {
+            Self {
+                ntt: NttTable::new_conjugate_invariant(n),
+                intt: NttTableInv::new_conjugate_invariant(n),
+            }
+        } else {
+            Self::new(n)
+        }
+    }
+
+    pub fn is_conjugate_invariant(&self) -> bool {
+        self.ntt.ci.is_some()
     }
 
     pub fn ntt(&self) -> &NttTable<P> {
@@ -76,13 +122,18 @@ pub struct NttPlanSet<P: PrimeSetCrt4> {
 
 impl<P: PrimeSetCrt4> NttPlanSet<P> {
     pub fn new(max_n: usize) -> Self {
+        Self::new_with_config(max_n, NTTModuleConfig::default())
+    }
+
+    pub fn new_with_config(max_n: usize, config: NTTModuleConfig) -> Self {
+        let max_log_n = P::MAX_LOG_N - u32::from(config.is_conjugate_invariant());
         assert!(
-            max_n.is_power_of_two() && max_n <= (1 << P::MAX_LOG_N),
+            max_n.is_power_of_two() && max_n <= (1 << max_log_n),
             "maximum ring degree must be a power of two ≤ 2^{}, got {max_n}",
-            P::MAX_LOG_N
+            max_log_n
         );
         let plans = (0..=max_n.ilog2() as usize)
-            .map(|log_n| NttPlan::new(1usize << log_n))
+            .map(|log_n| NttPlan::new_with_config(1usize << log_n, config))
             .collect();
         Self { plans, max_n }
     }
@@ -166,7 +217,7 @@ pub unsafe trait NttHandleProvider {
 /// drop via [`crate::layouts::Backend::destroy`].
 pub unsafe trait NttHandleFactory: Sized {
     /// Builds a fully initialized handle for ring dimension `n`.
-    fn create_ntt_handle(n: usize) -> Self;
+    fn create_ntt_handle(n: usize, config: NTTModuleConfig) -> Self;
 
     /// Optional runtime capability check (default: no-op).
     fn assert_ntt_runtime_support() {}

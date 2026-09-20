@@ -179,8 +179,68 @@ pub use fft64::{FFT64Neon, FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 pub use ntt4x30::NTT4x30Neon;
 #[cfg(feature = "enable-rayon")]
 pub use ntt4x30::NTT4x30NeonRayon;
+#[cfg(feature = "enable-neon")]
+pub use poulpy_cpu_ref::{FFT64Mode, FFT64ModuleConfig};
 
 #[cfg(feature = "enable-neon")]
 mod layout_compat;
 
 pub mod capabilities;
+
+pub use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NTTModuleConfig;
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64neon,
+    crate::FFT64Neon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30neon,
+    crate::NTT4x30Neon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64neonrayon,
+    crate::FFT64NeonRayon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30neonrayon,
+    crate::NTT4x30NeonRayon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64neon,
+    crate::FFT64Neon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30neon,
+    crate::NTT4x30Neon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64neonrayon,
+    crate::FFT64NeonRayon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30neonrayon,
+    crate::NTT4x30NeonRayon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);

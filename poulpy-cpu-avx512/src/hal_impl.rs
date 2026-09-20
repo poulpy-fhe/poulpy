@@ -34,7 +34,7 @@ where
 }
 
 unsafe impl HalVecZnxImpl for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
@@ -629,7 +629,17 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+        if <Self as poulpy_hal::layouts::Backend>::cyclotomic_order(module) == 4 * module.n() as i64 {
+            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+                p,
+                perm: poulpy_cpu_ref::reference::conjugate_invariant::ntt_automorphism_permutation(n, p)
+                    .into_iter()
+                    .map(|x| x as u32)
+                    .collect(),
+            }
+        } else {
+            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+        }
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -1043,7 +1053,17 @@ mod ifma_impl {
             // (bit-reversal over log2(n) bits + level-0 ω^i twiddle), not by
             // the prime set, so the NTT4x30 closed-form builder is identical
             // for NTT3x42.
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+            if <Self as poulpy_hal::layouts::Backend>::cyclotomic_order(module) == 4 * module.n() as i64 {
+                poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+                    p,
+                    perm: poulpy_cpu_ref::reference::conjugate_invariant::ntt_automorphism_permutation(n, p)
+                        .into_iter()
+                        .map(|x| x as u32)
+                        .collect(),
+                }
+            } else {
+                poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+            }
         }
 
         fn vec_znx_dft_automorphism_with_plan(

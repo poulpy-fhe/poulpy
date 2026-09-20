@@ -7,7 +7,10 @@ use crate::{
     },
     reference::{
         SendPtr,
-        fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
+        fft64::{
+            module::FFT64Plan,
+            reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
+        },
         znx::ZnxZero,
     },
 };
@@ -124,7 +127,7 @@ pub fn vec_znx_dft_copy<BE>(
 }
 
 pub fn vec_znx_dft_apply<BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -132,13 +135,17 @@ pub fn vec_znx_dft_apply<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64>
+        + ReimArith
+        + ReimFFTExecute<ReimFFTTable<f64>, f64>
+        + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+        + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     {
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
-        assert_eq!(table.m() << 1, res.n());
+        assert_eq!(plan.fft().m() << 1, res.n());
         assert_eq!(a.n(), res.n());
     }
 
@@ -152,7 +159,7 @@ pub fn vec_znx_dft_apply<BE>(
         let limb = offset + j * step;
         if limb < a_size {
             BE::reim_from_znx(res.at_mut(res_col, j), a.at(a_col, limb));
-            BE::reim_dft_execute(table, res.at_mut(res_col, j));
+            plan.forward::<BE>(res.at_mut(res_col, j));
         } else {
             BE::reim_zero(res.at_mut(res_col, j));
         }
@@ -164,31 +171,35 @@ pub fn vec_znx_dft_apply<BE>(
 }
 
 pub fn vec_znx_idft_apply<BE>(
-    table: &ReimIFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64>
+        + ReimArith
+        + ReimFFTExecute<ReimFFTTable<f64>, f64>
+        + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+        + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     {
-        assert_eq!(table.m() << 1, res.n());
+        assert_eq!(plan.fft().m() << 1, res.n());
         assert_eq!(a.n(), res.n());
     }
 
     let res_size: usize = res.size();
     let min_size: usize = res_size.min(a.size());
 
-    let divisor: f64 = table.m() as f64;
+    let divisor = plan.divisor();
 
     for j in 0..min_size {
         let res_slice_f64: &mut [f64] = cast_slice_mut(res.at_mut(res_col, j));
         BE::reim_copy(res_slice_f64, a.at(a_col, j));
-        BE::reim_dft_execute(table, res_slice_f64);
+        plan.inverse::<BE>(res_slice_f64);
         BE::reim_to_znx_assign(res_slice_f64, divisor);
     }
 
@@ -198,28 +209,32 @@ pub fn vec_znx_idft_apply<BE>(
 }
 
 pub fn vec_znx_idft_apply_tmpa<BE>(
-    table: &ReimIFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &mut VecZnxDftBackendMut<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64>
+        + ReimArith
+        + ReimFFTExecute<ReimFFTTable<f64>, f64>
+        + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+        + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
     {
-        assert_eq!(table.m() << 1, res.n());
+        assert_eq!(plan.fft().m() << 1, res.n());
         assert_eq!(a.n(), res.n());
     }
 
     let res_size = res.size();
     let min_size: usize = res_size.min(a.size());
 
-    let divisor: f64 = table.m() as f64;
+    let divisor = plan.divisor();
 
     for j in 0..min_size {
-        BE::reim_dft_execute(table, a.at_mut(a_col, j));
+        plan.inverse::<BE>(a.at_mut(a_col, j));
         BE::reim_to_znx(res.at_mut(res_col, j), divisor, a.at(a_col, j));
     }
 
@@ -234,22 +249,25 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
 pub fn vec_znx_idft_apply_consume<'a, BE>(
-    table: &ReimIFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     mut res: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
+    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64>
+        + ReimArith
+        + ReimFFTExecute<ReimFFTTable<f64>, f64>
+        + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     {
-        assert_eq!(table.m() << 1, res.n());
+        assert_eq!(plan.fft().m() << 1, res.n());
     }
 
-    let divisor: f64 = table.m() as f64;
+    let divisor = plan.divisor();
 
     for i in 0..res.cols() {
         for j in 0..res.size() {
-            BE::reim_dft_execute(table, res.at_mut(i, j));
+            plan.inverse::<BE>(res.at_mut(i, j));
             BE::reim_to_znx_assign(res.at_mut(i, j), divisor);
         }
     }
@@ -384,6 +402,7 @@ pub struct Fft64AutomorphismPlan {
     pub p: i64,
     pub perm: Vec<u32>,
     pub conj: bool,
+    pub real: bool,
 }
 
 /// Builds the [`Fft64AutomorphismPlan`] for ring dimension `n` and odd `p`.
@@ -397,9 +416,27 @@ pub struct Fft64AutomorphismPlan {
 /// - `p ≡ 3 (mod 4)` maps into the conjugate half. Substituting `-p`
 ///   (now `≡ 1 mod 4`) brings the action back at the cost of a single
 ///   global imag negation, signalled by `conj`.
-pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan {
+pub fn build_fft64_automorphism_plan(n: usize, p: i64, real: bool) -> Fft64AutomorphismPlan {
     assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
     assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
+
+    if real {
+        let order = (4 * n) as i64;
+        let mut perm = vec![0; n];
+        for (i, source) in perm.iter_mut().enumerate() {
+            let mut exponent = (p.rem_euclid(order) * (2 * i + 1) as i64).rem_euclid(order);
+            if exponent > 2 * n as i64 {
+                exponent = order - exponent;
+            }
+            *source = ((exponent - 1) >> 1) as u32;
+        }
+        return Fft64AutomorphismPlan {
+            p,
+            perm,
+            conj: false,
+            real: true,
+        };
+    }
 
     let m = n >> 1;
     let mask = (2 * n - 1) as i64;
@@ -419,7 +456,12 @@ pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan 
         let src: u32 = ((e_src - 1) >> 1) as u32;
         *mi = ir(src);
     }
-    Fft64AutomorphismPlan { p, perm, conj }
+    Fft64AutomorphismPlan {
+        p,
+        perm,
+        conj,
+        real: false,
+    }
 }
 
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
@@ -442,7 +484,7 @@ pub fn vec_znx_dft_automorphism<BE>(
 {
     {
         assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n() >> 1);
+        assert_eq!(plan.perm.len(), if plan.real { res.n() } else { res.n() >> 1 });
     }
 
     let m: usize = res.n() >> 1;
@@ -451,22 +493,32 @@ pub fn vec_znx_dft_automorphism<BE>(
     let min_size: usize = res_size.min(a_size);
     let perm: &[u32] = &plan.perm;
 
-    for limb in 0..min_size {
-        let (res_re, res_im) = res.at_mut(res_col, limb).split_at_mut(m);
-        let a_limb = a.at(a_col, limb);
-        let (a_re, a_im) = a_limb.split_at(m);
-
-        if plan.conj {
-            for i in 0..m {
-                let s = perm[i] as usize;
-                res_re[i] = a_re[s];
-                res_im[i] = -a_im[s];
+    if plan.real {
+        for limb in 0..min_size {
+            let output = res.at_mut(res_col, limb);
+            let input = a.at(a_col, limb);
+            for (value, &source) in output.iter_mut().zip(&plan.perm) {
+                *value = input[source as usize];
             }
-        } else {
-            for i in 0..m {
-                let s = perm[i] as usize;
-                res_re[i] = a_re[s];
-                res_im[i] = a_im[s];
+        }
+    } else {
+        for limb in 0..min_size {
+            let (res_re, res_im) = res.at_mut(res_col, limb).split_at_mut(m);
+            let a_limb = a.at(a_col, limb);
+            let (a_re, a_im) = a_limb.split_at(m);
+
+            if plan.conj {
+                for i in 0..m {
+                    let s = perm[i] as usize;
+                    res_re[i] = a_re[s];
+                    res_im[i] = -a_im[s];
+                }
+            } else {
+                for i in 0..m {
+                    let s = perm[i] as usize;
+                    res_re[i] = a_re[s];
+                    res_im[i] = a_im[s];
+                }
             }
         }
     }
@@ -489,7 +541,7 @@ pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
 {
     {
         assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n() >> 1);
+        assert_eq!(plan.perm.len(), if plan.real { res.n() } else { res.n() >> 1 });
     }
 
     let n = res.n();
@@ -500,6 +552,13 @@ pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
     let apply = |limb: usize| {
         let start = n * (limb * cols + res_col);
         let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
+        if plan.real {
+            let input = a.at(a_col, limb);
+            for (value, &source) in res_limb.iter_mut().zip(&plan.perm) {
+                *value += input[source as usize];
+            }
+            return;
+        }
         let (res_re, res_im) = res_limb.split_at_mut(m);
         let (a_re, a_im) = a.at(a_col, limb).split_at(m);
         for (i, &source) in plan.perm.iter().enumerate() {

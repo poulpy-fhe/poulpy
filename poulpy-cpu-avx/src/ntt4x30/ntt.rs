@@ -1028,6 +1028,10 @@ unsafe fn intt_iter_last_fused(
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+    if table.ci.is_some() {
+        return poulpy_cpu_ref::reference::ntt4x30::ntt::ntt_ref(table, data);
+    }
+
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1200,6 +1204,10 @@ pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+    if table.ci.is_some() {
+        return poulpy_cpu_ref::reference::ntt4x30::ntt::intt_ref(table, data);
+    }
+
     assert_eq!(
         data.len(),
         4 * table.n,

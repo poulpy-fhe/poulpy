@@ -93,12 +93,16 @@ where
         a_col: usize,
     ) where
         Module<Self>: FFTModuleHandle<f64>,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Self: Backend<DftWord = f64, ZnxWord = i64>
+            + ReimArith
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table_for(n), step, offset, res, res_col, a, a_col);
+        fft64_vec_znx_dft_apply::<Self>(module.get_fft_plan(n), step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -117,15 +121,18 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+        Self: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64>
+            + ReimArith
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
         let _ = scratch;
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
+        fft64_vec_znx_idft_apply::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmpa_default(
@@ -136,13 +143,16 @@ where
         a_col: usize,
     ) where
         Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+        Self: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64>
+            + ReimArith
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
+        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
     }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
@@ -242,11 +252,12 @@ where
         fft64_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
     where
+        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        build_fft64_automorphism_plan(n, p)
+        build_fft64_automorphism_plan(n, p, module.get_fft_plan(n).is_conjugate_invariant())
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
@@ -458,11 +469,22 @@ where
         ntt4x30_default_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
     where
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
+        Self: Backend<ZnxWord = i64>,
+        Module<Self>: NttModuleHandle,
     {
-        build_ntt4x30_automorphism_plan(n, p)
+        if module.get_ntt_plan(n).is_conjugate_invariant() {
+            NttAutomorphismPlan {
+                p,
+                perm: crate::reference::conjugate_invariant::ntt_automorphism_permutation(n, p)
+                    .into_iter()
+                    .map(|x| x as u32)
+                    .collect(),
+            }
+        } else {
+            build_ntt4x30_automorphism_plan(n, p)
+        }
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(

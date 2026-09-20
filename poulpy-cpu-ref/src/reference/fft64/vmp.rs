@@ -6,7 +6,8 @@ use crate::{
     reference::{
         SendPtr,
         fft64::{
-            reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+            module::FFT64Plan,
+            reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             reim4::Reim4BlkMatVec,
         },
         vmp_select::{assert_extractable, vmp_extract_selected_rows_core},
@@ -19,12 +20,17 @@ pub fn vmp_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 pub fn vmp_prepare<BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     pmat: &mut VmpPMatBackendMut<'_, BE>,
     mat: &MatZnxBackendRef<'_, BE>,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64>
+        + ReimArith
+        + Reim4BlkMatVec
+        + ReimFFTExecute<ReimFFTTable<f64>, f64>
+        + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+        + 'static,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -62,21 +68,21 @@ pub fn vmp_prepare<BE>(
 
     let nrows: usize = mat.cols_in() * mat.rows();
     let ncols: usize = mat.cols_out() * mat.size();
-    vmp_prepare_core::<BE, BE::TaskExecutor>(table, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
+    vmp_prepare_core::<BE, BE::TaskExecutor>(plan, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
 }
 
 pub(crate) fn vmp_prepare_core<REIM, E>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64>,
     pmat: &mut [f64],
     mat: &[i64],
     nrows: usize,
     ncols: usize,
     tmp: &mut [f64],
 ) where
-    REIM: ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+    REIM: ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
     E: TaskExecutor,
 {
-    let m: usize = table.m();
+    let m = plan.fft().m();
     let n: usize = m << 1;
 
     {
@@ -94,7 +100,7 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
             let pos: usize = n * (row_i * ncols + col_i);
 
             REIM::reim_from_znx(tmp, &mat[pos..pos + n]);
-            REIM::reim_dft_execute(table, tmp);
+            plan.forward::<REIM>(tmp);
 
             let dst = if col_i == (ncols - 1) && !ncols.is_multiple_of(2) {
                 col_i * nrows * 8 + row_i * 8
@@ -160,13 +166,14 @@ pub fn vmp_apply_dft_to_dft<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
     limb_offset: usize,
+    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, real, tmp_bytes);
 }
 
 #[inline(always)]
@@ -175,6 +182,7 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
     limb_offset: usize,
+    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
@@ -202,7 +210,7 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
     // always calls this with `limb_offset == 0`.
     if limb_offset == 0 {
-        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
+        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, real, tmp_bytes)
     } else {
         vmp_apply_dft_to_dft_core::<true, KERNEL, E>(
             n,
@@ -212,6 +220,7 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
             limb_offset * pmat.cols_out(),
             nrows,
             ncols,
+            real,
             tmp_bytes,
         )
     }
@@ -231,6 +240,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     row_max: usize,
     col_max: usize,
     blk_i: usize,
+    real: bool,
     tmp: &mut [f64],
 ) where
     REIM: ReimArith + Reim4BlkMatVec,
@@ -255,18 +265,30 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     if limb_offset.is_multiple_of(2) {
         for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
             let col_offset = col_pmat * (8 * nrows) + row_start * 16;
-            REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            if real {
+                REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            } else {
+                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            }
             save(col_res, &mat2cols_output[..8]);
             save(col_res + 1, &mat2cols_output[8..16]);
         }
     } else {
         let col_offset = (limb_offset - 1) * (8 * nrows) + row_start * 16;
-        REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+        if real {
+            REIM::reim4_real_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+        } else {
+            REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+        }
         save(0, &mat2cols_output[..8]);
 
         for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
             let col_offset = col_pmat * (8 * nrows) + row_start * 16;
-            REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            if real {
+                REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            } else {
+                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            }
             save(col_res, &mat2cols_output[..8]);
             save(col_res + 1, &mat2cols_output[8..16]);
         }
@@ -278,9 +300,17 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
         let col_offset = last_col * (8 * nrows) + row_offset;
         if last_col >= limb_offset {
             if ncols == col_max {
-                REIM::reim4_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                if real {
+                    REIM::reim4_real_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                } else {
+                    REIM::reim4_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                }
             } else {
-                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                if real {
+                    REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                } else {
+                    REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+                }
             }
             save(last_col - limb_offset, &mat2cols_output[..8]);
         }
@@ -296,6 +326,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     limb_offset: usize,
     nrows: usize,
     ncols: usize,
+    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     REIM: ReimArith + Reim4BlkMatVec,
@@ -354,6 +385,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
                 row_max,
                 col_max,
                 blk_i,
+                real,
                 tmp,
             );
         });
@@ -373,6 +405,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
                     row_max,
                     col_max,
                     blk_i,
+                    real,
                     tmp_bytes,
                 );
             }

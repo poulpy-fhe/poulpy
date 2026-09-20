@@ -203,8 +203,68 @@ pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 pub use ntt4x30::NTT4x30Avx;
 #[cfg(feature = "enable-rayon")]
 pub use ntt4x30::NTT4x30AvxRayon;
+#[cfg(feature = "enable-avx")]
+pub use poulpy_cpu_ref::{FFT64Mode, FFT64ModuleConfig};
 
 #[cfg(feature = "enable-avx")]
 mod layout_compat;
 
 pub mod capabilities;
+
+pub use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NTTModuleConfig;
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64avx,
+    crate::FFT64Avx,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30avx,
+    crate::NTT4x30Avx,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64avxrayon,
+    crate::FFT64AvxRayon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30avxrayon,
+    crate::NTT4x30AvxRayon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avx,
+    crate::FFT64Avx,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avx,
+    crate::NTT4x30Avx,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avxrayon,
+    crate::FFT64AvxRayon,
+    poulpy_cpu_ref::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avxrayon,
+    crate::NTT4x30AvxRayon,
+    poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant()
+);

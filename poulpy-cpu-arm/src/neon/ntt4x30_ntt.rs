@@ -350,6 +350,10 @@ unsafe fn intt_iter_red(
 ///
 /// `data.len()` must be `4 * table.n`.
 pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+    if table.ci.is_some() {
+        return poulpy_cpu_ref::reference::ntt4x30::ntt::ntt_ref(table, data);
+    }
+
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "ntt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
@@ -419,6 +423,10 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 ///
 /// `data.len()` must be `4 * table.n`.
 pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+    if table.ci.is_some() {
+        return poulpy_cpu_ref::reference::ntt4x30::ntt::intt_ref(table, data);
+    }
+
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "intt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {

@@ -527,6 +527,10 @@ macro_rules! impl_backend_from {
             type Handle = <$from as poulpy_hal::layouts::Backend>::Handle;
             type Location = <$from as poulpy_hal::layouts::Backend>::Location;
 
+            fn cyclotomic_order(module: &poulpy_hal::layouts::Module<Self>) -> i64 {
+                <$from as poulpy_hal::layouts::Backend>::cyclotomic_order(module.reinterpret::<$from>())
+            }
+
             fn alloc_bytes(len: usize) -> Self::OwnedBuf {
                 <$from as poulpy_hal::layouts::Backend>::alloc_bytes(len)
             }

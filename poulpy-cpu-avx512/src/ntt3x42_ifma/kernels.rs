@@ -486,6 +486,12 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable
         return;
     }
 
+    if let Some(ci) = &table.ci {
+        for k in 0..3 {
+            ci[k].apply(&mut data[k * n..(k + 1) * n], 1, P::Q[k]);
+        }
+    }
+
     unsafe {
         for k in 0..3 {
             let q = P::Q[k];
@@ -958,6 +964,12 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
                     *c = harvey_modmul(*c, n_inv, n_inv_quot, q);
                 }
             }
+        }
+    }
+
+    if let Some(ci) = &table.ci {
+        for k in 0..3 {
+            ci[k].apply(&mut data[k * n..(k + 1) * n], 1, P::Q[k]);
         }
     }
 }

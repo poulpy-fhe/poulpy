@@ -4,7 +4,7 @@ use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
         convolution::I64Ops,
-        module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
+        module::{FFT64HandleFactory, FFT64ModuleConfig, FFT64Plan, FFT64PlanSet, FFTHandleProvider, FFTModuleHandle},
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_ref, reim_zero_ref},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
@@ -18,7 +18,7 @@ use poulpy_cpu_ref::reference::{
 };
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, Host, Module},
 };
 
 use crate::{
@@ -95,6 +95,15 @@ impl Backend for FFT64Avx {
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64AvxHandle;
     type Location = Host;
+    fn cyclotomic_order(module: &Module<Self>) -> i64 {
+        module.n() as i64
+            * if module.get_fft_plan(module.n()).is_conjugate_invariant() {
+                4
+            } else {
+                2
+            }
+    }
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -194,10 +203,10 @@ impl Backend for FFT64Avx {
 ///
 /// The returned handle must be fully initialized for `n`.
 unsafe impl FFT64HandleFactory for FFT64AvxHandle {
-    fn create_fft64_handle(n: usize) -> Self {
+    fn create_fft64_handle(n: usize, config: FFT64ModuleConfig) -> Self {
         FFT64AvxHandle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new(n),
+            ring_plans: FFT64PlanSet::new_with_mode(n, config.mode),
         }
     }
 

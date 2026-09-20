@@ -66,6 +66,15 @@ impl Backend for NTT3x42Ifma {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT3x42IfmaHandle;
     type Location = poulpy_hal::layouts::Host;
+    fn cyclotomic_order(module: &Module<Self>) -> i64 {
+        module.n() as i64
+            * if handle(module).table_ntt_for(module.n()).ci.is_some() {
+                4
+            } else {
+                2
+            }
+    }
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -246,24 +255,36 @@ fn assert_runtime_support() {
 /// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of every
 /// degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
 pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
-    assert_runtime_support();
     assert!(
         n as usize >= NTT3x42Ifma::MIN_DEGREE,
         "NTT3x42Ifma requires n >= {}, got {n}",
         NTT3x42Ifma::MIN_DEGREE
     );
-    let handle = NTT3x42IfmaHandle {
-        table_cache: Default::default(),
-        tables_ntt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
-            .map(|log_degree| Ntt3x42IfmaTable::new(1usize << log_degree))
-            .collect(),
-        tables_intt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
-            .map(|log_degree| Ntt3x42IfmaTableInv::new(1usize << log_degree))
-            .collect(),
-        meta_bbc: Bbc126IfmaMeta::new(),
-    };
-    let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));
-    unsafe { Module::from_nonnull(ptr, n) }
+    poulpy_cpu_ref::NTTModuleConfig::default().new_module::<NTT3x42Ifma>(n)
+}
+
+unsafe impl poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory for NTT3x42IfmaHandle {
+    fn assert_ntt_runtime_support() {
+        assert_runtime_support();
+    }
+    fn create_ntt_handle(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
+        assert!(
+            n.is_power_of_two()
+                && n >= NTT3x42Ifma::MIN_DEGREE
+                && n <= (1usize
+                    << (<Primes42 as poulpy_hal::layouts::PrimeSet>::MAX_LOG_N - u32::from(config.is_conjugate_invariant())))
+        );
+        NTT3x42IfmaHandle {
+            table_cache: Default::default(),
+            tables_ntt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=n.ilog2() as usize)
+                .map(|log_degree| Ntt3x42IfmaTable::new_with_config(1usize << log_degree, config))
+                .collect(),
+            tables_intt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=n.ilog2() as usize)
+                .map(|log_degree| Ntt3x42IfmaTableInv::new_with_config(1usize << log_degree, config))
+                .collect(),
+            meta_bbc: Bbc126IfmaMeta::new(),
+        }
+    }
 }
 
 unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {

@@ -113,6 +113,7 @@ pub struct NttTable<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
+    pub ci: Option<[crate::reference::conjugate_invariant::ConjugateInvariantNtt; 4]>,
     _phantom: PhantomData<P>,
 }
 
@@ -132,6 +133,7 @@ pub struct NttTableInv<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
+    pub ci: Option<[crate::reference::conjugate_invariant::ConjugateInvariantNtt; 4]>,
     _phantom: PhantomData<P>,
 }
 
@@ -216,6 +218,20 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
 }
 
 impl<P: PrimeSetCrt4> NttTable<P> {
+    pub fn new_conjugate_invariant(n: usize) -> Self {
+        let mut table = Self::new(n);
+        table.ci = Some(std::array::from_fn(|k| {
+            crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                n,
+                P::Q[k] as u64,
+                P::OMEGA[k] as u64,
+                P::MAX_LOG_N,
+                false,
+            )
+        }));
+        table
+    }
+
     /// Builds the forward NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
@@ -247,6 +263,7 @@ impl<P: PrimeSetCrt4> NttTable<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                ci: None,
                 _phantom: PhantomData,
             };
         }
@@ -353,12 +370,27 @@ impl<P: PrimeSetCrt4> NttTable<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            ci: None,
             _phantom: PhantomData,
         }
     }
 }
 
 impl<P: PrimeSetCrt4> NttTableInv<P> {
+    pub fn new_conjugate_invariant(n: usize) -> Self {
+        let mut table = Self::new(n);
+        table.ci = Some(std::array::from_fn(|k| {
+            crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                n,
+                P::Q[k] as u64,
+                P::OMEGA[k] as u64,
+                P::MAX_LOG_N,
+                true,
+            )
+        }));
+        table
+    }
+
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
@@ -389,6 +421,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                ci: None,
                 _phantom: PhantomData,
             };
         }
@@ -505,6 +538,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            ci: None,
             _phantom: PhantomData,
         }
     }
@@ -563,6 +597,11 @@ pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 
     assert!(data.len() >= 4 * n);
 
+    if let Some(ci) = &table.ci {
+        for k in 0..4 {
+            ci[k].apply(&mut data[k..4 * n], 4, P::Q[k] as u64);
+        }
+    }
     let mut po_off = 0usize; // current offset into table.powomega
     let mut meta_idx = 0usize;
 
@@ -679,6 +718,11 @@ pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
                 let po = table.powomega[po_off + 4 * i + k];
                 data[4 * i + k] = split_precompmul(x, po, h, mask);
             }
+        }
+    }
+    if let Some(ci) = &table.ci {
+        for k in 0..4 {
+            ci[k].apply(&mut data[k..4 * n], 4, P::Q[k] as u64);
         }
     }
 }

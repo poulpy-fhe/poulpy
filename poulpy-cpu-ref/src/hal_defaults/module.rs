@@ -2,7 +2,10 @@
 
 use std::ptr::NonNull;
 
-use crate::reference::{fft64::module::FFT64HandleFactory, ntt4x30::vec_znx_dft::NttHandleFactory};
+use crate::reference::{
+    fft64::module::{FFT64HandleFactory, FFT64ModuleConfig},
+    ntt4x30::vec_znx_dft::{NTTModuleConfig, NttHandleFactory},
+};
 use poulpy_hal::layouts::{Backend, Module};
 
 #[doc(hidden)]
@@ -20,7 +23,7 @@ where
             Self::MIN_DEGREE
         );
         <Self::Handle as FFT64HandleFactory>::assert_fft64_runtime_support();
-        let handle = <Self::Handle as FFT64HandleFactory>::create_fft64_handle(n as usize);
+        let handle = <Self::Handle as FFT64HandleFactory>::create_fft64_handle(n as usize, FFT64ModuleConfig::default());
         let ptr: NonNull<Self::Handle> = NonNull::from(Box::leak(Box::new(handle)));
         unsafe { Module::from_nonnull(ptr, n) }
     }
@@ -43,7 +46,7 @@ where
             Self::MIN_DEGREE
         );
         <Self::Handle as NttHandleFactory>::assert_ntt_runtime_support();
-        let handle = <Self::Handle as NttHandleFactory>::create_ntt_handle(n as usize);
+        let handle = <Self::Handle as NttHandleFactory>::create_ntt_handle(n as usize, NTTModuleConfig::default());
         let ptr: NonNull<Self::Handle> = NonNull::from(Box::leak(Box::new(handle)));
         unsafe { Module::from_nonnull(ptr, n) }
     }

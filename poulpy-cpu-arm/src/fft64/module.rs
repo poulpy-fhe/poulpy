@@ -2,10 +2,12 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use poulpy_cpu_ref::reference::fft64::module::{
+    FFT64HandleFactory, FFT64ModuleConfig, FFT64Plan, FFT64PlanSet, FFTHandleProvider, FFTModuleHandle,
+};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, Host, Module},
 };
 
 use super::FFT64Neon;
@@ -34,6 +36,15 @@ impl Backend for FFT64Neon {
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64NeonHandle;
     type Location = Host;
+    fn cyclotomic_order(module: &Module<Self>) -> i64 {
+        module.n() as i64
+            * if module.get_fft_plan(module.n()).is_conjugate_invariant() {
+                4
+            } else {
+                2
+            }
+    }
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -133,10 +144,10 @@ impl Backend for FFT64Neon {
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
 unsafe impl FFT64HandleFactory for FFT64NeonHandle {
-    fn create_fft64_handle(n: usize) -> Self {
+    fn create_fft64_handle(n: usize, config: FFT64ModuleConfig) -> Self {
         FFT64NeonHandle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new(n),
+            ring_plans: FFT64PlanSet::new_with_mode(n, config.mode),
         }
     }
 }

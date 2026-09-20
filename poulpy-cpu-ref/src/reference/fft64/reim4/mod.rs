@@ -32,6 +32,18 @@ pub trait Reim4BlkMatVec {
     fn reim4_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
         reim4_vec_mat2cols_2ndcol_product_ref(nrows, dst, u, v)
     }
+
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat1col_product_ref(nrows, dst, u, v)
+    }
+
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat2cols_product_ref(nrows, dst, u, v)
+    }
+
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat2cols_2ndcol_product_ref(nrows, dst, u, v)
+    }
 }
 
 pub trait Reim4Convolution {
@@ -41,6 +53,14 @@ pub trait Reim4Convolution {
 
     fn reim4_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         reim4_convolution_2coeffs_ref(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_real_convolution_1coeff_ref(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_real_convolution_2coeffs_ref(k, dst, a, a_size, b, b_size)
     }
 
     fn reim4_convolution(dst: &mut [f64], dst_size: usize, offset: usize, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
@@ -54,6 +74,26 @@ pub trait Reim4Convolution {
         if !dst_size.is_multiple_of(2) {
             let k: usize = dst_size - 1;
             Self::reim4_convolution_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+    }
+
+    fn reim4_real_convolution(
+        dst: &mut [f64],
+        dst_size: usize,
+        offset: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+    ) {
+        assert!(a_size > 0);
+        assert!(b_size > 0);
+        for k in (0..dst_size - 1).step_by(2) {
+            Self::reim4_real_convolution_2coeffs(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+        if !dst_size.is_multiple_of(2) {
+            let k = dst_size - 1;
+            Self::reim4_real_convolution_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
         }
     }
 
@@ -103,6 +143,43 @@ pub trait Reim4Convolution {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_ci_block(m, tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            a_idx += a_stride;
+        }
+    }
+
     /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
     /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched. `tmp` holds
     /// at least `8 * (b_size + min_size)` f64, sized by the caller's
@@ -135,6 +212,45 @@ pub trait Reim4Convolution {
                 &*tmp_b
             };
             Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                for i in 0..4 {
+                    dst[off + i] += tmp_res[8 * k + i];
+                    dst[off + m + i] += tmp_res[8 * k + 4 + i];
+                }
+            }
+            a_idx += a_stride;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_ci_block(m, tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
             for k in 0..min_size {
                 let off: usize = dst_stride * k + 4 * blk_i;
                 for i in 0..4 {
@@ -195,6 +311,50 @@ pub trait Reim4Convolution {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_pairwise_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a0: &[f64],
+        a1: &[f64],
+        a_size: usize,
+        b0: &[f64],
+        b1: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + crate::reference::fft64::reim::ReimArith + Sized,
+    {
+        let a_row: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_a, tmp) = tmp.split_at_mut(a_row);
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut idx_a: usize = 0;
+        for blk_i in 0..m / 4 {
+            Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
+            if b_log_gap == 0 {
+                Self::reim_add(
+                    tmp_b,
+                    &b0[blk_i * b_row..(blk_i + 1) * b_row],
+                    &b1[blk_i * b_row..(blk_i + 1) * b_row],
+                );
+            } else {
+                reim4_gather_ci_block_sum(m, tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+            }
+            Self::reim4_real_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            idx_a += a_row;
+        }
+    }
+
     fn reim4_convolution_by_real_const_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64]) {
         reim4_convolution_by_real_const_1coeff_ref(k, dst, a, a_size, b)
     }
@@ -213,6 +373,32 @@ pub trait Reim4Convolution {
         if !dst_size.is_multiple_of(2) {
             let k: usize = dst_size - 1;
             Self::reim4_convolution_by_real_const_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b);
+        }
+    }
+}
+
+fn reim4_gather_ci_block(m: usize, dst: &mut [f64], src: &[f64], size: usize, block: usize, log_gap: usize) {
+    let n = (2 * m) >> log_gap;
+    for lane in 0..8 {
+        let index = (4 * block + lane % 4 + (lane / 4) * m) % (2 * n);
+        let index = if index < n { index } else { 2 * n - 1 - index };
+        let src_block = (index % (n / 2)) / 4;
+        let src_lane = index % 4 + (index / (n / 2)) * 4;
+        for limb in 0..size {
+            dst[8 * limb + lane] = src[8 * (src_block * size + limb) + src_lane];
+        }
+    }
+}
+fn reim4_gather_ci_block_sum(m: usize, dst: &mut [f64], src0: &[f64], src1: &[f64], size: usize, block: usize, log_gap: usize) {
+    let n = (2 * m) >> log_gap;
+    for lane in 0..8 {
+        let index = (4 * block + lane % 4 + (lane / 4) * m) % (2 * n);
+        let index = if index < n { index } else { 2 * n - 1 - index };
+        let src_block = (index % (n / 2)) / 4;
+        let src_lane = index % 4 + (index / (n / 2)) * 4;
+        for limb in 0..size {
+            dst[8 * limb + lane] =
+                src0[8 * (src_block * size + limb) + src_lane] + src1[8 * (src_block * size + limb) + src_lane];
         }
     }
 }

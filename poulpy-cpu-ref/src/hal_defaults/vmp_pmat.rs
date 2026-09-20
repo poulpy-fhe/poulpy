@@ -6,7 +6,7 @@ use std::mem::size_of;
 use crate::reference::{
     fft64::{
         module::FFTModuleHandle,
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+        reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         reim4::Reim4BlkMatVec,
         vmp::{
             vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
@@ -90,8 +90,12 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Self: Backend<DftWord = f64, ZnxWord = i64>
+            + ReimArith
+            + Reim4BlkMatVec
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -101,7 +105,7 @@ where
         assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
         let bytes = fft64_vmp_prepare_tmp_bytes(n);
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_table_for(n), res, a, tmp);
+        fft64_vmp_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -128,6 +132,7 @@ where
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
+        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -147,6 +152,7 @@ where
         workers: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
+        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
         KERNEL: ReimArith + Reim4BlkMatVec,
         E: TaskExecutor,
@@ -157,7 +163,14 @@ where
         let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let bytes = workers.max(1).min(scratch.available() / per_worker.max(1)).max(1) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(res, a, b, limb_offset, tmp);
+        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(
+            res,
+            a,
+            b,
+            limb_offset,
+            _module.get_fft_plan(_module.n()).is_conjugate_invariant(),
+            tmp,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -171,7 +184,7 @@ where
         workers: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<Self> + VecZnxDftZero<Self>,
+        Module<Self>: FFTModuleHandle<f64> + VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<Self> + VecZnxDftZero<Self>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
         KERNEL: ReimArith + Reim4BlkMatVec,
         E: TaskExecutor,
@@ -188,7 +201,14 @@ where
         let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let bytes = workers.max(1).min(scratch_1.available() / per_worker.max(1)).max(1) * per_worker;
         let (kernel_tmp, _) = take_host_typed::<Self, f64>(scratch_1, bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(&mut tmp, a, b, limb_offset, kernel_tmp);
+        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(
+            &mut tmp,
+            a,
+            b,
+            limb_offset,
+            module.get_fft_plan(module.n()).is_conjugate_invariant(),
+            kernel_tmp,
+        );
         let tmp_ref = tmp.to_backend_ref();
         for col in 0..cols_out {
             module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);

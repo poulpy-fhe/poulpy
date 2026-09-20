@@ -72,3 +72,30 @@ pub use scalar_znx_fill::ScalarZnxFill;
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
+pub use reference::fft64::module::{FFT64Mode, FFT64ModuleConfig};
+
+pub use crate::reference::ntt4x30::vec_znx_dft::NTTModuleConfig;
+
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64Ref, crate::FFT64ModuleConfig::conjugate_invariant());
+
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(
+    ci_ntt4x30ref,
+    crate::NTT4x30Ref,
+    crate::NTTModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(
+    ci_core_fft64ref,
+    crate::FFT64Ref,
+    crate::FFT64ModuleConfig::conjugate_invariant()
+);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30ref,
+    crate::NTT4x30Ref,
+    crate::NTTModuleConfig::conjugate_invariant()
+);
