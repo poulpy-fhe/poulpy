@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWECopy, GLWENegate, GLWERotate, GLWEShift,
+    GLWERotate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut},
 };
 use poulpy_hal::{
@@ -13,13 +13,6 @@ use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_off
 
 pub trait CKKSImagReference<BE: Backend> {
     fn ckks_mul_i_tmp_bytes_reference(&self, res_size: usize) -> usize
-    where
-        Self: GLWERotate<BE> + GLWEShift<BE>,
-    {
-        self.glwe_rotate_tmp_bytes().max(self.glwe_shift_tmp_bytes(res_size))
-    }
-
-    fn ckks_div_i_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: GLWERotate<BE> + GLWEShift<BE>,
     {
@@ -59,25 +52,6 @@ pub trait CKKSImagReference<BE: Backend> {
         dst.set_slots(SlotsKind::Complex);
         Ok(())
     }
-
-    fn ckks_div_i_into_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Self: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-    {
-        self.ckks_mul_i_into_reference(dst, src, scratch)?;
-        self.glwe_negate_assign(dst);
-        Ok(())
-    }
-
-    fn ckks_div_i_assign_reference<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Self: GLWENegate<BE> + GLWERotate<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    {
-        self.ckks_mul_i_assign_reference(dst, scratch)?;
-        self.glwe_negate_assign(dst);
-        Ok(())
-    }
 }
+
+impl<BE: Backend> CKKSImagReference<BE> for poulpy_hal::layouts::Module<BE> {}

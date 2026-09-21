@@ -270,3 +270,5 @@ where
     input.set_meta(meta);
     input
 }
+
+pub use super::eval_mod_scratch::ckks_eval_mod_tmp_bytes_reference;

@@ -1,18 +1,12 @@
 use crate::CKKSResult as Result;
-use poulpy_core::{
-    GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
 use crate::api::CKKSRotateOps;
 
-impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE>
-where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE> + GaloisElement,
-{
+impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,

@@ -23,7 +23,14 @@ All outputs are caller-allocated:
 - `ckks_ship_bootstrap_tmp_bytes` reports the caller-arena bound, validating the ciphertext and key layouts along the way.
 
 The only SHIP-specific backend hook is the coefficient encoding: the input-dependent conversion of the bottom ciphertext's public residues into `pt0` and the rotated `pi` plaintexts.
-A backend opts in by implementing `poulpy_ckks::oep::CKKSShipCoeffEncodingImpl`; the scheme definition is exported as `poulpy_ckks::encoding::ship_coeff_encodings_host`, and a CPU backend adopts it wholesale with `poulpy-cpu-ref`'s `impl_ckks_ship_coeff_encoding!` macro.
+A backend opts in by implementing `poulpy_ckks::oep::CKKSShipCoeffEncodingImpl`.
+The canonical embedding is exported as
+`poulpy_ckks::reference::encoding::ship_coeff_encodings_host` (also available
+through `poulpy_ckks::encoding`). Its host-access requirements belong to this
+explicit host reference; the resident OEP takes backend-readable ciphertexts
+and has no host-storage bound. Slot permutation and quantization are also
+defined by CKKS reference routines; the backend owns staging and transform
+plans.
 The rest of SHIP composes existing CKKS multiplication, keyswitching, convolution, and DFT APIs.
 
 ## Construction outline
@@ -74,3 +81,16 @@ The phase embedding imposes the same precision contract as PaCo: residues modulo
 For a cleartext of magnitude `|mu|`, the leading gap-model error is `(2*pi)^2 * |mu|^3 / (6 * gamma^2)` before homomorphic noise; `log_delta_work` should sit far enough above the accumulated CKKS noise (roughly 14 bits over the tree) that the gap model dominates.
 The mux chain must cover the window: the mixed-radix bases of `ShipPlan::mux_bases` multiply to at least `(2w + 1) / theta` candidates, and raising `theta` trades mux keyswitches for masking convolutions.
 Validate precision and security with application-scale parameters rather than the small test instances.
+
+## Validation
+
+The paired coefficient-encoding suite compares caller-selected backends for
+both real and complex material, including both `pt0` halves and every rotated
+`pi` vector. It compares canonical coefficients and exact metadata, checks each
+backend's advertised scratch with guards, and verifies that failed shape checks
+preserve the input. The independent host replica and full pipeline tests remain
+separate checks of the scheme math and precision.
+
+See [Implementing CKKS operations](../poulpy-ckks/docs/ckks-contracts.md) for the
+replacement contract and the [repository README](../README.md) for concrete
+test commands and execution coverage.

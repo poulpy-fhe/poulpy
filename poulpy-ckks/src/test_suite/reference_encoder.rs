@@ -14,8 +14,7 @@ use crate::{layouts::CKKSScalar, layouts::plaintext::CKKSPlaintextVecHostCodec};
 /// The encoder maps `m` complex slots onto an RNX plaintext of size `2m`
 /// through the canonical FFT/IFFT packing used by the rest of the crate.
 ///
-/// `T` is the negacyclic FFT implementation (e.g. `FFT64ReimTable<f64>`
-/// from `poulpy-cpu-ref`).
+/// `T` is the caller-selected negacyclic FFT implementation.
 pub struct ReferenceEncoder<T> {
     table: T,
     plan: ReferenceEncodingPlan,

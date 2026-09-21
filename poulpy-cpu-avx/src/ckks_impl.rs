@@ -3,9 +3,9 @@ use crate::{FFT64Avx, NTT4x30Avx};
 use crate::{FFT64AvxRayon, NTT4x30AvxRayon};
 use poulpy_ckks::{
     impl_ckks_add_reference, impl_ckks_conjugate_reference, impl_ckks_copy_reference, impl_ckks_dft_reference,
-    impl_ckks_encapsulated_mod_up_reference, impl_ckks_encryption_reference, impl_ckks_imag_reference, impl_ckks_mul_reference,
-    impl_ckks_neg_reference, impl_ckks_plaintext_reference, impl_ckks_pow2_reference, impl_ckks_rotate_reference,
-    impl_ckks_sub_reference,
+    impl_ckks_encapsulated_mod_up_reference, impl_ckks_encryption_reference, impl_ckks_eval_mod_reference,
+    impl_ckks_imag_reference, impl_ckks_mul_reference, impl_ckks_neg_reference, impl_ckks_plaintext_reference,
+    impl_ckks_polynomial_evaluation_reference, impl_ckks_pow2_reference, impl_ckks_rotate_reference, impl_ckks_sub_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx);
@@ -56,7 +56,11 @@ impl_ckks_sub_reference!(NTT4x30Avx);
 impl_ckks_plaintext_reference!(FFT64Avx);
 impl_ckks_plaintext_reference!(NTT4x30Avx);
 impl_ckks_dft_reference!(FFT64Avx);
+impl_ckks_eval_mod_reference!(FFT64Avx);
+impl_ckks_polynomial_evaluation_reference!(FFT64Avx);
 impl_ckks_dft_reference!(NTT4x30Avx);
+impl_ckks_eval_mod_reference!(NTT4x30Avx);
+impl_ckks_polynomial_evaluation_reference!(NTT4x30Avx);
 
 #[cfg(feature = "enable-rayon")]
 mod rayon_defaults {
@@ -79,6 +83,8 @@ mod rayon_defaults {
     impl_ckks_sub_reference!(FFT64AvxRayon);
     impl_ckks_plaintext_reference!(FFT64AvxRayon);
     impl_ckks_dft_reference!(FFT64AvxRayon);
+    impl_ckks_eval_mod_reference!(FFT64AvxRayon);
+    impl_ckks_polynomial_evaluation_reference!(FFT64AvxRayon);
 
     impl_ckks_conjugate_reference!(NTT4x30AvxRayon);
     impl_ckks_copy_reference!(NTT4x30AvxRayon);
@@ -96,4 +102,6 @@ mod rayon_defaults {
     impl_ckks_sub_reference!(NTT4x30AvxRayon);
     impl_ckks_plaintext_reference!(NTT4x30AvxRayon);
     impl_ckks_dft_reference!(NTT4x30AvxRayon);
+    impl_ckks_eval_mod_reference!(NTT4x30AvxRayon);
+    impl_ckks_polynomial_evaluation_reference!(NTT4x30AvxRayon);
 }

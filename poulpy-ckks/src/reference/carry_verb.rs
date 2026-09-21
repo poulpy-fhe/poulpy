@@ -54,7 +54,7 @@ where
     Ok(pt)
 }
 
-/// Generates a `CKKS{Add,Sub}Default` trait: the full default-layer carry-verb
+/// Generates a `CKKS{Add,Sub}Reference` trait: the full reference-layer carry-verb
 /// family (ct–ct, ct–pt-vector, ct–pt-constant, normalized and unnormalized,
 /// plus the one-constant facades and the tmp-bytes accounting).
 ///
@@ -223,21 +223,7 @@ macro_rules! ckks_carry_verb_reference {
                     Ok(())
                 }
 
-                fn [<ckks_ $verb _one_assign_reference>]<Dst>(
-                    &self,
-                    dst: &mut Dst,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWENormalize<BE>
-                        $(+ $PtVecBound<BE>)+
-                        + CKKSPlaintextReference<BE>
-                        + CKKSModuleAlloc<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                {
-                    let one = $crate::reference::carry_verb::ckks_one_pt::<BE, Self>(self, dst.base2k())?;
-                    self.[<ckks_ $verb _pt_const_assign_reference>](dst, 0, &one, 0, scratch)
-                }
+
 
                 fn [<ckks_ $verb _pt_vec_into_reference>]<Dst, A, P>(
                     &self,

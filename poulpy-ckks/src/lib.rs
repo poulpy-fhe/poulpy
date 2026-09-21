@@ -3,15 +3,15 @@
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
-//! homomorphic encryption scheme, built on top of the low-level primitives
-//! provided by `poulpy-core`, `poulpy-hal`, and the available compute
-//! backends (`poulpy-cpu-ref`, `poulpy-cpu-avx`).
+//! homomorphic encryption scheme, built from `poulpy-core` and `poulpy-hal`.
 //!
-//! The [`reference`](mod@crate::reference) module is the implementation of every CKKS operation, the
-//! only validated circuit; a backend override through [`oep`] is a faster route
-//! to the same result, validated by the parity suite against an attested
-//! backend (attestation is transitive back to the reference) and correct only when that test
-//! passes.
+//! Public calls dispatch through explicit backend [`oep`] contracts. Public
+//! [`reference`](mod@crate::reference) algorithms compose lower-layer operations;
+//! simple CKKS compositions are crate-private derived defaults on the contracts.
+//! A backend may replace a method while reusing the reference for other members
+//! of its family. Replacements must compute the same circuit and pass parity
+//! against a caller-selected validated implementation. Validation is transitive
+//! for the operations and parameter ranges covered by those tests.
 //!
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by
@@ -19,7 +19,11 @@
 //! [`CKKSMeta`]:
 //!
 //! - `log_delta`: base-2 logarithm of the encoded plaintext scaling factor
-//! - `log_budget`: remaining homomorphic headroom, also tracked in bits
+//! - `log_sparsity`: base-2 logarithm of the slot replication
+//!
+//! Remaining homomorphic headroom, `log_budget`, is derived from the wrapped
+//! ciphertext or plaintext width as `k() - log_delta`; it is not stored in
+//! [`CKKSMeta`].
 //!
 //! [`CKKSMeta`] also records the [`SlotsKind`] of a value: whether its slots are
 //! known to be real, or may carry an imaginary part. Operations compose that
@@ -51,11 +55,11 @@
 //! | Module | Role |
 //! |--------|------|
 //! | [`approximation`] | Reusable minimax fitting, precision/depth selection, composite sign generation, and prepared interval-mapped polynomial evaluation |
-//! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
+//! | [`encoding`] / [`reference::encoding`] | Canonical slot ordering, quantization, and PaCo/SHIP embeddings, with explicit host reference helpers |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`presets`] | Ready-to-use parameter sets |
 //! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
-//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::CKKSDFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
+//! | [`api::CKKSBootstrappingOps`] | API composition of encapsulated ModUp, DFT, and EvalMod; parameterized by [`layouts::BootstrappingPlan`] |
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{

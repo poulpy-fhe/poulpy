@@ -75,6 +75,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** backend CKKS operation families require explicit `*Impl` implementations. Reference macros select the callable lower-layer algorithms; add/sub-one, division by `i`, DFT format wrappers and one-shot polynomial evaluation are crate-private derived defaults that honor selected constituent operations. EvalMod now dispatches its scratch query through the backend contract. CKKS copy and decryption scratch queries take both layouts so they can account for the selected lower-layer operations and destination allocation; shared workflow budgets include CKKS copy, and rotation/conjugation queries include narrowing shifts. Delegates impose only the selected contract's requirements.
+- Canonical slot permutation and coefficient quantization live in `poulpy_ckks::reference::encoding`; backend code retains FFT execution, plans, caching and staging. Coefficient encoding rejects non-finite and signed-overflow inputs before writing, including `Quad` conversions that previously saturated silently.
+- Added caller-selected CKKS circuit parity, controlled-draw encryption, exact scratch guards and independent override regressions. Backend registrations and native/emulated CI cover encoding (including PaCo/SHIP), arithmetic, DFT, polynomial evaluation, EvalMod and encapsulated ModUp. The crate's contract guide documents reference/derived ownership and backend-independent validation.
+
 - Restore S2C-first bootstrapping precision after #285 without changing the modulus budget.
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 - `ckks_extract_pt_tmp_bytes`, the `carry_verb` tmp-bytes helpers, `ckks_add_many_tmp_bytes` and the `ckks_{copy,neg,mul_pow2,div_pow2,mul_i,div_i,mod_up}_tmp_bytes` families take the destination size, the same cascade as `poulpy-core`; `eval_baby_linear_combination_tmp_bytes` folds in `cnv_by_const_apply_add_tmp_bytes`.
