@@ -34,7 +34,7 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 /// stores it as a `PreparedDiagonal`. Because this type implements [`LWEInfos`],
 /// the shared evaluator reads `base2k` / `k` / `size` off it exactly as it
 /// does off a plaintext — which is what lets both flavors share the single
-/// [`LinearTransformation`](crate::layouts::LinearTransformation) container
+/// [`crate::layouts::LinearTransformation`] container
 /// (`LinearTransformation<PreparedDiagonal<…>>` vs
 /// `LinearTransformation<CKKSPlaintext<…>>`).
 ///

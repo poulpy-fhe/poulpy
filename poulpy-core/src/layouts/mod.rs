@@ -104,8 +104,8 @@ use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec
 ///
 /// These resolve to `<Layout><<BE as Backend>::OwnedBuf>` so that user
 /// code can declare types in terms of the owning backend instead of the
-/// raw storage type. On CPU backends this is just `AlignedBuf`; on future
-/// device backends it is the backend's device buffer type.
+/// raw storage type. Each backend selects its own buffer representation through
+/// [`Backend::OwnedBuf`].
 pub type BackendGLWE<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 pub type BackendGGLWE<BE> = GGLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 pub type BackendGGSW<BE> = GGSW<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;

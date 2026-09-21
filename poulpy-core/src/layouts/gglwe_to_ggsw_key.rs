@@ -289,7 +289,7 @@ impl<W: ZnxWord> GGLWEToGGSWKey<AlignedBuf, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKey<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
     pub fn at_mut(&mut self, i: usize) -> &mut GGLWE<D, W> {
         assert!((i as u32) < self.rank());
@@ -297,7 +297,7 @@ impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKey<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
     pub fn at(&self, i: usize) -> &GGLWE<D, W> {
         assert!((i as u32) < self.rank());

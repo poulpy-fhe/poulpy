@@ -114,7 +114,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWESecret<D, W> {
 ///
 /// The LWE counterpart of [`GLWESecretSampling`](crate::layouts::GLWESecretSampling):
 /// each distribution is drawn in place by the backend through
-/// [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution).
+/// [`crate::ScalarZnxFillDistribution`].
 pub trait LWESecretSampling<BE: Backend> {
     /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
     fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)

@@ -5,9 +5,8 @@ use crate::reference::encryption::CKKSEncryptionReference;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
-    EncryptionInfos,
+    EncryptionInfos, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef},
-    oep::{DecryptionReference, EncryptionReference},
 };
 use poulpy_hal::{
     api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
@@ -70,8 +69,8 @@ where
     BE: HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl + HostBackend,
     Module<BE>: CKKSEncryptionReference<BE>
         + CKKSPlaintextReference<BE>
-        + EncryptionReference<BE>
-        + DecryptionReference<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
         + poulpy_core::GLWENormalize<BE>
         + VecZnxLshAdd<BE>
         + VecZnxRshAdd<BE>

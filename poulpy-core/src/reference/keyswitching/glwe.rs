@@ -1,4 +1,5 @@
 use crate::api::GLWEBytesOf;
+use crate::api::GLWENormalize;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft, VmpApplyDftToDftAdd,
@@ -307,7 +308,6 @@ use poulpy_hal::{
 use crate::{
     layouts::{GLWELayout, GLWEToBackendMut},
     oep::GLWEKeyswitchReference,
-    reference::operations::GLWENormalizeReference,
 };
 
 fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
@@ -348,7 +348,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 /// Any lower limb can affect rounding through a sufficiently long carry chain.
 /// The retained window covers the live precision plus the worst-case norm
 /// growth of the signed polynomial products and VMP accumulation, on every
-/// backend; see [`gadget_product_output_size`].
+/// backend; see `gadget_product_output_size`.
 pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -412,7 +412,7 @@ where
     M: GLWEBytesOf<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -450,7 +450,7 @@ where
         };
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
-            .glwe_normalize_tmp_bytes_reference()
+            .glwe_normalize_tmp_bytes()
             .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos));
         let lvl_2_2: usize = small_term_tmp
             + consume_tmp.max(
@@ -480,7 +480,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         + GLWEKeyswitchReference<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxNormalize<BE>,
@@ -532,7 +532,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
                 k: (a.k().div_ceil(key.base2k()) as usize * key_base2k).into(),
                 rank: a.rank(),
             });
-            module.glwe_normalize_reference(&mut a_conv, a, &mut scratch_2.borrow());
+            module.glwe_normalize(&mut a_conv, a, &mut scratch_2.borrow());
             glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, key, &mut scratch_2);
         });
     } else {
@@ -598,7 +598,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
         + GLWEKeyswitchReference<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -649,7 +649,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
             k: (res.k().div_ceil(key.base2k()) as usize * key_base2k).into(),
             rank: res.rank(),
         });
-        module.glwe_normalize_reference(&mut res_conv, res, &mut scratch_3.borrow());
+        module.glwe_normalize(&mut res_conv, res, &mut scratch_3.borrow());
 
         module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_3);
 

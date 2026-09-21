@@ -6,7 +6,7 @@
 //! to compute statistics and is bounded on [`HostBackend`] at the method.
 //!
 //! A noise bound is a weak oracle. For the complementary check, that a backend
-//! agrees with a reference backend byte-for-byte, see [`super::parity`].
+//! agrees with a selected comparison backend byte-for-byte, see [`super::parity`].
 
 pub mod automorphism;
 pub mod encryption;

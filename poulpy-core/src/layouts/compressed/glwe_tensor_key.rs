@@ -21,7 +21,13 @@ use std::fmt;
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWETensorKeyCompressed<D: Data, W: ZnxWord>(pub(crate) GGLWECompressed<D, W>);
 
-impl<D: HostDataMut, W: ZnxWord> GGLWECompressedSeedMut for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWETensorKeyCompressed<D, W> {
+    fn seed(&self) -> &Vec<[u8; 32]> {
+        &self.0.seed
+    }
+}
+
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWETensorKeyCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.0.seed
     }

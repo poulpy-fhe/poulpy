@@ -1,23 +1,19 @@
-//! The implementation of every `poulpy-core` operation.
+//! Portable core algorithms built from HAL operations.
 //!
-//! Each module composes one operation family from the HAL operations. These
-//! compositions define what the operations compute and are the only validated
-//! circuit: a backend runs them through the `impl_*_reference_full!` macros of
-//! [`crate::oep`], or overrides a family through its `oep` trait with a faster
-//! route to the same result (a fused kernel, device-native code, another
-//! layout), which the parity suite validates against an attested backend: it runs the
-//! override and that backend on the same inputs and requires the same result.
-//! Attestation is transitive back to these bodies: the portable backend runs
-//! them directly, and any backend already attested serves as the oracle for
-//! the next; an override is correct only when that test passes.
+//! The `*Reference` methods and free functions in this module are reusable
+//! implementations. Backend `*Impl` traits explicitly select them for public
+//! dispatch. Crate-private compositions of other core operations provide
+//! defaults on those backend traits.
+//!
+//! Overrides must implement the same circuit. Parity tests use a caller-selected
+//! validated backend and compare integer results and metadata on identical
+//! inputs; randomized operations additionally control the sampled values.
 
 pub mod automorphism;
 pub mod conversion;
 pub mod decryption;
 pub mod encryption;
 pub mod external_product;
-pub mod glwe_packing;
-pub mod glwe_trace;
 pub mod keyswitching;
 pub mod linear_transformation;
 pub mod noise;

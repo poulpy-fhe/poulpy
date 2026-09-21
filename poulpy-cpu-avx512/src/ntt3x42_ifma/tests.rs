@@ -23,7 +23,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -54,7 +54,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_dft,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
             test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
@@ -83,13 +83,13 @@ mod ntt3x42_ifma_tests {
         }
     }
 
-    // Rayon fused DFT ops; 2*n*size crosses the 1<<17 parallel-work floor.
+    // Native Rayon fused DFT cases cross the parallel-work floor; emulated CI bounds the degree.
     #[cfg(feature = "enable-rayon")]
     cross_backend_test_suite! {
         mod vec_znx_dft_rayon,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42IfmaRayon,
-        params = TestParams { size: 1<<14, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
             test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
@@ -101,7 +101,7 @@ mod ntt3x42_ifma_tests {
         mod svp,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -113,7 +113,7 @@ mod ntt3x42_ifma_tests {
         mod vmp,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
             test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -127,7 +127,7 @@ mod ntt3x42_ifma_tests {
         mod vec_znx_big,
         backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
         backend_test = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
             test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -155,7 +155,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod derived,
         backend = crate::NTT3x42Ifma,
-        params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
             test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -200,7 +200,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod window,
         backend = crate::NTT3x42Ifma,
-        params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1 << 8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -221,7 +221,7 @@ mod ntt3x42_ifma_tests {
     backend_test_suite! {
         mod window_rayon,
         backend = crate::NTT3x42IfmaRayon,
-        params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+        params = crate::tests::bounded_emulation_params(TestParams { size: 1 << 8, base2k: 50, n: 8 }, 256),
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,

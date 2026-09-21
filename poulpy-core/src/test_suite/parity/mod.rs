@@ -1,42 +1,50 @@
-//! Cross-backend parity suite.
+//! Cross-backend core contract tests.
 //!
-//! Every test here runs one operation on a reference backend and on a backend
-//! under test, over identical inputs, and asserts the outputs are equal
-//! byte-for-byte.
+//! Operations run on a caller-selected comparison backend and a backend under
+//! test, with identical logical inputs and independently prepared objects.
+//! A validated backend can bootstrap another through transitive parity. Comparisons include integer coefficients, live precision and other
+//! metadata; opaque transform bytes are never compared across backend layouts.
 //!
-//! This is deliberately not the [`super::noise`] suite in a second costume,
-//! and the difference is the point:
+//! Arithmetic fixtures use arbitrary canonical coefficients to stress carries,
+//! widths and poisoned outputs. Mutation variants and each backend's advertised
+//! scratch are checked independently. Encryption tests require identical realized
+//! draws, using matching streams or an optional controlled-sampling adapter.
+//! Same-seed byte equality is not required by the sampling contract; distribution
+//! and source-consumption checks remain separate.
 //!
-//! - the noise suite answers "does this backend implement the scheme", which
-//!   needs secrets, encryption and a noise model, and can only judge a backend
-//!   against a bound;
-//! - this suite answers "does this backend agree with the reference", which
-//!   needs none of those. A bound is a weak oracle: a gadget-product
-//!   accumulator one limb too narrow passes the key-switch noise sweep
-//!   comfortably (see the width contract on
-//!   [`crate::oep::GLWEKeyswitchReference`]). Equality is not weak.
-//!
-//! Because nothing is decrypted, the operands need not be valid ciphertexts:
-//! they are filled with uniform noise, which exercises the limb arithmetic
-//! harder than well-formed inputs do.
-//!
-//! The reference backend doubles as the staging area: it is host-resident by
-//! construction, so it builds the inputs, receives the downloaded results and
-//! performs the comparison. Only the backend under test is unconstrained, and
-//! it owes just allocation, the prepared-key factory, the operation and
-//! transfer, which is what lets a device backend run this suite.
+//! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
+//! crates register these contract suites for their supported implementations.
 
 mod automorphism;
 mod coarsened;
+pub mod controlled_sampling;
+mod conversion;
+mod digits;
+mod encryption;
+mod encryption_keys;
 mod external_product;
+mod gadget;
 mod keyswitch;
+mod linear_transformation;
 mod operations;
+mod polynomial_evaluation;
+mod preparation;
+mod structure;
 
 pub use automorphism::*;
 pub use coarsened::*;
+pub use conversion::*;
+pub use digits::*;
+pub use encryption::*;
+pub use encryption_keys::*;
 pub use external_product::*;
+pub use gadget::*;
 pub use keyswitch::*;
+pub use linear_transformation::*;
 pub use operations::*;
+pub use polynomial_evaluation::*;
+pub use preparation::*;
+pub use structure::*;
 
 use poulpy_hal::layouts::ZnxViewMut;
 use poulpy_hal::{
@@ -79,6 +87,15 @@ impl ParityShapes {
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> {}
 
 impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>> ParityBackend for BE {}
+
+/// Builds precisely the advertised scratch capacity, poisoned before each operation.
+/// No other operation or backend's budget can conceal an underestimate.
+pub(crate) fn poisoned_scratch<B: Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<B> {
+    poulpy_hal::layouts::ScratchOwned {
+        data: B::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    }
+}
 
 /// Allocates a GLWE on the reference module and fills it with uniform noise,
 /// canonical at the `k` it reports.
@@ -123,17 +140,20 @@ where
     gglwe
 }
 
-/// Declares a `poulpy-core` parity suite for a (reference, test) backend pair.
+/// Declares a `poulpy-core` parity suite for a caller-selected backend pair.
+///
+/// `backend_ref` selects the comparison backend; `backend_test` selects the
+/// backend under test. An already validated backend can serve as the comparison
+/// backend for the same operations and parameter ranges.
 ///
 /// Each test receives `(&TestParams, &ParityShapes, &Module<Ref>, &Module<Test>)`.
 /// `shapes` is optional and defaults to the full sweep.
 ///
 /// The two modules are `Lazy` statics shared by every test in the generated
-/// module, and the test harness runs those tests in parallel. Sharing is fine
-/// for the in-tree backends, whose modules are read-only handles, and is what
-/// keeps setup off the per-test path. A backend whose module carries mutable
-/// state (a device stream or context, say) must make that state `Sync`, or
-/// declare one suite per test.
+/// module, and the test harness runs those tests in parallel. Their types must
+/// be `Sync`, and the backend must support concurrent use of each module.
+/// A backend that needs separate module state per test can call the test
+/// helpers directly with locally constructed modules.
 #[macro_export]
 macro_rules! core_parity_test_suite {
     (

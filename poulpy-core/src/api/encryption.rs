@@ -230,12 +230,6 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-pub trait GLWESwitchingKeyEncryptPk<BE: Backend> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-}
-
 pub trait GLWETensorKeyEncryptSk<BE: Backend> {
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -336,12 +330,6 @@ pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
-}
-
-pub trait GLWEAutomorphismKeyEncryptPk<BE: Backend> {
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 }
 
 pub trait GLWECompressedEncryptSk<BE: Backend> {

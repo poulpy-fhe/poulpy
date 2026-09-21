@@ -178,7 +178,7 @@ pub trait GGLWECompressedSeed {
     fn seed(&self) -> &Vec<[u8; 32]>;
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWECompressedSeed for GGLWECompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GGLWECompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.seed
     }

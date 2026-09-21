@@ -111,11 +111,7 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
     pub fn split_at(self, len: usize) -> (Self, Self) {
         let start: usize = align_up::<B>(self.start);
         let mid: usize = start.checked_add(len).expect("scratch arena split overflow");
-        assert!(
-            mid <= self.end,
-            "Attempted to take {len} from scratch arena with {} aligned bytes left",
-            self.available()
-        );
+        assert!(mid <= self.end, "insufficient scratch arena capacity");
         (
             Self {
                 data: self.data,
@@ -150,11 +146,7 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
     pub fn take_region(self, len: usize) -> (B::BufMut<'a>, Self) {
         let start: usize = align_up::<B>(self.start);
         let end: usize = start.checked_add(len).expect("scratch arena take overflow");
-        assert!(
-            end <= self.end,
-            "Attempted to take {len} from scratch arena with {} aligned bytes left",
-            self.available()
-        );
+        assert!(end <= self.end, "insufficient scratch arena capacity");
 
         let data: &mut B::OwnedBuf = unsafe {
             // Safety: `self.data` originates from `ScratchOwned::arena`, which ties

@@ -3,9 +3,12 @@
 //! The noise checks add two Gaussians into one column, then assert: the other
 //! column is untouched, the sum has standard deviation `sigma * sqrt(2)` at
 //! torus precision `2^-k`, and the unused low bits of the target limb are zero.
-//! The module degree has to be at least 4096 for the 0.1 tolerance on the
-//! standard deviation to hold, so those two are registered by hand next to a
-//! suite that runs that wide, not from `core_backend_test_suite!` (degree 256).
+//! They run on the module the suite supplies, and the tolerance on the standard
+//! deviation follows that degree: a sample standard deviation over `n` draws has
+//! a standard error of `sigma / sqrt(2n)`, so a narrow module bounds it loosely
+//! and a wide one tightly. The two noise checks are also registered by hand next
+//! to a suite that runs at degree 4096, which is where the bound bites; the
+//! parity suite runs them again at its own, narrower degree.
 
 use poulpy_hal::AlignedBuf;
 use std::f64::consts::SQRT_2;
@@ -131,6 +134,13 @@ fn noise_infos() -> NoiseInfos {
     NoiseInfos::new(2 * BASE2K - 3, 3.2, 6.0 * 3.2).unwrap()
 }
 
+/// Four standard errors of a sample standard deviation over `n` draws. Wide
+/// enough that a correct sampler never trips it, narrow enough that a wrong
+/// scale does.
+fn std_tolerance(n: usize, expected: f64) -> f64 {
+    4.0 * expected / (2.0 * n as f64).sqrt()
+}
+
 /// Asserts the shape of `a` after two additions into `col_i`.
 fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, noise: NoiseInfos) {
     let zero: Vec<i64> = vec![0; a.n()];
@@ -143,11 +153,8 @@ fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, noise: NoiseInfos) {
             continue;
         }
         let std: f64 = a.stats(BASE2K, col_i).std() * k_f64;
-        assert!(
-            (std - noise.sigma * SQRT_2).abs() < 0.1,
-            "std={std} ~!= {}",
-            noise.sigma * SQRT_2
-        );
+        let want: f64 = noise.sigma * SQRT_2;
+        assert!((std - want).abs() < std_tolerance(a.n(), want), "std={std} ~!= {want}");
         let (limb, shift) = noise.target_limb_and_shift(BASE2K);
         let low_mask = (1i64 << shift) - 1;
         assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
@@ -201,4 +208,91 @@ where
         }
         assert_two_additions(&download_vec_znx::<BE>(&res), col_i, noise);
     }
+}
+
+/// Same-backend Gaussian reproducibility, source advancement and preservation.
+/// Random streams deliberately are not compared between distinct backends.
+fn gaussian_reproducibility<BE: TestBackend>(module: &Module<BE>)
+where
+    Module<BE>: VecZnxAddNormal<BE>
+        + VecZnxBigAddNormal<BE>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let noise = noise_infos();
+    for big in [false, true] {
+        let draw = |source: &mut Source| {
+            let mut result = module.vec_znx_alloc(module.n(), COLS, SIZE);
+            if big {
+                let mut a = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
+                module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), 1, noise, source);
+                let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
+                for col in 0..COLS {
+                    module.vec_znx_big_normalize(
+                        &mut vec_znx_backend_mut::<BE>(&mut result),
+                        BASE2K,
+                        SIZE * BASE2K,
+                        0,
+                        col,
+                        &a.to_backend_ref(),
+                        BASE2K,
+                        col,
+                        &mut scratch.borrow(),
+                    );
+                }
+            } else {
+                module.vec_znx_add_normal(BASE2K, &mut vec_znx_backend_mut::<BE>(&mut result), 1, noise, source);
+            }
+            download_vec_znx::<BE>(&result)
+        };
+        let mut first = Source::new([91; 32]);
+        let mut repeat = Source::new([91; 32]);
+        let a = draw(&mut first);
+        let b = draw(&mut repeat);
+        assert_eq!(a, b, "Gaussian same-backend reproducibility (big={big})");
+        assert_eq!(first.new_seed(), repeat.new_seed(), "Gaussian source consumption (big={big})");
+        assert_ne!(a, draw(&mut first), "Gaussian source did not advance (big={big})");
+        for limb in 0..SIZE {
+            assert!(a.at(0, limb).iter().all(|value| *value == 0));
+        }
+    }
+}
+
+/// Runs the distribution and seeded-stream contracts independently on each
+/// backend, on the modules the suite supplies. The noise bounds follow their
+/// degree, see the module documentation.
+pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
+    params: &TestParams,
+    _: &crate::test_suite::parity::ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    Module<BR>: ScalarZnxFillDistribution<BR>
+        + VecZnxAddNormal<BR>
+        + VecZnxBigAddNormal<BR>
+        + VecZnxAlloc<BR>
+        + VecZnxBigAlloc<BR>
+        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalizeTmpBytes,
+    Module<BT>: ScalarZnxFillDistribution<BT>
+        + VecZnxAddNormal<BT>
+        + VecZnxBigAddNormal<BT>
+        + VecZnxAlloc<BT>
+        + VecZnxBigAlloc<BT>
+        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    test_scalar_znx_fill_distribution(params, r);
+    test_scalar_znx_fill_distribution(params, t);
+    test_vec_znx_add_normal(params, r);
+    test_vec_znx_add_normal(params, t);
+    test_vec_znx_big_add_normal(params, r);
+    test_vec_znx_big_add_normal(params, t);
+    gaussian_reproducibility(r);
+    gaussian_reproducibility(t);
 }

@@ -8,12 +8,25 @@ use crate::layouts::{
     GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
+/// Normalized trace onto the subring selected by `skip`.
+///
+/// Each stage divides by two with the shift operation's rounding, then adds
+/// the corresponding Galois conjugate. `skip` must not exceed `log2(N)`.
+/// An empty trace (`skip == log2(N)`) copies the input using [`GLWECopy`]
+/// semantics; its assign form preserves the destination. Neither needs keys.
+/// Invalid skips panic before mutation.
 pub trait GLWETrace<BE: Backend> {
     fn glwe_trace_galois_elements(&self) -> Vec<i64>;
 
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Scratch required by the selected in-place trace implementation.
+    fn glwe_trace_assign_tmp_bytes<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+    where
         A: GLWEInfos,
         K: GGLWEInfos;
 
@@ -29,12 +42,22 @@ pub trait GLWETrace<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
+/// Packs the selected coefficients through a merge tree and normalized trace.
+///
+/// The input map must be nonempty, `log_gap_out <= log2(N)`, and every index
+/// must be below `N` and divisible by `2^log_gap_out`. Invalid maps or gaps
+/// panic before changing inputs or destination. Valid calls consume and mutate
+/// the input ciphertexts; their final values are not preserved.
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
+    /// Scratch for packing inputs of layout `a` into a destination of layout `res`.
+    /// The derived implementation sizes the merge tree at `a` and the final
+    /// trace from `a` to `res`, including the trace's intermediate storage.
+    fn glwe_pack_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
+        A: GLWEInfos,
         K: GGLWEInfos;
 
     fn glwe_pack<R, A, H>(
@@ -202,6 +225,7 @@ pub trait GLWESub<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
+    /// Replaces `res` with `a - res`. For a rank-zero `a`, the old mask is negated.
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
@@ -240,6 +264,11 @@ pub trait GGSWRotate<BE: Backend> {
         R: GGSWToBackendMut<BE> + GGSWInfos;
 }
 
+/// Multiplies stored polynomial limbs by `X^k - 1` in the negacyclic ring.
+///
+/// This is raw limb arithmetic: it preserves destination metadata and performs
+/// neither radix conversion nor normalization, even when source and destination
+/// radices differ. Their degrees and ranks must match.
 pub trait GLWEMulXpMinusOne<BE: Backend> {
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where

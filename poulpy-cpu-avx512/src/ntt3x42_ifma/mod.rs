@@ -30,7 +30,7 @@ mod prim;
 pub(crate) mod primes;
 #[cfg(feature = "enable-rayon")]
 pub(crate) mod rayon;
-#[cfg(feature = "enable-rayon")]
+#[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
 pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 pub(crate) mod reference;
 pub(crate) mod svp;

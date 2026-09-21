@@ -2,7 +2,7 @@
 //!
 //! A caller names a function and the precision it is about to use the key at;
 //! the source answers with the backend view of a prepared key, which may be a
-//! coarser reading of it ([`GGLWEPrepared::with_dsize`]). Which key and which
+//! coarser reading of it ([`crate::layouts::GGLWEPrepared::with_dsize`]). Which key and which
 //! decomposition is the source's business: a map answers with what it stores,
 //! and a caller wanting other rules implements the trait itself.
 

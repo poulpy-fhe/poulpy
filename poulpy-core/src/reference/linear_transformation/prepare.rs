@@ -7,7 +7,7 @@
 //! [`LinearTransformation::alloc_prepared`] from a [`LinearTransformationLayout`]
 //! and a plaintext-shape proxy; this module's `_into` function only fills the
 //! pre-allocated `CnvPVecR` slots, performing zero `CnvPVecR` allocations.
-//! Backends forward to them from their [`crate::oep::LinearTransformationReference`]
+//! Backends forward to them from their [`crate::oep::LinearTransformationImpl`]
 //! impl.
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;

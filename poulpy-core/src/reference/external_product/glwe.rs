@@ -1,11 +1,6 @@
-//! GLWE external-product internals + reference implementations of the
-//! [`GLWEExternalProductReference`] methods.
-//!
-//! The reference DFT accumulation requires [`Backend::DFT_LIMBS_CONTIGUOUS`]
-//! because later digits accumulate into partial DFT views. Instantiating that
-//! body without the capability fails at compile time. Backends with other
-//! layouts must implement [`GLWEExternalProductReference`] without forwarding
-//! computation to these bodies or to [`GLWEExternalProductInternal`].
+//! Portable algorithms expressed with HAL operations.
+//! Inter-family core operations dispatch through the selected backend hooks.
+use crate::api::GLWENormalize;
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
@@ -26,7 +21,6 @@ use crate::{
         GadgetProductOutputSizeParams, LWEInfos, gadget_product_limbs, gadget_product_output_size,
     },
     oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
-    reference::operations::GLWENormalizeReference,
 };
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -85,7 +79,7 @@ fn glwe_external_product_dft_fill<BE, M>(
     const {
         assert!(
             BE::DFT_LIMBS_CONTIGUOUS,
-            "the reference external product requires contiguous DFT limbs; implement GLWEExternalProductReference for other layouts"
+            "the reference external product requires contiguous DFT limbs; implement GLWEExternalProductImpl for other layouts"
         );
     }
     let cols: usize = (ggsw.rank() + 1).into();
@@ -217,7 +211,7 @@ where
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -247,7 +241,7 @@ where
         };
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
-            .glwe_normalize_tmp_bytes_reference()
+            .glwe_normalize_tmp_bytes()
             .max(module.glwe_external_product_dft_fill_tmp_bytes_reference(&a_conv_infos, ggsw_infos));
         lvl_2_0 + lvl_2_1
     } else {
@@ -267,7 +261,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -307,7 +301,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
                 k: (a.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
                 rank: a.rank(),
             });
-            module.glwe_normalize_reference(&mut a_conv, a, &mut scratch_2.borrow());
+            module.glwe_normalize(&mut a_conv, a, &mut scratch_2.borrow());
             module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
         });
     } else {
@@ -346,7 +340,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeReference<BE>
+        + GLWENormalize<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -381,7 +375,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
                 k: (res.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
                 rank: res.rank(),
             });
-            module.glwe_normalize_reference(&mut res_conv, res, &mut scratch_2.borrow());
+            module.glwe_normalize(&mut res_conv, res, &mut scratch_2.borrow());
             module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
         });
     } else {

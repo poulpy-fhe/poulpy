@@ -254,7 +254,7 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
     pub fn at_mut(&mut self, i: usize) -> &mut GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
@@ -262,7 +262,7 @@ impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
     pub fn at(&self, i: usize) -> &GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
@@ -296,7 +296,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-/// Trait for decompressing a [`GGLWEToGGSWKeyCompressed`] into a standard [`GGLWEToGGSWKey`].
+/// Trait for decompressing a [`GGLWEToGGSWKeyCompressed`] into a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
 pub trait GGLWEToGGSWKeyDecompress
 where
     Self: GGLWEDecompress,
@@ -328,6 +328,8 @@ where
         }
     }
 }
+
+impl<B: Backend> GGLWEToGGSWKeyDecompress for poulpy_hal::layouts::Module<B> where Self: GGLWEDecompress {}
 
 // module-only API: decompression is provided by `GGLWEToGGSWKeyDecompress` on `Module`.
 

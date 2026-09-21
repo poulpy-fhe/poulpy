@@ -36,7 +36,7 @@ where
     fn rank_out(&self) -> Rank;
     /// Row stride into the stored matrix: digit `i` is stored row
     /// `(i + 1) * stride - 1`. A key used as stored has stride 1; a
-    /// [`GGLWEView`](super::GGLWEView) coarsening it to `dsize` reports
+    /// [`crate::layouts::GGLWEBackendRef`] coarsening it to `dsize` reports
     /// `dsize / stored dsize`.
     fn stride(&self) -> usize {
         1

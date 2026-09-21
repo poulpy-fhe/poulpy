@@ -22,6 +22,17 @@ use std::fmt;
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWEToGLWEKeyCompressed<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKeyCompressed<D, W>);
 
+// The wrapper carries the same degree metadata as its switching-key storage.
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for LWEToGLWEKeyCompressed<D, W> {
+    fn input_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::input_degree(&self.0)
+    }
+
+    fn output_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::output_degree(&self.0)
+    }
+}
+
 impl<D: Data, W: ZnxWord> LWEInfos for LWEToGLWEKeyCompressed<D, W> {
     fn n(&self) -> Degree {
         self.0.n()
