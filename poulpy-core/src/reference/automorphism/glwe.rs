@@ -8,9 +8,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
-        VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeTmpBytes,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -18,7 +18,7 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
     oep::GLWEAutomorphismReference,
@@ -32,6 +32,7 @@ where
         + ModuleN
         + GLWEKeyswitch<BE>
         + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxBigAutomorphismAssignTmpBytes
         + GLWEKeyswitchInternal<BE>
         + GLWENormalize<BE>
         + VecZnxDftBytesOf
@@ -48,25 +49,45 @@ where
     assert_eq!(module.n() as u32, a_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    // The add/sub variants always normalize into a conv buffer before glwe_keyswitch_internal.
-    // Their scratch layout is: res_dft | res_conv | max(ks_internal_tmp, res_big + compute).
-    // Since glwe_keyswitch_tmp_bytes = dft + max(ks_internal, big + compute), the total is
-    // lvl_conv + glwe_keyswitch_tmp_bytes, which also dominates the plain default/assign variants.
-    let lvl_conv: usize = if res_infos.k() > a_infos.k() {
-        module.glwe_bytes_of_from_infos(res_infos)
-    } else {
-        module.glwe_bytes_of_from_infos(a_infos)
-    };
-    let lvl_ks: usize = crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference::<BE, _, _, _, _>(
-        module, res_infos, a_infos, key_infos,
-    )
-    .max(module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos))
-    // Accumulating automorphisms normalize even when the input radix already
-    // matches the key, while a plain keyswitch can skip that operation.
-    .max(module.glwe_normalize_tmp_bytes());
-    let lvl_auto: usize = module.vec_znx_automorphism_assign_tmp_bytes();
+    // The plain and assign variants call the dispatched keyswitch, then rotate the
+    // destination in place; the two stages do not overlap.
+    let lvl_plain: usize = module
+        .glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
+        .max(module.vec_znx_automorphism_assign_tmp_bytes());
 
-    lvl_auto.max(lvl_conv + lvl_ks)
+    // The accumulating variants never call glwe_keyswitch: they normalize into a
+    // conv buffer at the key radix and drive glwe_keyswitch_internal themselves, so
+    // their scratch is sized here rather than read off any keyswitch implementation.
+    // Layout: res_dft | a_conv | max(normalize, ks_internal, res_big + compute).
+    let cols: usize = res_infos.rank().as_usize() + 1;
+    let mask_cols: usize = a_infos.rank().as_usize();
+    let mut a_conv_infos: GLWELayout = GLWELayout {
+        n: a_infos.n(),
+        base2k: key_infos.base2k(),
+        k: a_infos.k(),
+        rank: a_infos.rank(),
+    };
+    // The product window is read at the input precision; the conv buffer is then
+    // widened to its whole allocation, exactly as the bodies do.
+    let output_size: usize = gglwe_product_output_size::<BE, _, _, _>(res_infos, &a_conv_infos, key_infos);
+    a_conv_infos.k = a_conv_infos.max_k();
+    let a_dft_size: usize = a_conv_infos.size();
+
+    let lvl_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
+    let lvl_conv: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
+    let lvl_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size)
+        + module
+            .vec_znx_idft_apply_tmp_bytes()
+            .max(module.vec_znx_big_automorphism_assign_tmp_bytes())
+            .max(module.vec_znx_big_normalize_tmp_bytes());
+    let lvl_accumulate: usize = lvl_dft
+        + lvl_conv
+        + module
+            .glwe_normalize_tmp_bytes()
+            .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
+            .max(lvl_big);
+
+    lvl_plain.max(lvl_accumulate)
 }
 
 pub fn glwe_automorphism_reference<BE, M, R, A>(

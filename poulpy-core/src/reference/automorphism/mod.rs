@@ -99,6 +99,7 @@ where
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + crate::api::GLWENormalize<BE>
         + poulpy_hal::api::VecZnxBigAutomorphismAssign<BE>
+        + poulpy_hal::api::VecZnxBigAutomorphismAssignTmpBytes
         + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
         + poulpy_hal::api::VecZnxBigBytesOf
         + poulpy_hal::api::VecZnxBigNormalize<BE>
