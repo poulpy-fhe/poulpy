@@ -343,8 +343,7 @@ jobs:
           cargo test -p poulpy-cpu-avx512 --lib --profile ci
           --features "enable-ifma,enable-rayon,enable-ckks" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract core_parity core_encryption
-          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
+          raw_transform_matches_contract core_parity core_encryption glwe_copy
           --test-threads=2
 
       # Guarantee AVX coverage even if its separate native runner lacks AVX2/FMA.
@@ -356,8 +355,7 @@ jobs:
           cargo test -p poulpy-cpu-avx --lib --profile ci
           --features "enable-avx,enable-rayon,enable-ckks" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract core_parity core_encryption
-          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
+          raw_transform_matches_contract core_parity core_encryption glwe_copy
           --test-threads=2
 
   neon:
@@ -447,8 +445,7 @@ jobs:
           cargo test -p poulpy-cpu-arm --lib --profile ci
           --features "enable-neon,enable-rayon" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract convolution_by_const core_parity core_encryption
-          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
+          raw_transform_matches_contract convolution_by_const core_parity core_encryption glwe_copy
           --test-threads=2
 
   miri:

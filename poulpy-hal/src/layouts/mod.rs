@@ -190,9 +190,7 @@ macro_rules! impl_host_byte_storage {
         fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
             assert!(
                 buf.len() >= dst.len(),
-                "backend buffer length {} is smaller than destination host slice length {}",
-                buf.len(),
-                dst.len()
+                "backend buffer is smaller than the destination host slice"
             );
             dst.copy_from_slice(&buf[..dst.len()]);
         }
@@ -200,9 +198,7 @@ macro_rules! impl_host_byte_storage {
         fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
             assert!(
                 buf.len() >= src.len(),
-                "backend buffer length {} is smaller than source host slice length {}",
-                buf.len(),
-                src.len()
+                "backend buffer is smaller than the source host slice"
             );
             let src_len = src.len();
             buf[..src_len].copy_from_slice(src);
@@ -212,9 +208,7 @@ macro_rules! impl_host_byte_storage {
         fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
             assert!(
                 buf.len() >= dst.len(),
-                "backend view length {} is smaller than destination host slice length {}",
-                buf.len(),
-                dst.len()
+                "backend view is smaller than the destination host slice"
             );
             dst.copy_from_slice(&buf[..dst.len()]);
         }
@@ -222,9 +216,7 @@ macro_rules! impl_host_byte_storage {
         fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
             assert!(
                 buf.len() >= src.len(),
-                "backend view length {} is smaller than source host slice length {}",
-                buf.len(),
-                src.len()
+                "backend view is smaller than the source host slice"
             );
             let src_len = src.len();
             buf[..src_len].copy_from_slice(src);

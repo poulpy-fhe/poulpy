@@ -207,8 +207,8 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
     /// Returns a non-mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_ptr(&self, i: usize, j: usize) -> *const Self::Scalar {
         self.validate_element_view();
-        assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
-        assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
+        assert!(i < self.cols(), "column index out of bounds");
+        assert!(j < self.size(), "limb index out of bounds");
         let offset: usize = self.scalar_offset(i, j);
         assert!(
             offset
@@ -216,10 +216,7 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
                 .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
                 .expect("element view byte size overflows usize")
                 <= self.data().as_ref().len(),
-            "element view of block ({}, {}) exceeds the {}-byte buffer",
-            i,
-            j,
-            self.data().as_ref().len()
+            "element view of block exceeds the backing buffer"
         );
         unsafe { self.base_ptr().add(offset) }
     }
@@ -269,8 +266,8 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_mut_ptr(&mut self, i: usize, j: usize) -> *mut Self::Scalar {
         self.validate_element_view();
-        assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
-        assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
+        assert!(i < self.cols(), "column index out of bounds");
+        assert!(j < self.size(), "limb index out of bounds");
         let offset: usize = self.scalar_offset(i, j);
         assert!(
             offset
@@ -278,10 +275,7 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
                 .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
                 .expect("element view byte size overflows usize")
                 <= self.data().as_ref().len(),
-            "element view of block ({}, {}) exceeds the {}-byte buffer",
-            i,
-            j,
-            self.data().as_ref().len()
+            "element view of block exceeds the backing buffer"
         );
         unsafe { self.base_mut_ptr().add(offset) }
     }

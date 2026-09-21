@@ -64,8 +64,8 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
 
         match sk_ref.dist {
             Distribution::NONE => panic!("invalid sk: SecretDistribution::NONE"),
-            Distribution::ENCAPSULATED(name) => {
-                panic!("invalid sk: {name} is tagged for encapsulation and cannot back a public key")
+            Distribution::ENCAPSULATED(_) => {
+                panic!("invalid sk: encapsulated secrets cannot back a public key")
             }
             _ => {}
         }
@@ -116,9 +116,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
     assert_eq!(res.n(), sk.n());
     assert!(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
-        "scratch.available(): {} < GLWETensorKeyEncryptSk::glwe_tensor_key_encrypt_sk_tmp_bytes: {}",
-        scratch.available(),
-        glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res)
+        "insufficient scratch for GLWE tensor key encryption"
     );
 
     let scratch = scratch.borrow();
@@ -181,9 +179,7 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
     assert_eq!(res.n(), sk.n());
     assert!(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
-        "scratch.available(): {} < GLWETensorKeyCompressedEncryptSk::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes: {}",
-        scratch.available(),
-        glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res)
+        "insufficient scratch for compressed GLWE tensor key encryption"
     );
 
     let scratch = scratch.borrow();

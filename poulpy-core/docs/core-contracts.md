@@ -25,10 +25,8 @@ For example, rotating each GLWE polynomial with HAL's rotation operation is a
 **reference** implementation. Rotating a GGSW by calling core GLWE rotation on
 each row is **derived**. A backend that overrides GLWE rotation also changes the
 rotation used by that derived GGSW operation.
-Reverse subtraction and out-of-place multiplication by `X^p - 1` also compose
-core operations. Some assign variants remain required HAL-based primitives
-because their scratch contracts do not provide room for a whole ciphertext
-copy.
+Reverse subtraction also composes core operations. Multiplication by `X^p - 1`
+uses HAL reference algorithms in both forms, preserving raw-limb arithmetic.
 
 To select the HAL-based rotation algorithm, a backend with the required HAL
 operations can write:
