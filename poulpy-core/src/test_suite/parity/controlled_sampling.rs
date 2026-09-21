@@ -141,24 +141,37 @@ pub fn noise_samples(n: usize, base2k: usize, noise: NoiseInfos, seed: [u8; 32],
 /// streams can be selected directly; otherwise select a sampling adapter that
 /// uses [`scalar_samples`] and [`noise_samples`]. No comparison backend is fixed
 /// by this suite. Sampling distributions are validated separately.
+///
+/// `params` is optional and defaults to degree 256 with radix 12. Callers may
+/// select another supported degree; both modules use the supplied module size.
 #[macro_export]
 macro_rules! core_encryption_parity_test_suite {
-    (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty) => {
+    (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
+        $crate::core_encryption_parity_test_suite!(
+            mod $name,
+            backend_ref = $backend_ref,
+            backend_test = $backend_test,
+            params = ::poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 },
+        );
+    };
+    (
+        mod $name:ident,
+        backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty,
+        params = $params:expr $(,)?
+    ) => {
         mod $name {
             #[test]
             fn glwe_encryption() {
-                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};
+                let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(256),
+                    Module::<$backend_test>::new(params.size as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(256);
+                        let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_glwe_encryption_parity(
-                            &TestParams {
-                                size: 256,
-                                n: 256,
-                                base2k: 12,
-                            },
+                            &params,
                             &ParityShapes::default(),
                             &reference,
                             tested,
@@ -168,18 +181,15 @@ macro_rules! core_encryption_parity_test_suite {
             }
             #[test]
             fn key_encryption() {
-                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_key_encryption_parity};
+                let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(256),
+                    Module::<$backend_test>::new(params.size as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(256);
+                        let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_key_encryption_parity(
-                            &TestParams {
-                                size: 256,
-                                n: 256,
-                                base2k: 12,
-                            },
+                            &params,
                             &ParityShapes::default(),
                             &reference,
                             tested,
@@ -189,18 +199,15 @@ macro_rules! core_encryption_parity_test_suite {
             }
             #[test]
             fn lwe_encryption() {
-                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};
+                let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(256),
+                    Module::<$backend_test>::new(params.size as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(256);
+                        let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_lwe_encryption_parity(
-                            &TestParams {
-                                size: 256,
-                                n: 256,
-                                base2k: 12,
-                            },
+                            &params,
                             &ParityShapes::default(),
                             &reference,
                             tested,

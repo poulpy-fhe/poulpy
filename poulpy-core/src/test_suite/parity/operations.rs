@@ -409,47 +409,97 @@ pub fn test_glwe_tensor_parity<BR, BT>(
             },
         ]
     }) {
-        let res_infos = GLWELayout {
-            n: a_infos.n,
-            base2k: a_infos.base2k,
-            k: TorusPrecision(2 * a_infos.k.0),
-            rank: a_infos.rank,
-        };
+        test_glwe_tensor_parity_case(
+            &a_infos,
+            &[0, base2k - 1, base2k, a_infos.k.0 as usize],
+            module_ref,
+            module_test,
+            &mut source,
+        );
+    }
+}
 
-        let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-        let b_ref = ref_glwe(module_ref, &a_infos, &mut source);
-        let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
-        a_ref.transfer_into(&mut a_test);
-        let mut b_test = module_test.glwe_alloc_from_infos(&a_infos);
-        b_ref.transfer_into(&mut b_test);
+/// Checks tensor multiplication and squaring for one caller-selected layout and
+/// convolution offsets. Each operation uses exactly its queried, poisoned scratch
+/// and compares canonical coefficients and metadata against the selected backend.
+///
+/// Backend registrations can use focused cases at expensive ring degrees while
+/// retaining the full parameter sweep at smaller degrees.
+pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
+    layout: &GLWELayout,
+    offsets: &[usize],
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>,
+    Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert!(!offsets.is_empty(), "tensor parity requires at least one offset");
+    test_glwe_tensor_parity_case(layout, offsets, module_ref, module_test, &mut Source::new([29u8; 32]));
+}
 
-        let mut out_ref = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
-        let mut out_test = module_test.glwe_tensor_alloc_from_infos(&res_infos);
-        for cnv_offset in [0, base2k - 1, base2k, a_infos.k.0 as usize] {
-            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_apply_tmp_bytes(&out_ref, &a_ref, &b_ref));
-            let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test));
-            module_ref.glwe_tensor_apply(cnv_offset, &mut out_ref, &a_ref, &b_ref, &mut scratch_ref.borrow());
-            module_test.glwe_tensor_apply(cnv_offset, &mut out_test, &a_test, &b_test, &mut scratch_test.borrow());
-            let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
-            out_test.transfer_into(&mut have);
-            assert_eq!(
-                out_ref, have,
-                "glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
-                a_infos.k, a_infos.rank
-            );
+fn test_glwe_tensor_parity_case<BR, BT>(
+    a_infos: &GLWELayout,
+    offsets: &[usize],
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+    source: &mut Source,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>,
+    Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert_eq!(module_ref.n(), module_test.n());
+    assert_eq!(module_ref.n(), a_infos.n.as_usize());
+    let res_infos = GLWELayout {
+        n: a_infos.n,
+        base2k: a_infos.base2k,
+        k: TorusPrecision(2 * a_infos.k.0),
+        rank: a_infos.rank,
+    };
 
-            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_square_apply_tmp_bytes(&out_ref, &a_ref));
-            let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test));
-            module_ref.glwe_tensor_square_apply(cnv_offset, &mut out_ref, &a_ref, &mut scratch_ref.borrow());
-            module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, &a_test, &mut scratch_test.borrow());
-            let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
-            out_test.transfer_into(&mut have);
-            assert_eq!(
-                out_ref, have,
-                "glwe_tensor_square_apply: k={:?} rank={:?} offset={cnv_offset}",
-                a_infos.k, a_infos.rank
-            );
-        }
+    let a_ref = ref_glwe(module_ref, a_infos, source);
+    let b_ref = ref_glwe(module_ref, a_infos, source);
+    let mut a_test = module_test.glwe_alloc_from_infos(a_infos);
+    a_ref.transfer_into(&mut a_test);
+    let mut b_test = module_test.glwe_alloc_from_infos(a_infos);
+    b_ref.transfer_into(&mut b_test);
+
+    let mut out_ref = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+    let mut out_test = module_test.glwe_tensor_alloc_from_infos(&res_infos);
+    for &cnv_offset in offsets {
+        let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_apply_tmp_bytes(&out_ref, &a_ref, &b_ref));
+        let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test));
+        module_ref.glwe_tensor_apply(cnv_offset, &mut out_ref, &a_ref, &b_ref, &mut scratch_ref.borrow());
+        module_test.glwe_tensor_apply(cnv_offset, &mut out_test, &a_test, &b_test, &mut scratch_test.borrow());
+        let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+        out_test.transfer_into(&mut have);
+        assert_eq!(
+            out_ref, have,
+            "glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
+            a_infos.k, a_infos.rank
+        );
+
+        let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_square_apply_tmp_bytes(&out_ref, &a_ref));
+        let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test));
+        module_ref.glwe_tensor_square_apply(cnv_offset, &mut out_ref, &a_ref, &mut scratch_ref.borrow());
+        module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, &a_test, &mut scratch_test.borrow());
+        let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+        out_test.transfer_into(&mut have);
+        assert_eq!(
+            out_ref, have,
+            "glwe_tensor_square_apply: k={:?} rank={:?} offset={cnv_offset}",
+            a_infos.k, a_infos.rank
+        );
     }
 }
 

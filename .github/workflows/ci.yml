@@ -18,6 +18,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: nightly-2026-05-14
+  # Update the archive and its published SHA256 together from Intel's download page:
+  # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+  SDE_ARCHIVE: sde-external-10.13.1-2026-07-28-lin.tar.xz
+  SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+  SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
     poulpy-cpu-ref/enable-core
@@ -97,12 +102,17 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-core
 
   avx:
-    name: AVX backend
-    runs-on: ubuntu-latest
+    name: AVX backend (native or SDE)
+    runs-on: ubuntu-24.04
+    # Cold compilation is separate from the five-minute test execution budget.
+    timeout-minutes: 20
 
     env:
-      RUSTFLAGS: -C target-feature=+avx2,+fma
-      RUSTDOCFLAGS: -C target-feature=+avx2 -C target-feature=+fma
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma
+      CARGO_PROFILE_CI_DEBUG: 0
+      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -114,7 +124,8 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: clippy, rustfmt
+          targets: x86_64-unknown-linux-gnu
+          components: clippy
 
       - name: Cache cargo deps
         uses: actions/cache@v4
@@ -123,36 +134,43 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-avx-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-cargo-avx-
-            ${{ runner.os }}-cargo-
-
-      - name: Detect AVX2 and FMA
-        id: avx
-        run: |
-          if lscpu | grep -qi avx2 && lscpu | grep -qi fma; then
-            echo "supported=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "supported=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check AVX backend
-        if: steps.avx.outputs.supported == 'true'
-        run: cargo check --workspace --all-targets --features "$AVX_FEATURES"
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Clippy AVX backend
-        if: steps.avx.outputs.supported == 'true'
         run: cargo clippy --workspace --all-targets --features "$AVX_FEATURES" -- -D warnings
 
-      - name: Test AVX backend
+      - name: Detect native AVX2 and FMA support
+        id: avx
         shell: bash
-        if: steps.avx.outputs.supported == 'true'
-        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES"
+        run: |
+          rustc --edition=2024 -o "$RUNNER_TEMP/check-avx" - <<'RS'
+          fn main() {
+              let native = std::is_x86_feature_detected!("avx2")
+                  && std::is_x86_feature_detected!("fma");
+              println!("mode={}", if native { "native" } else { "emulated" });
+          }
+          RS
+          "$RUNNER_TEMP/check-avx" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Skip AVX backend
-        if: steps.avx.outputs.supported != 'true'
-        run: echo "Runner lacks AVX2/FMA; the AVX-512 job's native-or-SDE lane runs the same AVX HAL and core contracts."
+      - name: Install Intel SDE
+        if: steps.avx.outputs.mode == 'emulated'
+        run: |
+          curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
+          printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/intel-sde"
+          tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -hsw --" >> "$GITHUB_ENV"
+
+      - name: Compile AVX test binary
+        run: bash .github/scripts/test-backend.sh build avx '${{ steps.avx.outputs.mode }}'
+
+      - name: Test AVX backend
+        timeout-minutes: 5
+        run: bash .github/scripts/test-backend.sh test avx '${{ steps.avx.outputs.mode }}'
 
   intel_macos_avx:
     name: Intel macOS AVX smoke
@@ -246,8 +264,8 @@ jobs:
   avx512:
     name: AVX-512 backend (native or SDE)
     runs-on: ubuntu-24.04
-    # Allow for workspace check/clippy, the separate ci-profile build and emulation.
-    timeout-minutes: 60
+    # Cold compilation is separate from the five-minute test execution budget.
+    timeout-minutes: 20
 
     # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
     # off the host toolchain (build scripts, proc-macros). We pin --target and
@@ -257,11 +275,7 @@ jobs:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      # Update the archive and its published SHA256 together from Intel's download page:
-      # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
-      SDE_ARCHIVE: sde-external-10.13.1-2026-07-28-lin.tar.xz
-      SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
-      SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+      CARGO_PROFILE_CI_DEBUG: 0
       # Exercise the Rayon overrides with a bounded pool under emulation.
       RAYON_NUM_THREADS: 2
 
@@ -285,13 +299,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-avx512-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-cargo-avx512-
-            ${{ runner.os }}-cargo-
-
-      - name: Check AVX-512 backend
-        run: cargo check --workspace --all-targets --features "$AVX512_FEATURES"
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Clippy AVX-512 backend
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
@@ -317,13 +328,13 @@ jobs:
                   && std::is_x86_feature_detected!("ssse3")
                   && std::is_x86_feature_detected!("sse4.1")
                   && std::is_x86_feature_detected!("sse4.2");
-              println!("native={native}");
+              println!("mode={}", if native { "native" } else { "emulated" });
           }
           RS
           "$RUNNER_TEMP/check-avx512" | tee -a "$GITHUB_OUTPUT"
 
       - name: Install Intel SDE
-        if: steps.avx512.outputs.native != 'true'
+        if: steps.avx512.outputs.mode == 'emulated'
         run: |
           curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
           printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
@@ -335,28 +346,12 @@ jobs:
           # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
           echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
 
-      - name: Test AVX-512 and IFMA HAL and core operations
-        shell: bash
-        # Execute all core contract groups, including sampling and controlled-draw encryption.
-        # CKKS runtime coverage remains in its separate follow-up to #234.
-        run: >-
-          cargo test -p poulpy-cpu-avx512 --lib --profile ci
-          --features "enable-ifma,enable-rayon,enable-ckks" --
-          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract core_parity core_encryption glwe_copy
-          --test-threads=2
+      - name: Compile AVX-512 test binary
+        run: bash .github/scripts/test-backend.sh build avx512 '${{ steps.avx512.outputs.mode }}'
 
-      # Guarantee AVX coverage even if its separate native runner lacks AVX2/FMA.
-      # Same contract groups as the AVX-512 step above; a filter added there
-      # belongs here too.
-      - name: Test AVX HAL and core operations natively or under SDE
-        shell: bash
-        run: >-
-          cargo test -p poulpy-cpu-avx --lib --profile ci
-          --features "enable-avx,enable-rayon,enable-ckks" --
-          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract core_parity core_encryption glwe_copy
-          --test-threads=2
+      - name: Test AVX-512 backend
+        timeout-minutes: 5
+        run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
 
   neon:
     name: NEON backend (aarch64 native)

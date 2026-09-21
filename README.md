@@ -132,8 +132,16 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
 Backend crates register the core suites for portable FFT/NTT, AVX,
-AVX-512/IFMA, NEON and supported Rayon variants. CI runs them on native CPUs or
-under Intel SDE, with an additional optional NEON run under QEMU.
+AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
+sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts only,
+with an additional optional NEON run under QEMU.
+
+Each x86 backend job compiles its test binary separately, then enforces a five-minute
+test execution budget. SDE uses bounded degrees for ordinary HAL/core sweeps and
+focused large-ring tensor cases; it retains the rank, precision, offset, scratch,
+and statistical sampling checks. Native runs retain the exhaustive large-ring
+sweeps. The test log reports individual durations. Cold compilation is separately
+timed and cached.
 
 Run the portable core parity and encryption suites with:
 

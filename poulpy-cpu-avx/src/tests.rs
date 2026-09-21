@@ -1,6 +1,21 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
+/// Bounds only explicitly emulated CI runs. Native runs retain their original
+/// degrees; all modules are constructed from the same adjusted parameters.
+/// Statistical sampling and explicitly named large-ring suites do not use this
+/// helper. CI selects the latter separately instead of relabeling small tests.
+pub(crate) fn bounded_emulation_params(
+    mut params: poulpy_hal::test_suite::TestParams,
+    max_degree: usize,
+) -> poulpy_hal::test_suite::TestParams {
+    if std::env::var_os("POULPY_TEST_EMULATED").is_some_and(|value| value == "1") {
+        params.size = params.size.min(max_degree);
+        params.n = params.n.min(params.size);
+    }
+    params
+}
+
 #[test]
 fn glwe_copy() {
     use poulpy_core::test_suite::copy::test_glwe_copy;
@@ -30,7 +45,7 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -67,7 +82,7 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::FFT64Avx,
     backend_test = crate::FFT64AvxRayon,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -102,7 +117,7 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -139,7 +154,7 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::NTT4x30Avx,
     backend_test = crate::NTT4x30AvxRayon,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -176,7 +191,7 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: Some(vec![1, 2]),
@@ -244,24 +259,28 @@ mod tuning {
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64avx,
     backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
-    backend_test = crate::FFT64Avx
+    backend_test = crate::FFT64Avx,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30avx,
     backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
-    backend_test = crate::NTT4x30Avx
+    backend_test = crate::NTT4x30Avx,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64avxrayon,
     backend_ref = crate::FFT64Avx,
-    backend_test = crate::FFT64AvxRayon
+    backend_test = crate::FFT64AvxRayon,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30avxrayon,
     backend_ref = crate::NTT4x30Avx,
-    backend_test = crate::NTT4x30AvxRayon
+    backend_test = crate::NTT4x30AvxRayon,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );

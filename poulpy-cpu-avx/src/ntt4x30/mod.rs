@@ -28,7 +28,7 @@ pub(crate) mod ntt;
 mod prim;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
-#[cfg(feature = "enable-rayon")]
+#[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
 pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 pub(crate) mod svp;
 mod vec_znx_big;

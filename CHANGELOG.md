@@ -94,6 +94,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- AVX and AVX-512 CI each use native execution when available and SDE for bounded HAL/core contracts otherwise. Compilation is separate from the five-minute test execution budget, with per-test timings and caches refreshed after source changes. AVX uses AVX2/FMA-only code generation and Haswell emulation.
+
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.
   The scalar 29-bit and 31-bit prime sets also support this limit.
   **Breaking for prepared data:** the new primes and roots change raw NTT/prepared representations at every degree; regenerate them from coefficient-domain data.

@@ -735,6 +735,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512Ray
     }
 }
 
+#[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
     module: &Module<NTT4x30Avx512Rayon>,
