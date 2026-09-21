@@ -49,3 +49,5 @@ pub trait CKKSNegReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSNegReference<BE> for poulpy_hal::layouts::Module<BE> {}

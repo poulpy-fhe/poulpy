@@ -27,8 +27,29 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     const MIN_DEGREE: usize = 8;
 
     /// Maximum supported limb radix for FHE parameter selection.
-    /// Operation-specific input and accumulation bounds still apply.
+    /// Operation-specific input and accumulation bounds still apply. This does
+    /// not limit coefficient-only operations whose contracts permit wider
+    /// radices, such as uniform sampling at any radix in `1..=62`.
     const MAX_BASE2K: usize;
+
+    /// Whether a DFT vector stores each limb as one contiguous block containing
+    /// every column, and a range of those blocks is itself a valid DFT vector.
+    /// Within a limb, columns are contiguous blocks in column order, each of
+    /// size `bytes_of_vec_znx_dft(n, 1, 1)`. This also permits indexed host
+    /// zeroing through `VecZnxDft::zero_at`.
+    ///
+    /// Opting in requires `bytes_of_vec_znx_dft(n, cols, size)` to equal
+    /// `size * bytes_of_vec_znx_dft(n, cols, 1)`, including zero at `size == 0`.
+    /// Blocks have no size-dependent headers, strides or padding between them.
+    /// This permits [`VecZnxDftBackendMut::with_limb_range_mut`](crate::layouts::VecZnxDftBackendMut::with_limb_range_mut)
+    /// to reborrow a partial range without copying or changing its representation.
+    ///
+    /// The default makes no such promise. Other layouts support whole-buffer
+    /// views and backend-defined operations, but cannot use partial-range views
+    /// or generic indexed zeroing. Reference compositions that require partial
+    /// views must opt into this capability explicitly; such backends must supply
+    /// their own overrides instead of opting into those reference bodies.
+    const DFT_LIMBS_CONTIGUOUS: bool = false;
 
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;

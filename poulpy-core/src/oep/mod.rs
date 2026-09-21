@@ -1,95 +1,62 @@
 //! Open extension points for `poulpy-core`.
 //!
-//! The high-level algorithms are exposed through safe traits on
-//! [`poulpy_hal::layouts::Module`], which resolve through two layers, with one exception:
+//! Public [`crate::api`] operations dispatch through backend `*Impl` traits.
+//! Each backend implements these traits explicitly, either with its own methods
+//! or with the forwarding macros provided here.
 //!
-//! - `*Impl` traits (this module), blanket-implemented for every backend whose
-//!   `Module` implements the matching `*Reference` traits. They are the seat the
-//!   public API dispatches to, not the seat a backend takes.
-//! - `*Reference` traits (this module), implemented on `Module<BE>`. **This is the
-//!   override surface.** They are abstract: no HAL supertraits and no default
-//!   method bodies, so an implementor owes exactly the methods of one family,
-//!   each either forwarded to its reference body in [`crate::reference`] or
-//!   reimplemented as a faster route to the same result. The reference body is
-//!   the implementation; an override is validated by the parity suite, which
-//!   runs it against an attested backend on the same inputs (attestation is
-//!   transitive back to the reference body, so any attested backend serves
-//!   as the oracle),
-//!   and is correct only when that test passes.
-//! - [`SamplingImpl`] is the one exception: it has no `*Reference` twin and no
-//!   blanket impl, because `poulpy-core` has no reference body to offer. Every
-//!   other family's reference body composes HAL operations; drawing from a
-//!   distribution is not such a composition, and a backend's buffers are opaque
-//!   to generic code, so only the backend can produce the values. A backend
-//!   implements it directly, the CPU backends through
-//!   `poulpy_cpu_ref::impl_sampling_host!`.
+//! Core follows the same layer distinction as HAL:
 //!
-//! The `unsafe` marker on `*Impl` traits follows the same convention as the HAL:
-//! implementors are taking responsibility for the core correctness contract of
-//! the backend. In particular, implementations must preserve the mathematical
-//! semantics and bit-parity requirements expected by end-to-end pipelines across
-//! backends.
+//! - [`crate::reference`] contains algorithms built from HAL operations. Its
+//!   `*Reference` methods and free functions remain independently callable.
+//! - Crate-private derived helpers compose core operations. Their default bodies
+//!   on `*Impl` traits preserve dispatch through the selected backend methods.
+//!   A backend may override a derived body and its scratch query together.
 //!
-//! # Taking the override surface
+//! For example, `GLWERotateReference` rotates each GLWE polynomial through HAL.
+//! Derived GGSW rotation calls core GLWE rotation on each row, so it reuses a
+//! backend's GLWE rotation override. Trace and packing similarly call
+//! other core operations. The polynomial-evaluation schedule composes the
+//! caller's `BSGSOps` arithmetic policy, which owns scheme precision and rounding.
 //!
-//! A backend takes the reference implementation one family at a time, with the
-//! `impl_*_reference_full!` macros re-exported below. Each macro implements a
-//! single `*Reference` trait by forwarding every method to the corresponding
-//! reference body, so a backend that accelerates one family hand-writes that
-//! trait and macro-forwards the rest:
+//! # Selecting an implementation
 //!
-//! ```ignore
-//! use poulpy_core::oep::{GLWEKeyswitchReference, impl_gglwe_keyswitch_reference_full,
-//!                        impl_ggsw_keyswitch_reference_full, impl_lwe_keyswitch_reference_full};
+//! `impl_*_reference_full!` macros implement a backend's `*Impl` family with the
+//! available reference algorithms and derived defaults. Purely derived families
+//! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
+//! the provided implementations for all core families except [`SamplingImpl`].
 //!
-//! impl GLWEKeyswitchReference<MyBackend> for Module<MyBackend> {
-//!     fn glwe_keyswitch_reference<R, A>(&self, res: &mut R, a: &A,
-//!                                     key: &GGLWEPreparedBackendRef<'_, MyBackend>,
-//!                                     scratch: &mut ScratchArena<'_, MyBackend>)
-//!     where
-//!         R: GLWEToBackendMut<MyBackend> + GLWEInfos,
-//!         A: GLWEToBackendRef<MyBackend> + GLWEInfos,
-//!     {
-//!         my_fused_keyswitch(self, res, a, key.data(), scratch);
-//!     }
-//!     // ... tmp_bytes and assign
-//! }
+//! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
+//! required methods to reference helpers and inherit the derived defaults you
+//! want. Omit the corresponding family macro to avoid defining the trait twice.
+//! Satisfying a reference helper's HAL bounds alone never selects a backend hook.
 //!
-//! impl_gglwe_keyswitch_reference_full!(MyBackend);
-//! impl_ggsw_keyswitch_reference_full!(MyBackend);
-//! impl_lwe_keyswitch_reference_full!(MyBackend);
-//! ```
+//! # Layout requirements
 //!
-//! `Module<MyBackend>` now implements the public `GLWEKeyswitch` trait, and the
-//! override composes: the reference GGLWE and GGSW bodies call
-//! `glwe_keyswitch_reference`, so they route through the fused kernel too.
+//! Reference gadget digit products and GLWE external products form partial DFT
+//! views and require [`poulpy_hal::layouts::Backend::DFT_LIMBS_CONTIGUOUS`]. Their
+//! bodies assert that capability at monomorphization. A backend with another
+//! representation supplies its own [`GGLWEProductDigitsStridedImpl`] and
+//! [`GLWEExternalProductImpl`] methods. Other reference algorithms and derived
+//! defaults remain available when their individual requirements are met.
 //!
-//! The same shape applies where an `*Impl` trait spans several sub-families.
-//! `AutomorphismImpl` needs all three of `GLWEAutomorphismReference`,
-//! `GGSWAutomorphismReference` and `GGLWEAutomorphismReference`, so a backend with
-//! only a fused GLWE automorphism hand-writes that one and macro-forwards the
-//! other two:
+//! Prepared factories, decompression, and internal keyswitch helpers reuse core
+//! and HAL operations through their documented bounds. Host-only noise
+//! diagnostics have additional storage-access requirements.
 //!
-//! ```ignore
-//! impl GLWEAutomorphismReference<MyBackend> for Module<MyBackend> { /* 9 methods */ }
-//! impl_ggsw_automorphism_reference_full!(MyBackend);
-//! impl_gglwe_automorphism_reference_full!(MyBackend);
-//! ```
+//! # Correctness
 //!
-//! Note the size of that first impl. A `*Reference` trait is abstract, so an
-//! override owes *every* method, not just the interesting one:
-//! `GLWEKeyswitchReference` is 3 methods, but `GLWEAutomorphismReference` is 9 —
-//! the plain and assign forms plus the `add`, `sub` and `sub_negate`
-//! compositions. An accelerator that only wants to replace the core map still
-//! writes the other six, forwarding them to
-//! `crate::reference::automorphism::glwe`.
-//!
-//! `poulpy-cpu-ref`'s `core_impl` module (feature `enable-core`) is the in-tree
-//! worked example, forwarding every family.
+//! Implementors of the unsafe `*Impl` traits are responsible for numerical,
+//! layout, aliasing and scratch contracts. Parity tests compare integer results
+//! and metadata with a caller-selected validated backend, allowing one backend
+//! to bootstrap another through transitive validation.
+//! Each backend prepares its own objects and uses its own advertised scratch
+//! budget. Sampling streams may differ between backends; randomized parity tests
+//! control sampled values separately.
 
 mod automorphism;
 mod conversion;
 mod decryption;
+pub(crate) mod derived;
 mod encryption;
 mod external_product;
 mod keyswitching;
@@ -109,11 +76,43 @@ pub use operations::*;
 pub use polynomial_evaluation::*;
 pub use sampling::*;
 
+/// Explicitly forwards every core operation family except backend-supplied sampling.
+///
+/// Select the individual family macros instead when replacing an operation. The
+/// reference gadget-product and external-product bodies require contiguous DFT limbs.
+#[macro_export]
+macro_rules! impl_core_reference_full {
+    ($be:ty) => {
+        $crate::impl_conversion_reference_full!($be);
+        $crate::impl_decryption_reference_full!($be);
+        $crate::impl_encryption_reference_full!($be);
+        $crate::impl_operations_reference_full!($be);
+        $crate::impl_polynomial_evaluation_derived_full!($be);
+        $crate::impl_gglwe_external_product_derived_full!($be);
+        $crate::impl_gglwe_keyswitch_derived_full!($be);
+        $crate::impl_ggsw_external_product_derived_full!($be);
+        $crate::impl_ggsw_keyswitch_derived_full!($be);
+        $crate::impl_automorphism_reference_full!($be);
+        $crate::impl_glwe_external_product_reference_full!($be);
+        $crate::impl_glwe_keyswitch_reference_full!($be);
+        $crate::impl_glwe_packing_derived_full!($be);
+        $crate::impl_glwe_trace_derived_full!($be);
+        $crate::impl_linear_transformation_reference_full!($be);
+        $crate::impl_lwe_keyswitch_reference_full!($be);
+        $crate::impl_glwe_tensoring_reference!($be);
+        $crate::impl_gglwe_product_digits_strided_reference!($be);
+    };
+}
+
 pub use crate::{
-    impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
-    impl_ggsw_automorphism_reference_full, impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full,
-    impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
-    impl_glwe_packing_reference_full, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
-    impl_lwe_keyswitch_reference_full,
+    impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full, impl_decryption_reference_full,
+    impl_encryption_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
+    impl_gglwe_product_digits_strided_reference, impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full,
+    impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_copy_reference_full,
+    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full,
+    impl_glwe_mul_plain_reference_full, impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full,
+    impl_glwe_normalize_reference_full, impl_glwe_packing_derived_full, impl_glwe_rotate_reference_full,
+    impl_glwe_shift_reference_full, impl_glwe_sub_reference_full, impl_glwe_tensoring_reference, impl_glwe_trace_derived_full,
+    impl_glwe_zero_reference_full, impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
+    impl_operations_reference_full, impl_polynomial_evaluation_derived_full,
 };

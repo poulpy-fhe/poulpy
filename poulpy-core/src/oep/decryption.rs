@@ -1,7 +1,4 @@
-use poulpy_hal::{
-    layouts::{Backend, Data, Module, ScratchArena},
-    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
     GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
@@ -64,74 +61,20 @@ pub unsafe trait DecryptionImpl: Backend {
         A: GLWEInfos;
 }
 
-/// Override surface for the decryption family.
-///
-/// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::decryption`]
-/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
-pub trait DecryptionReference<BE: Backend> {
-    fn glwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos;
-
-    fn glwe_decrypt_reference<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
-
-    fn lwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: LWEInfos;
-
-    fn lwe_decrypt_reference<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEToBackendRef<BE> + LWEInfos,
-        P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos;
-
-    fn lwe_matrix_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: LWEMatrixInfos;
-
-    fn lwe_matrix_decrypt_reference<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos;
-
-    fn glwe_tensor_decrypt_reference<R: Data, P: Data, S0: Data, S1: Data>(
-        &self,
-        res: &GLWETensor<R, BE::ZnxWord>,
-        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
-        sk: &GLWESecretPrepared<S0, BE>,
-        sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_tensor_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos;
-}
-
-/// Implements [`DecryptionReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::decryption`].
+/// Selects the portable HAL algorithms for this backend operation family.
 #[macro_export]
 macro_rules! impl_decryption_reference_full {
     ($be:ty) => {
-        impl $crate::oep::DecryptionReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+        unsafe impl $crate::oep::DecryptionImpl for $be {
+            fn glwe_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_decrypt_tmp_bytes_reference::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::glwe::glwe_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
             }
 
-            fn glwe_decrypt_reference<R, P, S>(
-                &self,
+            fn glwe_decrypt<R, P, S>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,
                 pt: &mut P,
                 sk: &S,
@@ -141,18 +84,18 @@ macro_rules! impl_decryption_reference_full {
                 P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_decrypt_reference::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+                $crate::reference::decryption::glwe::glwe_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, pt, sk, scratch)
             }
 
-            fn lwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+            fn lwe_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEInfos,
             {
-                $crate::reference::decryption::lwe::lwe_decrypt_tmp_bytes_reference::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::lwe::lwe_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
             }
 
-            fn lwe_decrypt_reference<R, P, S>(
-                &self,
+            fn lwe_decrypt<R, P, S>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,
                 pt: &mut P,
                 sk: &S,
@@ -162,18 +105,18 @@ macro_rules! impl_decryption_reference_full {
                 P: $crate::layouts::LWEPlaintextToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::LWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::reference::decryption::lwe::lwe_decrypt_reference::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+                $crate::reference::decryption::lwe::lwe_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, pt, sk, scratch)
             }
 
-            fn lwe_matrix_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+            fn lwe_matrix_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEMatrixInfos,
             {
-                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_reference::<$be, _>(self, infos)
+                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_reference::<$be, _>(module, infos)
             }
 
-            fn lwe_matrix_decrypt_reference<R, P, S>(
-                &self,
+            fn lwe_matrix_decrypt<R, P, S>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,
                 pt: &mut P,
                 sk: &S,
@@ -184,17 +127,17 @@ macro_rules! impl_decryption_reference_full {
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
                 $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_reference::<$be, _, _, _>(
-                    self, res, pt, sk, scratch,
+                    module, res, pt, sk, scratch,
                 )
             }
 
-            fn glwe_tensor_decrypt_reference<
+            fn glwe_tensor_decrypt<
                 R: ::poulpy_hal::layouts::Data,
                 P: ::poulpy_hal::layouts::Data,
                 S0: ::poulpy_hal::layouts::Data,
                 S1: ::poulpy_hal::layouts::Data,
             >(
-                &self,
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &$crate::layouts::GLWETensor<R, <$be as poulpy_hal::layouts::Backend>::ZnxWord>,
                 pt: &mut $crate::layouts::GLWEPlaintext<P, <$be as poulpy_hal::layouts::Backend>::ZnxWord>,
                 sk: &$crate::layouts::GLWESecretPrepared<S0, $be>,
@@ -210,93 +153,20 @@ macro_rules! impl_decryption_reference_full {
                 $crate::layouts::GLWESecretTensorPrepared<S1, $be>:
                     $crate::layouts::prepared::GLWESecretTensorPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_reference::<Self, $be, R, P, S0, S1>(
-                    self, res, pt, sk, sk_tensor, scratch,
+                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, R, P, S0, S1>(
+                    module, res, pt, sk, sk_tensor, scratch,
                 )
             }
 
-            fn glwe_tensor_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+            fn glwe_tensor_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_reference::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
             }
         }
     };
 }
 
-unsafe impl<BE: Backend + HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl> DecryptionImpl for BE
-where
-    Module<BE>: DecryptionReference<BE>,
-{
-    fn glwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::glwe_decrypt_tmp_bytes_reference(module, infos)
-    }
-
-    fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::glwe_decrypt_reference(module, res, pt, sk, scratch)
-    }
-
-    fn lwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: LWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::lwe_decrypt_tmp_bytes_reference(module, infos)
-    }
-
-    fn lwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEToBackendRef<BE> + LWEInfos,
-        P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::lwe_decrypt_reference(module, res, pt, sk, scratch)
-    }
-
-    fn lwe_matrix_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: LWEMatrixInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::lwe_matrix_decrypt_tmp_bytes_reference(module, infos)
-    }
-
-    fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::lwe_matrix_decrypt_reference(module, res, pt, sk, scratch)
-    }
-
-    fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
-        module: &Module<BE>,
-        res: &GLWETensor<R, BE::ZnxWord>,
-        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
-        sk: &GLWESecretPrepared<S0, BE>,
-        sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::glwe_tensor_decrypt_reference(module, res, pt, sk, sk_tensor, scratch)
-    }
-
-    fn glwe_tensor_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        <Module<BE> as DecryptionReference<BE>>::glwe_tensor_decrypt_tmp_bytes_reference(module, infos)
-    }
-}
+// Reference helpers remain available through OEP for source compatibility.
+pub use crate::reference::decryption::DecryptionReference;

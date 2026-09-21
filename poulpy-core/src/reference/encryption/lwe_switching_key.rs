@@ -14,7 +14,9 @@ use crate::{
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESwitchingKeyDegreesMut, LWEInfos, LWESecretToBackendRef, Rank},
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWESwitchingKeyEncryptReference<BE: Backend> {
     fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

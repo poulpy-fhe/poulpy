@@ -220,3 +220,5 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSPlaintextReference<BE> for poulpy_hal::layouts::Module<BE> {}

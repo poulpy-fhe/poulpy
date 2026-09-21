@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module},
+    layouts::{Backend, Data, Module},
 };
 
 use crate::{
@@ -22,13 +22,13 @@ pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataRef, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
@@ -158,5 +158,38 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layouts::prepared::GLWESecretTensorPrepared;
+
+    #[test]
+    fn distribution_metadata_accepts_opaque_storage() {
+        // `()` satisfies Data but exposes no host memory. The generic witness
+        // prevents metadata access from accidentally acquiring HostData bounds.
+        fn assert_metadata<T: GetDistribution + GetDistributionMut>() {}
+        fn assert_for_any_storage<D: Data, B: Backend>() {
+            assert_metadata::<GLWEPublicKeyPrepared<D, B>>();
+            assert_metadata::<GLWESecretTensorPrepared<D, B>>();
+        }
+        fn assert_compressed_metadata<D: Data>() {
+            use crate::layouts::*;
+            fn seed<T: GLWECompressedSeed + GLWECompressedSeedMut>() {}
+            fn gadget_seed<T: GGLWECompressedSeed + GGLWECompressedSeedMut>() {}
+            fn ggsw_seed<T: GGSWCompressedSeed + GGSWCompressedSeedMut>() {}
+            fn automorphism<T: GetGaloisElement + SetGaloisElement>() {}
+            fn degrees<T: GLWESwitchingKeyDegrees + GLWESwitchingKeyDegreesMut>() {}
+            seed::<GLWECompressed<D, i64>>();
+            gadget_seed::<GGLWECompressed<D, i64>>();
+            gadget_seed::<GLWEAutomorphismKeyCompressed<D, i64>>();
+            ggsw_seed::<GGSWCompressed<D, i64>>();
+            automorphism::<GLWEAutomorphismKeyCompressed<D, i64>>();
+            degrees::<GLWESwitchingKeyCompressed<D, i64>>();
+        }
+        assert_compressed_metadata::<()>();
+        assert_for_any_storage::<(), poulpy_hal::layouts::HostBytesBackend>();
     }
 }

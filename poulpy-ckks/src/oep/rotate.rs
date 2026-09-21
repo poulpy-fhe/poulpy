@@ -1,14 +1,9 @@
 use crate::CKKSResult as Result;
-use crate::reference::rotate::CKKSRotateReference;
 
-use poulpy_core::{
-    GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef},
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
-use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
-    oep::HalVecZnxImpl,
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -41,46 +36,51 @@ pub unsafe trait CKKSRotateImpl: Backend {
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSRotateImpl for BE
-where
-    BE: Backend + HalVecZnxImpl,
-    Module<BE>: CKKSRotateReference<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
-{
-    fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {
-        module.ckks_rotate_tmp_bytes_reference(ct_infos, key_infos)
-    }
-
-    fn ckks_rotate_into_impl<Dst, Src>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        src: &Src,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-    {
-        module.ckks_rotate_into_reference(dst, src, key, scratch)
-    }
-
-    fn ckks_rotate_assign_impl<Dst>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-    {
-        module.ckks_rotate_assign_reference(dst, key, scratch)
-    }
-}
-
+/// Implements this contract with the callable reference algorithms.
 #[macro_export]
 macro_rules! impl_ckks_rotate_reference {
     ($be:ty) => {
-        impl $crate::reference::rotate::CKKSRotateReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        unsafe impl $crate::oep::CKKSRotateImpl for $be {
+            fn ckks_rotate_tmp_bytes_impl<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                ct_infos: &C,
+                key_infos: &K,
+            ) -> usize {
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_tmp_bytes_reference(module, ct_infos, key_infos)
+            }
+
+            fn ckks_rotate_into_impl<Dst, Src>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                src: &Src,
+                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEInfos
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
+            {
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_into_reference(module, dst, src, key, scratch)
+            }
+
+            fn ckks_rotate_assign_impl<Dst>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEInfos
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+            {
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_assign_reference(module, dst, key, scratch)
+            }
+        }
     };
 }
 pub use crate::impl_ckks_rotate_reference;

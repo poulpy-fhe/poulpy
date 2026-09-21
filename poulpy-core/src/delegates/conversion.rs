@@ -7,7 +7,7 @@ use crate::{
         LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
-    oep::{ConversionImpl, ConversionReference},
+    oep::ConversionImpl,
 };
 
 macro_rules! impl_conversion_delegate {
@@ -23,7 +23,7 @@ macro_rules! impl_conversion_delegate {
 
 impl_conversion_delegate!(
     LWESampleExtract<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
+    [BE: Backend + ConversionImpl],
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
@@ -35,7 +35,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GLWEFromLWE<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
+    [BE: Backend + ConversionImpl],
     fn glwe_from_lwe_tmp_bytes<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -62,7 +62,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     LWEFromGLWE<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
+    [BE: Backend + ConversionImpl],
     fn lwe_from_glwe_tmp_bytes<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
@@ -90,7 +90,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GLWEExpandLWE<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
+    [BE: Backend + ConversionImpl],
     fn glwe_expand_lwe_tmp_bytes<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
     where
         R: LWEInfos,
@@ -111,8 +111,7 @@ impl_conversion_delegate!(
 impl_conversion_delegate!(
     GLWEExpandLWEMatrix<BE>,
     [
-        BE: Backend + ConversionImpl,
-        Module<BE>: ConversionReference<BE>
+        BE: Backend + ConversionImpl
     ],
     fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
     where
@@ -133,13 +132,14 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GGSWFromGGLWE<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    [BE: Backend + ConversionImpl],
+    fn ggsw_from_gglwe_tmp_bytes<R, A, T>(&self, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        BE::ggsw_from_gglwe_tmp_bytes(self, res_infos, tsk_infos)
+        BE::ggsw_from_gglwe_tmp_bytes(self, res_infos, a_infos, tsk_infos)
     }
 
     fn ggsw_from_gglwe<R, A>(
@@ -159,7 +159,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GGSWExpandRows<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
+    [BE: Backend + ConversionImpl],
     fn ggsw_expand_rows_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,

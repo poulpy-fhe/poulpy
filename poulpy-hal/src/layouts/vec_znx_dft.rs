@@ -166,10 +166,12 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     /// The returned view addresses the same allocation, but HAL
     /// kernels see `size` as the active limb count. Dropping the view leaves
     /// `self`'s metadata unchanged.
+    /// Narrowing requires [`Backend::DFT_LIMBS_CONTIGUOUS`].
     ///
     /// # Panics
     ///
-    /// Panics if `size > self.size()`.
+    /// Panics if `size > self.size()`, or if narrowing a layout that does not
+    /// declare contiguous DFT limbs.
     pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
         self.with_limb_range_mut(0, size)
     }
@@ -178,11 +180,14 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// The returned view contains limbs `start..end` for every column and
     /// renumbers `start` as limb zero. Dropping it leaves `self` unchanged.
-    /// This is the typed alternative to manually slicing the backend buffer.
+    /// Partial ranges require [`Backend::DFT_LIMBS_CONTIGUOUS`]: each limb must
+    /// occupy one contiguous block containing every column. The full range
+    /// reborrows the buffer unchanged and supports every backend layout.
     ///
     /// # Panics
     ///
-    /// Panics unless `start <= end <= self.size()`.
+    /// Panics unless `start <= end <= self.size()`, or if a partial range is
+    /// requested from a layout that does not declare contiguous DFT limbs.
     pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
         crate::layouts::assert_dense(self, "VecZnxDft::with_limb_range_mut");
         assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
@@ -194,6 +199,13 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
 
         let n = self.n();
         let cols = self.cols();
+        if start == 0 && end == self.size() {
+            return vec_znx_dft_backend_mut_from_mut(self);
+        }
+        assert!(
+            B::DFT_LIMBS_CONTIGUOUS,
+            "VecZnxDft::with_limb_range_mut: partial ranges require contiguous DFT limbs"
+        );
         let offset = B::bytes_of_vec_znx_dft(n, cols, start);
         let len = B::bytes_of_vec_znx_dft(n, cols, end - start);
         VecZnxDft {
@@ -222,6 +234,10 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
     }
 
     fn zero_at(&mut self, i: usize, j: usize) {
+        assert!(
+            B::DFT_LIMBS_CONTIGUOUS,
+            "VecZnxDft::zero_at: indexed zeroing requires contiguous DFT limbs and columns"
+        );
         if self.has_element_view() {
             self.at_mut(i, j).fill(W::zero());
             return;
@@ -500,6 +516,76 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
 mod limb_range_tests {
     use super::*;
     use crate::layouts::{HostBytesBackend, VecZnxDftToBackendMut};
+
+    // Capability-only fixtures, not a simulated column-major transform. PACKED
+    // changes the byte count to exercise the packed and element-sized cases.
+    #[derive(PartialEq, Eq)]
+    struct NonContiguousDft<const PACKED: bool>;
+
+    impl<const PACKED: bool> Backend for NonContiguousDft<PACKED> {
+        const MAX_BASE2K: usize = 62;
+
+        type TaskExecutor = crate::execution::SerialTaskExecutor;
+        type ZnxWord = i64;
+        type BigWord = i128;
+        type DftWord = i64;
+        crate::layouts::impl_host_byte_storage!();
+
+        fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+            n * cols * size * if PACKED { 4 } else { size_of::<i64>() }
+        }
+    }
+
+    fn assert_non_contiguous_operations<const PACKED: bool>() {
+        let (n, cols, size) = (4, 2, 4);
+        let bytes = NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, cols, size);
+        let mut dft = VecZnxDft::<AlignedBuf, i64, NonContiguousDft<PACKED>>::from_shape(
+            AlignedBuf::from(vec![0xA5; bytes]),
+            VecZnxShape::new(n, cols, size),
+        );
+        let original = dft.data.clone();
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut backend = dft.to_backend_mut();
+            let middle = backend.with_limb_range_mut(1, 3);
+            middle.data.fill(0);
+        }));
+        assert!(rejected.is_err());
+        assert_eq!(dft.data, original);
+
+        // Both physical sizes are block-linear, so byte-count equality alone
+        // cannot authorize indexed access to an unknown layout.
+        assert_eq!(NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, 1, 1) * cols * size, bytes);
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dft.zero_at(1, 1)));
+        assert!(rejected.is_err());
+        assert_eq!(dft.data, original);
+        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
+
+        let ptr = dft.data.as_ptr();
+        {
+            let mut backend = dft.to_backend_mut();
+            let full = backend.with_size_mut(size);
+            assert_eq!((full.n(), full.cols(), full.size()), (n, cols, size));
+            assert_eq!(full.data.as_ptr(), ptr);
+            assert_eq!(full.data, original.as_slice());
+            full.data[bytes / 2..bytes].fill(0);
+        }
+        assert_eq!(&dft.data[..bytes / 2], &original[..bytes / 2]);
+        assert!(dft.data[bytes / 2..bytes].iter().all(|byte| *byte == 0));
+
+        dft.zero();
+        assert!(dft.data[..bytes].iter().all(|byte| *byte == 0));
+        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
+    }
+
+    #[test]
+    fn non_contiguous_element_sized_layout_rejects_indexed_mutation() {
+        assert_non_contiguous_operations::<false>();
+    }
+
+    #[test]
+    fn non_contiguous_packed_layout_rejects_indexed_mutation() {
+        assert_non_contiguous_operations::<true>();
+    }
 
     #[test]
     fn mutable_limb_range_rebases_a_nonzero_start() {

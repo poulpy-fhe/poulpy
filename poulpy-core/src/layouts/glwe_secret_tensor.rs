@@ -27,7 +27,7 @@ pub(crate) fn pairs(rank: usize) -> usize {
     (((rank + 1) * rank) >> 1).max(1)
 }
 
-/// Tensor of a [`GLWESecret`]: the `(rank + 1) * rank / 2` distinct products
+/// Tensor of a [`GLWESecret`](crate::layouts::GLWESecret): the `(rank + 1) * rank / 2` distinct products
 /// `s_i * s_j` of a base secret `(s_0, ..., s_{rank-1})`, e.g.
 /// `(1, s_0, s_1)^(x)2 = (s_0^2, s_0*s_1, s_1^2)`.
 ///
@@ -128,7 +128,7 @@ pub type GLWESecretTensorBackendMut<'a, BE> = GLWESecretTensor<<BE as Backend>::
 ///
 /// Deliberately distinct from [`GLWESecretToBackendRef`]: a tensor secret is
 /// not interchangeable with the base secret it was derived from, so it is
-/// not accepted by APIs that ask for a [`GLWESecret`].
+/// not accepted by APIs that ask for a [`GLWESecret`](crate::layouts::GLWESecret).
 pub trait GLWESecretTensorToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE>;
 }
@@ -239,85 +239,88 @@ where
         R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         A: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let res = &mut res.to_backend_mut();
-        let a = a.to_backend_ref();
-
-        // `res.rank()` is the rank of the base secret the tensor is derived
-        // from; its column count is `pairs(rank)`.
-        assert_eq!(res.rank(), a.rank());
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
-        assert!(
-            scratch.available() >= self.glwe_secret_tensor_prepare_tmp_bytes(a.rank()),
-            "scratch.available(): {} < GLWESecretTensorFactory::glwe_secret_tensor_prepare_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_secret_tensor_prepare_tmp_bytes(a.rank())
-        );
-
-        let rank: usize = a.rank().into();
-
-        let scratch = scratch.borrow();
-        let (mut a_prepared, _scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, rank.into());
+        let distribution = *a.dist();
         {
-            let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
+            let res = &mut res.to_backend_mut();
+            let a = a.to_backend_ref();
+
+            // `res.rank()` is the rank of the base secret the tensor is derived
+            // from; its column count is `pairs(rank)`.
+            assert_eq!(res.rank(), a.rank());
+            assert_eq!(res.n(), self.n() as u32);
+            assert_eq!(a.n(), self.n() as u32);
+            assert!(
+                scratch.available() >= self.glwe_secret_tensor_prepare_tmp_bytes(a.rank()),
+                "insufficient scratch for GLWE secret tensor preparation"
+            );
+
+            let rank: usize = a.rank().into();
+
+            let scratch = scratch.borrow();
+            let (mut a_prepared, _scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, rank.into());
+            {
+                let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
+                for i in 0..rank {
+                    self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
+                }
+            }
+            a_prepared.dist = *a.dist();
+
+            let base2k: usize = 17;
+
+            let mut a_dft = VecZnxDftOwned::<BE>::alloc(self.n(), rank, 1);
+            let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
             for i in 0..rank {
-                self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
+                let mut a_dft_backend = a_dft.to_backend_mut();
+                self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
             }
-        }
-        a_prepared.dist = *a.dist();
 
-        let base2k: usize = 17;
+            let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
+            let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
+            let mut a_ij_big_backend = self.vec_znx_big_alloc(self.n(), 1, 1);
+            let mut norm_scratch = ScratchOwned {
+                data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
+                _phantom: std::marker::PhantomData,
+            };
+            // Tag of the base secret `a`, carried over as-is: the products below
+            // are not distributed like `a`, but their statistics derive from it.
+            res.dist = *a.dist();
+            let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
 
-        let mut a_dft = VecZnxDftOwned::<BE>::alloc(self.n(), rank, 1);
-        let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
-        for i in 0..rank {
-            let mut a_dft_backend = a_dft.to_backend_mut();
-            self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
-        }
-
-        let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
-        let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
-        let mut a_ij_big_backend = self.vec_znx_big_alloc(self.n(), 1, 1);
-        let mut norm_scratch = ScratchOwned {
-            data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
-            _phantom: std::marker::PhantomData,
-        };
-        // Tag of the base secret `a`, carried over as-is: the products below
-        // are not distributed like `a`, but their statistics derive from it.
-        res.dist = *a.dist();
-        let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
-
-        // sk_tensor = sk (x) sk
-        // For example: (s0, s1) (x) (s0, s1) = (s0^2, s0s1, s1^2)
-        for i in 0..rank {
-            for j in i..rank {
-                let idx: usize = i * rank + j - (i * (i + 1) / 2);
-                let a_dft_ref = a_dft.to_backend_ref();
-                {
-                    let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
-                    self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
-                }
-                {
-                    let mut a_ij_big = a_ij_big_backend.to_backend_mut();
-                    let mut a_ij_dft = a_ij_dft.to_backend_mut();
-                    self.vec_znx_idft_apply_tmpa(&mut a_ij_big, 0, &mut a_ij_dft, 0);
-                }
-                {
-                    let a_ij_big = a_ij_big_backend.to_backend_ref();
-                    let res_k = res_backend.size() * base2k;
-                    self.vec_znx_big_normalize(
-                        &mut res_backend,
-                        base2k,
-                        res_k,
-                        0,
-                        idx,
-                        &a_ij_big,
-                        base2k,
-                        0,
-                        &mut norm_scratch.arena(),
-                    );
+            // sk_tensor = sk (x) sk
+            // For example: (s0, s1) (x) (s0, s1) = (s0^2, s0s1, s1^2)
+            for i in 0..rank {
+                for j in i..rank {
+                    let idx: usize = i * rank + j - (i * (i + 1) / 2);
+                    let a_dft_ref = a_dft.to_backend_ref();
+                    {
+                        let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
+                        self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
+                    }
+                    {
+                        let mut a_ij_big = a_ij_big_backend.to_backend_mut();
+                        let mut a_ij_dft = a_ij_dft.to_backend_mut();
+                        self.vec_znx_idft_apply_tmpa(&mut a_ij_big, 0, &mut a_ij_dft, 0);
+                    }
+                    {
+                        let a_ij_big = a_ij_big_backend.to_backend_ref();
+                        let res_k = res_backend.size() * base2k;
+                        self.vec_znx_big_normalize(
+                            &mut res_backend,
+                            base2k,
+                            res_k,
+                            0,
+                            idx,
+                            &a_ij_big,
+                            base2k,
+                            0,
+                            &mut norm_scratch.arena(),
+                        );
+                    }
                 }
             }
         }
+        // Backend views carry copied metadata; commit to the owning object.
+        *res.dist_mut() = distribution;
     }
 }

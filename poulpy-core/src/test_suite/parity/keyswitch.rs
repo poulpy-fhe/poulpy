@@ -1,5 +1,6 @@
 //! Key-switch parity: the gadget digit loop, compared across backends.
 
+use super::poisoned_scratch;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
@@ -84,11 +85,7 @@ where
         let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
-        let mut scratch = ScratchOwned::<BE>::alloc(
-            default_tmp
-                .max(backend_tmp)
-                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
-        );
+        let mut scratch = poisoned_scratch::<BE>(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out));
 
         let mut a = module.vec_znx_alloc(module.n(), cols_in, a_size);
         a.fill_uniform(base2k, &mut source);
@@ -114,6 +111,7 @@ where
         let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
+        let mut scratch = poisoned_scratch::<BE>(default_tmp);
         crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
             module,
             &mut want.to_backend_mut(),
@@ -126,6 +124,7 @@ where
 
         let mut have = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         BE::copy_from_host(&mut have.data, &sentinel);
+        let mut scratch = poisoned_scratch::<BE>(backend_tmp);
         BE::gglwe_product_digits_strided(
             module,
             &mut have.to_backend_mut(),
@@ -161,7 +160,7 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
     }
 }
 
-/// `glwe_keyswitch` agrees with the reference backend byte-for-byte.
+/// `glwe_keyswitch` agrees with the selected comparison backend byte-for-byte.
 ///
 /// Sweeps `dsize` and both ranks, so every branch of the digit loop is compared:
 /// the `dsize == 1` short circuit, the `di == 0` overwriting pass, and the
@@ -212,24 +211,22 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                 let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
                 key_ref_coeffs.transfer_into(&mut key_test_coeffs);
 
-                let mut res_ref = module_ref.glwe_alloc_from_infos(&res_infos);
+                let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
                 let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+                res_ref.transfer_into(&mut res_test);
 
-                let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-                    module_ref
-                        .gglwe_prepare_tmp_bytes(&key_infos)
-                        .max(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-                );
-                let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-                    module_test
-                        .gglwe_prepare_tmp_bytes(&key_infos)
-                        .max(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-                );
+                let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
+                let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
 
                 let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
                 module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
                 let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
                 module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+
+                let mut scratch_ref =
+                    poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
+                let mut scratch_test =
+                    poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
 
                 module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
                 module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
@@ -245,7 +242,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     }
 }
 
-/// `glwe_keyswitch_assign` agrees with the reference backend byte-for-byte.
+/// `glwe_keyswitch_assign` agrees with the selected comparison backend byte-for-byte.
 pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -285,21 +282,17 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
             let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
             key_ref_coeffs.transfer_into(&mut key_test_coeffs);
 
-            let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-                module_ref
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos)),
-            );
-            let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-                module_test
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos)),
-            );
+            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
+            let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
 
             let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
             module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
             let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
             module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+
+            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
+            let mut scratch_test =
+                poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
 
             module_ref.glwe_keyswitch_assign(&mut res_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
             module_test.glwe_keyswitch_assign(&mut res_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
@@ -311,7 +304,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     }
 }
 
-/// `gglwe_keyswitch` agrees with the reference backend byte-for-byte.
+/// `gglwe_keyswitch` agrees with the selected comparison backend byte-for-byte.
 pub fn test_gglwe_keyswitch_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -347,24 +340,21 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
             let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
             key_ref_coeffs.transfer_into(&mut key_test_coeffs);
 
-            let mut res_ref = module_ref.gglwe_alloc_from_infos(&res_infos);
+            let mut res_ref = ref_gglwe(module_ref, &res_infos, &mut source);
             let mut res_test = module_test.gglwe_alloc_from_infos(&res_infos);
+            res_ref.transfer_into(&mut res_test);
 
-            let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-                module_ref
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_ref.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-            );
-            let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-                module_test
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_test.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-            );
+            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
+            let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
 
             let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
             module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
             let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
             module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+
+            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
+            let mut scratch_test =
+                poisoned_scratch::<BT>(module_test.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
 
             module_ref.gglwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
             module_test.gglwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
@@ -372,6 +362,19 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
             let mut have = module_ref.gglwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
             assert_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
+
+            // The assign query is measured independently at the operand's own width.
+            let mut assigned_ref = module_ref.gglwe_alloc_from_infos(&a_infos);
+            let mut assigned_test = module_test.gglwe_alloc_from_infos(&a_infos);
+            a_ref.transfer_into(&mut assigned_ref);
+            a_ref.transfer_into(&mut assigned_test);
+            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_keyswitch_tmp_bytes(&a_infos, &a_infos, &key_infos));
+            let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_keyswitch_tmp_bytes(&a_infos, &a_infos, &key_infos));
+            module_ref.gglwe_keyswitch_assign(&mut assigned_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
+            module_test.gglwe_keyswitch_assign(&mut assigned_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
+            let mut have = module_ref.gglwe_alloc_from_infos(&a_infos);
+            assigned_test.transfer_into(&mut have);
+            assert_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
         }
     }
 }

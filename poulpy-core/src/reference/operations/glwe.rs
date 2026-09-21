@@ -5,7 +5,7 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRshAssign,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
@@ -36,7 +36,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEMulConstReference<BE: Backend> {
     fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -437,7 +437,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEMulPlainReference<BE: Backend> {
     fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -458,7 +458,7 @@ pub trait GLWEMulPlainReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
-#[doc(hidden)]
+/// Portable tensor composition helper; specialize [`crate::oep::GLWETensoringImpl`] to replace it.
 pub trait GLWETensoringReference<BE: Backend> {
     fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -1223,7 +1223,7 @@ where
 
 /// Tensor product reusing a caller-prepared right operand `b_prep`.
 ///
-/// Prepares only `a` into a scratch `CnvPVecL` and runs [`glwe_tensor_apply_loop`]
+/// Prepares only `a` into a scratch `CnvPVecL` and runs `glwe_tensor_apply_loop`
 /// against the supplied `b_prep`. `a_k` masks `a`'s bottom limb and
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
@@ -1359,7 +1359,7 @@ pub fn normalize_input_limb_bound_with_offset(
     normalize_input_limb_bound(full_size, res_size, res_base2k, in_base2k, offset_bits as usize)
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEAddReference<BE: Backend> {
     fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
@@ -1443,7 +1443,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWESubReference<BE: Backend> {
     fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
@@ -1455,22 +1455,11 @@ pub trait GLWESubReference<BE: Backend> {
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
-
-    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWESubReference<BE> for Module<BE>
 where
-    Self: ModuleN
-        + VecZnxSub<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxSubNegateAssign<BE>
-        + VecZnxCopy<BE>
-        + VecZnxNegate<BE>
-        + VecZnxZero<BE>,
+    Self: ModuleN + VecZnxSub<BE> + VecZnxSubAssign<BE> + VecZnxCopy<BE> + VecZnxNegate<BE> + VecZnxZero<BE>,
 {
     fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
@@ -1535,26 +1524,9 @@ where
             self.vec_znx_sub_assign(&mut res.data, i, &a.data, i);
         }
     }
-
-    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(res.base2k(), a.base2k());
-        assert!(res.rank() == a.rank() || a.rank() == 0);
-
-        for i in 0..(a.rank() + 1).into() {
-            self.vec_znx_sub_negate_assign(&mut res.data, i, &a.data, i);
-        }
-    }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWENegateReference<BE: Backend> {
     fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -1602,7 +1574,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEZeroReference<BE: Backend> {
     fn glwe_zero_reference<R>(&self, res: &mut R)
     where
@@ -1627,7 +1599,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWERotateReference<BE: Backend> {
     fn glwe_rotate_tmp_bytes_reference(&self) -> usize;
 
@@ -1692,7 +1664,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEMulXpMinusOneReference<BE: Backend> {
     fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
@@ -1708,6 +1680,8 @@ impl<BE: Backend> GLWEMulXpMinusOneReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE>,
 {
+    /// Raw limb arithmetic: the destination keeps its own radix and no digit is
+    /// converted or renormalized, so the two radices need not agree.
     fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
@@ -1740,7 +1714,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWECopyReference<BE: Backend> {
     fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
 
@@ -1810,7 +1784,7 @@ fn shift_offset(k: usize, bound: usize) -> i64 {
     k.min(bound) as i64
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEShiftReference<BE: Backend> {
     fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize;
 
@@ -2034,7 +2008,7 @@ where
     }
 }
 
-#[doc(hidden)]
+/// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWENormalizeReference<BE: Backend> {
     fn glwe_normalize_tmp_bytes_reference(&self) -> usize;
 
@@ -2113,4 +2087,296 @@ where
             self.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
         }
     }
+}
+
+/// Forwards every method of [`GLWEMulConstReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_mul_const_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEMulConstImpl for $be {
+    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
+    where
+        R: $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_tmp_bytes_reference::<R, A, B>(module, res, a, b)
+        }
+
+    fn glwe_mul_const<R, A, B>(
+        module: &::poulpy_hal::layouts::Module<$be>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_reference::<R, A, B>(module, cnv_offset, res, a, b, b_coeff, scratch)
+        }
+
+    fn glwe_mul_const_assign<R, B>(
+        module: &::poulpy_hal::layouts::Module<$be>,
+        cnv_offset: usize,
+        res: &mut R,
+        b: &B,
+        b_coeff: usize,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEMulPlainReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_mul_plain_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEMulPlainImpl for $be {
+    fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
+    where
+        R: $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be>>::glwe_mul_plain_tmp_bytes_reference::<R, A, B>(module, res, a, b)
+        }
+
+    fn glwe_mul_plain<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::IntPolyInfos + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be>>::glwe_mul_plain_reference::<R, A, B>(module, cnv_offset, res, a, b, scratch)
+        }
+
+    fn glwe_mul_plain_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::IntPolyInfos + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be>>::glwe_mul_plain_assign_reference::<R, A>(module, cnv_offset, res, a, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEAddReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_add_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEAddImpl for $be {
+    fn glwe_add_into<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, b: &B)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be>,
+        B: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEAddReference<$be>>::glwe_add_into_reference::<R, A, B>(module, res, a, b)
+        }
+
+    fn glwe_add_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEAddReference<$be>>::glwe_add_assign_reference::<R, A>(module, res, a)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWESubReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_sub_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWESubImpl for $be {
+    fn glwe_sub<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, b: &B)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be>,
+        B: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWESubReference<$be>>::glwe_sub_reference::<R, A, B>(module, res, a, b)
+        }
+
+    fn glwe_sub_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWESubReference<$be>>::glwe_sub_assign_reference::<R, A>(module, res, a)
+        }
+
+        }
+    };
+}
+
+/// Forwards every method of [`GLWENegateReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_negate_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWENegateImpl for $be {
+    fn glwe_negate<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENegateReference<$be>>::glwe_negate_reference::<R, A>(module, res, a)
+        }
+
+    fn glwe_negate_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENegateReference<$be>>::glwe_negate_assign_reference::<R>(module, res)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEZeroReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_zero_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEZeroImpl for $be {
+    fn glwe_zero<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEZeroReference<$be>>::glwe_zero_reference::<R>(module, res)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWERotateReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_rotate_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWERotateImpl for $be {
+    fn glwe_rotate_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateReference<$be>>::glwe_rotate_tmp_bytes_reference(module)
+        }
+
+    fn glwe_rotate<R, A>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateReference<$be>>::glwe_rotate_reference::<R, A>(module, k, res, a)
+        }
+
+    fn glwe_rotate_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWERotateReference<$be>>::glwe_rotate_assign_reference::<R>(module, k, res, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEMulXpMinusOneReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_mul_xp_minus_one_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEMulXpMinusOneImpl for $be {
+    fn glwe_mul_xp_minus_one<R, A>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulXpMinusOneReference<$be>>::glwe_mul_xp_minus_one_reference::<R, A>(module, k, res, a)
+        }
+
+    fn glwe_mul_xp_minus_one_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulXpMinusOneReference<$be>>::glwe_mul_xp_minus_one_assign_reference::<R>(module, k, res, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWECopyReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_copy_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWECopyImpl for $be {
+    fn glwe_copy_tmp_bytes<R: $crate::layouts::GLWEInfos, A: $crate::layouts::GLWEInfos>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWECopyReference<$be>>::glwe_copy_tmp_bytes_reference::<R, A>(module, res, a)
+        }
+
+    fn glwe_copy<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWECopyReference<$be>>::glwe_copy_reference::<R, A>(module, res, a, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWEShiftReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_shift_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWEShiftImpl for $be {
+    fn glwe_shift_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_shift_tmp_bytes_reference(module, res_size)
+        }
+
+    fn glwe_rsh<R>(module: &::poulpy_hal::layouts::Module<$be>, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_rsh_reference::<R>(module, k, res, scratch)
+        }
+
+    fn glwe_lsh_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_lsh_assign_reference::<R>(module, res, k, scratch)
+        }
+
+    fn glwe_lsh<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_lsh_reference::<R, A>(module, res, a, k, scratch)
+        }
+
+    fn glwe_lsh_add<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_lsh_add_reference::<R, A>(module, res, a, k, scratch)
+        }
+
+    fn glwe_lsh_sub<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_lsh_sub_reference::<R, A>(module, res, a, k, scratch)
+        }
+        }
+    };
+}
+
+/// Forwards every method of [`GLWENormalizeReference`] to its HAL-based reference implementation.
+#[macro_export]
+macro_rules! impl_glwe_normalize_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWENormalizeImpl for $be {
+    fn glwe_normalize_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>) -> usize {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeReference<$be>>::glwe_normalize_tmp_bytes_reference(module)
+        }
+
+    fn glwe_normalize<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeReference<$be>>::glwe_normalize_reference::<R, A>(module, res, a, scratch)
+        }
+
+    fn glwe_normalize_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWENormalizeReference<$be>>::glwe_normalize_assign_reference::<R>(module, res, scratch)
+        }
+        }
+    };
 }

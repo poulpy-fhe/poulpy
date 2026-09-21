@@ -12,10 +12,6 @@ documentation = "https://docs.rs/poulpy-core"
 [features]
 default = []
 enable-core = []
-enable-avx = []
-enable-avx512f = []
-enable-ifma = ["enable-avx512f"]
-enable-neon = []
 
 [dependencies]
 dashu-float = {workspace = true}

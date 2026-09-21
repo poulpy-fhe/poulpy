@@ -16,7 +16,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEToGLWESwitchingKeyEncryptSkReference<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

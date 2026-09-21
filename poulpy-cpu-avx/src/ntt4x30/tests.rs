@@ -15,7 +15,7 @@ cross_backend_test_suite! {
     mod vec_znx,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -74,7 +74,7 @@ cross_backend_test_suite! {
     mod svp,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
         test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -86,7 +86,7 @@ cross_backend_test_suite! {
     mod vec_znx_big,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
         test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -115,15 +115,15 @@ cross_backend_test_suite! {
     mod vec_znx_dft,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
+        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
         test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
         test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
         test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
         test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_vec_znx_dft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_apply,
         test_vec_znx_dft_zero => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_zero,
@@ -137,7 +137,7 @@ cross_backend_test_suite! {
     mod vmp,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
         test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -150,7 +150,7 @@ cross_backend_test_suite! {
 backend_test_suite! {
     mod derived,
     backend = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
         test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -195,7 +195,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod window,
     backend = crate::NTT4x30Avx,
-    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1 << 8, base2k: 50, n: 8 }, 256),
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -216,8 +216,8 @@ backend_test_suite! {
 backend_test_suite! {
     mod window_rayon,
     backend = crate::NTT4x30AvxRayon,
-    // Above NORMALIZE_MIN_TASK so the windowed normalize path is split across tasks.
-    params = TestParams { size: 1 << 13, base2k: 50, n: 8 },
+    // Native degree crosses NORMALIZE_MIN_TASK; emulated CI bounds the degree.
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1 << 13, base2k: 50, n: 8 }, 256),
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -237,7 +237,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod lwe_matrix,
     backend = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 1<<8 }, 256),
     tests = {
         glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
     }
@@ -257,7 +257,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<10, base2k: 50, n: 8 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
     }
 }
@@ -270,7 +270,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<13, base2k: 50, n: 8 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
     }
 }
@@ -283,7 +283,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<14, base2k: 50, n: 8 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
     }
 }
@@ -296,7 +296,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<15, base2k: 50, n: 8 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
     }
 }
@@ -344,14 +344,15 @@ fn test_gglwe_product_digits_strided_rayon_scratch_workers() {
     assert_eq!(actual, metadata + workers * (one_worker - metadata));
 }
 
-// Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
+// Fused-op conformance on Rayon; native degrees cross the parallel-work floors, while emulated CI bounds the degree.
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30AvxRayon,
-    params = TestParams { size: 1<<14, base2k: 50, n: 8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 50, n: 8 }, 256),
     tests = {
+        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
         test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }

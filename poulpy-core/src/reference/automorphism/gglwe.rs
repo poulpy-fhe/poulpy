@@ -1,8 +1,6 @@
-//! Reference implementations of the [`GGLWEAutomorphismReference`] methods.
-//!
-//! Each free function carries the HAL bounds it actually needs in its own `where` clause.
-//!
-//! Re-exported publicly through `crate::oep::gglwe_automorphism_reference`.
+//! Portable algorithms expressed with HAL operations.
+//! Inter-family core operations dispatch through the selected backend hooks.
+use crate::api::GLWEKeyswitch;
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -17,7 +15,7 @@ use crate::{
         glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    oep::{GGLWEAutomorphismReference, GLWEKeyswitchReference},
+    oep::GGLWEAutomorphismReference,
 };
 
 pub fn glwe_automorphism_key_automorphism_tmp_bytes_reference<BE, M, R, A, K>(
@@ -28,7 +26,7 @@ pub fn glwe_automorphism_key_automorphism_tmp_bytes_reference<BE, M, R, A, K>(
 ) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE> + VecZnxAutomorphismAssignTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxAutomorphismAssignTmpBytes,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
@@ -37,7 +35,7 @@ where
     assert_eq!(module.n() as u32, a_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let lvl_0: usize = module.glwe_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos);
+    let lvl_0: usize = module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos);
     let lvl_1: usize = module.vec_znx_automorphism_assign_tmp_bytes();
 
     if res_infos.glwe_layout() == a_infos.glwe_layout() {
@@ -58,7 +56,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
     M: GLWEBytesOf<BE>
         + GGLWEAutomorphismReference<BE>
         + GaloisElement
-        + GLWEKeyswitchReference<BE>
+        + GLWEKeyswitch<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxAutomorphismAssignTmpBytes
@@ -103,7 +101,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
                     }
 
                     let mut scratch_iter = scratch.borrow();
-                    module.glwe_keyswitch_assign_reference(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
+                    module.glwe_keyswitch_assign(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -117,7 +115,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
-                    module.glwe_keyswitch_reference(&mut res_tmp, &tmp_glwe_view, &key.to_backend_ref(), &mut scratch_iter);
+                    module.glwe_keyswitch(&mut res_tmp, &tmp_glwe_view, &key.to_backend_ref(), &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -137,7 +135,7 @@ pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GaloisElement + GLWEKeyswitchReference<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
+    M: GaloisElement + GLWEKeyswitch<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
@@ -158,7 +156,7 @@ pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R>(
                     module.vec_znx_automorphism_assign(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
-                module.glwe_keyswitch_assign_reference(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
+                module.glwe_keyswitch_assign(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
 
                 for i in 0..cols_out {
                     module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);

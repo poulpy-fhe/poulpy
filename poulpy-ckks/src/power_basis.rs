@@ -9,7 +9,6 @@ use crate::{
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
-    reference::carry_verb::ckks_one_pt,
 };
 
 pub use crate::api::{Basis, Parity};
@@ -175,8 +174,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
 
             if c == 0 {
-                let one = ckks_one_pt(module, doubled.base2k())?;
-                module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, &mut scratch)?;
+                module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
             } else {
                 let c_val = self.get_stored(c).expect("gen_power_chebyshev(c) just succeeded");
                 module.ckks_sub_assign(&mut doubled, c_val, &mut scratch)?;

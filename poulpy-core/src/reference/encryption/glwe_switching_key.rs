@@ -16,7 +16,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWESwitchingKeyEncryptSkReference<BE: Backend> {
     fn glwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -115,21 +117,5 @@ where
 
         *res.input_degree() = sk_in.n();
         *res.output_degree() = sk_out_ref.n();
-    }
-}
-
-#[doc(hidden)]
-pub trait GLWESwitchingKeyEncryptPkReference<BE: Backend> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-}
-
-impl<BE: Backend> GLWESwitchingKeyEncryptPkReference<BE> for Module<BE> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(&self, _infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        unimplemented!()
     }
 }

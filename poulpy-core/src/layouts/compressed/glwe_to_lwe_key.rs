@@ -23,6 +23,17 @@ use crate::layouts::{
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWEToLWESwitchingKeyCompressed<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKeyCompressed<D, W>);
 
+// The wrapper carries the same degree metadata as its switching-key storage.
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWEToLWESwitchingKeyCompressed<D, W> {
+    fn input_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::input_degree(&self.0)
+    }
+
+    fn output_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::output_degree(&self.0)
+    }
+}
+
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEToLWESwitchingKeyCompressed<D, W> {
     fn base2k(&self) -> Base2K {
         self.0.base2k()

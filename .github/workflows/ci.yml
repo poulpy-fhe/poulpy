@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_neon_qemu:
+        description: Run additional NEON HAL, core and CKKS tests under QEMU on x86
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -13,6 +18,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: nightly-2026-05-14
+  # Update the archive and its published SHA256 together from Intel's download page:
+  # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+  SDE_ARCHIVE: sde-external-10.13.1-2026-07-28-lin.tar.xz
+  SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+  SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
     poulpy-cpu-ref/enable-core
@@ -20,7 +30,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-avx
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-avx/enable-avx
@@ -29,8 +38,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-avx
-    poulpy-core/enable-ifma
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-avx/enable-avx
@@ -42,7 +49,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-core/enable-neon
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-arm/enable-ckks
@@ -89,15 +95,24 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
 
       - name: Test all non-AVX features
+        shell: bash
         run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
+      - name: Check core and CKKS documentation
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
+
   avx:
-    name: AVX backend
-    runs-on: ubuntu-latest
+    name: AVX backend (native or SDE)
+    runs-on: ubuntu-24.04
+    # Cold compilation is separate from the five-minute test execution budget.
+    timeout-minutes: 20
 
     env:
-      RUSTFLAGS: -C target-feature=+avx2,+fma
-      RUSTDOCFLAGS: -C target-feature=+avx2 -C target-feature=+fma
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma
+      CARGO_PROFILE_CI_DEBUG: 0
+      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -109,7 +124,8 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: clippy, rustfmt
+          targets: x86_64-unknown-linux-gnu
+          components: clippy
 
       - name: Cache cargo deps
         uses: actions/cache@v4
@@ -118,35 +134,43 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-avx-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-cargo-avx-
-            ${{ runner.os }}-cargo-
-
-      - name: Detect AVX2 and FMA
-        id: avx
-        run: |
-          if lscpu | grep -qi avx2 && lscpu | grep -qi fma; then
-            echo "supported=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "supported=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check AVX backend
-        if: steps.avx.outputs.supported == 'true'
-        run: cargo check --workspace --all-targets --features "$AVX_FEATURES"
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Clippy AVX backend
-        if: steps.avx.outputs.supported == 'true'
         run: cargo clippy --workspace --all-targets --features "$AVX_FEATURES" -- -D warnings
 
-      - name: Test AVX backend
-        if: steps.avx.outputs.supported == 'true'
-        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES"
+      - name: Detect native AVX2 and FMA support
+        id: avx
+        shell: bash
+        run: |
+          rustc --edition=2024 -o "$RUNNER_TEMP/check-avx" - <<'RS'
+          fn main() {
+              let native = std::is_x86_feature_detected!("avx2")
+                  && std::is_x86_feature_detected!("fma");
+              println!("mode={}", if native { "native" } else { "emulated" });
+          }
+          RS
+          "$RUNNER_TEMP/check-avx" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Skip AVX backend
-        if: steps.avx.outputs.supported != 'true'
-        run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
+      - name: Install Intel SDE
+        if: steps.avx.outputs.mode == 'emulated'
+        run: |
+          curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
+          printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/intel-sde"
+          tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -hsw --" >> "$GITHUB_ENV"
+
+      - name: Compile AVX test binary
+        run: bash .github/scripts/test-backend.sh build avx '${{ steps.avx.outputs.mode }}'
+
+      - name: Test AVX backend
+        timeout-minutes: 5
+        run: bash .github/scripts/test-backend.sh test avx '${{ steps.avx.outputs.mode }}'
 
   intel_macos_avx:
     name: Intel macOS AVX smoke
@@ -236,16 +260,14 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
           cargo test -p poulpy-cpu-ref --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
-  # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
-  # so this lane builds and lints the AVX-512F + IFMA configuration on every
-  # push to keep the poulpy-cpu-avx512 crate buildable. Tests are NOT run here
-  # (no AVX-512 silicon to execute on); a self-hosted runner is required to
-  # actually run the AVX-512 test suite.
+  # Run natively when every required CPU feature is usable; otherwise use SDE.
   avx512:
-    name: AVX-512 backend (typecheck only)
-    runs-on: ubuntu-latest
+    name: AVX-512 backend (native or SDE)
+    runs-on: ubuntu-24.04
+    # Cold compilation is separate from the five-minute test execution budget.
+    timeout-minutes: 20
 
-    # GitHub-hosted runners do not expose AVX-512, so we MUST keep AVX-512 flags
+    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
     # off the host toolchain (build scripts, proc-macros). We pin --target and
     # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
     # artifacts stay portable while the workspace itself builds for AVX-512.
@@ -253,6 +275,9 @@ jobs:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      CARGO_PROFILE_CI_DEBUG: 0
+      # Exercise the Rayon overrides with a bounded pool under emulation.
+      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -274,16 +299,59 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-avx512-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-cargo-avx512-
-            ${{ runner.os }}-cargo-
-
-      - name: Check AVX-512 backend
-        run: cargo check --workspace --all-targets --features "$AVX512_FEATURES"
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Clippy AVX-512 backend
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
+      - name: Detect native AVX-512 support
+        id: avx512
+        run: |
+          # Compile for the baseline host, without the target-scoped Cargo flags.
+          # Runtime detection also checks the OS enables AVX/AVX-512 register state.
+          rustc --edition=2024 -o "$RUNNER_TEMP/check-avx512" - <<'RS'
+          fn main() {
+              // Include the features LLVM enables implicitly with our target flags.
+              let native = std::is_x86_feature_detected!("avx2")
+                  && std::is_x86_feature_detected!("fma")
+                  && std::is_x86_feature_detected!("avx512f")
+                  && std::is_x86_feature_detected!("avx512ifma")
+                  && std::is_x86_feature_detected!("avx512vl")
+                  && std::is_x86_feature_detected!("bmi2")
+                  && std::is_x86_feature_detected!("adx")
+                  && std::is_x86_feature_detected!("avx")
+                  && std::is_x86_feature_detected!("f16c")
+                  && std::is_x86_feature_detected!("sse3")
+                  && std::is_x86_feature_detected!("ssse3")
+                  && std::is_x86_feature_detected!("sse4.1")
+                  && std::is_x86_feature_detected!("sse4.2");
+              println!("mode={}", if native { "native" } else { "emulated" });
+          }
+          RS
+          "$RUNNER_TEMP/check-avx512" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Install Intel SDE
+        if: steps.avx512.outputs.mode == 'emulated'
+        run: |
+          curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
+          printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/intel-sde"
+          tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
+          # Pin/SDE may need to attach to its parent on Ubuntu; this hosted VM is ephemeral.
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+          # Only target executables run under SDE; Cargo and build scripts remain native.
+          # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
+
+      - name: Compile AVX-512 test binary
+        run: bash .github/scripts/test-backend.sh build avx512 '${{ steps.avx512.outputs.mode }}'
+
+      - name: Test AVX-512 backend
+        timeout-minutes: 5
+        run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
 
   neon:
     name: NEON backend (aarch64 native)
@@ -319,7 +387,61 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$NEON_FEATURES" -- -D warnings
 
       - name: Test NEON backend
+        shell: bash
         run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
+
+  # Optional emulator validation; the required native neon job runs the full suite.
+  neon_hal:
+    name: NEON HAL, core and CKKS (manual QEMU)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
+      RAYON_NUM_THREADS: 2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install AArch64 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          # Cortex-A72 supplies baseline NEON; -L locates the target libc.
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER=qemu-aarch64 -cpu cortex-a72 -L /usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-
+
+      - name: Test NEON HAL, core and CKKS operations
+        shell: bash
+        # Exercise optional HAL, core and CKKS contract coverage and include constant-convolution kernel tests.
+        run: >-
+          cargo test -p poulpy-cpu-arm --lib --profile ci
+          --features "enable-neon,enable-rayon,enable-ckks" --
+          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
+          raw_transform_matches_contract convolution_by_const core_parity core_encryption glwe_copy ckks_parity
+          --test-threads=2
 
   miri:
     name: Miri (poulpy-hal unit tests)
@@ -365,6 +487,7 @@ jobs:
       - macos_arm_quad
       - avx512
       - neon
+      - neon_hal
       - miri
     if: always()
 
@@ -401,9 +524,19 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu }}" = "true" ]; then
+            if [ "${{ needs.neon_hal.result }}" != "success" ]; then
+              echo "Requested NEON QEMU job finished with: ${{ needs.neon_hal.result }}"
+              exit 1
+            fi
+          elif [ "${{ needs.neon_hal.result }}" != "skipped" ]; then
+            echo "NEON QEMU job was not requested but finished with: ${{ needs.neon_hal.result }}"
+            exit 1
+          fi
+
           if [ "${{ needs.miri.result }}" != "success" ]; then
             echo "Miri job finished with: ${{ needs.miri.result }}"
             exit 1
           fi
 
-          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, NEON and Miri CI jobs passed."
+          echo "All required CI jobs passed, including NEON QEMU when requested."

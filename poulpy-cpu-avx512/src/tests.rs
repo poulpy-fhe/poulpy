@@ -1,5 +1,21 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
+mod core_emulated_tensor;
+
+/// Bounds only explicitly emulated CI runs. Native runs retain their original
+/// degrees; all modules are constructed from the same adjusted parameters.
+/// Statistical sampling and explicitly named large-ring suites do not use this
+/// helper. CI selects the latter separately instead of relabeling small tests.
+pub(crate) fn bounded_emulation_params(
+    mut params: poulpy_hal::test_suite::TestParams,
+    max_degree: usize,
+) -> poulpy_hal::test_suite::TestParams {
+    if std::env::var_os("POULPY_TEST_EMULATED").is_some_and(|value| value == "1") {
+        params.size = params.size.min(max_degree);
+        params.n = params.n.min(params.size);
+    }
+    params
+}
 
 #[test]
 fn glwe_copy() {
@@ -41,13 +57,27 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx512,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -62,13 +92,27 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -81,16 +125,31 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -114,7 +173,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
     tests = {
@@ -157,7 +217,8 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
     tests = {
@@ -171,13 +232,27 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT3x42Ifma,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -190,16 +265,31 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -254,5 +344,86 @@ mod tuning {
         #[cfg(feature = "enable-ifma")]
         thread_scaling::<crate::NTT3x42IfmaRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
             .print("NTT3x42IfmaRayon");
+    }
+}
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avx512,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Avx512,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avx512,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Avx512,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+
+#[cfg(feature = "enable-ifma")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt3x42ifma,
+    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT3x42Ifma,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64avx512rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30avx512rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+
+#[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt3x42ifmarayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
+);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_fft64_rayon,
+    // The serial backend is validated above; this edge checks the Rayon implementation.
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    // computes at the module degree, no sweep
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }

@@ -14,7 +14,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
+    EncryptionInfos, GLWEMaskFill, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -22,7 +22,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEMaskFillReference<BE: Backend> {
     fn fill_glwe_mask_from_source_reference<R>(
         &self,
@@ -32,10 +34,6 @@ pub trait GLWEMaskFillReference<BE: Backend> {
         rank: usize,
         source_xa: &mut Source,
     ) where
-        R: GLWEToBackendMut<BE>;
-
-    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
-    where
         R: GLWEToBackendMut<BE>;
 }
 
@@ -64,17 +62,11 @@ where
             self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
         }
     }
-
-    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
-    where
-        R: GLWEToBackendMut<BE>,
-    {
-        let mut source_xa = Source::new(seed_xa);
-        self.fill_glwe_mask_from_source_reference(base2k, res, res_col, rank, &mut source_xa);
-    }
 }
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEEncryptSkReference<BE: Backend> {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -116,7 +108,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + GLWEMaskFillReference<BE>
+        + GLWEMaskFill<BE>
         + GLWEEncryptSkInternal<BE>,
 {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -172,7 +164,7 @@ where
         let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source_reference(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source(base2k, &mut res_ref, 1, rank, source_xa);
         }
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
@@ -215,13 +207,15 @@ where
         let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source_reference(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source(base2k, &mut res_ref, 1, rank, source_xa);
         }
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
     }
 }
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEEncryptPkReference<BE: Backend> {
     fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
