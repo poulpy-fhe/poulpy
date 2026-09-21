@@ -152,7 +152,7 @@ jobs:
 
       - name: Skip AVX backend
         if: steps.avx.outputs.supported != 'true'
-        run: echo "Runner lacks AVX2/FMA; the native-or-SDE lane still executes all AVX core contracts."
+        run: echo "Runner lacks AVX2/FMA; the AVX-512 job's native-or-SDE lane runs the same AVX HAL and core contracts."
 
   intel_macos_avx:
     name: Intel macOS AVX smoke
@@ -347,12 +347,17 @@ jobs:
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
           --test-threads=2
 
-      # Guarantee AVX core coverage even if its separate native runner lacks AVX2/FMA.
-      - name: Test AVX core operations natively or under SDE
+      # Guarantee AVX coverage even if its separate native runner lacks AVX2/FMA.
+      # Same contract groups as the AVX-512 step above; a filter added there
+      # belongs here too.
+      - name: Test AVX HAL and core operations natively or under SDE
         shell: bash
         run: >-
           cargo test -p poulpy-cpu-avx --lib --profile ci
-          --features "enable-rayon" -- core_parity core_encryption
+          --features "enable-avx,enable-rayon,enable-ckks" --
+          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
+          raw_transform_matches_contract core_parity core_encryption
+          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
           --test-threads=2
 
   neon:
