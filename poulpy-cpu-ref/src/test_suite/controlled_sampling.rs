@@ -105,14 +105,15 @@ mod tests {
     }
     #[test]
     fn encryption_parity_accepts_different_backend_random_streams() {
-        let original = with_backend_samples::<FFT64Ref, _>(64, || scalar_samples(64, Distribution::TernaryProb(0.5), [7; 32]));
-        let different = with_backend_samples::<DifferentSamplingFFT64Ref, _>(64, || {
+        let original = with_backend_samples(Module::<FFT64Ref>::new(64), |_| {
+            scalar_samples(64, Distribution::TernaryProb(0.5), [7; 32])
+        });
+        let different = with_backend_samples(Module::<DifferentSamplingFFT64Ref>::new(64), |_| {
             scalar_samples(64, Distribution::TernaryProb(0.5), [7; 32])
         });
         assert_ne!(original, different);
-        with_backend_samples::<DifferentSamplingFFT64Ref, _>(64, || {
+        with_backend_samples(Module::<DifferentSamplingFFT64Ref>::new(64), |tested| {
             let reference = Module::<ControlledSamplingFFT64Ref>::new(64);
-            let tested = Module::<DifferentSamplingFFT64Ref>::new(64);
             let params = poulpy_hal::test_suite::TestParams {
                 size: 64,
                 n: 64,
@@ -122,8 +123,8 @@ mod tests {
                 ranks: vec![1],
                 dsizes: None,
             };
-            poulpy_core::test_suite::parity::test_glwe_encryption_parity(&params, &shapes, &reference, &tested);
-            poulpy_core::test_suite::parity::test_lwe_encryption_parity(&params, &shapes, &reference, &tested);
+            poulpy_core::test_suite::parity::test_glwe_encryption_parity(&params, &shapes, &reference, tested);
+            poulpy_core::test_suite::parity::test_lwe_encryption_parity(&params, &shapes, &reference, tested);
         });
     }
 }

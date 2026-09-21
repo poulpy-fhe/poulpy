@@ -7,12 +7,12 @@ use crate::{Distribution, NoiseInfos, oep::SamplingImpl};
 use poulpy_hal::{
     api::*,
     layouts::*,
-    oep::{HalModuleImpl, HalVecZnxBigImpl, HalVecZnxImpl},
+    oep::{HalVecZnxBigImpl, HalVecZnxImpl},
     test_suite::{download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, vec_znx_backend_mut},
 };
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex, RwLock};
 
-trait SampleProvider {
+trait SampleProvider: Send + Sync {
     fn scalar(&self, n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64>;
     fn noise(&self, n: usize, base2k: usize, noise: NoiseInfos, seed: [u8; 32], big: bool) -> Vec<i64>;
 }
@@ -76,37 +76,45 @@ where
             .collect()
     }
 }
-thread_local! {
-    static SAMPLES: RefCell<Option<Rc<dyn SampleProvider>>> = RefCell::new(None);
-}
-struct Restore(Option<Rc<dyn SampleProvider>>);
-impl Drop for Restore {
+// The provider is process-wide, not thread-local: a backend is free to sample
+// from a worker thread, and a scope that only the calling thread could see would
+// turn that into a panic. `ACTIVE` keeps concurrently running test functions from
+// overwriting each other's scope.
+static ACTIVE: Mutex<()> = Mutex::new(());
+static SAMPLES: RwLock<Option<Arc<dyn SampleProvider>>> = RwLock::new(None);
+
+struct Scope;
+impl Drop for Scope {
     fn drop(&mut self) {
-        SAMPLES.with(|slot| {
-            slot.replace(self.0.take());
-        });
+        *SAMPLES.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 }
+
 /// Exposes backend `B`'s realized samples to a comparison backend's sampling adapter.
 ///
-/// The scope is thread-local and restored on return or unwind. It changes no
-/// production sampler; an adapter opts in by calling [`scalar_samples`] and
-/// [`noise_samples`]. The backend under test keeps its own sampling and encryption.
-pub fn with_backend_samples<B, R>(n: usize, test: impl FnOnce() -> R) -> R
+/// The caller supplies the module the draws are taken on and gets it back for the
+/// test body. The scope is cleared on return or unwind, and other scopes wait for
+/// it, so scopes do not nest. It changes no production sampler; an adapter opts in
+/// by calling [`scalar_samples`] and [`noise_samples`]. The backend under test
+/// keeps its own sampling and encryption.
+pub fn with_backend_samples<B, R>(tested: Module<B>, test: impl FnOnce(&Module<B>) -> R) -> R
 where
-    B: Backend<ZnxWord = i64> + HalModuleImpl + HalVecZnxImpl + HalVecZnxBigImpl + SamplingImpl + 'static,
+    B: Backend<ZnxWord = i64> + HalVecZnxImpl + HalVecZnxBigImpl + SamplingImpl + 'static,
 {
-    let samples: Rc<dyn SampleProvider> = Rc::new(BackendSamples::<B>(Module::<B>::new(n as u64)));
-    let _restore = Restore(SAMPLES.with(|slot| slot.replace(Some(samples))));
-    test()
+    let _active = ACTIVE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let samples: Arc<BackendSamples<B>> = Arc::new(BackendSamples::<B>(tested));
+    *SAMPLES.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(samples.clone() as Arc<dyn SampleProvider>);
+    let _scope = Scope;
+    test(&samples.0)
 }
-fn provider() -> Rc<dyn SampleProvider> {
-    SAMPLES.with(|slot| {
-        slot.borrow()
-            .as_ref()
-            .expect("controlled sampling needs with_backend_samples")
-            .clone()
-    })
+
+fn provider() -> Arc<dyn SampleProvider> {
+    SAMPLES
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .as_ref()
+        .expect("controlled sampling needs with_backend_samples")
+        .clone()
 }
 /// Returns a scalar draw from the backend selected by [`with_backend_samples`].
 /// A comparison backend's sampling adapter writes these values into its own storage.
@@ -139,60 +147,66 @@ macro_rules! core_encryption_parity_test_suite {
         mod $name {
             #[test]
             fn glwe_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples::<$backend_test, _>(256, || {
-                    let reference = Module::<$backend_ref>::new(256);
-                    let tested = Module::<$backend_test>::new(256);
-                    test_glwe_encryption_parity(
-                        &TestParams {
-                            size: 256,
-                            n: 256,
-                            base2k: 12,
-                        },
-                        &ParityShapes::default(),
-                        &reference,
-                        &tested,
-                    );
-                });
+                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                    Module::<$backend_test>::new(256),
+                    |tested| {
+                        let reference = Module::<$backend_ref>::new(256);
+                        test_glwe_encryption_parity(
+                            &TestParams {
+                                size: 256,
+                                n: 256,
+                                base2k: 12,
+                            },
+                            &ParityShapes::default(),
+                            &reference,
+                            tested,
+                        );
+                    },
+                );
             }
             #[test]
             fn key_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_key_encryption_parity};
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples::<$backend_test, _>(256, || {
-                    let reference = Module::<$backend_ref>::new(256);
-                    let tested = Module::<$backend_test>::new(256);
-                    test_key_encryption_parity(
-                        &TestParams {
-                            size: 256,
-                            n: 256,
-                            base2k: 12,
-                        },
-                        &ParityShapes::default(),
-                        &reference,
-                        &tested,
-                    );
-                });
+                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                    Module::<$backend_test>::new(256),
+                    |tested| {
+                        let reference = Module::<$backend_ref>::new(256);
+                        test_key_encryption_parity(
+                            &TestParams {
+                                size: 256,
+                                n: 256,
+                                base2k: 12,
+                            },
+                            &ParityShapes::default(),
+                            &reference,
+                            tested,
+                        );
+                    },
+                );
             }
             #[test]
             fn lwe_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+                use ::poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples::<$backend_test, _>(256, || {
-                    let reference = Module::<$backend_ref>::new(256);
-                    let tested = Module::<$backend_test>::new(256);
-                    test_lwe_encryption_parity(
-                        &TestParams {
-                            size: 256,
-                            n: 256,
-                            base2k: 12,
-                        },
-                        &ParityShapes::default(),
-                        &reference,
-                        &tested,
-                    );
-                });
+                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                    Module::<$backend_test>::new(256),
+                    |tested| {
+                        let reference = Module::<$backend_ref>::new(256);
+                        test_lwe_encryption_parity(
+                            &TestParams {
+                                size: 256,
+                                n: 256,
+                                base2k: 12,
+                            },
+                            &ParityShapes::default(),
+                            &reference,
+                            tested,
+                        );
+                    },
+                );
             }
         }
     };
