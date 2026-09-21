@@ -154,12 +154,25 @@ where
         }
         check_trace_edges!(BR, r, a_r);
         check_trace_edges!(BT, t, a_t);
-        for (positions, log_gap_out) in [(vec![0], 0), (vec![0, r.n() / 2, r.n() - 1], 0), (vec![0, 2, 4], 1)] {
-            let mut inputs_r: Vec<_> = positions.iter().map(|_| ref_glwe(r, &g, &mut source)).collect();
+        // Packing inputs need not share the destination layout: the merge tree and
+        // the closing trace both run at the input layout, so a wider input is the
+        // case a single-layout sweep cannot see.
+        let g_wide = GLWELayout {
+            k: TorusPrecision((5 * b) as u32),
+            ..g
+        };
+        for (positions, log_gap_out, gi) in [
+            (vec![0], 0, &g),
+            (vec![0, r.n() / 2, r.n() - 1], 0, &g),
+            (vec![0, 2, 4], 1, &g),
+            (vec![0, 2, 4], 1, &g_wide),
+            (vec![0, r.n() / 2, r.n() - 1], 0, &g_wide),
+        ] {
+            let mut inputs_r: Vec<_> = positions.iter().map(|_| ref_glwe(r, gi, &mut source)).collect();
             let mut inputs_t: Vec<_> = inputs_r
                 .iter()
                 .map(|a| {
-                    let mut x = t.glwe_alloc_from_infos(&g);
+                    let mut x = t.glwe_alloc_from_infos(gi);
                     a.transfer_into(&mut x);
                     x
                 })
@@ -174,27 +187,28 @@ where
                 map_r,
                 log_gap_out,
                 &keys_r,
-                &mut poisoned_scratch::<BR>(r.glwe_pack_tmp_bytes(&g, &k)).borrow(),
+                &mut poisoned_scratch::<BR>(r.glwe_pack_tmp_bytes(&g, gi, &k)).borrow(),
             );
             t.glwe_pack(
                 &mut out_t,
                 map_t,
                 log_gap_out,
                 &keys_t,
-                &mut poisoned_scratch::<BT>(t.glwe_pack_tmp_bytes(&g, &k)).borrow(),
+                &mut poisoned_scratch::<BT>(t.glwe_pack_tmp_bytes(&g, gi, &k)).borrow(),
             );
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
             assert_eq!(out_r, have, "pack rank={rank} positions={positions:?} gap={log_gap_out}");
-            if log_gap_out == 0 {
+            if log_gap_out == 0 && gi.k == g.k {
                 // The last packing phase is an empty trace: it must publish
                 // the accumulator retained at index zero into the destination.
                 assert_eq!(out_r, inputs_r[0], "packing failed to publish its final accumulator");
             }
             // Inputs are explicitly consumed; compare the observable mutations too.
+            let mut have_in = r.glwe_alloc_from_infos(gi);
             for (a, b) in inputs_r.iter().zip(inputs_t.iter()) {
-                b.transfer_into(&mut have);
-                assert_eq!(*a, have, "pack input mutation");
+                b.transfer_into(&mut have_in);
+                assert_eq!(*a, have_in, "pack input mutation");
             }
         }
         macro_rules! check_invalid_pack {
@@ -219,7 +233,7 @@ where
                             map,
                             gap,
                             &$keys,
-                            &mut poisoned_scratch::<$be>($module.glwe_pack_tmp_bytes(&g, &k)).borrow(),
+                            &mut poisoned_scratch::<$be>($module.glwe_pack_tmp_bytes(&g, &g, &k)).borrow(),
                         );
                     }));
                     assert!(rejected.is_err(), "packing accepted unsupported positions/gap");

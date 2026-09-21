@@ -71,7 +71,7 @@ where
         (module)
             .glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
             .max((module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos))
-            .max(module.glwe_pack_tmp_bytes(&glwe_out_infos, &key_infos)),
+            .max(module.glwe_pack_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos)),
     );
 
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);

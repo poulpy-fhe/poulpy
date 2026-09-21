@@ -383,12 +383,13 @@ pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GL
         crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
     }
 
-    fn glwe_pack_tmp_bytes<R, K>(module: &Module<Self>, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
+        A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _>(module, res, key)
+        crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
     }
 
     fn glwe_pack<R, A, H>(

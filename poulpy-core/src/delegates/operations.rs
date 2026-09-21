@@ -407,12 +407,13 @@ impl_operations_delegate!(
     fn glwe_pack_galois_elements(&self) -> Vec<i64> {
         BE::glwe_pack_galois_elements(self)
     },
-    fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
+        A: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_pack_tmp_bytes(self, res, key)
+        BE::glwe_pack_tmp_bytes(self, res, a, key)
     },
     fn glwe_pack<R, A, H>(
         &self,

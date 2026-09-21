@@ -51,9 +51,13 @@ pub trait GLWETrace<BE: Backend> {
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
+    /// Scratch for packing inputs of layout `a` into a destination of layout
+    /// `res`. The merge tree and the final trace both run at the input layout,
+    /// so it is sized here and need not match the destination.
+    fn glwe_pack_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
+        A: GLWEInfos,
         K: GGLWEInfos;
 
     fn glwe_pack<R, A, H>(

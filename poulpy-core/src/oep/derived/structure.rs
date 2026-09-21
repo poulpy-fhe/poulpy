@@ -391,7 +391,7 @@ mod packing {
         module.glwe_trace_galois_elements()
     }
 
-    pub(crate) fn glwe_pack_tmp_bytes_derived<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
+    pub(crate) fn glwe_pack_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res: &R, a: &A, key: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -402,19 +402,23 @@ mod packing {
             + GLWENormalize<BE>
             + GLWETrace<BE>,
         R: GLWEInfos,
+        A: GLWEInfos,
         K: GGLWEInfos,
     {
         assert_eq!(module.n() as u32, res.n());
+        assert_eq!(module.n() as u32, a.n());
         assert_eq!(module.n() as u32, key.n());
 
-        let lvl_0: usize = BE::scratch_aligned(module.glwe_bytes_of_from_infos(res));
+        // Every merge-tree operation runs on the inputs, not on the destination:
+        // the accumulator stays at the input layout until the closing trace.
+        let lvl_0: usize = BE::scratch_aligned(module.glwe_bytes_of_from_infos(a));
         let lvl_1: usize = module
             .glwe_rotate_tmp_bytes()
-            .max(module.glwe_shift_tmp_bytes(res.size()))
+            .max(module.glwe_shift_tmp_bytes(a.size()))
             .max(module.glwe_normalize_tmp_bytes())
-            .max(module.glwe_automorphism_tmp_bytes(res, res, key));
+            .max(module.glwe_automorphism_tmp_bytes(a, a, key));
 
-        (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
+        (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, a, key))
     }
 
     pub(crate) fn glwe_pack_derived<BE, M, R, A, H>(
@@ -449,16 +453,22 @@ mod packing {
             a.keys().all(|&index| index < module.n() && index % gap == 0),
             "packing indices must be below N and divisible by 2^log_gap_out"
         );
-        // Keys may differ per rotation; the bound is read off the first one, as
-        // on any path sized from a single key layout.
+        // The merge tree and the closing trace both run at the input layout, which
+        // every input shares. Keys may differ per rotation; the bound is read off
+        // the first one, as on any path sized from a single key layout.
+        let a_layout = a
+            .values()
+            .next()
+            .map(|input| input.glwe_layout())
+            .expect("packing requires at least one input");
         let key_infos = keys
-            .get_automorphism_key(-1, res.k())
+            .get_automorphism_key(-1, a_layout.k().max(res.k()))
             .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));
         assert!(
-            scratch.available() >= glwe_pack_tmp_bytes_derived::<BE, _, _, _>(module, res, &key_infos),
+            scratch.available() >= glwe_pack_tmp_bytes_derived::<BE, _, _, _, _>(module, res, &a_layout, &key_infos),
             "scratch.available(): {} < GLWEPacking::glwe_pack_tmp_bytes: {}",
             scratch.available(),
-            glwe_pack_tmp_bytes_derived::<BE, _, _, _>(module, res, &key_infos)
+            glwe_pack_tmp_bytes_derived::<BE, _, _, _, _>(module, res, &a_layout, &key_infos)
         );
 
         let mut scratch_local = scratch.borrow();
