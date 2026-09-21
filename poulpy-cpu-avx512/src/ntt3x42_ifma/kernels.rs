@@ -32,7 +32,7 @@ use core::arch::x86_64::{
 
 use crate::ntt3x42_ifma::{
     primes::{PrimeSetNtt3x42Ifma, modq_pow64},
-    tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
+    tables::{ConjugateInvariantTable, Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -91,6 +91,53 @@ pub(crate) unsafe fn harvey_modmul_si512(a: __m512i, omega: __m512i, omega_quot:
     let prod_lo52 = _mm512_madd52lo_epu64(zero, a, omega);
     let qq_lo52 = _mm512_madd52lo_epu64(zero, qhat, q);
     _mm512_and_si512(_mm512_sub_epi64(prod_lo52, qq_lo52), mask52)
+}
+
+#[target_feature(enable = "avx512ifma")]
+unsafe fn ci_basis_change(plan: &ConjugateInvariantTable, data: &mut [u64], q: u64) {
+    unsafe {
+        let n = data.len();
+        assert!(n > 0);
+        assert_eq!(plan.direct.len(), n);
+        assert_eq!(plan.reflected.len(), n);
+        assert_eq!(plan.direct_quot.len(), n);
+        assert_eq!(plan.reflected_quot.len(), n);
+        let qv = _mm512_set1_epi64(q as i64);
+        let q2 = _mm512_set1_epi64((2 * q) as i64);
+        let reverse = _mm512_set_epi64(0, 1, 2, 3, 4, 5, 6, 7);
+        let apply = |j, a, b| {
+            let d = _mm512_loadu_si512(plan.direct.as_ptr().add(j).cast());
+            let c = _mm512_loadu_si512(plan.reflected.as_ptr().add(j).cast());
+            let dq = _mm512_loadu_si512(plan.direct_quot.as_ptr().add(j).cast());
+            let cq = _mm512_loadu_si512(plan.reflected_quot.as_ptr().add(j).cast());
+            let sum = _mm512_add_epi64(harvey_modmul_si512(a, d, dq, qv), harvey_modmul_si512(b, c, cq, qv));
+            cond_sub_2q_si512(cond_sub_2q_si512(sum, q2), qv)
+        };
+        data[0] = cond_sub_2q(data[0], q);
+        let mut j = 1;
+        while j + 8 <= n / 2 {
+            let other = n - j - 7;
+            let a = _mm512_loadu_si512(data.as_ptr().add(j).cast());
+            let b = _mm512_loadu_si512(data.as_ptr().add(other).cast());
+            let lo = apply(j, a, _mm512_permutexvar_epi64(reverse, b));
+            let hi = apply(other, b, _mm512_permutexvar_epi64(reverse, a));
+            _mm512_storeu_si512(data.as_mut_ptr().add(j).cast(), lo);
+            _mm512_storeu_si512(data.as_mut_ptr().add(other).cast(), hi);
+            j += 8;
+        }
+        let apply = |j: usize, a, b| {
+            let d = harvey_modmul(a, plan.direct[j], plan.direct_quot[j], q);
+            let c = harvey_modmul(b, plan.reflected[j], plan.reflected_quot[j], q);
+            cond_sub_2q(cond_sub_2q(d + c, 2 * q), q)
+        };
+        for j in j..=n / 2 {
+            let other = n - j;
+            let a = data[j];
+            let b = data[other];
+            data[j] = apply(j, a, b);
+            data[other] = apply(other, b, a);
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -488,7 +535,9 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable
 
     if let Some(ci) = &table.ci {
         for k in 0..3 {
-            ci[k].apply(&mut data[k * n..(k + 1) * n], 1, P::Q[k]);
+            unsafe {
+                ci_basis_change(&ci[k], &mut data[k * n..(k + 1) * n], P::Q[k]);
+            }
         }
     }
 
@@ -969,7 +1018,9 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
 
     if let Some(ci) = &table.ci {
         for k in 0..3 {
-            ci[k].apply(&mut data[k * n..(k + 1) * n], 1, P::Q[k]);
+            unsafe {
+                ci_basis_change(&ci[k], &mut data[k * n..(k + 1) * n], P::Q[k]);
+            }
         }
     }
 }
@@ -990,6 +1041,67 @@ mod tests {
         tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     };
     use poulpy_hal::layouts::PrimeSet;
+
+    #[test]
+    fn conjugate_invariant_basis_change_parity() {
+        use poulpy_cpu_ref::{NTTModuleConfig, reference::conjugate_invariant::ConjugateInvariantNtt};
+        for n in [2, 4, 8, 16, 32, 64, 256, 1024, 8192, 32768, 65536] {
+            let config = NTTModuleConfig::conjugate_invariant();
+            let fwd = Ntt3x42IfmaTable::<Primes42>::new_with_config(n, config);
+            let inv = Ntt3x42IfmaTableInv::<Primes42>::new_with_config(n, config);
+            for (inverse, plans) in [(false, fwd.ci.as_ref().unwrap()), (true, inv.ci.as_ref().unwrap())] {
+                for (k, plan) in plans.iter().enumerate() {
+                    let q = Primes42::Q[k];
+                    let reference = ConjugateInvariantNtt::new(n, q, Primes42::OMEGA[k], Primes42::MAX_LOG_N, inverse);
+                    let mut seed = 0x1234_5678_9abc_def0u64;
+                    let mut actual: Vec<_> = (0..n)
+                        .map(|j| {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 7;
+                            seed ^= seed << 17;
+                            match j % 6 {
+                                0 => 0,
+                                1 => 1,
+                                2 => q - 1,
+                                3 => q,
+                                4 => 2 * q - 1,
+                                _ => seed % (2 * q),
+                            }
+                        })
+                        .collect();
+                    actual[0] = if inverse { 2 * q - 1 } else { q - 1 };
+                    let mut expected = actual.clone();
+                    reference.apply(&mut expected, 1, q);
+                    unsafe {
+                        ci_basis_change(plan, &mut actual, q);
+                    }
+                    assert_eq!(actual, expected, "n={n}, inverse={inverse}, prime={k}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn conjugate_invariant_basis_change_rejects_short_factors() {
+        for factor in 0..4 {
+            let mut table =
+                Ntt3x42IfmaTable::<Primes42>::new_with_config(32, poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant());
+            let plan = &mut table.ci.as_mut().unwrap()[0];
+            match factor {
+                0 => &mut plan.direct,
+                1 => &mut plan.reflected,
+                2 => &mut plan.direct_quot,
+                _ => &mut plan.reflected_quot,
+            }
+            .pop();
+            assert!(
+                std::panic::catch_unwind(|| unsafe {
+                    ci_basis_change(plan, &mut [0; 32], Primes42::Q[0]);
+                })
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn harvey_modmul_simd_vs_scalar() {

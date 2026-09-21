@@ -53,7 +53,7 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
     pub tail_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
     pub tail_quot: Vec<u64>,
-    pub ci: Option<[poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt; 3]>,
+    pub ci: Option<[ConjugateInvariantTable; 3]>,
     _phantom: PhantomData<P>,
 }
 
@@ -70,8 +70,32 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
     pub inv_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
     pub inv_quot: Vec<u64>,
-    pub ci: Option<[poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt; 3]>,
+    pub ci: Option<[ConjugateInvariantTable; 3]>,
     _phantom: PhantomData<P>,
+}
+
+/// Basis-change factors and their Harvey quotients for one prime plane.
+pub struct ConjugateInvariantTable {
+    pub direct: Vec<u64>,
+    pub reflected: Vec<u64>,
+    pub direct_quot: Vec<u64>,
+    pub reflected_quot: Vec<u64>,
+}
+
+impl ConjugateInvariantTable {
+    fn new(n: usize, q: u64, omega: u64, max_log_n: u32, inverse: bool) -> Self {
+        let plan = poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt::new(n, q, omega, max_log_n, inverse);
+        let direct: Vec<_> = plan.factors().iter().map(|f| f[0]).collect();
+        let reflected: Vec<_> = plan.factors().iter().map(|f| f[1]).collect();
+        let direct_quot = direct.iter().map(|&w| harvey_quotient(w, q)).collect();
+        let reflected_quot = reflected.iter().map(|&w| harvey_quotient(w, q)).collect();
+        Self {
+            direct,
+            reflected,
+            direct_quot,
+            reflected_quot,
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -297,13 +321,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
         let mut table = Self::new(n);
         if config.is_conjugate_invariant() {
             table.ci = Some(std::array::from_fn(|k| {
-                poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt::new(
-                    n,
-                    P::Q[k],
-                    P::OMEGA[k],
-                    P::MAX_LOG_N,
-                    false,
-                )
+                ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, false)
             }));
         }
         table
@@ -417,13 +435,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
         let mut table = Self::new(n);
         if config.is_conjugate_invariant() {
             table.ci = Some(std::array::from_fn(|k| {
-                poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt::new(
-                    n,
-                    P::Q[k],
-                    P::OMEGA[k],
-                    P::MAX_LOG_N,
-                    true,
-                )
+                ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, true)
             }));
         }
         table

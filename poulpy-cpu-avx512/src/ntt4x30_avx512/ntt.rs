@@ -64,6 +64,60 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     primes::PrimeSetCrt4,
 };
 
+#[target_feature(enable = "avx512f")]
+unsafe fn ci_basis_change<P: PrimeSetCrt4>(
+    plans: &[poulpy_cpu_ref::reference::conjugate_invariant::ConjugateInvariantNtt; 4],
+    data: &mut [u64],
+) {
+    use super::arithmetic_avx512::cond_sub;
+    unsafe {
+        let factors = plans.each_ref().map(|plan| plan.factors());
+        let n = factors[0].len();
+        assert_eq!(data.len(), 4 * n);
+        assert!(factors.iter().all(|f| f.len() == n));
+        let primes = P::Q.map(u64::from);
+        let mu = primes.map(|q| (1u64 << (P::LOG_Q + 31)) / q);
+        let pow32 = primes.map(|q| (1u64 << 32) % q);
+        let q = _mm256_loadu_si256(primes.as_ptr().cast());
+        let mu = _mm256_loadu_si256(mu.as_ptr().cast());
+        let pow32 = _mm256_loadu_si256(pow32.as_ptr().cast());
+        let mask = _mm256_set1_epi64x(u32::MAX as i64);
+        let high_shift = _mm_cvtsi64_si128((P::LOG_Q - 1) as i64);
+        let low_shift = _mm_cvtsi64_si128((P::LOG_Q + 31) as i64);
+        let reduce = |x| {
+            let hi = _mm256_mul_epu32(_mm256_srli_epi64::<32>(x), mu);
+            let lo = _mm256_mul_epu32(_mm256_and_si256(x, mask), mu);
+            let quotient = _mm256_add_epi64(_mm256_srl_epi64(hi, high_shift), _mm256_srl_epi64(lo, low_shift));
+            let r = _mm256_sub_epi64(x, _mm256_mul_epu32(quotient, q));
+            cond_sub(cond_sub(r, q), q)
+        };
+        // Split before reduction so every u64 input, including negative lifts, is valid.
+        let canonical = |x| {
+            let hi = reduce(_mm256_srli_epi64::<32>(x));
+            reduce(_mm256_add_epi64(_mm256_mul_epu32(hi, pow32), _mm256_and_si256(x, mask)))
+        };
+        let apply = |j: usize, a, b| {
+            let direct: [u64; 4] = std::array::from_fn(|k| factors[k][j][0]);
+            let reflected: [u64; 4] = std::array::from_fn(|k| factors[k][j][1]);
+            let d = _mm256_loadu_si256(direct.as_ptr().cast());
+            let c = _mm256_loadu_si256(reflected.as_ptr().cast());
+            cond_sub(
+                _mm256_add_epi64(reduce(_mm256_mul_epu32(a, d)), reduce(_mm256_mul_epu32(b, c))),
+                q,
+            )
+        };
+        let ptr = data.as_mut_ptr().cast::<__m256i>();
+        _mm256_storeu_si256(ptr, canonical(_mm256_loadu_si256(ptr)));
+        for j in 1..=n / 2 {
+            let other = n - j;
+            let a = canonical(_mm256_loadu_si256(ptr.add(j)));
+            let b = canonical(_mm256_loadu_si256(ptr.add(other)));
+            _mm256_storeu_si256(ptr.add(j), apply(j, a, b));
+            _mm256_storeu_si256(ptr.add(other), apply(other, b, a));
+        }
+    }
+}
+
 /// Switch from level-order to block-order processing at this block size.
 ///
 /// Matches `CHANGE_MODE_N` in `q120_ntt_avx2.c`.
@@ -959,10 +1013,6 @@ unsafe fn intt_iter_red(
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
-    if table.ci.is_some() {
-        return poulpy_cpu_ref::reference::ntt4x30::ntt::ntt_ref(table, data);
-    }
-
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -976,6 +1026,9 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut
     }
 
     unsafe {
+        if let Some(ci) = &table.ci {
+            ci_basis_change::<P>(ci, data);
+        }
         let begin = data.as_mut_ptr() as *mut __m256i;
         let end = begin.add(n) as *const __m256i;
         let po_base = table.powomega.as_ptr() as *const __m256i;
@@ -1060,10 +1113,6 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
-    if table.ci.is_some() {
-        return poulpy_cpu_ref::reference::ntt4x30::ntt::intt_ref(table, data);
-    }
-
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1135,6 +1184,9 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: 
         } else {
             ntt_iter_first(begin, end, meta, po_base.add(po_avx));
         }
+        if let Some(ci) = &table.ci {
+            ci_basis_change::<P>(ci, data);
+        }
     }
 }
 
@@ -1144,6 +1196,17 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: 
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
+    #[test]
+    fn conjugate_invariant_basis_change_parity() {
+        use poulpy_cpu_ref::{
+            reference::ntt4x30::primes::{Primes29, Primes30, Primes31},
+            test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
+        };
+        test_conjugate_invariant_ntt_basis_change::<Primes29>(|plans, data| unsafe { ci_basis_change::<Primes29>(plans, data) });
+        test_conjugate_invariant_ntt_basis_change::<Primes30>(|plans, data| unsafe { ci_basis_change::<Primes30>(plans, data) });
+        test_conjugate_invariant_ntt_basis_change::<Primes31>(|plans, data| unsafe { ci_basis_change::<Primes31>(plans, data) });
+    }
+
     use super::*;
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},

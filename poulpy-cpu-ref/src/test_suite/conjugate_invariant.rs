@@ -1,3 +1,113 @@
+/// Checks real-slot products, convolution tails, and invalid size rejection.
+pub fn test_conjugate_invariant_fft_arithmetic<BE>()
+where
+    BE: crate::reference::fft64::reim4::Reim4BlkMatVec + crate::reference::fft64::reim4::Reim4Convolution,
+{
+    use crate::reference::fft64::reim4::*;
+    let values = |n: usize, seed: usize| -> Vec<f64> {
+        (0..n)
+            .map(|j| (((j + seed) * 17 % 101) as f64 - 50.0) / ((j % 7) as f64 + 0.7))
+            .collect()
+    };
+    for rows in [0, 1, 2, 3, 7, 16] {
+        let a = values(8 * rows, 1);
+        let b = values(16 * rows, 5);
+        for cols in 0..3 {
+            let mut actual = [123.0; 24];
+            let mut expected = actual;
+            match cols {
+                0 => {
+                    BE::reim4_real_mat1col_prod(rows, &mut actual, &a, &b);
+                    reim4_real_vec_mat1col_product_ref(rows, &mut expected, &a, &b);
+                }
+                1 => {
+                    BE::reim4_real_mat2cols_prod(rows, &mut actual, &a, &b);
+                    reim4_real_vec_mat2cols_product_ref(rows, &mut expected, &a, &b);
+                }
+                _ => {
+                    BE::reim4_real_mat2cols_2ndcol_prod(rows, &mut actual, &a, &b);
+                    reim4_real_vec_mat2cols_2ndcol_product_ref(rows, &mut expected, &a, &b);
+                }
+            }
+            assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+        }
+    }
+    for a_size in [0, 1, 2, 3, 7, 14] {
+        for b_size in [0, 1, 2, 5, 14] {
+            let a = values(8 * a_size, 2);
+            let b = values(8 * b_size, 3);
+            for k in 0..a_size + b_size + 2 {
+                let mut actual = [123.0; 16];
+                let mut expected = [0.0; 16];
+                BE::reim4_real_convolution_2coeffs(k, &mut actual, &a, a_size, &b, b_size);
+                if a_size != 0 && b_size != 0 {
+                    reim4_real_convolution_2coeffs_ref(k, &mut expected, &a, a_size, &b, b_size);
+                }
+                assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+                let mut single = [123.0; 8];
+                BE::reim4_real_convolution_1coeff(k, &mut single, &a, a_size, &b, b_size);
+                assert_eq!(single.map(f64::to_bits), actual.map(f64::to_bits)[..8]);
+            }
+        }
+    }
+    let oversized = usize::MAX / 8 + 1;
+    assert!(
+        std::panic::catch_unwind(|| BE::reim4_real_convolution_1coeff(0, &mut [0.0; 8], &[], oversized, &[0.0; 8], 1)).is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| BE::reim4_real_convolution_1coeff(0, &mut [0.0; 8], &[0.0; 8], 1, &[], oversized)).is_err()
+    );
+    assert!(std::panic::catch_unwind(|| BE::reim4_real_mat1col_prod(oversized, &mut [0.0; 8], &[], &[])).is_err());
+    assert!(std::panic::catch_unwind(|| BE::reim4_real_mat2cols_prod(oversized, &mut [0.0; 16], &[], &[])).is_err());
+    assert!(std::panic::catch_unwind(|| BE::reim4_real_mat2cols_2ndcol_prod(oversized, &mut [0.0; 8], &[], &[])).is_err());
+}
+
+/// Compares a four-prime SIMD basis change against scalar modular arithmetic.
+pub fn test_conjugate_invariant_ntt_basis_change<P: crate::reference::ntt4x30::primes::PrimeSetCrt4>(
+    apply: impl Fn(&[crate::reference::conjugate_invariant::ConjugateInvariantNtt; 4], &mut [u64]),
+) {
+    use crate::reference::conjugate_invariant::ConjugateInvariantNtt;
+    for n in [1, 2, 4, 8, 16, 32, 64, 256, 1024, 8192, 32768, 65536] {
+        for inverse in [false, true] {
+            let plans =
+                std::array::from_fn(|k| ConjugateInvariantNtt::new(n, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, inverse));
+            let mut seed = 0x1234_5678_9abc_def0u64;
+            let mut actual: Vec<_> = (0..4 * n)
+                .map(|j| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    let q = P::Q[j % 4] as u64;
+                    match (j / 4) % 9 {
+                        0 => 0,
+                        1 => 1,
+                        2 => q - 1,
+                        3 => q,
+                        4 => 2 * q - 1,
+                        5 => u64::MAX,
+                        6 => 1 << 63,
+                        _ => seed,
+                    }
+                })
+                .collect();
+            for (k, value) in actual[..4].iter_mut().enumerate() {
+                *value = if inverse { u64::MAX } else { P::Q[k] as u64 };
+            }
+            let mut expected = actual.clone();
+            for k in 0..4 {
+                plans[k].apply(&mut expected[k..], 4, P::Q[k] as u64);
+            }
+            apply(&plans, &mut actual);
+            assert_eq!(actual, expected, "n={n}, inverse={inverse}, prime bits={}", P::LOG_Q);
+        }
+    }
+    let mut plans =
+        std::array::from_fn(|k| ConjugateInvariantNtt::new(8, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, false));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply(&plans, &mut [0; 16]))).is_err());
+    plans[1] = ConjugateInvariantNtt::new(16, P::Q[1] as u64, P::OMEGA[1] as u64, P::MAX_LOG_N, false);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply(&plans, &mut [0; 32]))).is_err());
+}
+
 /// Multiplies through an independent degree-2n negacyclic embedding.
 pub fn ambient_product(a: &[i64], b: &[i64]) -> Vec<i64> {
     let n = a.len();

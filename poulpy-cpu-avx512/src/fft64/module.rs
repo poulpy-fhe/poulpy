@@ -38,7 +38,7 @@ use crate::{
             reim4_convolution_1coeff_avx512, reim4_convolution_2coeffs_avx512, reim4_convolution_apply_accumulate_avx512,
             reim4_convolution_apply_avx512, reim4_convolution_avx512, reim4_convolution_by_real_const_1coeff_avx512,
             reim4_convolution_by_real_const_2coeffs_avx512, reim4_convolution_pairwise_apply_avx512,
-            reim4_extract_1blk_from_reim_contiguous_avx512, reim4_save_1blk_to_reim_avx512,
+            reim4_extract_1blk_from_reim_contiguous_avx512, reim4_real_convolution_1coeff_avx512, reim4_save_1blk_to_reim_avx512,
             reim4_save_1blk_to_reim_contiguous_avx512, reim4_save_2blk_to_reim_avx512, reim4_vec_mat1col_product_avx512,
             reim4_vec_mat2cols_2ndcol_product_avx512, reim4_vec_mat2cols_product_avx512,
         },
@@ -642,6 +642,18 @@ impl Reim4BlkMatVec for FFT64Avx512 {
 }
 
 impl Reim4Convolution for FFT64Avx512 {
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        unsafe { reim4_real_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        let (lo, hi) = dst.split_at_mut(8);
+        Self::reim4_real_convolution_1coeff(k, lo.try_into().unwrap(), a, a_size, b, b_size);
+        Self::reim4_real_convolution_1coeff(k + 1, hi.try_into().unwrap(), a, a_size, b, b_size);
+    }
+
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { reim4_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }

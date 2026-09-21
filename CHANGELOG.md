@@ -89,6 +89,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- CI NTT4x30 transforms and NTT3x42 IFMA basis changes use SIMD kernels.
+  Real-slot FFT convolution uses AVX-512 or NEON kernels; NEON also specializes real-slot matrix products.
+
 - Add conjugate invariant module constructors and ring arithmetic for FFT64, NTT4x30, and IFMA CPU backends, including Rayon wrappers. The `n`-coefficient basis has ambient order `4n`.
 
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.

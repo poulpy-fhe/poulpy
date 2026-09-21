@@ -5,6 +5,11 @@ pub struct ConjugateInvariantNtt {
 }
 
 impl ConjugateInvariantNtt {
+    /// Direct and reflected coefficient multipliers, indexed by coefficient.
+    pub fn factors(&self) -> &[[u64; 2]] {
+        &self.factors
+    }
+
     /// Uses a primitive `2^(max_log_n + 1)`-th root for the supplied prime.
     pub fn new(n: usize, q: u64, omega: u64, max_log_n: u32, inverse: bool) -> Self {
         assert!(n.is_power_of_two() && n <= (1usize << (max_log_n - 1)));

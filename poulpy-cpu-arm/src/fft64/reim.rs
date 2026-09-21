@@ -170,6 +170,21 @@ impl ReimArith for FFT64Neon {}
 #[cfg(target_arch = "aarch64")]
 impl Reim4BlkMatVec for FFT64Neon {
     #[inline(always)]
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 8>(nrows, dst, u, v, 0) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<2, 16>(nrows, dst, u, v, 0) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 16>(nrows, dst, u, v, 8) }
+    }
+
+    #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         crate::neon::reim4_arith::reim4_extract_1blk_contiguous_neon(m, rows, blk, dst, src);
     }
@@ -204,6 +219,18 @@ impl Reim4BlkMatVec for FFT64Neon {}
 
 #[cfg(target_arch = "aarch64")]
 impl Reim4Convolution for FFT64Neon {
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        unsafe { crate::neon::reim4_conv::reim4_real_convolution_1coeff_neon(k, dst, a, a_size, b, b_size) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        let (lo, hi) = dst.split_at_mut(8);
+        Self::reim4_real_convolution_1coeff(k, lo.try_into().unwrap(), a, a_size, b, b_size);
+        Self::reim4_real_convolution_1coeff(k + 1, hi.try_into().unwrap(), a, a_size, b, b_size);
+    }
+
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         crate::neon::reim4_conv::reim4_convolution_1coeff_neon(k, dst, a, a_size, b, b_size);
