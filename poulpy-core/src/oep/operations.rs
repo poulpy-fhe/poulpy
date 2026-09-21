@@ -264,14 +264,11 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
 /// # Safety
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
-pub unsafe trait GLWEMulXpMinusOneImpl: GLWERotateImpl + GLWESubImpl {
+pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
-    {
-        crate::oep::derived::operations::glwe_mul_xp_minus_one_derived::<Self, _, _>(module, k, res, a)
-    }
+        A: GLWEToBackendRef<Self>;
 
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where

@@ -76,26 +76,3 @@ where
     BE::glwe_negate_assign(module, res);
     BE::glwe_add_assign(module, res, a);
 }
-
-/// `res = (X^k - 1) * a`, preserving raw limbs and destination metadata.
-pub(crate) fn glwe_mul_xp_minus_one_derived<BE, R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-where
-    BE: crate::oep::GLWEMulXpMinusOneImpl,
-    R: GLWEToBackendMut<BE>,
-    A: GLWEToBackendRef<BE>,
-{
-    let a = a.to_backend_ref();
-    {
-        let res = res.to_backend_ref();
-        assert_eq!(res.n(), module.n() as u32);
-        assert_eq!(a.n(), module.n() as u32);
-        assert_eq!(res.rank(), a.rank());
-    }
-    BE::glwe_rotate(module, k, res, &&a);
-    let mut res = res.to_backend_mut();
-    // This ring operation acts on raw limbs without radix conversion. Subtraction
-    // requires matching radix metadata, so use a local view with the source radix;
-    // changing copied view metadata leaves the owning destination unchanged.
-    res.base2k = a.base2k;
-    BE::glwe_sub_assign(module, &mut &mut res, &&a);
-}

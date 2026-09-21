@@ -2,10 +2,10 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssign,
-        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
-        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign,
-        VecZnxZero,
+        VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRshAssign,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
@@ -1666,6 +1666,11 @@ where
 
 /// HAL-based reference implementation, independently callable from backend overrides.
 pub trait GLWEMulXpMinusOneReference<BE: Backend> {
+    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>;
+
     fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
@@ -1673,8 +1678,27 @@ pub trait GLWEMulXpMinusOneReference<BE: Backend> {
 
 impl<BE: Backend> GLWEMulXpMinusOneReference<BE> for Module<BE>
 where
-    Self: ModuleN + VecZnxMulXpMinusOneAssign<BE>,
+    Self: ModuleN + VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE>,
 {
+    /// Raw limb arithmetic: the destination keeps its own radix and no digit is
+    /// converted or renormalized, so the two radices need not agree.
+    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE>,
+    {
+        let res = &mut res.to_backend_mut();
+        let a = &a.to_backend_ref();
+
+        assert_eq!(res.n(), self.n() as u32);
+        assert_eq!(a.n(), self.n() as u32);
+        assert_eq!(res.rank(), a.rank());
+
+        for i in 0..res.rank().as_usize() + 1 {
+            self.vec_znx_mul_xp_minus_one(k, &mut res.data, i, &a.data, i);
+        }
+    }
+
     fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
@@ -2252,6 +2276,13 @@ macro_rules! impl_glwe_rotate_reference_full {
 macro_rules! impl_glwe_mul_xp_minus_one_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEMulXpMinusOneImpl for $be {
+    fn glwe_mul_xp_minus_one<R, A>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, a: &A)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        A: $crate::layouts::GLWEToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulXpMinusOneReference<$be>>::glwe_mul_xp_minus_one_reference::<R, A>(module, k, res, a)
+        }
+
     fn glwe_mul_xp_minus_one_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
     where
         R: $crate::layouts::GLWEToBackendMut<$be> {
