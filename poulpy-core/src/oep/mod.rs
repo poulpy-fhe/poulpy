@@ -116,5 +116,3 @@ pub use crate::{
     impl_glwe_zero_reference_full, impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
     impl_operations_reference_full, impl_polynomial_evaluation_derived_full,
 };
-
-pub use crate::reference::{encryption::*, operations::*};

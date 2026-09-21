@@ -102,8 +102,6 @@ pub(crate) mod encryption {
         pub(crate) use crate::reference::encryption::gglwe::*;
     }
 
-    pub(crate) mod glwe {}
-
     pub(crate) mod glwe_switching_key {
         pub(crate) use crate::reference::encryption::glwe_switching_key::*;
     }
@@ -118,8 +116,6 @@ pub(crate) mod noise {
 
     pub(crate) use crate::reference::noise::*;
 }
-
-pub(crate) mod operations {}
 
 pub mod test_suite;
 

@@ -25,6 +25,7 @@ mod encryption_keys;
 mod external_product;
 mod gadget;
 mod keyswitch;
+mod linear_transformation;
 mod operations;
 mod polynomial_evaluation;
 mod preparation;
@@ -39,6 +40,7 @@ pub use encryption_keys::*;
 pub use external_product::*;
 pub use gadget::*;
 pub use keyswitch::*;
+pub use linear_transformation::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
 pub use preparation::*;
@@ -189,6 +191,3 @@ macro_rules! core_parity_test_suite {
         }
     };
 }
-
-mod linear_transformation;
-pub use linear_transformation::*;
