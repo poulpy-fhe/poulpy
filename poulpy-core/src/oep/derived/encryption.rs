@@ -16,8 +16,7 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchArena, ScratchOwned},
+    layouts::{Module, ScratchArena},
     source::Source,
 };
 
@@ -43,6 +42,14 @@ pub(crate) fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBacken
     BE::fill_lwe_mask_from_source(module, base2k, res, &mut Source::new(seed_xa));
 }
 
+pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
+    module: &Module<BE>,
+    infos: &A,
+) -> usize {
+    assert_eq!(infos.n(), module.n() as u32);
+    BE::glwe_encrypt_sk_tmp_bytes(module, infos)
+}
+
 pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     module: &Module<BE>,
     res: &mut R,
@@ -50,6 +57,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     enc_infos: &E,
     source_xe: &mut Source,
     source_xa: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
     R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
@@ -70,9 +78,11 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             _ => {}
         }
 
-        // Its ok to allocate scratch space here since pk is usually generated only once.
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(BE::glwe_encrypt_sk_tmp_bytes(module, res));
-        BE::glwe_encrypt_zero_sk(module, res, sk, enc_infos, source_xe, source_xa, &mut scratch.borrow());
+        assert!(
+            scratch.available() >= glwe_public_key_generate_tmp_bytes_derived(module, res),
+            "insufficient scratch for GLWE public key generation"
+        );
+        BE::glwe_encrypt_zero_sk(module, res, sk, enc_infos, source_xe, source_xa, scratch);
     }
     *res.dist_mut() = *sk.dist();
 }

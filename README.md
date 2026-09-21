@@ -51,7 +51,7 @@ Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy
 
 ### Layer Anatomy
 
-HAL and core separate the public API from backend dispatch:
+HAL, core and CKKS separate the public API from backend dispatch:
 
 ```text
 public API → delegates → backend *Impl
@@ -69,7 +69,9 @@ public API → delegates → backend *Impl
 The reference HAL kernels live in `poulpy-cpu-ref`. Core algorithms built from
 HAL operations live in `poulpy-core::reference`. Compositions of other core
 operations live in core's private `oep::derived` module and inherit the selected
-backend implementations of their component operations.
+backend implementations of their component operations. CKKS follows the same
+rule: its reference algorithms compose core/HAL operations, while private
+derived defaults compose CKKS operations.
 
 ### Overriding at Any Level
 
@@ -128,13 +130,14 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | HAL, cross backend | `NTT4x30Ref` vs `FFT64Ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` |
 | Core noise | `FFT64Ref`, `NTT4x30Ref` | — | — | — |
 | Core parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| CKKS parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
 
 The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
-Backend crates register the core suites for portable FFT/NTT, AVX,
+Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
 AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
-sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts only,
-with an additional optional NEON run under QEMU.
+sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts only;
+CKKS runs natively, with an additional optional NEON run under QEMU.
 
 Each x86 backend job compiles its test binary separately, then enforces a five-minute
 test execution budget. SDE uses bounded degrees for ordinary HAL/core sweeps and
@@ -148,6 +151,22 @@ Run the portable core parity and encryption suites with:
 ```sh
 cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-core -- \
   core_parity core_encryption --test-threads=2
+```
+
+CKKS keeps its independent mathematical conformance tests and adds caller-selected
+circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
+`Quad` on all 16 CPU backend types, with Rayon variants compared against their
+serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
+runs include the `ckks_parity` groups, including controlled-sampling encryption.
+See [implementing a CKKS backend](poulpy-ckks/docs/ckks-contracts.md).
+
+Run portable CKKS parity, the full conformance suite, or the
+[polynomial example](poulpy-cpu-ref/examples/ckks_poly2.rs) with:
+
+```sh
+cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-ckks -- ckks_parity
+cargo test -p poulpy-cpu-ref --profile ci --features enable-ckks
+cargo run -p poulpy-cpu-ref --example ckks_poly2 --features enable-ckks
 ```
 
 ## Bivariate Polynomial Representation

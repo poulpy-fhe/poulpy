@@ -301,8 +301,9 @@ mod packing {
     //!
     //! Input indices identify positions in the degree-`N` output ring. The map must
     //! be nonempty, `log_gap_out <= log2(N)`, and every index must be below `N` and
-    //! divisible by `2^log_gap_out`. These conditions are checked before input or
-    //! destination mutation. The input ciphertexts are consumed by valid calls.
+    //! divisible by `2^log_gap_out`. All inputs must share the same degree, radix,
+    //! precision and rank. These conditions are checked before input or destination
+    //! mutation. The input ciphertexts are consumed by valid calls.
 
     use crate::api::GLWEBytesOf;
     use std::collections::HashMap;
@@ -313,8 +314,8 @@ mod packing {
     };
 
     use crate::{
-        GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
-        layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc},
+        GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
+        layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
     };
 
     #[allow(clippy::too_many_arguments)]
@@ -334,7 +335,6 @@ mod packing {
             + GLWEShift<BE>
             + GLWEAdd<BE>
             + GLWENormalize<BE>
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ?Sized,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEInfos,
@@ -348,20 +348,20 @@ mod packing {
 
             if let Some(b) = b.as_deref_mut() {
                 let a_layout = a.glwe_layout();
-                let mut tmp_b = module.glwe_alloc_from_infos(&a_layout);
-                module.glwe_rotate_assign(-t, a, scratch);
+                let (mut tmp_b, mut scratch_1) = scratch.borrow().take_glwe_scratch(&a_layout);
+                module.glwe_rotate_assign(-t, a, &mut scratch_1);
                 module.glwe_sub(&mut tmp_b, a, b);
-                module.glwe_rsh(1, &mut tmp_b, scratch);
+                module.glwe_rsh(1, &mut tmp_b, &mut scratch_1);
                 module.glwe_add_assign(a, b);
-                module.glwe_rsh(1, a, scratch);
-                module.glwe_normalize_assign(&mut tmp_b, scratch);
+                module.glwe_rsh(1, a, &mut scratch_1);
+                module.glwe_normalize_assign(&mut tmp_b, &mut scratch_1);
                 let key = keys
                     .get_automorphism_key(p, tmp_b.k())
                     .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
-                module.glwe_automorphism_assign(&mut tmp_b, &key, scratch);
+                module.glwe_automorphism_assign(&mut tmp_b, &key, &mut scratch_1);
                 module.glwe_sub_assign(a, &tmp_b);
-                module.glwe_normalize_assign(a, scratch);
-                module.glwe_rotate_assign(t, a, scratch);
+                module.glwe_normalize_assign(a, &mut scratch_1);
+                module.glwe_rotate_assign(t, a, &mut scratch_1);
             } else {
                 module.glwe_rsh(1, a, scratch);
                 let key = keys
@@ -373,13 +373,13 @@ mod packing {
             let t: i64 = 1 << (b.n().log2() - i - 1);
 
             let b_layout = b.glwe_layout();
-            let mut tmp_b = module.glwe_alloc_from_infos(&b_layout);
+            let (mut tmp_b, mut scratch_1) = scratch.borrow().take_glwe_scratch(&b_layout);
             module.glwe_rotate(t, &mut tmp_b, b);
-            module.glwe_rsh(1, &mut tmp_b, scratch);
+            module.glwe_rsh(1, &mut tmp_b, &mut scratch_1);
             let key = keys
                 .get_automorphism_key(p, tmp_b.k())
                 .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
-            module.glwe_automorphism_sub_negate(b, &tmp_b, &key, scratch)
+            module.glwe_automorphism_sub_negate(b, &tmp_b, &key, &mut scratch_1)
         }
     }
 
@@ -434,7 +434,6 @@ mod packing {
             + GLWEAutomorphism<BE>
             + GaloisElement
             + ModuleLogN
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWERotate<BE>
             + GLWESub<BE>
             + GLWEShift<BE>
@@ -461,6 +460,9 @@ mod packing {
             .next()
             .map(|input| input.glwe_layout())
             .expect("packing requires at least one input");
+        for (&index, input) in &a {
+            assert_eq!(input.glwe_layout(), a_layout, "packing input {index} has a different layout");
+        }
         let key_infos = keys
             .get_automorphism_key(-1, a_layout.k().max(res.k()))
             .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));

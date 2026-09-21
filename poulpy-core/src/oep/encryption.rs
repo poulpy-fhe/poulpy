@@ -140,6 +140,13 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
 
+    fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        super::derived::encryption::glwe_public_key_generate_tmp_bytes_derived(module, infos)
+    }
+
     fn glwe_public_key_generate<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
@@ -147,12 +154,13 @@ pub unsafe trait EncryptionImpl: Backend {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
     {
-        super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, enc_infos, source_xe, source_xa)
+        super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
     fn gglwe_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize

@@ -75,6 +75,11 @@ backend reports 1,024 bytes, its test must run with that budget even if the
 comparison backend reports 4,096 bytes. Giving both implementations 4,096 bytes
 would hide an underestimate.
 
+Public-key generation follows this contract: allocate the caller's arena using
+`glwe_public_key_generate_tmp_bytes` and pass it to `glwe_public_key_generate`.
+The derived default sizes and uses that arena through the selected secret-key
+encryption implementation, without allocating an internal scratch buffer.
+
 Prepared keys and transformed buffers can have different layouts across
 backends. Prepare each backend's objects independently and compare the integer
 outputs of operations that use them. Host-only inspection and noise diagnostics

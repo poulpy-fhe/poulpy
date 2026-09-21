@@ -1392,3 +1392,6 @@ poulpy_core::core_parity_test_suite! {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }
+
+#[cfg(feature = "enable-ckks")]
+mod ckks_overrides;

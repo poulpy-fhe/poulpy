@@ -2,8 +2,9 @@
 //!
 //! All test functions are generic over `BE: super::helpers::TestContextBackend` and take
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
-//! The backend-specific test harnesses (in downstream crates such as `poulpy-cpu-ref`)
-//! instantiate and invoke these functions via the [`ckks_backend_test_suite!`] macro.
+//! Downstream backend crates instantiate these independent mathematical tests
+//! through [`ckks_backend_test_suite!`]. The [`parity`] suite compares a
+//! caller-selected pair through production operation dispatch.
 
 use poulpy_core::{
     EncryptionLayout,
@@ -35,7 +36,7 @@ pub struct CKKSTestParams {
 
 impl CKKSTestParams {
     /// Derives the full plaintext [`CKKSLayout`] from `prec_meta`/`prec_log_budget`,
-    /// reusing the param set's `n`/`base2k` (rank-1). This is the single source of
+    /// reusing the param set's `n`, `base2k`, and `rank`. This is the single source of
     /// truth for the test plaintext precision; storing it would duplicate `n`,
     /// `base2k`, and the `log_delta + log_budget` sum.
     pub fn prec(&self) -> CKKSLayout {
@@ -102,7 +103,7 @@ impl CKKSTestParams {
         .unwrap()
     }
 
-    /// Layout of a rank-1 GLWE key-switching key whose input ciphertext has
+    /// Layout of a GLWE key-switching key at the selected rank whose input ciphertext has
     /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
     /// `sparseToDense` keys, sized at the input level and at `k_boot`).
     pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
@@ -120,8 +121,8 @@ impl CKKSTestParams {
     }
 }
 
-/// NTT4x30 parameter set.
-pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+/// Radix-52 parameter set.
+pub const BASE52_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 40,
@@ -136,8 +137,8 @@ pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     rank: 1,
 };
 
-/// FFT64 parameter set.
-pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+/// Radix-19 parameter set.
+pub const BASE19_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 19,
     k: 8 * 19,
@@ -152,8 +153,8 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     rank: 1,
 };
 
-/// NTT4x30 parameter set.
-pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
+/// Radix-52 parameter set.
+pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 80,
@@ -175,11 +176,11 @@ pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
 /// construction), so higher-rank coverage uses this subset instead.
-/// [`NTT4X30_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
+/// [`BASE52_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
 /// subset ([`ckks_backend_rank2_test_suite!`](crate::ckks_backend_rank2_test_suite)).
-pub const NTT4X30_PARAMS_F64_RANK2: CKKSTestParams = CKKSTestParams {
+pub const BASE52_PARAMS_F64_RANK2: CKKSTestParams = CKKSTestParams {
     rank: 2,
-    ..NTT4X30_PARAMS_F64
+    ..BASE52_PARAMS_F64
 };
 
 #[macro_export]
@@ -1044,3 +1045,6 @@ pub mod ship;
 pub mod slots_kind;
 pub mod sub;
 pub mod sub_unsafe;
+
+/// Paired OEP conformance with caller-selected comparison backends.
+pub mod parity;

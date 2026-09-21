@@ -1,14 +1,7 @@
 use crate::CKKSResult as Result;
-use crate::reference::imag::CKKSImagReference;
 
-use poulpy_core::{
-    GLWECopy, GLWENegate, GLWERotate, GLWEShift,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
-};
-use poulpy_hal::{
-    api::ModuleN,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -51,65 +44,67 @@ pub unsafe trait CKKSImagImpl: Backend {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSImagImpl for BE
-where
-    BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>:
-        crate::reference::imag::CKKSImagReference<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-{
-    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_mul_i_tmp_bytes_reference(res_size)
-    }
-
-    fn ckks_mul_i_into_impl<Dst, Src>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-    {
-        module.ckks_mul_i_into_reference(dst, src, scratch)
-    }
-
-    fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    {
-        module.ckks_mul_i_assign_reference(dst, scratch)
-    }
-
-    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_div_i_tmp_bytes_reference(res_size)
-    }
-
-    fn ckks_div_i_into_impl<Dst, Src>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-    {
-        module.ckks_div_i_into_reference(dst, src, scratch)
-    }
-
-    fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    {
-        module.ckks_div_i_assign_reference(dst, scratch)
-    }
-}
-
+/// Implements this contract with the callable reference algorithms.
 #[macro_export]
 macro_rules! impl_ckks_imag_reference {
     ($be:ty) => {
-        impl $crate::reference::imag::CKKSImagReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        unsafe impl $crate::oep::CKKSImagImpl for $be {
+            fn ckks_mul_i_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                $crate::reference::imag::CKKSImagReference::ckks_mul_i_tmp_bytes_reference(module, res_size)
+            }
+
+            fn ckks_mul_i_into_impl<Dst, Src>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                src: &Src,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
+            {
+                $crate::reference::imag::CKKSImagReference::ckks_mul_i_into_reference(module, dst, src, scratch)
+            }
+
+            fn ckks_mul_i_assign_impl<Dst>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+            {
+                $crate::reference::imag::CKKSImagReference::ckks_mul_i_assign_reference(module, dst, scratch)
+            }
+
+            fn ckks_div_i_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                $crate::reference::imag::CKKSImagReference::ckks_div_i_tmp_bytes_reference(module, res_size)
+            }
+
+            fn ckks_div_i_into_impl<Dst, Src>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                src: &Src,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
+            {
+                $crate::reference::imag::CKKSImagReference::ckks_div_i_into_reference(module, dst, src, scratch)
+            }
+
+            fn ckks_div_i_assign_impl<Dst>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+            {
+                $crate::reference::imag::CKKSImagReference::ckks_div_i_assign_reference(module, dst, scratch)
+            }
+        }
     };
 }
 pub use crate::impl_ckks_imag_reference;

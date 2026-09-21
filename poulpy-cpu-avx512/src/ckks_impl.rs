@@ -7,9 +7,9 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_ckks::{
     impl_ckks_add_reference, impl_ckks_conjugate_reference, impl_ckks_copy_reference, impl_ckks_dft_reference,
-    impl_ckks_encapsulated_mod_up_reference, impl_ckks_encryption_reference, impl_ckks_imag_reference, impl_ckks_mul_reference,
-    impl_ckks_neg_reference, impl_ckks_plaintext_reference, impl_ckks_pow2_reference, impl_ckks_rotate_reference,
-    impl_ckks_sub_reference,
+    impl_ckks_encapsulated_mod_up_reference, impl_ckks_encryption_reference, impl_ckks_eval_mod_reference,
+    impl_ckks_imag_reference, impl_ckks_mul_reference, impl_ckks_neg_reference, impl_ckks_plaintext_reference,
+    impl_ckks_polynomial_evaluation_reference, impl_ckks_pow2_reference, impl_ckks_rotate_reference, impl_ckks_sub_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx512);
@@ -105,9 +105,17 @@ impl_ckks_plaintext_reference!(NTT4x30Avx512);
 impl_ckks_plaintext_reference!(NTT3x42Ifma);
 
 impl_ckks_dft_reference!(FFT64Avx512);
+impl_ckks_eval_mod_reference!(FFT64Avx512);
+impl_ckks_polynomial_evaluation_reference!(FFT64Avx512);
 impl_ckks_dft_reference!(NTT4x30Avx512);
+impl_ckks_eval_mod_reference!(NTT4x30Avx512);
+impl_ckks_polynomial_evaluation_reference!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_dft_reference!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_ckks_eval_mod_reference!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_ckks_polynomial_evaluation_reference!(NTT3x42Ifma);
 
 #[cfg(feature = "enable-rayon")]
 impl_ckks_conjugate_reference!(FFT64Avx512Rayon);
@@ -141,6 +149,10 @@ impl_ckks_sub_reference!(FFT64Avx512Rayon);
 impl_ckks_plaintext_reference!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_dft_reference!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_eval_mod_reference!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_polynomial_evaluation_reference!(FFT64Avx512Rayon);
 
 #[cfg(feature = "enable-rayon")]
 mod ntt4x30_rayon_defaults {
@@ -162,6 +174,8 @@ mod ntt4x30_rayon_defaults {
     impl_ckks_sub_reference!(NTT4x30Avx512Rayon);
     impl_ckks_plaintext_reference!(NTT4x30Avx512Rayon);
     impl_ckks_dft_reference!(NTT4x30Avx512Rayon);
+    impl_ckks_eval_mod_reference!(NTT4x30Avx512Rayon);
+    impl_ckks_polynomial_evaluation_reference!(NTT4x30Avx512Rayon);
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -184,4 +198,6 @@ mod ifma_rayon_defaults {
     impl_ckks_sub_reference!(NTT3x42IfmaRayon);
     impl_ckks_plaintext_reference!(NTT3x42IfmaRayon);
     impl_ckks_dft_reference!(NTT3x42IfmaRayon);
+    impl_ckks_eval_mod_reference!(NTT3x42IfmaRayon);
+    impl_ckks_polynomial_evaluation_reference!(NTT3x42IfmaRayon);
 }

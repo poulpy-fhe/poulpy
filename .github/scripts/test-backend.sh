@@ -28,7 +28,9 @@ filters=()
 if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   filters=(test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy)
-  if [[ "$mode" == emulated ]]; then
+  if [[ "$mode" == native ]]; then
+    filters+=(ckks_parity)
+  else
     filters+=(--skip ::ntt_n)
     if [[ "$backend" == avx512 ]]; then
       # Large-ring kernel paths have focused cases; exhaustive sweeps remain native.

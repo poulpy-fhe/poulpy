@@ -60,20 +60,20 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_decrypt_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
+    fn ckks_decrypt_tmp_bytes_reference<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
         Self: GLWEBytesOf<BE>,
-        A: GLWEInfos + CKKSInfos,
+        Pt: CKKSInfos,
+        Ct: GLWEInfos + CKKSInfos,
         Self:
             GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextReference<BE>,
     {
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
-                // `ckks_extract_pt` shifts into the destination plaintext, not
-                // into the ciphertext: size it by the destination's allocated
-                // limb width, which this signature bounds by the ciphertext's.
-                .max(self.ckks_extract_pt_tmp_bytes_reference(ct_infos.max_size()))
+                // Extraction uses the destination's physical limb allocation,
+                // which can exceed either object's effective precision.
+                .max(self.ckks_extract_pt_tmp_bytes_reference(pt_infos.max_size()))
     }
 
     fn ckks_decrypt_reference<Dpt, Dct, S>(
@@ -97,3 +97,5 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSEncryptionReference<BE> for poulpy_hal::layouts::Module<BE> {}

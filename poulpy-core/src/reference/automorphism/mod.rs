@@ -108,9 +108,7 @@ where
         + poulpy_hal::api::VecZnxBigSubSmallAssign<BE>
         + poulpy_hal::api::VecZnxBigSubSmallNegateAssign<BE>
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes
-        + poulpy_hal::api::VecZnxIdftNormalizeConsumeTmpBytes
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
-        + poulpy_hal::api::VecZnxNormalizeTmpBytes,
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

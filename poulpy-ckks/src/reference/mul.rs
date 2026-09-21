@@ -610,3 +610,5 @@ pub(crate) fn mul_pt_params_raw(
         cnv_offset,
     ))
 }
+
+impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}

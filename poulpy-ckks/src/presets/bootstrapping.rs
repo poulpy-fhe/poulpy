@@ -609,7 +609,7 @@ mod tests {
         for preset in all().unwrap() {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
-            // FFT64 uses 7-limb high-modulus digits and 1-limb dense-to-sparse digits.
+            // Use 7-limb high-modulus digits and 1-limb dense-to-sparse digits.
             let fft = preset.with_base2k(19).unwrap().with_dsizes(7, 1).unwrap();
             assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
             assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_neon_qemu:
-        description: Run additional NEON HAL and core tests under QEMU on x86
+        description: Run additional NEON HAL, core and CKKS tests under QEMU on x86
         type: boolean
         default: false
 
@@ -98,8 +98,8 @@ jobs:
         shell: bash
         run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
-      - name: Check core documentation
-        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-core
+      - name: Check core and CKKS documentation
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
 
   avx:
     name: AVX backend (native or SDE)
@@ -392,7 +392,7 @@ jobs:
 
   # Optional emulator validation; the required native neon job runs the full suite.
   neon_hal:
-    name: NEON HAL and core (manual QEMU)
+    name: NEON HAL, core and CKKS (manual QEMU)
     if: github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -433,14 +433,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-
 
-      - name: Test NEON HAL and core operations
+      - name: Test NEON HAL, core and CKKS operations
         shell: bash
-        # Match the SDE contract coverage and include constant-convolution kernel tests.
+        # Exercise optional HAL, core and CKKS contract coverage and include constant-convolution kernel tests.
         run: >-
           cargo test -p poulpy-cpu-arm --lib --profile ci
-          --features "enable-neon,enable-rayon" --
+          --features "enable-neon,enable-rayon,enable-ckks" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
-          raw_transform_matches_contract convolution_by_const core_parity core_encryption glwe_copy
+          raw_transform_matches_contract convolution_by_const core_parity core_encryption glwe_copy ckks_parity
           --test-threads=2
 
   miri:

@@ -135,6 +135,13 @@ pub trait GLWEEncryptPk<BE: Backend> {
 }
 
 pub trait GLWEPublicKeyGenerate<BE: Backend> {
+    /// Scratch required to generate a public key with the given output layout.
+    fn glwe_public_key_generate_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    /// Generate a public key using caller-owned scratch. The arena may contain
+    /// arbitrary bytes and must meet [`Self::glwe_public_key_generate_tmp_bytes`].
     fn glwe_public_key_generate<R, S, E>(
         &self,
         res: &mut R,
@@ -142,6 +149,7 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
