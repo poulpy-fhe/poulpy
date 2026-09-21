@@ -164,8 +164,16 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
 
         let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut pk);
-        module.glwe_public_key_generate(&mut pk, &skp, &enc, &mut e, &mut a);
+        module.glwe_public_key_generate(
+            &mut pk,
+            &skp,
+            &enc,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
+        );
         results.push(snapshot_glwe::<B, _>("public_key_generate", &pk));
+        results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
         assert_eq!(pk.dist(), sk.dist());
         let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
         module.glwe_public_key_prepare(&mut pkp, &pk);

@@ -64,8 +64,10 @@ parameters passed to execution. In particular, `ckks_copy_tmp_bytes(dst, src)`
 receives both layouts because narrowing, radix conversion, and intermediate
 storage depend on their relationship. Likewise, `ckks_decrypt_tmp_bytes(pt, ct)`
 includes the plaintext allocation width even when its effective precision is
-lower. An override may report a different size from the reference. EvalMod's
-query dispatches through
+lower. Add/subtract-one calls use `ckks_add_one_tmp_bytes` and
+`ckks_sub_one_tmp_bytes`; their derived queries follow the selected
+plaintext-constant add/subtract implementation. An override may report a
+different size from the reference. EvalMod's query dispatches through
 `CKKSEvalModImpl::ckks_eval_mod_tmp_bytes_impl`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.
 

@@ -47,8 +47,7 @@ where
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
             module.ckks_square_into(&mut doubled, src, tsk, scratch)?;
             module.ckks_mul_pow2_assign(&mut doubled, 1, scratch)?;
-            let one = crate::reference::carry_verb::ckks_one_pt(module, src.base2k())?;
-            module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, scratch)?;
+            module.ckks_sub_one_assign(&mut doubled, scratch)?;
             Ok(doubled)
         }
     }

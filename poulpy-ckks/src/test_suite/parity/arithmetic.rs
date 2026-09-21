@@ -91,7 +91,7 @@ fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Modul
                     );
                     run!(ckks_add_assign_impl, ckks_add_tmp_bytes_impl, la, [&rhs]);
                     raw!(ckks_add_assign_unnormalized_impl, ckks_add_tmp_bytes_impl, la, [&rhs]);
-                    run!(ckks_add_one_assign_impl, ckks_add_tmp_bytes_impl, la, []);
+                    run!(ckks_add_one_assign_impl, ckks_add_one_tmp_bytes_impl, la, []);
                     run!(
                         ckks_add_pt_vec_into_impl,
                         ckks_add_pt_vec_tmp_bytes_impl,
@@ -157,7 +157,7 @@ fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Modul
                     );
                     run!(ckks_sub_assign_impl, ckks_sub_tmp_bytes_impl, la, [&rhs]);
                     raw!(ckks_sub_assign_unnormalized_impl, ckks_sub_tmp_bytes_impl, la, [&rhs]);
-                    run!(ckks_sub_one_assign_impl, ckks_sub_tmp_bytes_impl, la, []);
+                    run!(ckks_sub_one_assign_impl, ckks_sub_one_tmp_bytes_impl, la, []);
                     run!(
                         ckks_sub_pt_vec_into_impl,
                         ckks_sub_pt_vec_tmp_bytes_impl,

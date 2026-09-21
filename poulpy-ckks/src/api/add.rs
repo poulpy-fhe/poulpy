@@ -78,10 +78,13 @@ pub trait CKKSAddOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Scratch bytes for [`Self::ckks_add_one_assign`].
+    fn ckks_add_one_tmp_bytes(&self, res_size: usize) -> usize;
+
     /// Computes `dst += 1` in-place.
     ///
     /// The exact integer constant is added to coefficient slot `0`.
-    /// Metadata is preserved.
+    /// Metadata is preserved. Size scratch with [`Self::ckks_add_one_tmp_bytes`].
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

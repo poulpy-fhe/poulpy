@@ -136,6 +136,7 @@ where
             .max(module.glwe_copy_tmp_bytes(&work, ct))
             .max(module.ckks_add_pt_const_tmp_bytes(work.max_size()))
             .max(module.ckks_sub_pt_const_tmp_bytes(work.max_size()))
+            .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
             .max(bsgs_giant)
             .max(square_scope)
             .max(fused_baby)

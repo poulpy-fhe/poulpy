@@ -46,6 +46,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.
+- Packing uses its reserved arena temporary instead of allocating a GLWE at every merge, and rejects mixed input layouts before mutation. Removed unused HAL scratch-query bounds from the automorphism reference.
 - Derived plaintext-minus-ciphertext subtraction negates the mask as well as the body. GGSW keyswitching respects a shorter destination row count; conversion and automorphism scratch sizing account for selected core overrides.
 
 - **Breaking:** core now uses HAL's reference/derived split. HAL-based algorithms are callable `*Reference` methods or free functions; compositions of other core operations live in `oep::derived` and provide defaults on backend `*Impl` traits. Backends implement `*Impl` explicitly, with family macros available for reference forwarding. The extra abstract reference override layer and `*Composition` names are removed. Derived operations reuse selected backend methods and scratch queries. Their helper functions are crate-private; backends select them through default `*Impl` methods. `GLWETrace` exposes a separate assign scratch query; `ggsw_from_gglwe_tmp_bytes` now also takes source metadata so custom copy implementations receive the correct budget.
@@ -75,10 +77,12 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** add/subtract-one operations have dedicated `ckks_add_one_tmp_bytes` / `ckks_sub_one_tmp_bytes` queries, following the selected plaintext-constant implementation by default. Shared polynomial and EvalMod budgets include these queries. Add/subtract reference wrappers and backend macros share one definition.
+- CKKS parity runs natively, with optional NEON QEMU coverage. Encryption parity no longer takes an unused scalar type parameter.
 - Multiplication and division by `i` use direct core monomial rotations by `N/2` and `-N/2`. Division no longer composes multiplication with negation; both directions are callable reference algorithms selected by `CKKSImagImpl`.
 - **Breaking:** backend CKKS operation families require explicit `*Impl` implementations. Reference macros select the callable lower-layer algorithms; add/sub-one, DFT format wrappers and one-shot polynomial evaluation are crate-private derived defaults that honor selected constituent operations. EvalMod now dispatches its scratch query through the backend contract. CKKS copy and decryption scratch queries take both layouts so they can account for the selected lower-layer operations and destination allocation; shared workflow budgets include CKKS copy, and rotation/conjugation queries include narrowing shifts. Delegates impose only the selected contract's requirements.
 - Canonical slot permutation and coefficient quantization live in `poulpy_ckks::reference::encoding`; backend code retains FFT execution, plans, caching and staging. Coefficient encoding rejects non-finite and signed-overflow inputs before writing, including `Quad` conversions that previously saturated silently.
-- Added caller-selected CKKS circuit parity, controlled-draw encryption, exact scratch guards and independent override regressions. Backend registrations and native/emulated CI cover encoding (including PaCo/SHIP), arithmetic, DFT, polynomial evaluation, EvalMod and encapsulated ModUp. The crate's contract guide documents reference/derived ownership and backend-independent validation.
+- Added caller-selected CKKS circuit parity, controlled-draw encryption, exact scratch guards and independent override regressions. Backend registrations, native CI and optional NEON QEMU runs cover encoding (including PaCo/SHIP), arithmetic, DFT, polynomial evaluation, EvalMod and encapsulated ModUp. The crate's contract guide documents reference/derived ownership and backend-independent validation.
 
 - Restore S2C-first bootstrapping precision after #285 without changing the modulus budget.
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.

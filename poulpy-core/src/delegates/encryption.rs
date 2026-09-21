@@ -188,6 +188,12 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEPublicKeyGenerate<BE>,
+    fn glwe_public_key_generate_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::glwe_public_key_generate_tmp_bytes(self, infos)
+    },
     fn glwe_public_key_generate<R, S, E>(
         &self,
         res: &mut R,
@@ -195,12 +201,13 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        BE::glwe_public_key_generate(self, res, sk, enc_infos, source_xe, source_xa)
+        BE::glwe_public_key_generate(self, res, sk, enc_infos, source_xe, source_xa, scratch)
     }
 );
 

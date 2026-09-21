@@ -300,7 +300,8 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_noise_tmp_bytes(&glwe_infos)
-                .max(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos)),
+                .max(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos))
+                .max(module.glwe_public_key_generate_tmp_bytes(&glwe_infos)),
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
@@ -310,7 +311,14 @@ where
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
         let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&glwe_infos);
-        module.glwe_public_key_generate(&mut pk, &sk_prepared, &glwe_infos, &mut source_xe, &mut source_xa);
+        module.glwe_public_key_generate(
+            &mut pk,
+            &sk_prepared,
+            &glwe_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
 
         module.vec_znx_fill_uniform_source(
             base2k,

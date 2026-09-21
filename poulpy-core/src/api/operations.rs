@@ -45,9 +45,10 @@ pub trait GLWETrace<BE: Backend> {
 /// Packs the selected coefficients through a merge tree and normalized trace.
 ///
 /// The input map must be nonempty, `log_gap_out <= log2(N)`, and every index
-/// must be below `N` and divisible by `2^log_gap_out`. Invalid maps or gaps
-/// panic before changing inputs or destination. Valid calls consume and mutate
-/// the input ciphertexts; their final values are not preserved.
+/// must be below `N` and divisible by `2^log_gap_out`. All inputs must have the
+/// same degree, radix, precision and rank. Invalid maps, mixed input layouts or
+/// gaps panic before changing inputs or destination. Valid calls consume and
+/// mutate the input ciphertexts; their final values are not preserved.
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 

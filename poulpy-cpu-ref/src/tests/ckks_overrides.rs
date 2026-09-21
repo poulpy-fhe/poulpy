@@ -39,8 +39,7 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
         poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_reference(module, dst, src, &mut remaining)
     }
 }
-poulpy_ckks::impl_ckks_add_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_sub_reference!(OverrideBackend);
+mod carry;
 poulpy_ckks::impl_ckks_neg_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference!(OverrideBackend);

@@ -34,6 +34,10 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         BE::ckks_sub_assign_impl(self, dst, a, scratch)
     }
 
+    fn ckks_sub_one_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_sub_one_tmp_bytes_impl(self, res_size)
+    }
+
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

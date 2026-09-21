@@ -4,8 +4,8 @@ use crate::{
     Distribution, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecretTensorFactory, GLWETensorKeyLayout,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretTensorFactory,
+        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
             GLWETensorKeyPreparedFactory,
@@ -164,6 +164,7 @@ where
         for (positions, log_gap_out, gi) in [
             (vec![0], 0, &g),
             (vec![0, r.n() / 2, r.n() - 1], 0, &g),
+            (vec![0, 1, r.n() / 2, r.n() / 2 + 1], 0, &g),
             (vec![0, 2, 4], 1, &g),
             (vec![0, 2, 4], 1, &g_wide),
             (vec![0, r.n() / 2, r.n() - 1], 0, &g_wide),
@@ -249,6 +250,73 @@ where
         }
         check_invalid_pack!(BR, r, keys_r);
         check_invalid_pack!(BT, t, keys_t);
+        // Put each mismatched field at every actual HashMap iteration position.
+        // This deterministically covers a wider input hidden after the layout used
+        // for sizing, independently of the map's randomized order.
+        macro_rules! check_mixed_pack_layouts {
+            ($be:ty, $module:ident, $keys:ident) => {{
+                for mixed in [
+                    g_wide,
+                    GLWELayout {
+                        n: Degree(2 * g.n.0),
+                        ..g
+                    },
+                    GLWELayout {
+                        base2k: Base2K((b - 1) as u32),
+                        ..g
+                    },
+                    GLWELayout {
+                        rank: Rank(g.rank.0 + 1),
+                        ..g
+                    },
+                ] {
+                    let positions = [0, $module.n() / 2, $module.n() - 1];
+                    for mixed_slot in 0..positions.len() {
+                        let initial = ref_glwe(r, &g, &mut source);
+                        let mut out = $module.glwe_alloc_from_infos(&g);
+                        initial.transfer_into(&mut out);
+                        let mut expected: Vec<_> = positions.iter().map(|_| ref_glwe(r, &g, &mut source)).collect();
+                        let mut operands: Vec<_> = expected
+                            .iter()
+                            .map(|input| {
+                                let mut operand = $module.glwe_alloc_from_infos(&g);
+                                input.transfer_into(&mut operand);
+                                operand
+                            })
+                            .collect();
+                        let mut map: HashMap<_, _> = positions.iter().copied().zip(operands.iter_mut()).collect();
+                        let (&position, input) = map.iter_mut().nth(mixed_slot).unwrap();
+                        let operand_index = positions.iter().position(|&index| index == position).unwrap();
+                        expected[operand_index] = ref_glwe(r, &mixed, &mut source);
+                        **input = $module.glwe_alloc_from_infos(&mixed);
+                        expected[operand_index].transfer_into(*input);
+                        let mut scratch = poisoned_scratch::<$be>($module.glwe_pack_tmp_bytes(&g, &g, &k));
+                        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            $module.glwe_pack(&mut out, map, 0, &$keys, &mut scratch.borrow());
+                        }));
+                        assert!(
+                            rejected.is_err(),
+                            "packing accepted mixed layouts: {mixed:?} slot={mixed_slot}"
+                        );
+                        let mut have = r.glwe_alloc_from_infos(&g);
+                        out.transfer_into(&mut have);
+                        assert_eq!(initial, have, "mixed packing layouts changed output");
+                        for (want, operand) in expected.iter().zip(&operands) {
+                            assert_eq!(
+                                want.glwe_layout(),
+                                operand.glwe_layout(),
+                                "mixed packing layouts changed metadata"
+                            );
+                            let mut have = r.glwe_alloc_from_infos(want);
+                            operand.transfer_into(&mut have);
+                            assert_eq!(*want, have, "mixed packing layouts consumed an input");
+                        }
+                    }
+                }
+            }};
+        }
+        check_mixed_pack_layouts!(BR, r, keys_r);
+        check_mixed_pack_layouts!(BT, t, keys_t);
     }
 }
 

@@ -86,14 +86,13 @@ where
 /// Both backends must receive identical draws, either through matching streams
 /// or a caller-installed controlled-sampling scope. Equal seeds alone do not
 /// establish that condition. Each backend prepares the same secret independently.
-pub fn test_encryption_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_encryption_parity<BR, BT>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     Module<BR>: GLWESecretPreparedFactory<BR>,
     Module<BT>: GLWESecretPreparedFactory<BT>,
 {
-    let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(exercise(params, r), exercise(params, t));
 }
 
@@ -110,9 +109,7 @@ macro_rules! ckks_encryption_parity_test_suite {
                     ::poulpy_hal::layouts::Module::<$tested>::new(params.n as u64),
                     |tested| {
                         let reference = ::poulpy_hal::layouts::Module::<$reference>::new(params.n as u64);
-                        $crate::test_suite::parity::test_encryption_parity::<$reference, $tested, f64>(
-                            params, &reference, tested,
-                        );
+                        $crate::test_suite::parity::test_encryption_parity::<$reference, $tested>(params, &reference, tested);
                     },
                 );
             }

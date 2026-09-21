@@ -10,7 +10,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeTmpBytes,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -38,9 +38,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
