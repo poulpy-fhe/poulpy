@@ -274,6 +274,62 @@ where
     }
 }
 
+/// Checks the advertised precision on both CI bootstrapping paths.
+/// Backends register these full-size checks as ignored tests.
+pub fn ci_bootstrapping_preset_meets_precision<BE>(ci: Module<BE>, preset: crate::presets::bootstrapping::CIBootstrappingPreset)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let preset = if preset.base2k() > BE::MAX_BASE2K {
+        preset.with_base2k(BE::MAX_BASE2K).unwrap().with_dsizes(7, 1, 1).unwrap()
+    } else {
+        preset
+    };
+    let params = crate::test_suite::CKKSTestParams {
+        ring_kind: crate::CKKSRingKind::ConjugateInvariant,
+        n: preset.n(),
+        base2k: preset.base2k(),
+        k: preset.bootstrap_k(),
+        prec_meta: preset.input_layout().meta,
+        prec_log_budget: preset.input_k() - preset.log_delta(),
+        hw: preset.dense_secret_hamming_weight(),
+        dsize: preset.keys_layout().bootstrap_keys.automorphism_key.dsize.as_usize(),
+        rank: 1,
+    };
+    let mut run = CIBootstrappingRun::setup(
+        ci,
+        preset.plan(),
+        params,
+        *preset.keys_layout(),
+        preset.input_k(),
+        preset.output_k(),
+    );
+    for pair in [false, true] {
+        run.bootstrap(pair);
+        for (index, precision) in run.precision(pair).iter().enumerate() {
+            println!(
+                "PRECISION backend={} preset={} base2k={} pair={pair} output={index} min={:.2}b avg={:.2}b",
+                std::any::type_name::<BE>(),
+                preset.name(),
+                preset.base2k(),
+                precision.min_log2_prec,
+                precision.avg_log2_prec
+            );
+            assert!(
+                precision.min_log2_prec >= preset.log2_precision() as f64,
+                "{} precision {:.2} below {} bits",
+                preset.name(),
+                precision.min_log2_prec,
+                preset.log2_precision()
+            );
+        }
+    }
+}
+
 /// End-to-end fixture for CI bootstrapping conformance tests.
 pub(crate) struct CIBootstrappingRun<BE: Backend> {
     pub(crate) ci: Module<BE>,
@@ -442,6 +498,7 @@ where
                     .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.scratch.borrow())
                     .unwrap();
                 assert!(im.iter().all(|&v| v == 0.0));
+                assert!(re.iter().all(|v| v.is_finite()));
                 precision_stats(&re, want, ct.log_delta())
             })
             .collect()

@@ -130,8 +130,9 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio,
     ///   then the output scale and modulus width are reduced to return to the input scale.
     /// - [`S2CFirst`](crate::layouts::BootstrappingPipeline::S2CFirst): `SlotsToCoeffs → ModUp →
-    ///   CoeffsToSlots → EvalMod`. The first transform uses scaling `1/2`; the
-    ///   output is relabeled at `ct_in.log_delta`.
+    ///   CoeffsToSlots → EvalMod`. Compilation combines the recipe's initial
+    ///   `1/2` scaling with the input factor of two. The output is relabeled
+    ///   at `ct_in.log_delta`.
     ///
     /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
@@ -192,8 +193,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// use the CI module; the context and evaluation keys use `self`.
     /// The context must use full-slot standard transforms, including for sparse inputs.
     /// Conversion is internal, and the input scale and slot count are preserved.
-    /// Reserve `plan.bootstrap_k(output_k, input.log_delta())` bits in the
-    /// output allocation and cover `output_k` bits with the return key.
+    /// Reserve `plan.bootstrap_k(output_k + 1, input.log_delta())` bits in the
+    /// output allocation. The return key must also cover the retained output
+    /// scale: `output_k + 1 + c2s_guard_bits` for S2C-first, or
+    /// `output_k + 1 + f_mod_log_delta - input.log_delta()` for C2S-first.
     fn ckks_ci_bootstrap<F, K, S>(
         &self,
         ci_module: &poulpy_hal::layouts::Module<BE>,

@@ -126,12 +126,19 @@ where
         standard_base2k,
         left_in.k().as_usize().div_ceil(standard_base2k.as_usize()),
     )?;
+    crate::ckks_ensure!(
+        keys.ci_to_standard.gglwe_layout().gadget_k() >= left_in.k(),
+        "CI-to-standard key does not cover the input width"
+    );
     // The return switch runs after the standard pipeline has consumed its budget.
-    let output_k = left_out
+    let return_k = left_out
         .k()
         .as_usize()
         .checked_sub(ctx.output_consumed_bits(left_in.log_delta()))
         .ok_or_else(|| crate::CKKSError::from(anyhow::anyhow!("insufficient CI bootstrap output width")))?;
+    let output_k = return_k
+        .checked_sub(ctx.output_scale_drop(left_in.log_delta()) + 1)
+        .ok_or_else(|| crate::CKKSError::from(anyhow::anyhow!("insufficient CI bootstrap normalization width")))?;
     crate::ckks_ensure!(output_k > left_in.log_delta(), "CI bootstrap output has no message budget");
     crate::layouts::validation::validate_gadget_backend_view(
         "standard-to-CI key",
@@ -139,8 +146,12 @@ where
         &keys.standard_to_ci.to_backend_ref(),
         standard_module.n(),
         standard_base2k,
-        output_k.div_ceil(standard_base2k.as_usize()),
+        return_k.div_ceil(standard_base2k.as_usize()),
     )?;
+    crate::ckks_ensure!(
+        keys.standard_to_ci.gglwe_layout().gadget_k().as_usize() >= return_k,
+        "standard-to-CI key does not cover the return width"
+    );
     let standard_in_layout = GLWELayout {
         n: standard_module.n().into(),
         base2k: standard_base2k,
@@ -158,20 +169,16 @@ where
     let mut packed = standard_module.ckks_ciphertext_alloc_from_glwe_infos(&standard_in_layout);
     packed.set_meta(left_in.meta());
 
-    real_to_complex(standard_module, &mut packed, left_in, keys.ci_to_standard.as_core(), scratch)?;
+    embed_real_ciphertext(standard_module, &mut packed, left_in, scratch)?;
     if let Some(right_in) = right_in {
         let mut right_packed = standard_module.ckks_ciphertext_alloc_from_glwe_infos(&standard_in_layout);
-        real_to_complex(
-            standard_module,
-            &mut right_packed,
-            right_in,
-            keys.ci_to_standard.as_core(),
-            scratch,
-        )?;
+        embed_real_ciphertext(standard_module, &mut right_packed, right_in, scratch)?;
         standard_module.ckks_mul_i_assign(&mut right_packed, scratch)?;
         standard_module.ckks_add_assign(&mut packed, &right_packed, scratch)?;
         packed.set_slots(SlotsKind::Complex);
     }
+
+    standard_module.glwe_keyswitch_assign(&mut packed, &keys.ci_to_standard.as_core().to_backend_ref(), scratch);
 
     let mut refreshed = standard_module.ckks_ciphertext_alloc_from_glwe_infos(&standard_out_layout);
     refreshed.set_meta(left_in.meta());
@@ -179,27 +186,27 @@ where
     standard_module.ckks_bootstrap(&mut refreshed, &packed, ctx, &keys.bootstrap_keys, scratch)?;
     standard_module.glwe_keyswitch_assign(&mut refreshed, &keys.standard_to_ci.as_core().to_backend_ref(), scratch);
     fold_complex_to_real(ci_module, left_out, &refreshed, scratch);
+    crate::ckks_set_log_delta_normalized(ci_module, left_out, left_in.log_delta(), scratch);
 
     if let Some(right_out) = right_out {
         standard_module.ckks_div_i_assign(&mut refreshed, scratch)?;
         fold_complex_to_real(ci_module, right_out, &refreshed, scratch);
+        crate::ckks_set_log_delta_normalized(ci_module, right_out, left_in.log_delta(), scratch);
     }
     Ok(())
 }
 
-fn real_to_complex<BE, K>(
+fn embed_real_ciphertext<BE>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
     src: &CKKSCiphertextOwned<BE>,
-    key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEKeyswitch<BE> + GLWENormalize<BE> + CKKSModuleAlloc<BE>,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: GLWENormalize<BE> + CKKSModuleAlloc<BE>,
 {
     crate::ckks_ensure!(dst.n().as_usize() == 2 * src.n().as_usize(), "invalid CI-to-standard degrees");
     crate::ckks_ensure!(dst.rank() == src.rank(), "invalid CI-to-standard layout");
@@ -210,6 +217,7 @@ where
     dst.set_k(src.k());
     if dst.base2k() == src.base2k() {
         unfold_ciphertext::<BE>(dst, src);
+        module.glwe_normalize_assign(dst, scratch);
     } else {
         let layout = GLWELayout {
             n: dst.n(),
@@ -222,8 +230,6 @@ where
         unfold_ciphertext::<BE>(&mut unfolded, src);
         module.glwe_normalize(dst, &unfolded, scratch);
     }
-    module.glwe_normalize_assign(dst, scratch);
-    module.glwe_keyswitch_assign(dst, &key.to_backend_ref(), scratch);
     Ok(())
 }
 
@@ -336,6 +342,7 @@ fn fold_complex_to_real<BE: Backend<ZnxWord = i64>>(
 {
     dst.set_meta(CKKSMeta {
         slots: SlotsKind::Real,
+        log_delta: src.log_delta() + 1,
         ..src.meta()
     });
     dst.set_k(src.k());

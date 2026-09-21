@@ -62,6 +62,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-ckks`
 
 - Add conjugate invariant bootstrapping through a standard ring of twice the degree, with internal ring conversion and dedicated switching keys. `ckks_ci_bootstrap` refreshes one real ciphertext; `ckks_ci_bootstrap_pair` explicitly packs two. S2C-first without EvalRound+ uses one EvalMod for a single input. Both preserve CI provenance, scale, and slot metadata.
+- Compile S2C-first normalization into the initial transform. CI bootstrap allocations reserve one trace bit, and return keys cover the retained output scale. Outputs recover the input scale after extraction; paired CI inputs use one inbound key switch.
+- Add CI bootstrapping presets for `2^15` and `2^16` real slots at scale `2^35`, with 19-bit minimum measured precision, covering single and paired evaluation and both ring switching keys.
 
 - **Breaking:** CKKS values, keys, and prepared operands carry their ring kind and degree; evaluation rejects incompatible rings before mutation. `CKKSInfos` and `CKKSLayout` expose `ring_kind`. Import Core keys with `CKKSKey::from_raw_parts` and retain their provenance through checked preparation; key collections use `CKKSKey::from_keys`, and custom providers wrap the existing Core lookup traits with `CKKSKey::from_raw_provider`. Linear transformations use CKKS wrappers. DFT/key preparation and ciphertext normalization return `Result`; host polynomial encoding takes an explicit ring kind.
 

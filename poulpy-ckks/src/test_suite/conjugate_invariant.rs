@@ -8,7 +8,7 @@ use crate::{
     },
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::LWEInfos;
+use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{HostBytesBackend, HostDataMut, HostDataRef, Module},
@@ -482,20 +482,32 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             fn ckks_ci_bootstrap_s2c() {
                 let params = $params;
                 let ci = ($config).new_module::<$backend>(params.n as u64);
-                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 0, false);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, true, true, 0, false, 6,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_without_guards() {
+                let params = $params;
+                let ci = ($config).new_module::<$backend>(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, true, true, 0, false, 0,
+                );
             }
             #[test]
             fn ckks_ci_bootstrap_s2c_sparse() {
                 let params = $params;
                 let ci = ($config).new_module::<$backend>(params.n as u64);
-                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 2, false);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, true, true, 2, false, 6,
+                );
             }
             #[test]
             fn ckks_ci_bootstrap_s2c_without_encapsulation() {
                 let params = $params;
                 let ci = ($config).new_module::<$backend>(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, false, 0, false,
+                    params, ci, true, false, 0, false, 6,
                 );
             }
             #[test]
@@ -503,14 +515,30 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let params = $params;
                 let ci = ($config).new_module::<$backend>(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, false, true, 0, false,
+                    params, ci, false, true, 0, false, 0,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_eval_round() {
                 let params = $params;
                 let ci = ($config).new_module::<$backend>(params.n as u64);
-                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(params, ci, true, true, 0, true);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params, ci, true, true, 0, true, 6,
+                );
+            }
+            #[test]
+            #[ignore = "full CI bootstrapping preset at 2^15 slots"]
+            fn ckks_ci_bootstrap_preset_n15() {
+                let preset = $crate::presets::bootstrapping::ci_n15_d35_k720_p19_s2c().unwrap();
+                let ci = ($config).new_module::<$backend>(preset.n() as u64);
+                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(ci, preset);
+            }
+            #[test]
+            #[ignore = "full CI bootstrapping preset at 2^16 slots"]
+            fn ckks_ci_bootstrap_preset_n16() {
+                let preset = $crate::presets::bootstrapping::ci_n16_d35_k720_p19_s2c().unwrap();
+                let ci = ($config).new_module::<$backend>(preset.n() as u64);
+                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(ci, preset);
             }
             #[test]
             fn ckks_ci_leveled() {
@@ -783,6 +811,7 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     encapsulate: bool,
     log_sparsity: usize,
     eval_round: bool,
+    guard_bits: usize,
 ) where
     BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -847,14 +876,14 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     )
     .unwrap();
     let plan = if s2c_first {
-        plan.with_c2s_guard_bits(6).unwrap()
+        plan.with_c2s_guard_bits(guard_bits).unwrap()
     } else {
         plan
     };
-    let output_k = 200;
+    let output_k = 4 * params.base2k - 1;
     let input_k = plan.input_k(log_delta + log_msg_ratio);
     params.n = ci.n();
-    params.k = plan.bootstrap_k(output_k, log_delta);
+    params.k = plan.bootstrap_k(output_k + 1, log_delta);
     params.ring_kind = crate::CKKSRingKind::ConjugateInvariant;
     params.prec_meta = crate::CKKSMeta {
         log_delta,
@@ -878,7 +907,17 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
             }),
         },
         ci_to_standard: standard_params.ksk_layout(input_k).layout,
-        standard_to_ci: standard_params.ksk_layout(output_k).layout,
+        standard_to_ci: standard_params
+            .ksk_layout(
+                output_k
+                    + 1
+                    + if s2c_first {
+                        plan.c2s_guard_bits()
+                    } else {
+                        plan.eval_mod().f_mod_log_delta - log_delta
+                    },
+            )
+            .layout,
     };
     let mut run = super::presets::CIBootstrappingRun::setup(ci, &plan, params, keys_layout, input_k, output_k);
     for pair in [false, true] {
@@ -907,6 +946,28 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     for output in &mut run.outputs {
         output.set_k(params.k.into());
     }
+    let return_key = &run.keys.standard_to_ci;
+    let return_capacity = return_key.gglwe_layout().gadget_k().as_usize();
+    let mut too_wide = run.ci.ckks_ciphertext_alloc(
+        params.base2k.into(),
+        (return_capacity + 1 + run.context.standard.output_consumed_bits(log_delta)).into(),
+    );
+    let before_too_wide = too_wide.to_host_owned::<BE>();
+    let err = run
+        .standard
+        .ckks_ci_bootstrap(
+            &run.ci,
+            &mut too_wide,
+            &run.inputs[0],
+            &run.context,
+            &run.keys,
+            &mut run.scratch.borrow(),
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("standard-to-CI"), "{err}");
+    assert_eq!(too_wide.data().data().as_ref(), before_too_wide.data().data().as_ref());
+    assert_eq!(too_wide.meta(), before_too_wide.meta());
+    assert_eq!(too_wide.k(), before_too_wide.k());
     let before = run.outputs[0].to_host_owned::<BE>();
     let before_right = run.outputs[1].to_host_owned::<BE>();
     let wrong = run.standard.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
