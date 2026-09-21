@@ -284,6 +284,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
 struct CoreQueryOverrides<'a> {
     module: &'a Module<OverrideBackend>,
     rotate_workspace: usize,
+    copy_calls: RefCell<Vec<(TorusPrecision, usize)>>,
     imag_calls: RefCell<Vec<ImagCoreCall>>,
 }
 
@@ -306,16 +307,24 @@ impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
         res: &R,
         a: &A,
     ) -> usize {
-        CORE_COPY_WORKSPACE + res.max_size() * 64 + poulpy_core::GLWECopy::glwe_copy_tmp_bytes(self.module, res, a)
+        self.copy_calls.borrow_mut().push((res.k(), res.max_size()));
+        CORE_COPY_WORKSPACE
+            + (res.k().as_usize() + res.max_size()) * 64
+            + poulpy_core::GLWECopy::glwe_copy_tmp_bytes(self.module, res, a)
     }
     fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
     where
         R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
         A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
     {
+        let layout = {
+            let res = res.to_backend_ref();
+            (res.k(), res.max_size())
+        };
+        self.copy_calls.borrow_mut().push(layout);
         let (_workspace, mut remaining) = scratch
             .borrow()
-            .take_region(CORE_COPY_WORKSPACE + res.to_backend_mut().max_size() * 64);
+            .take_region(CORE_COPY_WORKSPACE + (layout.0.as_usize() + layout.1) * 64);
         poulpy_core::GLWECopy::glwe_copy(self.module, res, a, &mut remaining)
     }
 }
@@ -504,12 +513,15 @@ impl poulpy_core::GLWEAutomorphism<OverrideBackend> for CoreQueryOverrides<'_> {
 
 #[test]
 fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
+    use poulpy_ckks::CKKSInfos;
     use poulpy_ckks::reference::{conjugate::CKKSConjugateReference, copy::CKKSCopyReference, rotate::CKKSRotateReference};
     use poulpy_core::{GLWECopy, GLWEShift};
+    use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
     let module = Module::<OverrideBackend>::new(64);
     let query = CoreQueryOverrides {
         module: &module,
         rotate_workspace: 0,
+        copy_calls: RefCell::default(),
         imag_calls: RefCell::default(),
     };
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
@@ -517,13 +529,40 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
         log_delta: 16,
         ..Default::default()
     });
-    // Copy retains cross-radix conversion; this path is not a zero-bit shift.
-    let mut dst = module.ckks_ciphertext_alloc(15usize.into(), 128usize.into());
-    let bytes = query.ckks_copy_tmp_bytes_reference(&dst, &src);
-    assert!(bytes >= query.glwe_copy_tmp_bytes(&dst, &src));
-    let mut owned = ScratchOwned::<OverrideBackend>::alloc(bytes);
-    let (mut exact, _) = owned.borrow().split_at(bytes);
-    query.ckks_copy_reference(&mut dst, &src, &mut exact).unwrap();
+    for source_k in [64usize, 61] {
+        SetCKKSInfos::set_k(&mut src, source_k.into());
+        for col in 0..2 {
+            for limb in 0..src.max_size() {
+                let padding = ((limb + 1) * 16).saturating_sub(source_k);
+                for (j, digit) in src.data_mut().at_mut(col, limb).iter_mut().enumerate() {
+                    let value = [-32768i64, -9, 7, 32767][(j + col + limb) % 4];
+                    *digit = (value >> padding) << padding;
+                }
+            }
+        }
+        for base in [16usize, 15, 17] {
+            let mut dst = module.ckks_ciphertext_alloc(base.into(), 128usize.into());
+            dst.data_mut().raw_mut().fill(0x55);
+            let original_layout = (dst.k(), dst.max_size());
+            // The previous ordering stamped the final width before copying.
+            let mut expected = dst.clone();
+            expected.set_meta(src.meta());
+            expected.set_log_budget(src.log_budget());
+            let mut reference_scratch = ScratchOwned::<OverrideBackend>::alloc(module.glwe_copy_tmp_bytes(&expected, &src));
+            module.glwe_copy(&mut expected, &src, &mut reference_scratch.borrow());
+
+            query.copy_calls.borrow_mut().clear();
+            let bytes = query.ckks_copy_tmp_bytes_reference(&dst, &src);
+            let mut owned = ScratchOwned::<OverrideBackend>::alloc(bytes);
+            let (mut exact, _) = owned.borrow().split_at(bytes);
+            query.ckks_copy_reference(&mut dst, &src, &mut exact).unwrap();
+            assert_eq!(*query.copy_calls.borrow(), [original_layout, original_layout]);
+            assert_eq!(dst.data().raw(), expected.data().raw());
+            assert_eq!(dst.meta(), src.meta());
+            assert_eq!(dst.k(), src.k());
+            assert_eq!(dst.max_size(), original_layout.1);
+        }
+    }
     let key = poulpy_core::layouts::GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
@@ -555,6 +594,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
         let query = CoreQueryOverrides {
             module: &module,
             rotate_workspace,
+            copy_calls: RefCell::default(),
             imag_calls: RefCell::default(),
         };
         for output_k in [64usize, 47] {
