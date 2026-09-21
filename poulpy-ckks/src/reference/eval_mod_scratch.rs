@@ -131,6 +131,9 @@ where
     usize::from(needs_work_copy) * compact_work
         + module
             .ckks_copy_tmp_bytes(&work, &work)
+            // Polynomial evaluation finishes by copying into the caller's
+            // destination, whose allocated capacity can exceed the work layout.
+            .max(module.ckks_copy_tmp_bytes(res, &work))
             .max(module.ckks_copy_tmp_bytes(&work, res))
             .max(module.ckks_copy_tmp_bytes(&work, ct))
             .max(module.glwe_copy_tmp_bytes(&work, ct))

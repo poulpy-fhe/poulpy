@@ -12,6 +12,7 @@ thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+ static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
 poulpy_ckks::impl_ckks_plaintext_reference!(OverrideBackend);
@@ -22,7 +23,8 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
         dst: &Dst,
         src: &Src,
     ) -> usize {
-        COPY_WORKSPACE + poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_tmp_bytes_reference(module, dst, src)
+        COPY_WORKSPACE * dst.max_size()
+            + poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_tmp_bytes_reference(module, dst, src)
     }
     fn ckks_copy_impl<Dst, Src>(
         module: &Module<Self>,
@@ -34,8 +36,10 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
         Dst: poulpy_core::layouts::GLWEToBackendMut<Self> + poulpy_ckks::CKKSCtBounds + SetCKKSInfos,
         Src: poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds,
     {
-        let (mut region, mut remaining) = scratch.borrow().take_region(COPY_WORKSPACE);
-        Self::copy_host_to_view(&mut region, &vec![0x5A; COPY_WORKSPACE]);
+        MAX_COPY_CAPACITY.with(|capacity| capacity.set(capacity.get().max(dst.max_size())));
+        let workspace = COPY_WORKSPACE * dst.max_size();
+        let (mut region, mut remaining) = scratch.borrow().take_region(workspace);
+        Self::copy_host_to_view(&mut region, &vec![0x5A; workspace]);
         poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_reference(module, dst, src, &mut remaining)
     }
 }
@@ -69,8 +73,9 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
         REAL_CALLS.with(|calls| calls.set(calls.get() + 1));
-        let _ = (module, res, poly, power_basis, tsk, scratch);
-        Err(anyhow::anyhow!("polynomial override probe").into())
+        poulpy_ckks::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
+            module, res, poly, power_basis, tsk, scratch,
+        )
     }
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
@@ -95,8 +100,9 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
         COMPLEX_CALLS.with(|calls| calls.set(calls.get() + 1));
-        let _ = (module, res, poly, power_basis, tsk, scratch);
-        Err(anyhow::anyhow!("polynomial override probe").into())
+        poulpy_ckks::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
+            module, res, poly, power_basis, tsk, scratch,
+        )
     }
 }
 
@@ -147,8 +153,8 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
 }
 
 struct NoTensorKey;
-impl GetTensorKey<OverrideBackend> for NoTensorKey {
-    fn get_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, OverrideBackend>> {
+impl<BE: Backend> GetTensorKey<BE> for NoTensorKey {
+    fn get_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("linear polynomial dispatch must not request a tensor key")
     }
 }
@@ -207,21 +213,17 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     REAL_CALLS.with(|calls| calls.set(0));
     COMPLEX_CALLS.with(|calls| calls.set(0));
     let real = polynomial(&module);
-    assert!(
-        module
-            .ckks_eval_poly_real_const_coeffs(&mut dst, &src, &real, &NoTensorKey, &mut scratch.borrow())
-            .is_err()
-    );
+    module
+        .ckks_eval_poly_real_const_coeffs(&mut dst, &src, &real, &NoTensorKey, &mut scratch.borrow())
+        .unwrap();
     assert_eq!(REAL_CALLS.with(Cell::get), 1);
     let complex = ComplexBSGSPolynomial {
         re: real,
         im: polynomial(&module),
     };
-    assert!(
-        module
-            .ckks_eval_poly_complex_const_coeffs(&mut dst, &src, &complex, &NoTensorKey, &mut scratch.borrow())
-            .is_err()
-    );
+    module
+        .ckks_eval_poly_complex_const_coeffs(&mut dst, &src, &complex, &NoTensorKey, &mut scratch.borrow())
+        .unwrap();
     assert_eq!(COMPLEX_CALLS.with(Cell::get), 1);
 }
 
@@ -276,6 +278,101 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
             .is_err()
     );
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
+}
+
+#[test]
+fn eval_mod_reference_sizes_the_final_destination_copy() {
+    use poulpy_ckks::{
+        CKKSInfos,
+        layouts::eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly},
+        polynomial::{Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+        reference::eval_mod::{CKKSEvalModOpsReference, ckks_eval_mod_tmp_bytes_reference},
+    };
+    use poulpy_hal::layouts::{HostBytesBackend, ZnxView, ZnxViewMut};
+    let module = Module::<OverrideBackend>::new(64);
+    let reference = Module::<crate::FFT64Ref>::new(64);
+    let host = Module::<HostBytesBackend>::new(64);
+    let coeff_meta = CoeffsMeta::from_delta_budget(8, 8);
+    let poly = || Polynomial::new(Basis::Monomial, vec![0.125f64, 0.5]);
+    let encoded = || {
+        poly()
+            .encode_bsgs_with(&host, 16usize.into(), coeff_meta, SplitStrategy::MinDepth)
+            .unwrap()
+    };
+    let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {
+        n: 64usize.into(),
+        base2k: 16usize.into(),
+        k_aux: 16usize.into(),
+        rank: 1usize.into(),
+        dnum: 4usize.into(),
+        dsize: 1usize.into(),
+    };
+    let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    src.set_meta(CKKSMeta {
+        log_delta: 16,
+        ..Default::default()
+    });
+    src.data_mut().at_mut(0, 0)[0] = 128;
+    src.data_mut().at_mut(1, 0)[1] = -64;
+    let source_before = src.clone();
+    for (complex, inverse) in [(false, false), (true, false), (false, true)] {
+        let params = EvalMod {
+            plan: EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, coeff_meta, 16),
+            range_extension_consts: None,
+            f_mod_input_offset: None,
+            f_mod_bsgs: if complex {
+                EvalModBsgs::Complex(ComplexBSGSPolynomial {
+                    re: encoded(),
+                    im: encoded(),
+                })
+            } else {
+                EvalModBsgs::Real(encoded())
+            },
+            f_mod_inv_bsgs: inverse.then(encoded),
+            f_mod_poly: if complex {
+                EvalModPoly::Complex(ComplexPolynomial::new(Basis::Monomial, vec![0.125, 0.5], vec![0.125, 0.5]))
+            } else {
+                EvalModPoly::Real(poly())
+            },
+            f_mod_inv_poly: inverse.then(poly),
+        };
+        for capacity_k in [128usize, 192] {
+            let mut dst = module.ckks_ciphertext_alloc(src.base2k(), capacity_k.into());
+            dst.set_meta(src.meta());
+            dst.set_k(src.k());
+            dst.data_mut().raw_mut().fill(0x55);
+            assert!(dst.max_size() > src.max_size());
+            let capacity = dst.max_size();
+            let mut expected = dst.clone();
+            let expected_bytes = reference.ckks_eval_mod_tmp_bytes(&expected, &src, &params, &key_infos);
+            let mut expected_scratch = ScratchOwned::<crate::FFT64Ref>::alloc(expected_bytes);
+            reference
+                .ckks_eval_mod(&mut expected, &src, &params, &NoTensorKey, &mut expected_scratch.borrow())
+                .unwrap();
+
+            // Bypass the independent EvalMod dispatch probe and exercise its
+            // real reference circuit with the destination-dependent copy override.
+            let bytes = ckks_eval_mod_tmp_bytes_reference(&module, &dst, &src, &params, &key_infos);
+            let mut owned = ScratchOwned::<OverrideBackend> {
+                data: OverrideBackend::from_host_bytes(&vec![0xA5; bytes]),
+                _phantom: std::marker::PhantomData,
+            };
+            let (mut exact, _) = owned.borrow().split_at(bytes);
+            assert_eq!(exact.available(), bytes);
+            MAX_COPY_CAPACITY.set(0);
+            module
+                .ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, &mut exact)
+                .unwrap();
+            assert_eq!(MAX_COPY_CAPACITY.get(), capacity);
+            assert_eq!(dst.data().raw(), expected.data().raw());
+            assert_eq!(dst.meta(), expected.meta());
+            assert_eq!(dst.k(), expected.k());
+            assert_eq!(dst.max_size(), capacity);
+            assert_eq!(src.data().raw(), source_before.data().raw());
+            assert_eq!(src.meta(), source_before.meta());
+            assert_eq!(src.k(), source_before.k());
+        }
+    }
 }
 
 // The query proxy keeps actual lower-layer arithmetic while independently
