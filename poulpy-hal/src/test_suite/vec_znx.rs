@@ -3,6 +3,8 @@ use super::{
     upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
 };
 
+use rand_core::Rng;
+
 use crate::{
     api::{
         ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
@@ -1361,17 +1363,66 @@ where
         })
     });
 
-    let k = 3 * base2k + 1;
-    let live_size = k.div_ceil(base2k);
-    let low_mask = (1i64 << (base2k - k % base2k)) - 1;
-    let mut host_init = VecZnx::alloc(params.n, cols, size);
-    host_init.raw_mut().fill(0xff);
-    let mut a = upload_vec_znx::<B>(&host_init);
-    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), 0, &mut source);
-    let a = download_vec_znx::<B>(&a);
-    assert!(a.at(0, live_size - 1).iter().all(|value| value & low_mask == 0));
-    for limb in live_size..size {
-        assert_eq!(a.at(0, limb), zero);
+    // Verify the specified stream and draw order independently of the backend's
+    // sampling helpers. Include the radix endpoints, partial final limbs, and
+    // poisoned destination tails and unselected columns.
+    for (seed, prefix_len) in [([0u8; 32], 0), ([0xa5u8; 32], 13), (std::array::from_fn(|i| i as u8), 61)] {
+        for base2k in [1, 17, 62] {
+            for k in [1, base2k, 3 * base2k + 1, size * base2k] {
+                for col in 0..cols {
+                    let mut expected = VecZnx::alloc(n, cols, size);
+                    for (i, value) in expected.raw_mut().iter_mut().enumerate() {
+                        *value = i64::MIN + i as i64;
+                    }
+                    let mut actual = upload_vec_znx::<B>(&expected);
+                    let mut source = Source::new(seed);
+                    let mut expected_source = Source::new(seed);
+                    // Exercise both fresh and previously consumed caller streams.
+                    let mut prefix = [0u8; 61];
+                    source.fill_bytes(&mut prefix[..prefix_len]);
+                    expected_source.fill_bytes(&mut prefix[..prefix_len]);
+                    let mut child_seed = [0u8; 32];
+                    expected_source.fill_bytes(&mut child_seed);
+                    let mut draws = Source::new(child_seed);
+                    let live_size = k.div_ceil(base2k);
+                    let padding = (base2k - k % base2k) % base2k;
+                    let mask = (1u64 << base2k) - 1;
+                    let half = 1i64 << (base2k - 1);
+                    for limb in 0..size {
+                        for value in expected.at_mut(col, limb) {
+                            *value = if limb < live_size {
+                                let digit = (draws.next_u64() & mask) as i64 - half;
+                                if limb == live_size - 1 {
+                                    let unit = 1i64 << padding;
+                                    digit.div_euclid(unit) * unit
+                                } else {
+                                    digit
+                                }
+                            } else {
+                                0
+                            };
+                        }
+                    }
+
+                    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<B>(&mut actual), col, &mut source);
+                    assert_eq!(
+                        download_vec_znx::<B>(&actual),
+                        expected,
+                        "uniform sampling differs from the contract: seed={seed:?}, base2k={base2k}, k={k}, col={col}"
+                    );
+                    // The call consumes exactly one 32-byte seed from its caller,
+                    // regardless of the number of generated limbs or coefficients.
+                    let mut actual_next = [0u8; 96];
+                    let mut expected_next = [0u8; 96];
+                    source.fill_bytes(&mut actual_next);
+                    expected_source.fill_bytes(&mut expected_next);
+                    assert_eq!(
+                        actual_next, expected_next,
+                        "uniform sampling advanced the caller source incorrectly"
+                    );
+                }
+            }
+        }
     }
 }
 

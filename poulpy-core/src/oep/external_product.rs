@@ -303,6 +303,11 @@ where
 
 /// Implements [`GLWEExternalProductReference`] for `Module<$be>` by forwarding every method to
 /// the corresponding free function in [`crate::reference::external_product::glwe`].
+///
+/// Requires [`Backend::DFT_LIMBS_CONTIGUOUS`]: the reference accumulation
+/// narrows DFT views and rejects incompatible backends at compile time when
+/// instantiated. Backends with other layouts must implement
+/// [`GLWEExternalProductReference`] without forwarding to these bodies.
 #[macro_export]
 macro_rules! impl_glwe_external_product_reference_full {
     ($be:ty) => {

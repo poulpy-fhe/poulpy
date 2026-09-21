@@ -248,6 +248,11 @@ where
 /// Canonical GGLWE product over interleaved gadget digits: digit `di` gathers
 /// the source limbs congruent to `dsize - 1 - di` modulo `dsize`. Reference
 /// semantics for every backend hook.
+///
+/// This reference body requires [`Backend::DFT_LIMBS_CONTIGUOUS`] because later
+/// digits accumulate into partial DFT views. Instantiating it without that
+/// capability fails at compile time. Other layouts must implement
+/// [`GGLWEProductDigitsStridedImpl`] instead of forwarding to this body.
 #[doc(hidden)]
 pub fn gglwe_product_digits_strided_reference<BE: Backend>(
     module: &Module<BE>,
@@ -260,6 +265,12 @@ pub fn gglwe_product_digits_strided_reference<BE: Backend>(
 ) where
     Module<BE>: VecZnxDftBytesOf + VecZnxDftCopy<BE> + VmpApplyDftToDft<BE> + VmpApplyDftToDftAdd<BE>,
 {
+    const {
+        assert!(
+            BE::DFT_LIMBS_CONTIGUOUS,
+            "the reference interleaved-digit product requires contiguous DFT limbs; implement GGLWEProductDigitsStridedImpl for other layouts"
+        );
+    }
     assert_ne!(dsize, 0);
     let cols = a.cols();
     let a_size = a.size();

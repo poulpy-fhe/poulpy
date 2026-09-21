@@ -6,7 +6,7 @@ use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
+        ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
@@ -310,7 +310,6 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
-    let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
     let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
@@ -326,7 +325,7 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
             for step_offset in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let steps = step_offset[0];
                 let offset = step_offset[1];
-                let res_init = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut res_init = poisoned_host(module_host, params.n, cols, res_size);
                 let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &res_init, 1, 0);
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &res_init, 1, 0);
 
@@ -349,10 +348,84 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
                     );
                 }
 
-                let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
-                let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
+                for col in 0..cols {
+                    set_expected_idft_column(&mut res_init, col, &a, steps, offset);
+                }
+                let big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
+                let big_test = idft_into_alloc(module_test, &mut res_dft_test);
+                assert_idft_integer_limbs(module_ref, &big_ref, &res_init, &mut scratch_ref);
+                assert_idft_integer_limbs(module_test, &big_test, &res_init, &mut scratch_test);
             }
+        }
+    }
+}
+
+// Observe each integer limb separately through HAL normalization and coefficient
+// transfers. Three 62-bit limbs retain the entire supported big-word range:
+// shifting a single input limb by -124 gives a / 2^186. This prevents carries
+// between input limbs or reduction modulo the sampling base from hiding errors.
+fn assert_idft_integer_limbs<BE>(
+    module: &Module<BE>,
+    big: &VecZnxBigOwned<BE>,
+    expected: &VecZnxOwned<i64>,
+    scratch: &mut ScratchOwned<BE>,
+) where
+    BE: crate::test_suite::TestBackend,
+    Module<BE>: VecZnxBigNormalize<BE>,
+{
+    assert_eq!(big.shape(), expected.shape());
+    let mut observed = module.vec_znx_alloc(big.n(), 1, 3);
+    for col in 0..big.cols() {
+        for limb in 0..big.size() {
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut observed),
+                62,
+                186,
+                -124,
+                0,
+                &big.to_backend_ref().window_limbs(limb, 1, 1),
+                62,
+                col,
+                &mut scratch.arena(),
+            );
+            let observed = download_vec_znx::<BE>(&observed);
+            assert!(observed.at(0, 0).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
+            assert!(observed.at(0, 1).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
+            assert_eq!(observed.at(0, 2), expected.at(col, limb), "col {col}, limb {limb}");
+        }
+    }
+}
+
+fn poisoned_host(module: &Module<HostBytesBackend>, n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
+    let mut host = module.vec_znx_alloc(n, cols, size);
+    for col in 0..cols {
+        for limb in 0..size {
+            host.at_mut(col, limb).fill(17 + col as i64);
+        }
+    }
+    host
+}
+
+fn poison_idft_destination<BE>(module: &Module<BE>, host: &VecZnxOwned<i64>) -> VecZnxBigOwned<BE>
+where
+    BE: crate::test_suite::TestBackend,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
+{
+    let uploaded = upload_vec_znx::<BE>(host);
+    let mut big = module.vec_znx_big_alloc(host.n(), host.cols(), host.size());
+    for col in 0..host.cols() {
+        module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&uploaded), col);
+    }
+    big
+}
+
+fn set_expected_idft_column(expected: &mut VecZnxOwned<i64>, col: usize, a: &VecZnxOwned<i64>, step: usize, offset: usize) {
+    for limb in 0..expected.size() {
+        let source_limb = offset + limb * step;
+        if source_limb < a.size() {
+            expected.at_mut(col, limb).copy_from_slice(a.at(col, source_limb));
+        } else {
+            expected.at_mut(col, limb).fill(0);
         }
     }
 }
@@ -366,37 +439,69 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
     Module<BR>: VecZnxDftApply<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BR>,
+        + VecZnxIdftApply<BR>
+        + VecZnxIdftApplyTmpBytes,
     Module<BT>: VecZnxDftApply<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BT>,
+        + VecZnxIdftApply<BT>
+        + VecZnxIdftApplyTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
-    let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
-    let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = ScratchOwned::alloc(
+        module_ref
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module_ref.vec_znx_idft_apply_tmp_bytes()),
+    );
+    let mut scratch_test = ScratchOwned::alloc(
+        module_test
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module_test.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        a.fill_uniform(params.base2k, &mut source);
 
         for res_size in [1, 2, 3, 4] {
-            for params in [[1, 0], [1, 1], [1, 2], [2, 2]] {
-                let res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, params[0], params[1]);
-                let res_dft_test = dft_of_uploaded_vec_znx(module_test, &a, params[0], params[1]);
-                let res_ref = idft_apply_to_host(module_ref, base2k, &res_dft_ref, res_size, &mut scratch_ref);
-                let res_test = idft_apply_to_host(module_test, base2k, &res_dft_test, res_size, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
+            for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
+                let dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
+                let dft_test = dft_of_uploaded_vec_znx(module_test, &a, step, offset);
+                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
+                let mut big_ref = poison_idft_destination(module_ref, &expected);
+                let mut big_test = poison_idft_destination(module_test, &expected);
+                // Repeating the immutable operation also checks source preservation.
+                for _ in 0..2 {
+                    for col in 0..cols {
+                        module_ref.vec_znx_idft_apply(
+                            &mut big_ref.to_backend_mut(),
+                            col,
+                            &dft_ref.to_backend_ref(),
+                            col,
+                            &mut scratch_ref.arena(),
+                        );
+                        module_test.vec_znx_idft_apply(
+                            &mut big_test.to_backend_mut(),
+                            col,
+                            &dft_test.to_backend_ref(),
+                            col,
+                            &mut scratch_test.arena(),
+                        );
+                        set_expected_idft_column(&mut expected, col, &a, step, offset);
+                        assert_idft_integer_limbs(module_ref, &big_ref, &expected, &mut scratch_ref);
+                        assert_idft_integer_limbs(module_test, &big_test, &expected, &mut scratch_test);
+                    }
+                }
             }
         }
     }
@@ -411,21 +516,21 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
     Module<BR>: VecZnxDftApply<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpA<BR>,
     Module<BT>: VecZnxDftApply<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpA<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
-    let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
-    let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
     let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
@@ -433,64 +538,24 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        a.fill_uniform(params.base2k, &mut source);
 
-        for _res_size in [1, 2, 3, 4] {
-            for params in [[1, 0], [1, 1], [1, 2], [2, 2]] {
-                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, params[0], params[1]);
-                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &a, params[0], params[1]);
-                let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
-                let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
-            }
-        }
-    }
-}
-
-pub fn test_vec_znx_idft_apply_alloc<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
-    params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
-    module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BR>: VecZnxDftApply<BR>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxDftAlloc<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigAlloc<BR>
-        + VecZnxIdftApplyTmpA<BR>,
-    Module<BT>: VecZnxDftApply<BT>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxDftAlloc<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigAlloc<BT>
-        + VecZnxIdftApplyTmpA<BT>,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
-{
-    let base2k = params.base2k;
-    assert_eq!(module_ref.n(), module_test.n());
-    let _n = params.n;
-    let cols = 2;
-    let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref =
-        ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes() | module_ref.vec_znx_idft_apply_tmp_bytes());
-    let mut scratch_test =
-        ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes() | module_test.vec_znx_idft_apply_tmp_bytes());
-
-    for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-
-        for _res_size in [1, 2, 3, 4] {
-            for params in [[1, 0], [1, 1], [1, 2], [2, 2]] {
-                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, params[0], params[1]);
-                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &a, params[0], params[1]);
-                let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
-                let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
+        for res_size in [1, 2, 3, 4] {
+            for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
+                let mut dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
+                let mut dft_test = dft_of_uploaded_vec_znx(module_test, &a, step, offset);
+                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
+                let mut big_ref = poison_idft_destination(module_ref, &expected);
+                let mut big_test = poison_idft_destination(module_test, &expected);
+                for col in 0..cols {
+                    module_ref.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), col, &mut dft_ref.to_backend_mut(), col);
+                    module_test.vec_znx_idft_apply_tmpa(&mut big_test.to_backend_mut(), col, &mut dft_test.to_backend_mut(), col);
+                    set_expected_idft_column(&mut expected, col, &a, step, offset);
+                    // Check after every column: untouched destination columns retain
+                    // their poison, while truncated/extended results match the oracle.
+                    assert_idft_integer_limbs(module_ref, &big_ref, &expected, &mut scratch_ref);
+                    assert_idft_integer_limbs(module_test, &big_test, &expected, &mut scratch_test);
+                }
             }
         }
     }
@@ -1106,15 +1171,8 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                 assert_eq!(got_ref, got_test, "step {step} offset {offset}");
 
                 let mut want = module_host.vec_znx_alloc(params.n, cols, res_size);
-                for j in 0..cols {
-                    for limb in 0..res_size {
-                        let src: usize = offset + limb * step;
-                        if src < a_size {
-                            want.at_mut(j, limb).copy_from_slice(a.at(j, src));
-                        } else {
-                            want.at_mut(j, limb).fill(0);
-                        }
-                    }
+                for col in 0..cols {
+                    set_expected_idft_column(&mut want, col, &a, step, offset);
                 }
                 assert_eq!(got_ref, want, "step {step} offset {offset}");
             }

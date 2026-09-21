@@ -44,7 +44,7 @@ Host-visible code should construct `HostBytesBackend` views directly, either thr
 - `ScalarZnx`: front-end scalar polynomial layout, mainly used for secrets and small plaintexts. Generic code typically consumes it through `ScalarZnxToBackendRef<BE>` / `ScalarZnxToBackendMut<BE>`.
 - `VecZnx`: front-end vector-of-polynomials layout used for LWE/GLWE plaintexts and ciphertexts. Precision is represented by limbs in base `2^k`. Generic execution uses `VecZnxBackendRef` / `VecZnxBackendMut` via `VecZnxToBackendRef<BE>` / `VecZnxToBackendMut<BE>`.
 - `MatZnx`: front-end matrix-of-polynomials layout, used for GGLWE and GGSW-style objects. Generic backends consume it through `MatZnxToBackendRef<BE>` / `MatZnxToBackendMut<BE>`.
-- `VecZnxDft`: backend-specific prepared-domain representation of `VecZnx`. Its storage layout is backend-defined.
+- `VecZnxDft`: backend-specific prepared-domain representation of `VecZnx`. Its storage layout is backend-defined. The `with_limb_range_mut` helper can narrow a view only when the backend opts into `Backend::DFT_LIMBS_CONTIGUOUS`: each complete limb must occupy a contiguous byte region of equal size, with equal-sized column blocks in column order. Generic host `zero_at` also requires this capability. CPU backends satisfy the contract. Other layouts retain whole-object views and backend-defined operations. Unsupported narrowing or indexed zeroing panics before touching storage; core reference gadget-product and external-product bodies that narrow views reject incompatible backend instantiations at compile time.
 - `VecZnxBig`: backend-specific big-coefficient representation, typically used after multiplication or convolution and later normalized back into `VecZnx`.
 - `SvpPPol`: backend-specific prepared form of `ScalarZnx` for scalar-vector products.
 - `VmpPMat`: backend-specific prepared form of `MatZnx` for vector-matrix products.
@@ -67,14 +67,16 @@ At this layer, APIs are expected to be backend-generic. In practice that means:
 
 ### **poulpy-hal/oep**
 
-This module provides open extension points that can be implemented to provide a concrete backend to any crate built on **`poulpy-hal/api`** and **`poulpy-hal/layouts`** — including **`poulpy-core`**, **`poulpy-ckks`**, **`poulpy-bin-fhe`**, or any external project. Poulpy-HAL itself is dispatch-only: portable default implementations live in `poulpy-cpu-ref`, and accelerated backends (e.g. `poulpy-cpu-avx`) selectively override hot paths while inheriting everything else.
+This module provides open extension points that can be implemented to provide a concrete backend to any crate built on **`poulpy-hal/api`** and **`poulpy-hal/layouts`** — including **`poulpy-core`**, **`poulpy-ckks`**, **`poulpy-bin-fhe`**, or any external project. The required methods define the backend implementation surface. HAL supplies backend-generic compositions in [`oep::derived`](./src/oep/derived.rs) as default bodies for operations that can be expressed using those methods and the supplied scratch. Backends may override these bodies with optimized kernels. Mutation variants whose signatures cannot provide the temporary storage needed by a composition remain required methods; each such exception is documented on its OEP method.
+
+The `poulpy-cpu-ref` crate separately provides portable CPU kernels and host-storage helpers in `hal_defaults`. CPU backends can reuse these helpers while selecting their own low-level kernels; device backends implement the required methods for their native storage and inherit HAL's compatible derived compositions.
 
 
 ---------
 
 ### **poulpy-hal/delegates**
 
-This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to the matching per-family OEP trait implemented by `BE` (for example `HalVecZnxImpl<BE>`, `HalVmpImpl<BE>`, or `HalConvolutionImpl<BE>`).
+This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to the matching per-family OEP trait implemented by `BE` (for example `HalVecZnxImpl`, `HalVmpImpl`, or `HalConvolutionImpl`).
 
 
 ---------
@@ -108,7 +110,7 @@ Delegate in `poulpy-hal`:
 ```rust
 impl<BE> VecZnxAdd<BE> for Module<BE>
 where
-    BE: Backend + HalVecZnxImpl<BE>,
+    BE: Backend<ZnxWord = i64> + HalVecZnxImpl,
 {
     fn vec_znx_add(
         &self,
@@ -124,34 +126,41 @@ where
 }
 ```
 
-Backend implementation (AVX keeps defaults unless it overrides):
+Backend implementation (the CPU helper macros bind required methods to CPU kernels and leave HAL compositions inherited where appropriate):
 
 ```rust
-unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+unsafe impl HalVecZnxImpl for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 ```
 
-Default in `poulpy-cpu-ref`:
+CPU helper in `poulpy-cpu-ref` (excerpt from `HalVecZnxDefault`):
 
 ```rust
-pub trait HalVecZnxDefault<BE: Backend>: Backend {
-    fn vec_znx_add_default(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+pub trait HalVecZnxDefault: Backend<ZnxWord = i64>
+where
+    Self::OwnedBuf: HostDataMut,
+{
+    fn vec_znx_add_default<'a>(
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'a, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'a, Self>,
         b_col: usize,
-    )
-    where
-        BE: ZnxAdd + ZnxCopy + ZnxZero,
+    ) where
+        Self: ZnxAdd + ZnxCopy + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: PartialEq + Eq + Sized + Default + AsRef<[u8]> + Sync,
     {
-        vec_znx_add::<BE>(res, res_col, a, a_col, b, b_col);
+        vec_znx_add::<Self>(res, res_col, a, a_col, b, b_col);
     }
 }
 ```
+
+The CPU helper uses host-storage traits because it implements CPU arithmetic. The public API and HAL's `oep::derived` compositions operate through backend-native views.
 
 ### Host Views vs Backend Views
 

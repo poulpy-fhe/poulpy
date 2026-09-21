@@ -6,6 +6,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- AVX-512/IFMA HAL CI runs natively when supported, with pinned, checksum-verified Intel SDE as the fallback, including Rayon variants. Native ARM CI runs the full NEON backend suite on every push and pull request; additional QEMU HAL tests on x86 are available through the manual `run_neon_qemu` workflow input. The AVX-512 execution filters cover HAL; CKKS ModUp runtime coverage remains in the separate CKKS follow-up to #234. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
+- HAL conformance now pins uniform sampling's seeded output and caller-stream advancement, registers DFT-copy parity on every accelerated CPU backend and its Rayon variant, and checks inverse-transform limbs and poisoned destinations at independently varied widths.
+- **Breaking, behaviour:** `Backend::DFT_LIMBS_CONTIGUOUS` explicitly opts a backend into partial DFT limb-range views and indexed host zeroing; limbs contain equal-sized column blocks in column order. It defaults to false and is forwarded by `impl_backend_from!`. Existing CPU layouts opt in. Whole-buffer reborrows work for every layout, while incompatible partial ranges and indexed zeroing panic before touching storage. Core reference gadget-product and external-product bodies that require partial views reject incompatible backend instantiations at compile time; custom overrides remain available.
+
 - `PrimeSet::MAX_LOG_N` describes the supported negacyclic NTT degree and root order.
   It defaults to 16 for compatibility with existing custom prime sets.
 
