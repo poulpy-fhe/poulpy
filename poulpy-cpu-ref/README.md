@@ -35,6 +35,9 @@ Higher-level backend wiring is feature-gated:
 - `enable-core` wires the reference backends into the `poulpy-core` reference implementations.
 - `enable-ckks` wires the reference backends into the `poulpy-ckks` reference implementations and
   also enables core support.
+- `enable-test-suite` ships the portable comparison adapters other backend crates run their core
+  parity suites against. Those adapters answer from a controlled-sampling scope and panic outside
+  one, so enable this from `[dev-dependencies]` only, never in a shipping build.
 
 Useful test commands:
 

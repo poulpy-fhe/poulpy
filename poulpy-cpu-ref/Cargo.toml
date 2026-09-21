@@ -12,6 +12,10 @@ documentation = "https://docs.rs/poulpy-cpu-ref"
 [features]
 enable-core = []
 enable-ckks = ["dep:poulpy-ckks", "enable-core"]
+# Ships the portable comparison adapters other backend crates test against.
+# They panic outside a controlled-sampling scope, so keep this out of a build
+# that is not running tests: enable it from `[dev-dependencies]` only.
+enable-test-suite = ["enable-core"]
 
 [dependencies]
 anyhow = {workspace = true}
