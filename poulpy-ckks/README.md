@@ -302,13 +302,14 @@ power basis built from the encrypted input:
 ```rust,ignore
 use poulpy_ckks::{
     api::CKKSPolynomialEvaluationOps,
+    layouts::CKKSRingKind,
     polynomial::{Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
 // host side: degree-31 Chebyshev interpolation of sin on [-1, 1], in BSGS form
 let poly = Polynomial::chebyshev_interpolate(DEGREE, -1.0, 1.0, f64::sin)?;
-let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
+let bsgs = poly.encode_bsgs(&host_module, CKKSRingKind::Standard, BASE2K.into(), COEFF_META)?;
 
 // encrypted side: populate the Chebyshev power basis, then evaluate
 let mut pb = PowerBasis::new(Basis::Chebyshev, ct_x);

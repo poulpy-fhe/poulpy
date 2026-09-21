@@ -570,11 +570,12 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
 {
     use crate::{
         CKKSCompositionError,
-        api::{CKKSAddManyOps, CKKSDotProductOps, CKKSEncryptOps},
+        api::{CKKSAddManyOps, CKKSDotProductOps, CKKSEncryptOps, CKKSEvalModOps},
         layouts::{
             CKKSKey, CKKSRingKind, LinearTransformationBabySteps, LinearTransformationPrepared, UnnormalizedCKKSCiphertext,
+            eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
         },
-        polynomial::{Basis, EncodeBSGS, Polynomial},
+        polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
         power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
     };
     use poulpy_core::{
@@ -791,6 +792,34 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     });
     assert!(i > 1);
     rejected!(ci.ckks_eval_poly_real_const_coeffs(&mut dst, &ci_ct, &mixed_poly, &ci_tsk, &mut scratch.borrow()));
+    let mut eval_mod = compile_eval_mod::<BE, f64>(
+        params.base2k.into(),
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosCheby,
+            log_msg_ratio: 3,
+            f_mod_degree: 3,
+            f_mod_interval: 1,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: crate::CoeffsMeta::from_delta_budget(10, 2),
+            f_mod_log_delta: 10,
+        },
+        ci,
+        &mut scratch.borrow(),
+    )
+    .unwrap();
+    let constants = eval_mod.range_extension_consts.take().unwrap();
+    let mut wrong_constants = standard.ckks_pt_coeffs_alloc(constants.n().as_usize(), constants.base2k(), constants.k());
+    wrong_constants.set_meta(constants.meta());
+    eval_mod.range_extension_consts = Some(wrong_constants);
+    rejected!(ci.ckks_eval_mod(&mut dst, &ci_ct, &eval_mod, &ci_tsk, &mut scratch.borrow()));
+    eval_mod.range_extension_consts = Some(constants);
+    let mut wrong_offset = standard.ckks_pt_coeffs_alloc(1, params.base2k.into(), eval_mod.plan.coeffs_meta.k);
+    wrong_offset.set_meta(eval_mod.plan.coeffs_meta.meta);
+    eval_mod.f_mod_input_offset = Some(wrong_offset);
+    rejected!(ci.ckks_eval_mod(&mut dst, &ci_ct, &eval_mod, &ci_tsk, &mut scratch.borrow()));
     let mut powers = PowerBasis::new(Basis::Monomial, ci_ct.clone());
     assert!(powers.insert(2, std_ct.clone()).is_err());
     assert!(!powers.contains_power(2));

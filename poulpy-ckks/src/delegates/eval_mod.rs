@@ -180,6 +180,9 @@ where
         if let Some(poly) = &params.f_mod_inv_bsgs {
             super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, poly)?;
         }
+        for pt in params.range_extension_consts.iter().chain(params.f_mod_input_offset.iter()) {
+            ring.check_coefficients("ckks_eval_mod", pt)?;
+        }
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }
