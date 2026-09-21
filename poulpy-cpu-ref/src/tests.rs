@@ -25,7 +25,11 @@ fn bootstrapping_presets_respect_max_base2k() {
     for preset in all().unwrap() {
         let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
         let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();
-        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+        let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+        assert_eq!(
+            (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
+            (19, fft_dsize, 1)
+        );
         assert_eq!(
             (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
             (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
