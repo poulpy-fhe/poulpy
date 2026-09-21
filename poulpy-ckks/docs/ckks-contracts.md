@@ -21,7 +21,7 @@ operations, so their overrides remain effective.
 | OEP family | Canonical implementation |
 |---|---|
 | `CKKSAddImpl`, `CKKSSubImpl` | [`reference/add.rs`](../src/reference/add.rs), [`reference/sub.rs`](../src/reference/sub.rs); adding/subtracting one are derived plaintext compositions. |
-| `CKKSCopyImpl`, `CKKSNegImpl`, `CKKSPow2Impl`, `CKKSImagImpl` | Corresponding [`reference`](../src/reference/) modules; division by `i` derives from multiplication by `i` and negation. |
+| `CKKSCopyImpl`, `CKKSNegImpl`, `CKKSPow2Impl`, `CKKSImagImpl` | Corresponding [`reference`](../src/reference/) modules; multiplication and division by `i` use direct core monomial rotations by `N/2` and `-N/2`. |
 | `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including ordinary/prepared and plaintext products. |
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
 | `CKKSPlaintextZnxImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |

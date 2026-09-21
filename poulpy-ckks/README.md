@@ -125,7 +125,7 @@ all parameters.
 | `api` | Public evaluator traits implemented on `Module<BE>`. |
 | `delegates` | Crate-private dispatch, validation, and API compositions such as affine operations and dot products. |
 | `oep` | Explicit backend `*Impl` contracts; no blanket selection of operation implementations. `CKKSImpl` aggregates capabilities. |
-| `oep::derived` | Crate-private same-layer defaults: add/subtract one, division by `i`, one-shot polynomial evaluation, and the six DFT format/direction wrappers. |
+| `oep::derived` | Crate-private same-layer defaults: add/subtract one, one-shot polynomial evaluation, and the six DFT format/direction wrappers. |
 | `reference` | Callable lower-layer algorithms and canonical encoding definitions. Their implementation bounds do not constrain an unrelated override. |
 | `layouts` | Ciphertexts, plaintexts, metadata, allocation, prepared plans, and backend-resident encoding buffers. |
 | `encoding` | PaCo and SHIP scheme embeddings and explicitly named host helpers, also exposed through `reference::encoding`. |
