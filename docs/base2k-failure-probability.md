@@ -80,7 +80,7 @@ The term $5L$ covers the transforms, including twiddle errors. The remaining var
 - Separate complex products and additions contribute $2/3+(d+1)/6-1/(3d)$.
 - Two fused updates per complex product contribute $(d+1/2)/3$, since both updates round a growing partial sum.
 
-Including these partial-sum errors prevents underestimating error by simply multiplying single-product error by $\sqrt d$. Inverse scaling by $N/2$ is exact in binary floating point. All current FFT64 backends opt into this common envelope. Statistical FFT roundoff analysis is described by [Weinstein](https://www.ll.mit.edu/r-d/publications/roundoff-noise-floating-point-fast-fourier-transform-computation); [§6.1 of the FHE paper](https://eprint.iacr.org/2023/771) uses measured multiplication-error variance and a Gaussian model.
+Including these partial-sum errors prevents underestimating error by simply multiplying single-product error by $\sqrt d$. Inverse scaling by $N/2$ is exact in binary floating point. All current FFT64 backends implement `BackendMaxBase2k` using this common envelope. Statistical FFT roundoff analysis is described by [Weinstein](https://www.ll.mit.edu/r-d/publications/roundoff-noise-floating-point-fast-fourier-transform-computation); [§6.1 of the FHE paper](https://eprint.iacr.org/2023/771) uses measured multiplication-error variance and a Gaussian model.
 
 Rounding recovers the integer coefficient when $|e_j|<1/2$. Assuming approximately centered Gaussian output errors gives
 
@@ -151,7 +151,7 @@ For FFT64, the paper's experiments support limb widths around $K=19$, not $K=52$
 
 ## Selecting a radix for a failure target
 
-`Module::<BE>::max_base2k(N, d, failure_bits)` uses the corresponding NTT or FFT64 model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for supported backends, `Some(0)` if no positive radix fits, and `None` for backends with neither a CRT modulus nor an enabled FFT64 error model.
+`Module::<BE>::max_base2k(N, d, failure_bits)` delegates to the backend's `BackendMaxBase2k` trait implementation. Current arithmetic backends use the corresponding NTT or FFT64 model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for supported backends, `Some(0)` if no positive radix fits, and `None` when the backend implementation has no applicable model for the workload. Backends use `impl const BackendMaxBase2k` to preserve constant evaluation; constant callers enable `#![feature(const_trait_impl)]`. Selecting the model is independent of the DFT storage word.
 
 To avoid evaluating or inverting `erfc` in a constant expression, the query uses the conservative envelope
 

@@ -155,6 +155,8 @@
 //! marker type and its trait implementations from `poulpy_hal::oep`. All other items are
 //! implementation details subject to change without notice.
 
+#![feature(const_trait_impl)]
+
 // ─────────────────────────────────────────────────────────────
 // Build the backend **only when ALL conditions are satisfied**
 // ─────────────────────────────────────────────────────────────

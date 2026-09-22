@@ -106,9 +106,11 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The const query `Module::<BE>::max_base2k(n, products, failure_bits)` uses the probabilistic uniform-input model:
+Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The const query `Module::<BE>::max_base2k(n, products, failure_bits)` delegates to the backend's `BackendMaxBase2k` implementation:
 
 ```rust
+#![feature(const_trait_impl)]
+
 use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
 use poulpy_hal::layouts::Module;
 
@@ -123,7 +125,8 @@ The query uses independent centered-uniform input coefficients, a conservative G
 For NTT backends, `PrimeSet::LOG_Q_PRODUCT` supplies `log2(Q)` from the actual CRT modulus, approximately 119.8861552574811 for `NTT4x30` and 125.99998314565484 for `NTT3x42`.
 
 The result is the largest radix up to 62 satisfying the Gaussian envelope; `Some(0)` means no positive radix fits. For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
-FFT64 backends explicitly opt into a stochastic roundoff model covering transforms, complex products, and sequential accumulation before one inverse FFT. It assumes approximately uncorrelated roundoff and twiddle-error contributions; these are model estimates, not certified far-tail bounds. Backends with neither a CRT modulus nor an enabled FFT64 model return `None`.
+FFT64 backends implement the trait using the shared stochastic roundoff model covering transforms, complex products, and sequential accumulation before one inverse FFT. It assumes approximately uncorrelated roundoff and twiddle-error contributions; these are model estimates, not certified far-tail bounds. An implementation returns `None` when it has no applicable model for the workload, as with the storage-only `HostBytesBackend`.
+Backends provide `impl const BackendMaxBase2k` to make the query available in constant expressions. Constant callers also enable `#![feature(const_trait_impl)]` on the repository's nightly toolchain; runtime callers do not need this feature gate. They can reuse `poulpy_hal::layouts::{max_base2k_ntt, max_base2k_fft64}` or supply a model for their own arithmetic. The module validates the common input constraints before forwarding the query. Storage delegation through `impl_backend_from!` does not choose a model; wrappers that preserve the arithmetic explicitly forward `BackendMaxBase2k` as well.
 See [Failure estimates](base2k-failure-probability.md) for the formula, assumptions, and comparison with worst-case bounds.
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.

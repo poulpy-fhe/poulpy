@@ -256,7 +256,6 @@ fn sample_glwe() -> GLWE<AlignedBuf, i64> {
 
 #[test]
 fn delegating_backend_manual_family_matches_fft64_ref() {
-    assert_eq!(DelegatingFFT64Ref::FFT64_ERROR_MODEL, FFT64Ref::FFT64_ERROR_MODEL);
     const DELEGATED_RADIX: Option<usize> = Module::<DelegatingFFT64Ref>::max_base2k(1 << 16, 32, 128);
     assert_eq!(DELEGATED_RADIX, Some(19));
     assert_eq!(DELEGATED_RADIX, Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128));

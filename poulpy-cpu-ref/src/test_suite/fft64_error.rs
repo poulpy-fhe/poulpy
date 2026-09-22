@@ -3,7 +3,7 @@
 use poulpy_hal::{
     alloc_aligned,
     api::ModuleNew,
-    layouts::{Backend, Module, PrimeSet},
+    layouts::{Backend, BackendMaxBase2k, Module, PrimeSet},
 };
 use rand_chacha::{
     ChaCha8Rng,
@@ -121,6 +121,7 @@ where
 pub fn test_fft64_accumulation_error<BE>()
 where
     BE: Backend<ZnxWord = i64, DftWord = f64>
+        + BackendMaxBase2k
         + ReimArith
         + ReimFFTExecute<ReimFFTTable<f64>, f64>
         + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
@@ -146,6 +147,7 @@ where
 pub fn measure_fft64_accumulation_error<BE>()
 where
     BE: Backend<ZnxWord = i64, DftWord = f64>
+        + BackendMaxBase2k
         + ReimArith
         + ReimFFTExecute<ReimFFTTable<f64>, f64>
         + ReimFFTExecute<ReimIFFTTable<f64>, f64>,

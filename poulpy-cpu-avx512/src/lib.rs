@@ -117,6 +117,8 @@
 //! the `ntt3x42_ifma_api` support exports used by benchmarks. Other items are
 //! implementation details.
 
+#![feature(const_trait_impl)]
+
 #[cfg(all(feature = "enable-avx512f", not(docsrs), not(target_arch = "x86_64")))]
 compile_error!("feature `enable-avx512f` requires target_arch = \"x86_64\".");
 

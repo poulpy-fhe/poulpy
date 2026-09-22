@@ -26,18 +26,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
-    /// Opts into the split-complex FFT64 stochastic roundoff model used by
-    /// [`Module::max_base2k`]. Sharing an `f64` word alone does not opt in.
-    ///
-    /// Applies to radix-2 FFT stages, ordinary complex products and sequential
-    /// accumulation, followed by one inverse FFT and exact power-of-two scaling.
-    /// Assumes centered independent arithmetic roundoff with variance `2^-106/3`
-    /// and mean squared complex twiddle error at most `2 * 2^-106`, treating
-    /// their propagated contributions as uncorrelated. The model covers both
-    /// separate multiply/add and two-FMA accumulator updates.
-    /// This models the error distribution; it is not a worst-case guarantee.
-    const FFT64_ERROR_MODEL: bool = false;
-
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
     /// Within a limb, columns are contiguous blocks in column order, each of
@@ -297,18 +285,20 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Selects a limb radix for a uniform-input Gaussian failure model.
+    /// Selects a limb radix using the backend's failure model.
     ///
     /// `products` is the number of polynomial products accumulated into one
     /// output polynomial of degree `n`. `failure_bits` requests an estimated
     /// probability at most `2^(-failure_bits)` that any coefficient fails CRT
     /// reconstruction or FFT integer rounding. Both arguments must be positive.
     ///
-    /// The model assumes independent, centered uniform input coefficients in
-    /// `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. For NTT,
+    /// Delegates to [`BackendMaxBase2k`](super::BackendMaxBase2k), which lets
+    /// each backend choose its model independently of its DFT storage word.
+    /// The shared NTT and FFT64 models assume independent, centered uniform
+    /// inputs in `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. For NTT,
     /// `sigma = 2^(2*b) * sqrt(n * products) / 12` and the threshold is `Q/2`.
-    /// For backends opting into [`Backend::FFT64_ERROR_MODEL`], the rounding
-    /// error model is `sigma_e = 2^(2*b-53) * sqrt(n*d*R) / 12`, where
+    /// For the shared FFT64 model, the rounding error is modeled as
+    /// `sigma_e = 2^(2*b-53) * sqrt(n*d*R) / 12`, where
     /// `d = products` and
     /// `R = 5*(log2(n)-1) + max(2/3 + (d+1)/6 - 1/(3*d), (d+1/2)/3)`.
     /// Its threshold is `1/2`; it includes transforms, products, and rounding
@@ -320,9 +310,9 @@ impl<B: Backend> Module<B> {
     /// bound. Correlated operands and accumulated inputs require a suitable
     /// model of their own.
     ///
-    /// Returns the largest radix up to 62 satisfying that envelope, or
-    /// `Some(0)` if no positive radix does. Returns `None` for backends with
-    /// neither CRT modulus metadata nor an enabled FFT64 error model.
+    /// The shared models return the largest radix up to 62 satisfying that
+    /// envelope, or `Some(0)` if no positive radix does. A backend returns
+    /// `None` when it has no applicable estimate for the requested workload.
     ///
     /// This maximum does not reserve coefficient-word headroom for additions
     /// and subtractions outside the DFT domain. Choose a smaller working radix
@@ -331,23 +321,25 @@ impl<B: Backend> Module<B> {
     ///
     /// For `m` output polynomials, add `ceil(log2(m))` to `failure_bits` to
     /// allocate the failure budget by a union bound. This function can be
-    /// evaluated in a constant expression without constructing a module.
+    /// evaluated in a constant expression without constructing a module when
+    /// the backend provides a `const` implementation of the trait. Constant
+    /// callers must enable `#![feature(const_trait_impl)]`; runtime calls do
+    /// not require that feature gate.
     ///
     /// # Panics
     ///
     /// Panics if `n` is not a power of two, is below [`Backend::MIN_DEGREE`],
     /// or if `products` or `failure_bits` is zero.
     #[inline]
-    pub const fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+    pub const fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
+    where
+        B: [const] super::BackendMaxBase2k,
+    {
         assert!(n.is_power_of_two(), "n must be a power of two");
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
         assert!(products > 0, "products must be positive");
         assert!(failure_bits > 0, "failure_bits must be positive");
-        match <B::DftWord as crate::layouts::DftWord>::LOG_CRT_MODULUS {
-            Some(log_q) => Some(super::base2k::max_base2k_ntt(log_q, n, products, failure_bits)),
-            None if B::FFT64_ERROR_MODEL => Some(super::base2k::max_base2k_fft64(n, products, failure_bits)),
-            None => None,
-        }
+        B::max_base2k(n, products, failure_bits)
     }
 
     /// Creates a backend module for ring degree `N`.

@@ -4,10 +4,10 @@ mod fft64_error;
 
 #[test]
 fn max_base2k() {
-    use poulpy_hal::layouts::{Backend, Module};
+    use poulpy_hal::layouts::{BackendMaxBase2k, Module};
 
     // A 128-bit target for one output polynomial and 32 independent products.
-    const fn limits<B: Backend>() -> [Option<usize>; 2] {
+    const fn limits<B: [const] BackendMaxBase2k>() -> [Option<usize>; 2] {
         [
             Module::<B>::max_base2k(1 << 15, 32, 128),
             Module::<B>::max_base2k(1 << 16, 32, 128),

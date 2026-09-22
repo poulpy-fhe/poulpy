@@ -57,6 +57,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
+pub use base2k::{BackendMaxBase2k, max_base2k_fft64, max_base2k_ntt};
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;
@@ -311,6 +312,13 @@ impl Backend for HostBytesBackend {
     impl_host_byte_storage!();
 }
 
+// Storage-only backend: no transform arithmetic to model.
+impl const BackendMaxBase2k for HostBytesBackend {
+    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize) -> Option<usize> {
+        None
+    }
+}
+
 unsafe impl HalModuleImpl for HostBytesBackend {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
@@ -510,6 +518,8 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// This is useful for proof or delegating backends that want to remain a
 /// distinct backend type while reusing the same owned buffer, borrowed views,
 /// scalar types, and handle representation as a source backend.
+/// Arithmetic capabilities, including [`BackendMaxBase2k`], are implemented
+/// separately so a wrapper can choose a different model when needed.
 #[macro_export]
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
@@ -517,7 +527,6 @@ macro_rules! impl_backend_from {
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
-            const FFT64_ERROR_MODEL: bool = <$from as poulpy_hal::layouts::Backend>::FFT64_ERROR_MODEL;
             const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
@@ -633,7 +642,9 @@ macro_rules! impl_backend_from {
             }
 
             unsafe fn destroy(handle: std::ptr::NonNull<Self::Handle>) {
-                <$from as poulpy_hal::layouts::Backend>::destroy(handle)
+                // SAFETY: the wrapper shares the source backend's handle and
+                // forwards the caller's destruction contract unchanged.
+                unsafe { <$from as poulpy_hal::layouts::Backend>::destroy(handle) }
             }
 
             // Sizing must be forwarded explicitly: these are defaulted trait

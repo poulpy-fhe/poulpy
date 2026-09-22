@@ -81,8 +81,13 @@ pub struct FFT64Avx512Handle {
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
+impl const poulpy_hal::layouts::BackendMaxBase2k for FFT64Avx512 {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_fft64(n, products, failure_bits))
+    }
+}
+
 impl Backend for FFT64Avx512 {
-    const FFT64_ERROR_MODEL: bool = true;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     // The AVX-512 complex multiply steps eight complex slots at a time with no

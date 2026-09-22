@@ -53,6 +53,17 @@ impl NTT3x42IfmaHandle {
     }
 }
 
+impl const poulpy_hal::layouts::BackendMaxBase2k for NTT3x42Ifma {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_ntt(
+            <Primes42 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            failure_bits,
+        ))
+    }
+}
+
 impl Backend for NTT3x42Ifma {
     const MIN_DEGREE: usize = 8;
     const DFT_LIMBS_CONTIGUOUS: bool = true;

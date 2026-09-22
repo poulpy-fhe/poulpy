@@ -94,6 +94,10 @@ macro_rules! rayon_forward_znx_const {
 
 /// Implements the Rayon-scheduled FFT64 backend `$rayon` on top of the serial
 /// backend `$base`.
+///
+/// The caller enables `#![feature(const_trait_impl)]`, and `$base` implements
+/// `const poulpy_hal::layouts::BackendMaxBase2k`; the wrapper forwards that
+/// query along with the arithmetic it preserves.
 #[macro_export]
 macro_rules! impl_fft64_rayon_backend {
     ($rayon:ty, $base:ty, $dft_automorphism:path) => {
@@ -141,6 +145,12 @@ use $crate::__private::poulpy_hal::{
 use $crate::{RayonTaskExecutor, SendPtr};
 
 $crate::__private::poulpy_hal::impl_backend_from!($rayon, $base, $crate::RayonTaskExecutor);
+
+impl const $crate::__private::poulpy_hal::layouts::BackendMaxBase2k for $rayon {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+        <$base as $crate::__private::poulpy_hal::layouts::BackendMaxBase2k>::max_base2k(n, products, failure_bits)
+    }
+}
 
 fn base_module(module: &Module<$rayon>) -> &Module<$base> {
     module.reinterpret()

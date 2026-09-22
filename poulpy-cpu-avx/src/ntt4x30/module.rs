@@ -43,6 +43,17 @@ pub struct NTT4x30AvxHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx {}
 
+impl const poulpy_hal::layouts::BackendMaxBase2k for NTT4x30Avx {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_ntt(
+            <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            failure_bits,
+        ))
+    }
+}
+
 impl Backend for NTT4x30Avx {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 

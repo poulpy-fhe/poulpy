@@ -1,5 +1,34 @@
 use std::f64::consts::{LN_2, LOG2_E};
 
+use super::Backend;
+
+/// Backend-specific radix selection for a requested failure budget.
+///
+/// Implement this trait on a backend to enable [`Module::max_base2k`](super::Module::max_base2k).
+/// The backend chooses the model appropriate for its arithmetic. Backends can
+/// reuse [`max_base2k_ntt`] or [`max_base2k_fft64`], or supply a different model
+/// with documented input-distribution and numerical-error assumptions.
+///
+/// Use `impl const` to support queries in constant expressions. Implementing
+/// the const trait and calling it in constants require `#![feature(const_trait_impl)]`.
+/// Storage or handle delegation alone does not imply that two backends share a model;
+/// wrappers that preserve the arithmetic can explicitly forward this trait.
+pub const trait BackendMaxBase2k: Backend {
+    /// Estimates the largest supported limb radix for `products` accumulated
+    /// polynomial products of degree `n`, targeting a probability at most
+    /// `2^(-failure_bits)` that any coefficient of the output polynomial fails.
+    ///
+    /// Returns `Some(0)` when no positive radix meets the target, or `None` if
+    /// the backend has no applicable model for this workload. An estimate does
+    /// not reserve headroom for coefficient-domain additions or normalization.
+    ///
+    /// [`Module::max_base2k`](super::Module::max_base2k) checks that `n` is a
+    /// power of two at least [`Backend::MIN_DEGREE`], and that `products` and
+    /// `failure_bits` are positive before forwarding to this method. Direct
+    /// callers must supply those valid parameters too.
+    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>;
+}
+
 /// Selects an NTT radix using a conservative Gaussian failure estimate.
 ///
 /// Model each output coefficient as a sum of `n * products` independent
@@ -19,7 +48,12 @@ use std::f64::consts::{LN_2, LOG2_E};
 /// This is conservative within the Gaussian model; it does not certify the
 /// tails of the actual discrete product distribution. The result is capped at
 /// the supported signed-digit radix 62, and zero denotes no positive radix.
-pub(super) const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failure_bits: usize) -> usize {
+///
+/// # Panics
+///
+/// Panics if `log2_modulus` is not finite and positive, `n` is not a power of
+/// two, or `products` or `failure_bits` is zero.
+pub const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failure_bits: usize) -> usize {
     assert!(
         log2_modulus.is_finite() && log2_modulus > 0.0,
         "the modulus logarithm must be finite and positive"
@@ -60,7 +94,13 @@ pub(super) const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize,
 /// bound give `sigma_e <= 1/sqrt(8*ln(2)*(failure_bits+log2(n)))`.
 /// These are stochastic assumptions, including decorrelation of reused twiddle
 /// errors; this does not certify the far tail of actual floating-point error.
-pub(super) const fn max_base2k_fft64(n: usize, products: usize, failure_bits: usize) -> usize {
+/// The result is capped at radix 62; zero denotes no positive radix.
+///
+/// # Panics
+///
+/// Panics if `n` is not a power of two at least 2, or `products` or
+/// `failure_bits` is zero.
+pub const fn max_base2k_fft64(n: usize, products: usize, failure_bits: usize) -> usize {
     assert!(n >= 2 && n.is_power_of_two(), "FFT degree must be a power of two >= 2");
     assert!(products > 0, "the number of accumulated products must be positive");
     assert!(failure_bits > 0, "the failure target must be positive");
@@ -101,7 +141,31 @@ const fn log2(x: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{log2, max_base2k_fft64, max_base2k_ntt};
+    use super::{BackendMaxBase2k, log2, max_base2k_fft64, max_base2k_ntt};
+    use crate as poulpy_hal;
+    use crate::layouts::{HostBytesBackend, Module};
+
+    #[derive(PartialEq, Eq)]
+    struct CustomModelBackend;
+
+    // Reuse storage without inheriting the source backend's radix model.
+    crate::impl_backend_from!(CustomModelBackend, HostBytesBackend);
+
+    impl const BackendMaxBase2k for CustomModelBackend {
+        fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+            // Distinct contributions detect dropped or reordered arguments.
+            Some(n.ilog2() as usize + 2 * products + failure_bits / 128)
+        }
+    }
+
+    #[test]
+    fn max_base2k_dispatches_to_the_backend_in_const_expressions() {
+        const RADIX: Option<usize> = Module::<CustomModelBackend>::max_base2k(16, 3, 256);
+        const UNSUPPORTED: Option<usize> = Module::<HostBytesBackend>::max_base2k(16, 3, 256);
+        assert_eq!(RADIX, Some(12));
+        assert_eq!(UNSUPPORTED, None);
+        assert_eq!(Module::<CustomModelBackend>::max_base2k(32, 5, 128), Some(16));
+    }
 
     const LOG2_Q: f64 = 119.886_155_257_481_1;
     const RADIX_N15: usize = max_base2k_ntt(LOG2_Q, 1 << 15, 32, 128);
