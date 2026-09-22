@@ -40,7 +40,7 @@ pub struct FFT64RefHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
 
 impl Backend for FFT64Ref {
-    const MAX_BASE2K: usize = 19;
+    const DFT_MAX_BITS: usize = f64::MANTISSA_DIGITS as usize;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

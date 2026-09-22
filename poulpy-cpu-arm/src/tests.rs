@@ -1,6 +1,24 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
+#[test]
+fn max_base2k() {
+    use poulpy_hal::layouts::{Backend, Module};
+
+    // Cover odd and even log2(n), including ceiling rounding.
+    const fn limits<B: Backend>() -> [usize; 2] {
+        [Module::<B>::max_base2k(8), Module::<B>::max_base2k(1 << 16)]
+    }
+
+    assert_eq!(const { limits::<crate::FFT64Neon>() }, [25, 19]);
+    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [59, 52]);
+    #[cfg(feature = "enable-rayon")]
+    {
+        assert_eq!(const { limits::<crate::FFT64NeonRayon>() }, [25, 19]);
+        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [59, 52]);
+    }
+}
+
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
     backend_ref = poulpy_cpu_ref::FFT64Ref,

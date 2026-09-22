@@ -2,6 +2,31 @@
 mod ckks_tests;
 mod core_emulated_tensor;
 
+#[test]
+fn max_base2k() {
+    use poulpy_hal::layouts::{Backend, Module};
+
+    // Cover each backend's minimum degree and a common large degree.
+    const fn limits<B: Backend>() -> [usize; 2] {
+        [Module::<B>::max_base2k(B::MIN_DEGREE), Module::<B>::max_base2k(1 << 16)]
+    }
+
+    assert_eq!(const { limits::<crate::FFT64Avx512>() }, [25, 19]);
+    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [59, 52]);
+    #[cfg(feature = "enable-rayon")]
+    {
+        assert_eq!(const { limits::<crate::FFT64Avx512Rayon>() }, [25, 19]);
+        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [59, 52]);
+    }
+
+    #[cfg(feature = "enable-ifma")]
+    {
+        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [62, 55]);
+        #[cfg(feature = "enable-rayon")]
+        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [62, 55]);
+    }
+}
+
 /// Bounds only explicitly emulated CI runs. Native runs retain their original
 /// degrees; all modules are constructed from the same adjusted parameters.
 /// Statistical sampling and explicitly named large-ring suites do not use this

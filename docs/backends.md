@@ -106,8 +106,21 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-The backend fixes the maximum limb size `base2k` you can use.
-`FFT64` allows up to 19 bits per limb, while `NTT4x30` allows up to 52.
+The backend and ring degree together determine the maximum limb size `base2k` for parameter selection.
+Query it with `Module::<BE>::max_base2k(n)`, a `const fn` that requires a power-of-two degree:
+
+```rust
+use poulpy_cpu_ref::FFT64Ref;
+use poulpy_hal::layouts::Module;
+
+const N: usize = 1 << 16;
+const BASE2K: usize = Module::<FFT64Ref>::max_base2k(N); // 19
+```
+
+The transform bound is `ceil((DFT_MAX_BITS - log2(n)) / 2)`, using 53 bits for `FFT64`, 120 for `NTT4x30`, and 126 for `NTT3x42`.
+At `n = 2^16`, the corresponding limits are 19, 52, and 55 bits per limb.
+Operation-specific input, accumulation, and floating-point error bounds still apply and can require smaller limbs.
+This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs, at the cost of more expensive elementary operations.
 
 Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.

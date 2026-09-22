@@ -10,7 +10,7 @@ Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own
    Without IFMA, start with packed `NTT4x30` on x86 for a full CKKS pipeline; `FFT64` can be faster for a small, switch-heavy workload.
 2. Within a family, take the widest ISA your CPU supports — run the [capability report](#3-compilation-options) to see which ones this machine has.
    In our measurements the ordering between backends did not change with the thread count.
-3. Use the largest `base2k` the backend allows — 19 bits for `FFT64`, 52 for `NTT4x30` and `NTT3x42`.
+3. Start with `Module::<BE>::max_base2k(n)` for your backend and ring degree, then account for the circuit's numerical bounds — at `n = 2^16`, the query returns 19 for `FFT64`, 52 for `NTT4x30`, and 55 for `NTT3x42`.
 4. Tune `dsize`: it sets key size and the key's auxiliary precision together, and has a smaller, machine-dependent effect on speed. `dsize = 4` is a reasonable starting point.
 5. Give the Rayon backends a handful of threads, not all of them, and measure where your own knee is.
 
@@ -23,7 +23,10 @@ At realistic parameters those keys are hundreds of megabytes, far beyond any cac
 The size of a prepared key is therefore the first thing to look at, and the backend decides it.
 A prepared key holds one DFT-domain word per coefficient per limb, so what matters is the number of bytes it spends per bit of torus precision:
 
-| backend / layout | bytes per coefficient | max `base2k` | bytes per torus bit |
+The following table uses the measured parameter choices: `base2k = 19` for FFT and `base2k = 52` for NTT.
+These are benchmark settings; the degree-dependent limits are described [below](#4-base2k).
+
+| backend / layout | bytes per coefficient | measured `base2k` | bytes per torus bit |
 | --- | --- | --- | --- |
 | `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
 | `NTT4x30` (AVX2 / AVX-512) | 16 | 52 | 0.31 |
@@ -32,9 +35,9 @@ A prepared key holds one DFT-domain word per coefficient per limb, so what matte
 
 A wider limb is only worth what it costs to store.
 The AVX2 and AVX-512 `NTT4x30` backends store their four residues as `u32` and widen them only while computing, so each transformed coefficient occupies 16 bytes.
-They therefore have the same storage density as `NTT3x42`; the reference and Neon implementations store four `u64` residues and occupy 32 bytes per transformed coefficient.
+At the same radix they therefore have the same storage density as `NTT3x42`; the reference and Neon implementations store four `u64` residues and occupy 32 bytes per transformed coefficient.
 
-For leveled work, where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
+At the measured radices, for leveled work where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
 `NTT3x42` remains the fastest because it evaluates three residue streams rather than four.
 Packed `NTT4x30` has denser keys than `FFT64`, but its four modular transforms can leave it behind `FFT64` on an isolated key-switch or relinearized multiplication, especially at smaller ring degrees.
 
@@ -132,14 +135,17 @@ NTT3x42Ifma          poulpy-cpu-avx512   yes  no     --features enable-ifma   RU
 
 ## 4. `base2k`
 
-The backend caps the limb size: 19 bits for `FFT64`, 52 for `NTT4x30` and `NTT3x42`.
-Within that cap, larger is better, and by a wide margin.
+Query the limb-size limit with the `const fn` `Module::<BE>::max_base2k(n)` before choosing parameters.
+For a power-of-two ring degree `n`, its transform bound is `ceil((DFT_MAX_BITS - log2(n)) / 2)`.
+The backend capacities are 53 bits for `FFT64`, 120 for `NTT4x30`, and 126 for `NTT3x42`, giving limits of 19, 52, and 55 at `n = 2^16`.
+See [Backends](backends.md#choosing-a-subfamily) for a compile-time example.
+Within the numerical bounds of the operation and circuit, larger limbs improve performance by a wide margin.
 
 A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the limb count — linearly for the transforms and the key traffic, quadratically for the tensor product.
 Halving `base2k` therefore roughly doubles the work, and the whole span from a small limb to the backend's maximum is worth several times the runtime on every backend we measured.
 
-Use the largest `base2k` the backend allows, unless the noise budget of your circuit forces a smaller one.
-The key-size table above assumes this: a family is only as good as the `base2k` it is run at.
+Use the largest `base2k` permitted by this query and the operation's input, accumulation, and floating-point error bounds, as well as the circuit's noise budget.
+The key-size table above records the radices used in the measurements; recalculate its bytes-per-bit figures for your selected radix.
 
 ## 5. `dsize`
 

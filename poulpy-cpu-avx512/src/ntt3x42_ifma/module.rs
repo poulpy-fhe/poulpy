@@ -55,7 +55,8 @@ impl NTT3x42IfmaHandle {
 
 impl Backend for NTT3x42Ifma {
     const MIN_DEGREE: usize = 8;
-    const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
+    // Three 42-bit CRT primes provide a 126-bit transform modulus.
+    const DFT_MAX_BITS: usize = 126;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

@@ -26,11 +26,14 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
-    /// Maximum supported limb radix for FHE parameter selection.
-    /// Operation-specific input and accumulation bounds still apply. This does
-    /// not limit coefficient-only operations whose contracts permit wider
-    /// radices, such as uniform sampling at any radix in `1..=62`.
-    const MAX_BASE2K: usize;
+    /// DFT-domain bit capacity used by [`Module::max_base2k`] for FHE parameter
+    /// selection: the floating-point significand width for FFT backends, or
+    /// the composite modulus bit width for NTT backends.
+    ///
+    /// Storage-only backends without DFT products use zero. Operation-specific
+    /// input, rounding and accumulation bounds still apply. This does not limit
+    /// coefficient-only operations such as uniform sampling at radix `1..=62`.
+    const DFT_MAX_BITS: usize;
 
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
@@ -291,8 +294,24 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// The backend's supported FHE limb radix; see [`Backend::MAX_BASE2K`].
-    pub const MAX_BASE2K: usize = B::MAX_BASE2K;
+    /// Maximum FHE limb radix at ring degree `n`:
+    /// `ceil((B::DFT_MAX_BITS - log2(n)) / 2)`.
+    ///
+    /// This can be evaluated in a constant expression without constructing a
+    /// module. Use the operand's degree, which may be smaller than a module's
+    /// maximum degree. Returns zero if the DFT capacity leaves no positive radix.
+    /// Operation-specific input, rounding and accumulation bounds still apply;
+    /// summing multiple products can require a smaller radix.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is not a power of two or is below [`Backend::MIN_DEGREE`].
+    #[inline]
+    pub const fn max_base2k(n: usize) -> usize {
+        assert!(n.is_power_of_two(), "n must be a power of two");
+        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
+        B::DFT_MAX_BITS.saturating_sub(n.ilog2() as usize).div_ceil(2)
+    }
 
     /// Creates a backend module for ring degree `N`.
     #[inline]

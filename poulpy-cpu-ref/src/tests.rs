@@ -14,14 +14,13 @@ mod ckks_tests;
 #[cfg(feature = "enable-core")]
 mod delegating_backend;
 mod derived_scratch;
+mod max_base2k;
 
 #[test]
 fn bootstrapping_presets_respect_max_base2k() {
     use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_for_backend};
     use poulpy_core::layouts::LWEInfos;
 
-    assert_eq!(Module::<FFT64Ref>::MAX_BASE2K, 19);
-    assert_eq!(Module::<NTT4x30Ref>::MAX_BASE2K, 52);
     for preset in all().unwrap() {
         let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
         let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();

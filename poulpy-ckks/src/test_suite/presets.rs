@@ -40,10 +40,11 @@ pub const PRECISION_LOG_BUDGET: usize = 8;
 /// the FFT digit shape at the backend's radix limit: up to 7 high-modulus
 /// limbs, reduced to fit the modulus bounds, and 1 dense-to-sparse limb.
 pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
-    if preset.base2k() <= BE::MAX_BASE2K {
+    let max_base2k = Module::<BE>::max_base2k(preset.n());
+    if preset.base2k() <= max_base2k {
         Ok(preset.clone())
     } else {
-        let preset = preset.with_base2k(BE::MAX_BASE2K)?;
+        let preset = preset.with_base2k(max_base2k)?;
         for dsize in (2..=7).rev() {
             if let Ok(adapted) = preset.with_dsizes(dsize, 1) {
                 return Ok(adapted);

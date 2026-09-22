@@ -15,7 +15,7 @@ use crate::{
 struct TestBackend;
 
 impl Backend for TestBackend {
-    const MAX_BASE2K: usize = 62;
+    const DFT_MAX_BITS: usize = 0;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type ZnxWord = i64;

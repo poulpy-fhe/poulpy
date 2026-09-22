@@ -1,6 +1,24 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
+#[test]
+fn max_base2k() {
+    use poulpy_hal::layouts::{Backend, Module};
+
+    // Cover odd and even log2(n), including ceiling rounding.
+    const fn limits<B: Backend>() -> [usize; 2] {
+        [Module::<B>::max_base2k(8), Module::<B>::max_base2k(1 << 16)]
+    }
+
+    assert_eq!(const { limits::<crate::FFT64Avx>() }, [25, 19]);
+    assert_eq!(const { limits::<crate::NTT4x30Avx>() }, [59, 52]);
+    #[cfg(feature = "enable-rayon")]
+    {
+        assert_eq!(const { limits::<crate::FFT64AvxRayon>() }, [25, 19]);
+        assert_eq!(const { limits::<crate::NTT4x30AvxRayon>() }, [59, 52]);
+    }
+}
+
 /// Bounds only explicitly emulated CI runs. Native runs retain their original
 /// degrees; all modules are constructed from the same adjusted parameters.
 /// Statistical sampling and explicitly named large-ring suites do not use this
