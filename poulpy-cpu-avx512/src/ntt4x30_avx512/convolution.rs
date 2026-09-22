@@ -1,3 +1,6 @@
+use crate::NTT4x30Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m128i, __m256i, __m512i, _mm_cvtsi64_si128, _mm_loadu_si128, _mm256_broadcastsi128_si256, _mm256_loadu_si256,
@@ -16,7 +19,6 @@ use poulpy_hal::layouts::{
 use std::mem::size_of;
 
 use super::{
-    NTT4x30Avx512,
     arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, cond_sub_512, reduce_b_to_canonical_512},
     vec_znx_dft::packed_limb_mut,
 };
@@ -63,7 +65,7 @@ fn col_slice_mut(raw: &mut [u32], n: usize, size: usize, col: usize) -> &mut [u3
     &mut raw[col * stride..(col + 1) * stride]
 }
 
-fn zero_res_limb(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>, col: usize, limb: usize) {
+fn zero_res_limb<R: CpuRing>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>, col: usize, limb: usize) {
     let (n, cols) = (res.n(), res.cols());
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     packed_limb_mut(data, n, cols, col, limb).fill(0);
@@ -268,11 +270,11 @@ unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize
     }
 }
 
-fn prepare<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx512>>,
-    right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx512>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+fn prepare<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx512Backend<R>>>,
+    right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx512Backend<R>>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     tmp: &mut [u64],
 ) {
     poulpy_hal::layouts::assert_dense(a, "prepare");
@@ -282,7 +284,7 @@ fn prepare<E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512Backend<R>>(module.n(), n);
     assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
@@ -305,8 +307,8 @@ fn prepare<E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-                NTT4x30Avx512::ntt_dft_execute(table, tmp);
+                NTT4x30Avx512Backend::<R>::ntt_from_znx64(tmp, a.at(col, limb));
+                NTT4x30Avx512Backend::<R>::ntt_dft_execute(table, tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
                 }
@@ -334,8 +336,8 @@ fn prepare<E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-            NTT4x30Avx512::ntt_dft_execute(table, tmp);
+            NTT4x30Avx512Backend::<R>::ntt_from_znx64(tmp, a.at(col, limb));
+            NTT4x30Avx512Backend::<R>::ntt_dft_execute(table, tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
             }
@@ -358,32 +360,32 @@ fn prepare<E: TaskExecutor>(
     }
 }
 
-pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn cnv_prepare_left<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512Backend<R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, Some(res), None, a, tmp);
+    prepare::<E, _>(module, Some(res), None, a, tmp);
 }
 
-pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn cnv_prepare_right<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512Backend<R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, None, Some(res), a, tmp);
+    prepare::<E, _>(module, None, Some(res), a, tmp);
 }
 
-pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
-    right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn cnv_prepare_self<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512Backend<R>>,
+    right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512Backend<R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, Some(left), Some(right), a, tmp);
+    prepare::<E, _>(module, Some(left), Some(right), a, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -391,20 +393,20 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
-    module: &Module<NTT4x30Avx512>,
+unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a0_col: usize,
     a1_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
     b0_col: usize,
     b1_col: usize,
 ) {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512Backend<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
@@ -446,57 +448,57 @@ unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
+pub(crate) unsafe fn cnv_apply_dft<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
     b_col: usize,
 ) {
-    unsafe { apply::<E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<E, false, false, _>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_add<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
+pub(crate) unsafe fn cnv_apply_dft_add<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
     b_col: usize,
 ) {
-    unsafe { apply::<E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<E, true, false, _>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_pairwise_apply_dft<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
+pub(crate) unsafe fn cnv_pairwise_apply_dft<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
     i: usize,
     j: usize,
 ) {
     if i == j {
-        unsafe { apply::<E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<E, false, false, _>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
-        unsafe { apply::<E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<E, false, true, _>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
     }
 }
 
-pub(crate) unsafe fn cnv_tensor_rank1_dft<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) unsafe fn cnv_tensor_rank1_dft<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
 ) {
     assert!(res.cols() >= 3 && a.cols() >= 2 && b.cols() >= 2);
     assert_eq!(a.n(), res.n(), "cnv_tensor_rank1_dft: a.n():{} != res.n():{}", a.n(), res.n());
@@ -547,15 +549,15 @@ pub(crate) fn cnv_tensor_rank1_dft_avx512_tmp_bytes(_res_size: usize, _a_size: u
     0
 }
 
-pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512<E: TaskExecutor, R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     cnv_offset: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512Backend<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512Backend<R>>,
     _tmp: &mut [u8],
 ) {
-    unsafe { cnv_tensor_rank1_dft::<E>(module, res, cnv_offset, a, b) };
+    unsafe { cnv_tensor_rank1_dft::<E, _>(module, res, cnv_offset, a, b) };
 }
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {

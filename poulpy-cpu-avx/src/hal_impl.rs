@@ -1,6 +1,9 @@
+use crate::FFT64AvxBackend;
+use crate::NTT4x30AvxBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::mem::size_of;
 
-use crate::{FFT64Avx, NTT4x30Avx};
 use poulpy_cpu_ref::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault,
@@ -34,32 +37,32 @@ where
     (slice, arena)
 }
 
-unsafe impl HalVecZnxImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalVecZnxImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalModuleImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalVmpImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalConvolutionImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalVecZnxBigImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalSvpImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl for FFT64Avx {
+unsafe impl<R: CpuRing> HalVecZnxDftImpl for FFT64AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
 
     #[inline(always)]
@@ -75,16 +78,16 @@ unsafe impl HalVecZnxDftImpl for FFT64Avx {
     }
 }
 
-unsafe impl HalVecZnxImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalVecZnxImpl for NTT4x30AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalModuleImpl for NTT4x30AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30AvxBackend<R> {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_avx(module.n())
     }
@@ -122,7 +125,7 @@ unsafe impl HalVmpImpl for NTT4x30Avx {
     ) {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_avx::<poulpy_hal::execution::SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -154,7 +157,7 @@ unsafe impl HalVmpImpl for NTT4x30Avx {
     ) {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_add_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_add_avx::<poulpy_hal::execution::SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -179,7 +182,7 @@ unsafe impl HalVmpImpl for NTT4x30Avx {
     }
 }
 
-unsafe impl HalConvolutionImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalConvolutionImpl for NTT4x30AvxBackend<R> {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n())
     }
@@ -392,11 +395,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
     }
 }
 
-unsafe impl HalVecZnxBigImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalVecZnxBigImpl for NTT4x30AvxBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalSvpImpl for NTT4x30AvxBackend<R> {
     fn svp_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
@@ -459,7 +462,7 @@ unsafe impl HalSvpImpl for NTT4x30Avx {
     }
 }
 
-unsafe impl HalVecZnxDftImpl for NTT4x30Avx {
+unsafe impl<R: CpuRing> HalVecZnxDftImpl for NTT4x30AvxBackend<R> {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         4 * module.n() * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
     }
@@ -663,6 +666,6 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx {
     ) {
         let _ = scratch;
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(plan, res, res_col, a, a_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor, _>(plan, res, res_col, a, a_col)
     }
 }

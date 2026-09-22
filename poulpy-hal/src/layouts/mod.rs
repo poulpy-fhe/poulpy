@@ -512,8 +512,8 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
-    ($be:ty, $from:ty $(, $executor:ty)?) => {
-        impl poulpy_hal::layouts::Backend for $be {
+    ($be:ty, $from:ty $(, $executor:ty)? $(; $generic:ident: $bound:path)?) => {
+        impl $(<$generic: $bound>)? poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
             const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
 
@@ -527,9 +527,7 @@ macro_rules! impl_backend_from {
             type Handle = <$from as poulpy_hal::layouts::Backend>::Handle;
             type Location = <$from as poulpy_hal::layouts::Backend>::Location;
 
-            fn cyclotomic_order(module: &poulpy_hal::layouts::Module<Self>) -> i64 {
-                <$from as poulpy_hal::layouts::Backend>::cyclotomic_order(module.reinterpret::<$from>())
-            }
+            const CYCLOTOMIC_ORDER_FACTOR: i64 = <$from as poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR;
 
             fn alloc_bytes(len: usize) -> Self::OwnedBuf {
                 <$from as poulpy_hal::layouts::Backend>::alloc_bytes(len)
@@ -678,16 +676,16 @@ macro_rules! impl_backend_from {
 
         // A delegating backend forwards all storage behavior verbatim, so every
         // container layout is shared with the source backend by construction.
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl $(<$generic: $bound>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
 }
 

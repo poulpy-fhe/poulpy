@@ -20,7 +20,7 @@ pub fn vmp_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 pub fn vmp_prepare<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     pmat: &mut VmpPMatBackendMut<'_, BE>,
     mat: &MatZnxBackendRef<'_, BE>,
     tmp: &mut [f64],
@@ -72,7 +72,7 @@ pub fn vmp_prepare<BE>(
 }
 
 pub(crate) fn vmp_prepare_core<REIM, E>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     pmat: &mut [f64],
     mat: &[i64],
     nrows: usize,
@@ -166,14 +166,13 @@ pub fn vmp_apply_dft_to_dft<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
     limb_offset: usize,
-    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, real, tmp_bytes);
+    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 #[inline(always)]
@@ -182,7 +181,6 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
     limb_offset: usize,
-    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
@@ -210,9 +208,9 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
     // always calls this with `limb_offset == 0`.
     if limb_offset == 0 {
-        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, real, tmp_bytes)
+        vmp_apply_dft_to_dft_core::<true, KERNEL, E, BE>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
     } else {
-        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(
+        vmp_apply_dft_to_dft_core::<true, KERNEL, E, BE>(
             n,
             res_raw,
             a_raw,
@@ -220,14 +218,13 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
             limb_offset * pmat.cols_out(),
             nrows,
             ncols,
-            real,
             tmp_bytes,
         )
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
+unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM, BE: Backend>(
     n: usize,
     m: usize,
     res_addr: usize,
@@ -240,7 +237,6 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     row_max: usize,
     col_max: usize,
     blk_i: usize,
-    real: bool,
     tmp: &mut [f64],
 ) where
     REIM: ReimArith + Reim4BlkMatVec,
@@ -265,7 +261,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     if limb_offset.is_multiple_of(2) {
         for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
             let col_offset = col_pmat * (8 * nrows) + row_start * 16;
-            if real {
+            if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
                 REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
             } else {
                 REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
@@ -275,7 +271,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
         }
     } else {
         let col_offset = (limb_offset - 1) * (8 * nrows) + row_start * 16;
-        if real {
+        if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
             REIM::reim4_real_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
         } else {
             REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
@@ -284,7 +280,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
 
         for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
             let col_offset = col_pmat * (8 * nrows) + row_start * 16;
-            if real {
+            if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
                 REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
             } else {
                 REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
@@ -300,13 +296,13 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
         let col_offset = last_col * (8 * nrows) + row_offset;
         if last_col >= limb_offset {
             if ncols == col_max {
-                if real {
+                if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
                     REIM::reim4_real_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
                 } else {
                     REIM::reim4_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
                 }
             } else {
-                if real {
+                if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
                     REIM::reim4_real_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
                 } else {
                     REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
@@ -318,7 +314,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
+fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E, BE: Backend>(
     n: usize,
     res: &mut [f64],
     a: &[f64],
@@ -326,7 +322,6 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     limb_offset: usize,
     nrows: usize,
     ncols: usize,
-    real: bool,
     tmp_bytes: &mut [f64],
 ) where
     REIM: ReimArith + Reim4BlkMatVec,
@@ -372,7 +367,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     let res_addr = res.as_mut_ptr() as usize;
     if E::is_parallel() && block_count > 1 {
         E::for_each_chunked(block_count, tmp_bytes, task_tmp_len, |tmp, blk_i| unsafe {
-            vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+            vmp_apply_dft_to_dft_block::<OVERWRITE, REIM, BE>(
                 n,
                 m,
                 res_addr,
@@ -385,14 +380,13 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
                 row_max,
                 col_max,
                 blk_i,
-                real,
                 tmp,
             );
         });
     } else {
         for blk_i in 0..block_count {
             unsafe {
-                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM, BE>(
                     n,
                     m,
                     res_addr,
@@ -405,7 +399,6 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
                     row_max,
                     col_max,
                     blk_i,
-                    real,
                     tmp_bytes,
                 );
             }

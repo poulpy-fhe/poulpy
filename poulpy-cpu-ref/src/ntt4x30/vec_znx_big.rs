@@ -3,10 +3,12 @@
 //! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations.
 
-use crate::NTT4x30Ref;
+use crate::NTT4x30RefBackend;
+use crate::ring::CpuRing;
+
 use crate::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
-impl I128BigOps for NTT4x30Ref {}
-impl I128NormalizeOps for NTT4x30Ref {
+impl<R: CpuRing> I128BigOps for NTT4x30RefBackend<R> {}
+impl<R: CpuRing> I128NormalizeOps for NTT4x30RefBackend<R> {
     const FUSE_NORMALIZE: bool = false;
 }

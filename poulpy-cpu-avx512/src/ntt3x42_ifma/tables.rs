@@ -15,6 +15,7 @@
 //! Each coefficient = 4 × u64 (3 active CRT residues + 1 padding).
 //! All residues are kept in `[0, 2q)` throughout the NTT.
 
+use poulpy_cpu_ref::ring::{CpuRing, RingData, Standard};
 use std::marker::PhantomData;
 
 use poulpy_hal::{AlignedVec, alloc_aligned};
@@ -29,7 +30,7 @@ use super::primes::{PrimeSetNtt3x42Ifma, modq_pow64};
 ///
 /// No per-level metadata is needed — the IFMA-native butterfly keeps all
 /// values in `[0, 2q)` without explicit reduction levels.
-pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
+pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: CpuRing = Standard> {
     /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// `2q[k]` for each prime (lane 3 = 0); used for the final `[0, 4q)` → `[0, 2q)` pass.
@@ -53,12 +54,12 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
     pub tail_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
     pub tail_quot: Vec<u64>,
-    pub ci: Option<[ConjugateInvariantTable; 3]>,
+    pub ci: R::Data<[ConjugateInvariantTable; 3]>,
     _phantom: PhantomData<P>,
 }
 
 /// Precomputed twiddle-factor table for the inverse NTT (3-prime IFMA).
-pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
+pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: CpuRing = Standard> {
     pub n: usize,
     pub q2: [u64; 4],
     pub q4: [u64; 4],
@@ -70,7 +71,7 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
     pub inv_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
     pub inv_quot: Vec<u64>,
-    pub ci: Option<[ConjugateInvariantTable; 3]>,
+    pub ci: R::Data<[ConjugateInvariantTable; 3]>,
     _phantom: PhantomData<P>,
 }
 
@@ -316,20 +317,10 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
 // Forward NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
-    pub fn new_with_config(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
-        let mut table = Self::new(n);
-        if config.is_conjugate_invariant() {
-            table.ci = Some(std::array::from_fn(|k| {
-                ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, false)
-            }));
-        }
-        table
-    }
-
+impl<P: PrimeSetNtt3x42Ifma, R: CpuRing> Ntt3x42IfmaTable<P, R> {
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            n.is_power_of_two() && n <= (1 << (P::MAX_LOG_N - u32::from(R::IS_CI))),
             "NTT size must be a power of two ≤ 2^{}, got {n}",
             P::MAX_LOG_N
         );
@@ -370,7 +361,9 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
                 root_quot,
                 tail_root,
                 tail_quot,
-                ci: None,
+                ci: R::Data::new(|| {
+                    std::array::from_fn(|k| ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, false))
+                }),
                 _phantom: PhantomData,
             };
         }
@@ -420,7 +413,9 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
             root_quot,
             tail_root,
             tail_quot,
-            ci: None,
+            ci: R::Data::new(|| {
+                std::array::from_fn(|k| ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, false))
+            }),
             _phantom: PhantomData,
         }
     }
@@ -430,20 +425,10 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
 // Inverse NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
-    pub fn new_with_config(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
-        let mut table = Self::new(n);
-        if config.is_conjugate_invariant() {
-            table.ci = Some(std::array::from_fn(|k| {
-                ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, true)
-            }));
-        }
-        table
-    }
-
+impl<P: PrimeSetNtt3x42Ifma, R: CpuRing> Ntt3x42IfmaTableInv<P, R> {
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            n.is_power_of_two() && n <= (1 << (P::MAX_LOG_N - u32::from(R::IS_CI))),
             "NTT size must be a power of two ≤ 2^{}, got {n}",
             P::MAX_LOG_N
         );
@@ -478,7 +463,9 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
                 powomega,
                 inv_root,
                 inv_quot,
-                ci: None,
+                ci: R::Data::new(|| {
+                    std::array::from_fn(|k| ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, true))
+                }),
                 _phantom: PhantomData,
             };
         }
@@ -527,7 +514,9 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
             powomega,
             inv_root,
             inv_quot,
-            ci: None,
+            ci: R::Data::new(|| {
+                std::array::from_fn(|k| ConjugateInvariantTable::new(n, P::Q[k], P::OMEGA[k], P::MAX_LOG_N, true))
+            }),
             _phantom: PhantomData,
         }
     }

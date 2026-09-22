@@ -102,8 +102,8 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a_col: usize,
         ) {
             assert_eq!(
-                <Self as ::poulpy_hal::layouts::Backend>::cyclotomic_order(module),
-                2 * module.n() as i64,
+                <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR,
+                2,
                 "monomial multiplication is not defined for the invariant ring"
             );
             <Self as HalVecZnxDefault>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
@@ -122,8 +122,8 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         ) {
             let mut scratch = scratch.borrow();
             assert_eq!(
-                <Self as ::poulpy_hal::layouts::Backend>::cyclotomic_order(module),
-                2 * module.n() as i64,
+                <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR,
+                2,
                 "monomial multiplication is not defined for the invariant ring"
             );
             <Self as HalVecZnxDefault>::vec_znx_rotate_assign_default(module, k, a, a_col, &mut scratch);
@@ -144,8 +144,8 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         ) {
             let mut scratch = scratch.borrow();
             assert_eq!(
-                <Self as ::poulpy_hal::layouts::Backend>::cyclotomic_order(module),
-                2 * module.n() as i64,
+                <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR,
+                2,
                 "monomial multiplication is not defined for the invariant ring"
             );
             <Self as HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_default(module, k, res, res_col, &mut scratch);
@@ -256,7 +256,7 @@ macro_rules! hal_impl_vec_znx_automorphism {
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            if <Self as ::poulpy_hal::layouts::Backend>::cyclotomic_order(module) == 4 * module.n() as i64 {
+            if <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR == 4 {
                 $crate::reference::vec_znx::vec_znx_ci_automorphism::<Self>(k, res, res_col, a, a_col)
             } else {
                 <Self as HalVecZnxDefault>::vec_znx_automorphism_default(module, k, res, res_col, a, a_col)
@@ -275,7 +275,7 @@ macro_rules! hal_impl_vec_znx_automorphism {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            if <Self as ::poulpy_hal::layouts::Backend>::cyclotomic_order(module) == 4 * module.n() as i64 {
+            if <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR == 4 {
                 let (tmp, _) = scratch.take_region(res.n() * ::std::mem::size_of::<i64>());
                 let tmp = ::bytemuck::cast_slice_mut::<u8, i64>(::poulpy_hal::api::HostBufMut::into_bytes(tmp));
                 $crate::reference::vec_znx::vec_znx_ci_automorphism_assign::<Self>(k, res, res_col, tmp)

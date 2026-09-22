@@ -1,3 +1,8 @@
+use crate::NTT4x30AvxBackend;
+#[cfg(feature = "enable-rayon")]
+use crate::NTT4x30AvxRayonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::mem::size_of;
 
 use crate::NTT4x30Avx;
@@ -44,7 +49,7 @@ trait ModUpBackend: Backend {
     );
 }
 
-impl ModUpBackend for NTT4x30Avx {
+impl<R: CpuRing> ModUpBackend for NTT4x30AvxBackend<R> {
     fn product_known_zero_prefix(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -67,7 +72,7 @@ impl ModUpBackend for NTT4x30Avx {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -81,7 +86,7 @@ impl ModUpBackend for NTT4x30Avx {
 }
 
 #[cfg(feature = "enable-rayon")]
-impl ModUpBackend for NTT4x30AvxRayon {
+impl<R: CpuRing> ModUpBackend for NTT4x30AvxRayonBackend<R> {
     fn product_known_zero_prefix(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -264,5 +269,8 @@ macro_rules! impl_encapsulated_mod_up {
 }
 
 impl_encapsulated_mod_up!(NTT4x30Avx);
+impl_encapsulated_mod_up!(crate::NTT4x30CIAvx);
 #[cfg(feature = "enable-rayon")]
 impl_encapsulated_mod_up!(NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_encapsulated_mod_up!(crate::NTT4x30CIAvxRayon);

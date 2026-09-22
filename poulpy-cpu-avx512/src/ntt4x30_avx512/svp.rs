@@ -1,3 +1,6 @@
+use crate::NTT4x30Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, _mm256_loadu_si256, _mm256_storeu_si256, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_mul_epu32,
@@ -12,7 +15,6 @@ use poulpy_hal::{
 };
 
 use super::{
-    NTT4x30Avx512,
     arithmetic_avx512::{BARRETT_MU, Q_VEC, barrett_reduce_512, bcast_quad},
     vec_znx_dft::{pack_limb_q120, packed_limb, packed_limb_mut},
 };
@@ -48,27 +50,27 @@ unsafe fn mul_packed_limb_assign(n: usize, dst: &mut [u32], factor: &[u32]) {
     }
 }
 
-pub(crate) fn svp_prepare(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_prepare<R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, NTT4x30Avx512>,
+    a: &ScalarZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
 ) {
     let n = res.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512Backend<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let mut tmp = vec![0u64; 4 * n];
-    NTT4x30Avx512::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
+    NTT4x30Avx512Backend::<R>::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
+    NTT4x30Avx512Backend::<R>::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     unsafe { pack_limb_q120(n, &mut data[4 * n * res_col..][..4 * n], &tmp) };
 }
 
-pub(crate) fn svp_ppol_copy(
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_ppol_copy<R: CpuRing>(
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
 ) {
     assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
@@ -85,13 +87,13 @@ pub(crate) fn svp_ppol_copy(
     dst[4 * n * res_col..][..4 * n].copy_from_slice(&src[4 * n * a_col..][..4 * n]);
 }
 
-pub(crate) fn svp_apply_dft(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft<R: CpuRing>(
+    module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxBackendRef<'_, NTT4x30Avx512Backend<R>>,
     b_col: usize,
 ) {
     let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b.size());
@@ -101,13 +103,13 @@ pub(crate) fn svp_apply_dft(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn svp_apply_dft_to_dft(
-    _module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft_to_dft<R: CpuRing>(
+    _module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512Backend<R>>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -130,11 +132,11 @@ pub(crate) fn svp_apply_dft_to_dft(
     }
 }
 
-pub(crate) fn svp_apply_dft_to_dft_assign(
-    _module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft_to_dft_assign<R: CpuRing>(
+    _module: &Module<NTT4x30Avx512Backend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512Backend<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512Backend<R>>,
     a_col: usize,
 ) {
     let n = res.n();

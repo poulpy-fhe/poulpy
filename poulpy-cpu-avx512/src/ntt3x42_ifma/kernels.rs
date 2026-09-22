@@ -21,7 +21,6 @@
 //
 // ----------------------------------------------------------------------
 
-#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m128i, __m256i, __m512i, _mm_loadu_si128, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64,
     _mm256_madd52lo_epu64, _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64,
@@ -29,6 +28,8 @@ use core::arch::x86_64::{
     _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_blend_epi64, _mm512_min_epu64,
     _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
+#[cfg(target_arch = "x86_64")]
+use poulpy_cpu_ref::ring::RingData;
 
 use crate::ntt3x42_ifma::{
     primes::{PrimeSetNtt3x42Ifma, modq_pow64},
@@ -526,14 +527,18 @@ unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, root: &[u64], precon: &[u64], 
 /// `[0, 4q)` instead of `[0, q)`, skipping the final reduction; use it for
 /// consumers that re-reduce (`c_from_b`, the BBC product, whose bound is `2^44 > 4q`).
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, data: &mut [u64], lazy_output: bool) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
+    table: &Ntt3x42IfmaTable<P, impl poulpy_cpu_ref::ring::CpuRing>,
+    data: &mut [u64],
+    lazy_output: bool,
+) {
     let n = table.n;
     assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
         return;
     }
 
-    if let Some(ci) = &table.ci {
+    if let Some(ci) = table.ci.get() {
         for k in 0..3 {
             unsafe {
                 ci_basis_change(&ci[k], &mut data[k * n..(k + 1) * n], P::Q[k]);
@@ -928,7 +933,10 @@ unsafe fn inv_plane(
 /// the diff lane uses `W' = (W·n_inv) mod q`, the sum lane is scaled by `n_inv`,
 /// avoiding a separate plane sweep.
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(
+    table: &Ntt3x42IfmaTableInv<P, impl poulpy_cpu_ref::ring::CpuRing>,
+    data: &mut [u64],
+) {
     let n = table.n;
     assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
@@ -1016,7 +1024,7 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
         }
     }
 
-    if let Some(ci) = &table.ci {
+    if let Some(ci) = table.ci.get() {
         for k in 0..3 {
             unsafe {
                 ci_basis_change(&ci[k], &mut data[k * n..(k + 1) * n], P::Q[k]);
@@ -1044,12 +1052,11 @@ mod tests {
 
     #[test]
     fn conjugate_invariant_basis_change_parity() {
-        use poulpy_cpu_ref::{NTTModuleConfig, reference::conjugate_invariant::ConjugateInvariantNtt};
+        use poulpy_cpu_ref::{reference::conjugate_invariant::ConjugateInvariantNtt, ring::ConjugateInvariant};
         for n in [2, 4, 8, 16, 32, 64, 256, 1024, 8192, 32768, 65536] {
-            let config = NTTModuleConfig::conjugate_invariant();
-            let fwd = Ntt3x42IfmaTable::<Primes42>::new_with_config(n, config);
-            let inv = Ntt3x42IfmaTableInv::<Primes42>::new_with_config(n, config);
-            for (inverse, plans) in [(false, fwd.ci.as_ref().unwrap()), (true, inv.ci.as_ref().unwrap())] {
+            let fwd = Ntt3x42IfmaTable::<Primes42, ConjugateInvariant>::new(n);
+            let inv = Ntt3x42IfmaTableInv::<Primes42, ConjugateInvariant>::new(n);
+            for (inverse, plans) in [(false, &fwd.ci), (true, &inv.ci)] {
                 for (k, plan) in plans.iter().enumerate() {
                     let q = Primes42::Q[k];
                     let reference = ConjugateInvariantNtt::new(n, q, Primes42::OMEGA[k], Primes42::MAX_LOG_N, inverse);
@@ -1084,9 +1091,8 @@ mod tests {
     #[test]
     fn conjugate_invariant_basis_change_rejects_short_factors() {
         for factor in 0..4 {
-            let mut table =
-                Ntt3x42IfmaTable::<Primes42>::new_with_config(32, poulpy_cpu_ref::NTTModuleConfig::conjugate_invariant());
-            let plan = &mut table.ci.as_mut().unwrap()[0];
+            let mut table = Ntt3x42IfmaTable::<Primes42, poulpy_cpu_ref::ring::ConjugateInvariant>::new(32);
+            let plan = &mut table.ci[0];
             match factor {
                 0 => &mut plan.direct,
                 1 => &mut plan.reflected,

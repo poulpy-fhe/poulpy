@@ -247,7 +247,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let backend = std::any::type_name::<BE>();
     for preset in all().unwrap() {
         let preset = preset_for_backend::<BE>(&preset).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup(preset);
@@ -276,9 +276,16 @@ where
 
 /// Checks the advertised precision on both CI bootstrapping paths.
 /// Backends register these full-size checks as ignored tests.
-pub fn ci_bootstrapping_preset_meets_precision<BE>(ci: Module<BE>, preset: crate::presets::bootstrapping::CIBootstrappingPreset)
-where
+pub fn ci_bootstrapping_preset_meets_precision<BE, STD>(
+    ci: Module<BE>,
+    standard: Module<STD>,
+    preset: crate::presets::bootstrapping::CIBootstrappingPreset,
+) where
     BE: TestContextBackend,
+    STD: TestContextBackend,
+    Module<STD>: TestContextModule<STD> + CKKSEncodingOps<STD, f64> + CKKSBootstrappingOps<STD> + CKKSDFTMatrixOps<STD, f64>,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -302,6 +309,7 @@ where
     };
     let mut run = CIBootstrappingRun::setup(
         ci,
+        standard,
         preset.plan(),
         params,
         *preset.keys_layout(),
@@ -331,12 +339,13 @@ where
 }
 
 /// End-to-end fixture for CI bootstrapping conformance tests.
-pub(crate) struct CIBootstrappingRun<BE: Backend> {
+pub(crate) struct CIBootstrappingRun<BE: Backend, STD: Backend> {
     pub(crate) ci: Module<BE>,
-    pub(crate) standard: Module<BE>,
-    pub(crate) context: crate::layouts::CIBootstrappingContext<BE, f64>,
-    pub(crate) keys: crate::layouts::CIBootstrappingKeysPrepared<BE::OwnedBuf, BE>,
+    pub(crate) standard: Module<STD>,
+    pub(crate) context: crate::layouts::CIBootstrappingContext<STD, f64>,
+    pub(crate) keys: crate::layouts::CIBootstrappingKeysPrepared<STD::OwnedBuf, STD>,
     pub(crate) scratch: ScratchOwned<BE>,
+    pub(crate) std_scratch: ScratchOwned<STD>,
     pub(crate) inputs: [CKKSCiphertextOwned<BE>; 2],
     pub(crate) outputs: [CKKSCiphertextOwned<BE>; 2],
     sk: crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
@@ -345,9 +354,13 @@ pub(crate) struct CIBootstrappingRun<BE: Backend> {
     output_k: usize,
 }
 
-impl<BE> CIBootstrappingRun<BE>
+impl<BE, STD> CIBootstrappingRun<BE, STD>
 where
     BE: TestContextBackend,
+    STD: TestContextBackend,
+    Module<STD>: TestContextModule<STD> + CKKSEncodingOps<STD, f64> + CKKSBootstrappingOps<STD> + CKKSDFTMatrixOps<STD, f64>,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -357,6 +370,7 @@ where
     /// and encrypts two distinct real vectors for single and pair evaluation.
     pub fn setup(
         ci: Module<BE>,
+        standard: Module<STD>,
         plan: &crate::layouts::BootstrappingPlan,
         params: crate::test_suite::CKKSTestParams,
         keys_layout: crate::layouts::CIBootstrappingKeysLayout,
@@ -365,7 +379,6 @@ where
     ) -> Self {
         use super::helpers::{alloc_scratch, gen_sk_with_raw};
         use poulpy_core::layouts::GLWEInfos;
-        let standard = Module::<BE>::new((2 * ci.n()) as u64);
         let standard_host = Module::<HostBytesBackend>::new(standard.n() as u64);
         let ci_host = Module::<HostBytesBackend>::new(ci.n() as u64);
         let standard_params = crate::test_suite::CKKSTestParams {
@@ -373,9 +386,10 @@ where
             n: standard.n(),
             ..params
         };
-        let mut scratch = alloc_scratch(&standard_params, &standard);
+        let mut std_scratch = alloc_scratch(&standard_params, &standard);
+        let mut scratch = alloc_scratch(&params, &ci);
         let context =
-            crate::layouts::CIBootstrappingContext::compile(&standard, params.base2k.into(), plan, &mut scratch.borrow())
+            crate::layouts::CIBootstrappingContext::compile(&standard, params.base2k.into(), plan, &mut std_scratch.borrow())
                 .unwrap();
         let (standard_sk, _) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [11; 32]);
         let (ci_sk, sk) = gen_sk_with_raw(&params, &ci, &ci_host, [12; 32]);
@@ -391,10 +405,10 @@ where
                 &mut source_xs,
                 &mut source_xe,
                 &mut source_xa,
-                &mut scratch.borrow(),
+                &mut std_scratch.borrow(),
             )
             .unwrap()
-            .prepare(&standard, &mut scratch.borrow())
+            .prepare(&standard, &mut std_scratch.borrow())
             .unwrap();
         let slots = ci.n() >> params.prec_meta.log_sparsity;
         let (want0, want1) = test_vector_1::<f64>(slots);
@@ -411,14 +425,17 @@ where
             ct
         });
         let outputs = std::array::from_fn(|_| ci.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()));
-        let bytes = standard.ckks_ci_bootstrap_tmp_bytes(&ci, &outputs[0], &inputs[0], &context, &keys_layout);
-        scratch = ScratchOwned::<BE>::alloc(bytes);
+        let bytes = crate::layouts::CIRingBridge::new(&ci, &standard)
+            .unwrap()
+            .bootstrap_tmp_bytes(&outputs[0], &inputs[0], &context, &keys_layout);
+        std_scratch = ScratchOwned::<STD>::alloc(bytes);
         Self {
             ci,
             standard,
             context,
             keys,
             scratch,
+            std_scratch,
             inputs,
             outputs,
             sk,
@@ -435,27 +452,27 @@ where
         }
         let [left, right] = &mut self.outputs;
         if pair {
-            self.standard
-                .ckks_ci_bootstrap_pair(
-                    &self.ci,
+            crate::layouts::CIRingBridge::new(&self.ci, &self.standard)
+                .unwrap()
+                .bootstrap_pair(
                     left,
                     right,
                     &self.inputs[0],
                     &self.inputs[1],
                     &self.context,
                     &self.keys,
-                    &mut self.scratch.borrow(),
+                    &mut self.std_scratch.borrow(),
                 )
                 .unwrap();
         } else {
-            self.standard
-                .ckks_ci_bootstrap(
-                    &self.ci,
+            crate::layouts::CIRingBridge::new(&self.ci, &self.standard)
+                .unwrap()
+                .bootstrap(
                     left,
                     &self.inputs[0],
                     &self.context,
                     &self.keys,
-                    &mut self.scratch.borrow(),
+                    &mut self.std_scratch.borrow(),
                 )
                 .unwrap();
         }

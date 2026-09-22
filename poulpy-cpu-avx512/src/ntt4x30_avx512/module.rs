@@ -11,19 +11,20 @@
 //! - The [`NttHandleProvider`] impl for [`NTT4x30Avx512Handle`], wiring the handle into
 //!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
 
+use crate::NTT4x30Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::ptr::NonNull;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    vec_znx_dft::{NTTModuleConfig, NttHandleFactory, NttHandleProvider, NttModuleHandle, NttPlan, NttPlanSet},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, CrtWord, Module},
+    layouts::{Backend, CrtWord},
 };
-
-use super::NTT4x30Avx512;
 
 /// Opaque handle for the [`NTT4x30Avx512`](super::NTT4x30Avx512) backend.
 ///
@@ -34,16 +35,16 @@ use super::NTT4x30Avx512;
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT4x30Avx512>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT4x30Avx512Handle {
-    ring_plans: NttPlanSet<Primes30>,
+pub struct NTT4x30Avx512Handle<R: CpuRing = poulpy_cpu_ref::ring::Standard> {
+    ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx512 {}
+impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for NTT4x30Avx512Backend<R> {}
 
-impl Backend for NTT4x30Avx512 {
+impl<R: CpuRing> Backend for NTT4x30Avx512Backend<R> {
     const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
@@ -53,16 +54,9 @@ impl Backend for NTT4x30Avx512 {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30Avx512Handle;
+    type Handle = NTT4x30Avx512Handle<R>;
     type Location = poulpy_hal::layouts::Host;
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        module.n() as i64
-            * if module.get_ntt_plan(module.n()).is_conjugate_invariant() {
-                4
-            } else {
-                2
-            }
-    }
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -167,11 +161,11 @@ impl Backend for NTT4x30Avx512 {
 /// # Panics
 ///
 /// Panics if the runtime CPU does not support the AVX-512F instruction set.
-unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
-    fn create_ntt_handle(n: usize, config: NTTModuleConfig) -> Self {
-        NTT4x30Avx512Handle {
+unsafe impl<R: CpuRing> NttHandleFactory for NTT4x30Avx512Handle<R> {
+    fn create_ntt_handle(n: usize) -> Self {
+        NTT4x30Avx512Handle::<R> {
             table_cache: Default::default(),
-            ring_plans: NttPlanSet::new_with_config(n, config),
+            ring_plans: NttPlanSet::new(n),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -188,8 +182,9 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
 ///
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised in [`NTT4x30Avx512::new_impl`].
-unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+unsafe impl<R: CpuRing> NttHandleProvider for NTT4x30Avx512Handle<R> {
+    type Ring = R;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
         self.ring_plans.for_ring(n)
     }
 
@@ -202,7 +197,7 @@ unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30Avx512Handle {
+unsafe impl<R: CpuRing> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30Avx512Handle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

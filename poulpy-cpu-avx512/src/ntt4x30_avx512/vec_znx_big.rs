@@ -7,7 +7,9 @@
 //! (`_mm512_cmpgt_epi64_mask`, `_mm512_cmpeq_epi64_mask`) drive borrow propagation
 //! in place of the 256-bit vector-andnot trick.
 
-use super::NTT4x30Avx512;
+use crate::NTT4x30Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use crate::vec_znx_big_avx512::{
     nfc_final_step_add_assign_avx512, nfc_final_step_add_assign_scalar, nfc_final_step_assign_avx512,
     nfc_final_step_assign_scalar, nfc_final_step_sub_assign_avx512, nfc_final_step_sub_assign_scalar,
@@ -21,7 +23,7 @@ use crate::vec_znx_big_avx512::{
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
-impl I128BigOps for NTT4x30Avx512 {
+impl<R: CpuRing> I128BigOps for NTT4x30Avx512Backend<R> {
     #[inline(always)]
     fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
         unsafe { vi128_hadamard_i64_avx512(res.len(), res, a, b) }
@@ -29,7 +31,7 @@ impl I128BigOps for NTT4x30Avx512 {
 
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
-        // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
+        // SAFETY: NTT4x30Avx512Backend::<R>::new() verifies AVX-512F availability at construction time.
         unsafe { vi128_add_avx512(res.len(), res, a, b) }
     }
     #[inline(always)]
@@ -90,14 +92,14 @@ impl I128BigOps for NTT4x30Avx512 {
     }
 }
 
-impl BigWordHadamardProduct for NTT4x30Avx512 {
+impl<R: CpuRing> BigWordHadamardProduct for NTT4x30Avx512Backend<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 
-impl I128NormalizeOps for NTT4x30Avx512 {
+impl<R: CpuRing> I128NormalizeOps for NTT4x30Avx512Backend<R> {
     #[inline(always)]
     fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
         assert!(a.len() >= carry.len());

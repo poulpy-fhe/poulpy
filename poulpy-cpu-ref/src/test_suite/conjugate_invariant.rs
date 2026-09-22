@@ -157,16 +157,33 @@ pub fn ambient_automorphism(a: &[i64], p: i64) -> Vec<i64> {
 /// Shared invariant ring correctness and cross-backend product tests.
 #[macro_export]
 macro_rules! conjugate_invariant_test_suite {
-    ($name:ident, $backend:ty, $config:expr) => {
+    ($name:ident, $backend:ty, $standard:ty) => {
         mod $name {
             use poulpy_hal::{api::*, layouts::*};
             type BE = $backend;
             fn module(n: u64) -> Module<BE> {
-                ($config).new_module::<BE>(n)
+                Module::<BE>::new(n)
             }
 
             #[test]
             fn conjugate_invariant_ring_metadata() {
+                assert_ne!(std::any::TypeId::of::<BE>(), std::any::TypeId::of::<$standard>());
+                assert_ne!(
+                    std::any::TypeId::of::<<BE as Backend>::Handle>(),
+                    std::any::TypeId::of::<<$standard as Backend>::Handle>()
+                );
+                assert_ne!(
+                    std::any::TypeId::of::<VecZnxDftOwned<BE>>(),
+                    std::any::TypeId::of::<VecZnxDftOwned<$standard>>()
+                );
+
+                trait NotDftCompatible<A> {
+                    fn check() {}
+                }
+                impl<T> NotDftCompatible<()> for T {}
+                impl<T: Backend + VecZnxDftLayoutCompatible<$standard>> NotDftCompatible<u8> for T {}
+                let _ = <BE as NotDftCompatible<_>>::check;
+
                 fn check<B: Backend>(module: &Module<B>, order: i64) {
                     assert_eq!(module.cyclotomic_order(), order);
                     assert_eq!(module.galois_element(2), 25 % order);
@@ -175,7 +192,7 @@ macro_rules! conjugate_invariant_test_suite {
                 }
 
                 for n in [BE::MIN_DEGREE as u64, 32768] {
-                    check(&Module::<BE>::new(n), 2 * n as i64);
+                    check(&Module::<$standard>::new(n), 2 * n as i64);
                     check(&module(n), 4 * n as i64);
                 }
             }
@@ -309,7 +326,7 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_products_parity() {
                 let module = module(256);
-                let reference = $crate::FFT64ModuleConfig::conjugate_invariant().new_module::<$crate::FFT64Ref>(256);
+                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(256);
                 let host = Module::<HostBytesBackend>::new(256);
                 for n in [8, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
                     let params = poulpy_hal::test_suite::TestParams {
@@ -401,7 +418,7 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_large_radix_products() {
                 let module = module(8192);
-                let reference = $crate::NTTModuleConfig::conjugate_invariant().new_module::<$crate::NTT4x30Ref>(8192);
+                let reference = Module::<$crate::NTT4x30CIRef>::new(8192);
                 let host = Module::<HostBytesBackend>::new(8192);
                 let params = poulpy_hal::test_suite::TestParams {
                     size: 8192,
@@ -434,12 +451,12 @@ macro_rules! conjugate_invariant_test_suite {
 /// Core operation parity under an invariant module configuration.
 #[macro_export]
 macro_rules! conjugate_invariant_core_test_suite {
-    ($name:ident, $backend:ty, $config:expr) => {
+    ($name:ident, $backend:ty, $standard:ty) => {
         mod $name {
             #[test]
             fn conjugate_invariant_core_parity() {
-                let reference = $crate::FFT64ModuleConfig::conjugate_invariant().new_module::<$crate::FFT64Ref>(256);
-                let module = ($config).new_module::<$backend>(256);
+                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(256);
+                let module = poulpy_hal::layouts::Module::<$backend>::new(256);
                 let params = poulpy_hal::test_suite::TestParams {
                     size: 256,
                     n: 256,
@@ -467,7 +484,7 @@ mod tests {
             n: 256,
             base2k: 10,
         };
-        let module = crate::NTTModuleConfig::conjugate_invariant().new_module::<crate::NTT4x30Ref>(256);
+        let module = poulpy_hal::layouts::Module::<crate::NTT4x30CIRef>::new(256);
         poulpy_core::test_suite::noise::encryption::test_glwe_encrypt_sk(&params, &module);
         poulpy_core::test_suite::noise::automorphism::test_glwe_automorphism(&params, &module);
         poulpy_core::test_suite::noise::encryption::test_gglwe_automorphism_key_encrypt_sk(&params, &module);
@@ -482,8 +499,8 @@ mod tests {
 fn conjugate_invariant_key_composition() {
     use poulpy_core::{EncryptionLayout, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk, layouts::*};
     use poulpy_hal::{api::*, layouts::*, source::Source};
-    type BE = crate::NTT4x30Ref;
-    let module = crate::NTTModuleConfig::conjugate_invariant().new_module::<BE>(8);
+    type BE = crate::NTT4x30CIRef;
+    let module = Module::<BE>::new(8);
     let infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: 8u32.into(),
         base2k: 10u32.into(),

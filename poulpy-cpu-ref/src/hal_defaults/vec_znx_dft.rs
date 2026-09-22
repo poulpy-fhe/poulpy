@@ -252,12 +252,12 @@ where
         fft64_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
     where
         Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        build_fft64_automorphism_plan(n, p, module.get_fft_plan(n).is_conjugate_invariant())
+        build_fft64_automorphism_plan::<Self>(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
@@ -320,8 +320,11 @@ where
         a_col: usize,
     ) where
         Module<Self>: NttModuleHandle,
-        Self:
-            Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttFromZnx64
+            + NttZero
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
         ntt4x30_default_vec_znx_dft_apply::<Self>(module, step, offset, res, res_col, a, a_col);
@@ -344,7 +347,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-            + NttDFTExecute<NttTableInv<Primes30>>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttToZnx128
             + NttCopy,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -366,7 +369,9 @@ where
         a_col: usize,
     ) where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
+        Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttToZnx128,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
         ntt4x30_default_vec_znx_idft_apply_tmpa::<Self>(module, res, res_col, a, a_col);
@@ -469,12 +474,12 @@ where
         ntt4x30_default_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
     where
         Self: Backend<ZnxWord = i64>,
         Module<Self>: NttModuleHandle,
     {
-        if module.get_ntt_plan(n).is_conjugate_invariant() {
+        if Self::CYCLOTOMIC_ORDER_FACTOR == 4 {
             NttAutomorphismPlan {
                 p,
                 perm: crate::reference::conjugate_invariant::ntt_automorphism_permutation(n, p)

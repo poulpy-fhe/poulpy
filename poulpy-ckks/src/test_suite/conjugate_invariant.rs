@@ -449,7 +449,7 @@ where
 /// Instantiates conjugate invariant encoding and leveled-operation tests.
 #[macro_export]
 macro_rules! conjugate_invariant_ckks_test_suite {
-    ($name:ident, $backend:ty, $config:expr, $params:expr) => {
+    ($name:ident, $backend:ty, $standard:ty, $params:expr) => {
         mod $name {
             use poulpy_hal::{
                 api::ModuleNew,
@@ -457,12 +457,12 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             };
             #[test]
             fn ckks_ci_encoding_f64() {
-                let module = ($config).new_module::<$backend>(256);
+                let module = Module::<$backend>::new(256);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_encoding::<$backend, f64>(&module, 40, 1e-8);
             }
             #[test]
             fn ckks_ci_encoding_quad() {
-                let module = ($config).new_module::<$backend>(256);
+                let module = Module::<$backend>::new(256);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_encoding::<$backend, $crate::Quad>(
                     &module, 80, 1e-20,
                 );
@@ -470,9 +470,9 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             #[test]
             fn ckks_ci_ring_checks() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
-                let standard = Module::<$backend>::new(params.n as u64);
-                let ambient = Module::<$backend>::new((2 * params.n) as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
+                let standard = Module::<$standard>::new(params.n as u64);
+                let ambient = Module::<$standard>::new((2 * params.n) as u64);
                 let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_checks(
                     params, &ci, &standard, &ambient, &host,
@@ -481,69 +481,119 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             #[test]
             fn ckks_ci_bootstrap_s2c() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, true, 0, false, 6,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    6,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_s2c_without_guards() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, true, 0, false, 0,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    0,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_s2c_sparse() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, true, 2, false, 6,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    2,
+                    false,
+                    6,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_s2c_without_encapsulation() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, false, 0, false, 6,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    false,
+                    0,
+                    false,
+                    6,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_c2s() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, false, true, 0, false, 0,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    false,
+                    true,
+                    0,
+                    false,
+                    0,
                 );
             }
             #[test]
             fn ckks_ci_bootstrap_eval_round() {
                 let params = $params;
-                let ci = ($config).new_module::<$backend>(params.n as u64);
+                let ci = Module::<$backend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
-                    params, ci, true, true, 0, true, 6,
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    true,
+                    6,
                 );
             }
             #[test]
             #[ignore = "full CI bootstrapping preset at 2^15 slots"]
             fn ckks_ci_bootstrap_preset_n15() {
                 let preset = $crate::presets::bootstrapping::ci_n15_d35_k720_p19_s2c().unwrap();
-                let ci = ($config).new_module::<$backend>(preset.n() as u64);
-                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(ci, preset);
+                let ci = Module::<$backend>::new(preset.n() as u64);
+                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(
+                    ci,
+                    Module::<$standard>::new((2 * preset.n()) as u64),
+                    preset,
+                );
             }
             #[test]
             #[ignore = "full CI bootstrapping preset at 2^16 slots"]
             fn ckks_ci_bootstrap_preset_n16() {
                 let preset = $crate::presets::bootstrapping::ci_n16_d35_k720_p19_s2c().unwrap();
-                let ci = ($config).new_module::<$backend>(preset.n() as u64);
-                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(ci, preset);
+                let ci = Module::<$backend>::new(preset.n() as u64);
+                $crate::test_suite::presets::ci_bootstrapping_preset_meets_precision(
+                    ci,
+                    Module::<$standard>::new((2 * preset.n()) as u64),
+                    preset,
+                );
             }
             #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
-                let module = ($config).new_module::<$backend>(params.n as u64);
+                let module = Module::<$backend>::new(params.n as u64);
                 let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_leveled(params, &module, &host);
             }
@@ -551,14 +601,22 @@ macro_rules! conjugate_invariant_ckks_test_suite {
     };
 }
 
-pub fn test_conjugate_invariant_ring_checks<BE>(
+pub fn test_conjugate_invariant_ring_checks<BE, STD>(
     mut params: CKKSTestParams,
     ci: &Module<BE>,
-    standard: &Module<BE>,
-    ambient: &Module<BE>,
+    standard: &Module<STD>,
+    ambient: &Module<STD>,
     host: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    STD: TestContextBackend,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
+    Module<STD>: TestContextModule<STD>
+        + CKKSEncodingHostOps<STD, f64>
+        + CKKSLinearTransformationOps<STD>
+        + CKKSPolynomialEvaluationOps<STD>
+        + poulpy_hal::api::CnvPVecAlloc<STD>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE>
@@ -568,6 +626,10 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
+    assert!(crate::layouts::CIRingBridge::new(ci, ambient).is_ok());
+    assert!(crate::layouts::CIRingBridge::new(ci, standard).is_err());
+    assert!(crate::layouts::CIRingBridge::new(standard, ambient).is_err());
+    assert!(crate::layouts::CIRingBridge::new(ci, ci).is_err());
     use crate::{
         CKKSCompositionError,
         api::{CKKSAddManyOps, CKKSDotProductOps, CKKSEncryptOps, CKKSEvalModOps},
@@ -585,9 +647,13 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     use poulpy_hal::{layouts::CyclotomicOrder, source::Source};
     let mut scratch = alloc_scratch(&params, ci);
     let (ci_raw, ci_sk) = gen_sk_with_raw(&params, ci, host, [1; 32]);
-    let (std_raw, std_sk) = gen_sk_with_raw(&params, standard, host, [2; 32]);
+    let (_std_raw, std_sk) = gen_sk_with_raw(&params, standard, host, [2; 32]);
     let ci_tsk = gen_tsk(&params, ci, &ci_raw, &mut scratch.borrow());
-    let std_tsk = gen_tsk(&params, standard, &std_raw, &mut scratch.borrow());
+    let std_tsk = CKKSKey::from_raw_parts(
+        gen_tsk(&params, ci, &ci_raw, &mut scratch.borrow()).into_core(),
+        standard.ckks_ring(),
+    )
+    .unwrap();
     let mut ci_pt = ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
     let mut std_pt = standard.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
     ci_pt.set_meta(params.prec().meta());
@@ -599,7 +665,7 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
             &mut std_pt,
             &vec![0.25; params.n / 2],
             &vec![0.0; params.n / 2],
-            &mut scratch.borrow(),
+            &mut scratch.borrow().into_backend::<STD>(),
         )
         .unwrap();
     params.ring_kind = CKKSRingKind::ConjugateInvariant;
@@ -618,7 +684,7 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
         &std_sk,
         params.k,
         &std_pt.to_host_owned::<BE>(),
-        &mut scratch.borrow(),
+        &mut scratch.borrow().into_backend::<STD>(),
     );
     std_ct.set_slots(SlotsKind::Real);
     let mut dst = ci_ct.clone();
@@ -651,7 +717,7 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     }
     rejected!(ci.ckks_add_into(&mut dst, &ci_ct, &std_ct, &mut scratch.borrow()));
     rejected!(ci.ckks_sub_into(&mut dst, &std_ct, &ci_ct, &mut scratch.borrow()));
-    rejected!(standard.ckks_copy(&mut dst, &std_ct, &mut scratch.borrow()));
+    rejected!(standard.ckks_copy(&mut dst, &std_ct, &mut scratch.borrow().into_backend::<STD>()));
     rejected!(standard.ckks_neg_assign(&mut dst));
     rejected!(ci.ckks_mul_into(&mut dst, &ci_ct, &std_ct, &ci_tsk, &mut scratch.borrow()));
     rejected!(ci.ckks_mul_into(&mut dst, &ci_ct, &ci_ct, &std_tsk, &mut scratch.borrow()));
@@ -673,14 +739,15 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
         &[0, 0],
         &mut scratch.borrow()
     ));
-    let prepared = standard.ckks_prepare_right(&std_ct, &mut scratch.borrow()).unwrap();
+    let mut prepared = ci.ckks_prepare_right(&ci_ct, &mut scratch.borrow()).unwrap();
+    prepared.ring = standard.ckks_ring();
     assert_eq!(prepared.ring(), standard.ckks_ring());
     rejected!(ci.ckks_mul_prepared_assign(&mut dst, &prepared, &ci_tsk, &mut scratch.borrow()));
-    mismatch!(standard.ckks_prepare_right(&ci_ct, &mut scratch.borrow()));
+    mismatch!(standard.ckks_prepare_right(&ci_ct, &mut scratch.borrow().into_backend::<STD>()));
     mismatch!(ci_raw.prepare_secret(standard));
     assert_eq!(ci_raw.prepare_secret(ci).unwrap().key_ring(), ci.ckks_ring());
     let raw_tensor = CKKSKey::from_raw_parts(ci.glwe_tensor_key_alloc_from_infos(&params.tsk_layout()), ci.ckks_ring()).unwrap();
-    mismatch!(raw_tensor.prepare_tensor(standard, &mut scratch.borrow()));
+    mismatch!(raw_tensor.prepare_tensor(standard, &mut scratch.borrow().into_backend::<STD>()));
     {
         use crate::layouts::ScratchArenaTakeCKKS;
         let (view, arena) = scratch.borrow().take_ckks_ciphertext_like_scratch(&ci_ct);
@@ -692,10 +759,17 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
         .normalize(ci, &mut scratch.borrow())
         .unwrap();
     assert_eq!(normalized.ring_kind(), CKKSRingKind::ConjugateInvariant);
-    mismatch!(UnnormalizedCKKSCiphertext::new(ci_ct.clone()).normalize(standard, &mut scratch.borrow()));
+    mismatch!(UnnormalizedCKKSCiphertext::new(ci_ct.clone()).normalize(standard, &mut scratch.borrow().into_backend::<STD>()));
     let mut keys = HashMap::new();
     let p = ci.ckks_galois_element(1);
-    keys.insert(p, gen_atk(&params, standard, p, &std_raw, &mut scratch.borrow()));
+    keys.insert(
+        p,
+        CKKSKey::from_raw_parts(
+            gen_atk(&params, ci, p, &ci_raw, &mut scratch.borrow()).into_core(),
+            standard.ckks_ring(),
+        )
+        .unwrap(),
+    );
     let keys = CKKSKey::from_keys(keys, standard.ckks_ring()).unwrap();
     rejected!(ci.ckks_rotate_into(&mut dst, &ci_ct, 1, &keys, &mut scratch.borrow()));
     rejected!(ci.ckks_rotate_into(&mut dst, &ci_ct, 0, &keys, &mut scratch.borrow()));
@@ -705,7 +779,14 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     rejected!(ci.ckks_rotate_into(&mut dst, &ci_ct, 1, &keys, &mut scratch.borrow()));
     let mut mixed_keys = HashMap::new();
     mixed_keys.insert(p, gen_atk(&params, ci, p, &ci_raw, &mut scratch.borrow()));
-    mixed_keys.insert(-1, gen_atk(&params, standard, -1, &std_raw, &mut scratch.borrow()));
+    mixed_keys.insert(
+        -1,
+        CKKSKey::from_raw_parts(
+            gen_atk(&params, ci, -1, &ci_raw, &mut scratch.borrow()).into_core(),
+            standard.ckks_ring(),
+        )
+        .unwrap(),
+    );
     mismatch!(CKKSKey::from_keys(mixed_keys, ci.ckks_ring()));
     let wrong_degree = crate::layouts::CKKSRing {
         kind: ci.ckks_ring().kind,
@@ -717,26 +798,27 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     let mut xe = Source::new([7; 32]);
     let mut xa = Source::new([8; 32]);
     let enc = EncryptionLayout::new_from_default_sigma(params.glwe_layout()).unwrap();
-    rejected!(ci.ckks_encrypt_sk(&mut dst, &ci_pt, &std_sk, &enc, &mut xe, &mut xa, &mut scratch.borrow()));
+    let wrong_sk = CKKSKey::from_raw_parts(ci_raw.prepare_secret(ci).unwrap().into_core(), standard.ckks_ring()).unwrap();
+    rejected!(ci.ckks_encrypt_sk(&mut dst, &ci_pt, &wrong_sk, &enc, &mut xe, &mut xa, &mut scratch.borrow()));
     let pt_before = ci_pt.to_host_owned::<BE>();
-    mismatch!(ci.ckks_decrypt(&mut ci_pt, &ci_ct, &std_sk, &mut scratch.borrow()));
+    mismatch!(ci.ckks_decrypt(&mut ci_pt, &ci_ct, &wrong_sk, &mut scratch.borrow()));
     assert_eq!(ci_pt.meta(), pt_before.meta());
     assert_eq!(ci_pt.data().data().as_ref(), pt_before.data().data().as_ref());
     mismatch!(standard.ckks_encode_reim_into(
         &mut ci_pt,
         &vec![0.0; params.n / 2],
         &vec![0.0; params.n / 2],
-        &mut scratch.borrow()
+        &mut scratch.borrow().into_backend::<STD>()
     ));
     assert_eq!(ci_pt.data().data().as_ref(), pt_before.data().data().as_ref());
     let mut re = vec![17.0; params.n / 2];
     let mut im = re.clone();
-    mismatch!(standard.ckks_decode_reim_into(&ci_pt, &mut re, &mut im, &mut scratch.borrow()));
+    mismatch!(standard.ckks_decode_reim_into(&ci_pt, &mut re, &mut im, &mut scratch.borrow().into_backend::<STD>()));
     assert!(re.iter().chain(&im).all(|&x| x == 17.0));
     assert_eq!(ci.cyclotomic_order(), ambient.cyclotomic_order());
     let ambient_ct = ambient.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     rejected!(ci.ckks_add_into(&mut dst, &ci_ct, &ambient_ct, &mut scratch.borrow()));
-    rejected!(ambient.ckks_copy(&mut dst, &ambient_ct, &mut scratch.borrow()));
+    rejected!(ambient.ckks_copy(&mut dst, &ambient_ct, &mut scratch.borrow().into_backend::<STD>()));
 
     let mut re = Diagonals::new(params.n / 2);
     re.set(0, vec![1.0; params.n / 2]);
@@ -754,21 +836,23 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
         .unwrap()
     };
     let ci_lt = make_lt(ci, &mut scratch.borrow());
-    let std_lt = make_lt(standard, &mut scratch.borrow());
+    let mut std_lt = make_lt(ci, &mut scratch.borrow());
+    std_lt.ring = standard.ckks_ring();
     let mut prep = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(
-        standard,
-        &std_lt.index(),
-        std_lt.first_diagonal_plaintext().unwrap(),
+        ci,
+        &ci_lt.index(),
+        ci_lt.first_diagonal_plaintext().unwrap(),
     );
-    standard
-        .ckks_prepare_linear_transformation_rhs(&mut prep, &std_lt, &mut scratch.borrow())
+    ci.ckks_prepare_linear_transformation_rhs(&mut prep, &ci_lt, &mut scratch.borrow())
         .unwrap();
+    prep.ring = standard.ckks_ring();
     mismatch!(ci.ckks_prepare_linear_transformation_rhs(&mut prep, &ci_lt, &mut scratch.borrow()));
     let empty = HashMap::<i64, CKKSKey<poulpy_core::layouts::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>>::new();
     let empty = CKKSKey::from_keys(empty, ci.ckks_ring()).unwrap();
     rejected!(ci.ckks_eval_linear_transformation_self_into(&mut dst, &ci_ct, &prep, &empty, &mut scratch.borrow()));
     rejected!(ci.ckks_eval_linear_transformation_self_into(&mut dst, &ci_ct, &std_lt, &empty, &mut scratch.borrow()));
-    let mut babies = LinearTransformationBabySteps::<BE>::alloc(standard, &[0], &std_ct);
+    let mut babies = LinearTransformationBabySteps::<BE>::alloc(ci, &[0], &ci_ct);
+    babies.ring = standard.ckks_ring();
     mismatch!(ci.ckks_prepare_linear_transformation_baby_steps(&mut babies, &ci_ct, &empty, &mut scratch.borrow()));
     rejected!(ci.ckks_eval_linear_transformation_into(&mut dst, &ci_ct, &babies, &ci_lt, &empty, &mut scratch.borrow()));
     let host_poly = Polynomial::new(Basis::Monomial, vec![0.125f64; 9])
@@ -833,9 +917,11 @@ pub fn test_conjugate_invariant_ring_checks<BE>(
     assert!(powers.gen_power(3, ci, &ci_tsk, &mut scratch.borrow()).is_err());
 }
 
-pub fn test_conjugate_invariant_bootstrapping<BE>(
+#[allow(clippy::too_many_arguments)]
+pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     mut params: CKKSTestParams,
     ci: Module<BE>,
+    standard: Module<STD>,
     s2c_first: bool,
     encapsulate: bool,
     log_sparsity: usize,
@@ -843,6 +929,13 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     guard_bits: usize,
 ) where
     BE: TestContextBackend,
+    STD: TestContextBackend,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
+    Module<STD>: TestContextModule<STD>
+        + crate::api::CKKSEncodingOps<STD, f64>
+        + crate::api::CKKSBootstrappingOps<STD>
+        + crate::api::CKKSDFTMatrixOps<STD, f64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE>
@@ -851,7 +944,7 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
         + crate::api::CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
-    use crate::{CoeffsMeta, api::CKKSBootstrappingOps, layouts::*, polynomial::SplitStrategy};
+    use crate::{CoeffsMeta, layouts::*, polynomial::SplitStrategy};
     let layers = ci.n().ilog2() as usize;
     let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
     let log_delta = 35;
@@ -948,7 +1041,7 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
             )
             .layout,
     };
-    let mut run = super::presets::CIBootstrappingRun::setup(ci, &plan, params, keys_layout, input_k, output_k);
+    let mut run = super::presets::CIBootstrappingRun::setup(ci, standard, &plan, params, keys_layout, input_k, output_k);
     for pair in [false, true] {
         run.bootstrap(pair);
         for stats in run.precision(pair) {
@@ -982,15 +1075,14 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
         (return_capacity + 1 + run.context.standard.output_consumed_bits(log_delta)).into(),
     );
     let before_too_wide = too_wide.to_host_owned::<BE>();
-    let err = run
-        .standard
-        .ckks_ci_bootstrap(
-            &run.ci,
+    let err = crate::layouts::CIRingBridge::new(&run.ci, &run.standard)
+        .unwrap()
+        .bootstrap(
             &mut too_wide,
             &run.inputs[0],
             &run.context,
             &run.keys,
-            &mut run.scratch.borrow(),
+            &mut run.std_scratch.borrow(),
         )
         .unwrap_err();
     assert!(err.to_string().contains("standard-to-CI"), "{err}");
@@ -1002,16 +1094,16 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     let wrong = run.standard.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
     let [left, right] = &mut run.outputs;
     assert!(
-        run.standard
-            .ckks_ci_bootstrap_pair(
-                &run.ci,
+        crate::layouts::CIRingBridge::new(&run.ci, &run.standard)
+            .unwrap()
+            .bootstrap_pair(
                 left,
                 right,
                 &run.inputs[0],
                 &wrong,
                 &run.context,
                 &run.keys,
-                &mut run.scratch.borrow()
+                &mut run.std_scratch.borrow()
             )
             .is_err()
     );
@@ -1022,44 +1114,21 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     let right_meta = run.inputs[1].meta();
     run.inputs[1].set_log_delta(right_meta.log_delta + 1);
     assert!(
-        run.standard
-            .ckks_ci_bootstrap_pair(
-                &run.ci,
+        crate::layouts::CIRingBridge::new(&run.ci, &run.standard)
+            .unwrap()
+            .bootstrap_pair(
                 left,
                 right,
                 &run.inputs[0],
                 &run.inputs[1],
                 &run.context,
                 &run.keys,
-                &mut run.scratch.borrow()
+                &mut run.std_scratch.borrow()
             )
             .is_err()
     );
     run.inputs[1].set_meta(right_meta);
-    assert!(
-        run.standard
-            .ckks_ci_bootstrap(
-                &run.standard,
-                left,
-                &run.inputs[0],
-                &run.context,
-                &run.keys,
-                &mut run.scratch.borrow()
-            )
-            .is_err()
-    );
-    assert!(
-        run.ci
-            .ckks_ci_bootstrap(
-                &run.ci,
-                left,
-                &run.inputs[0],
-                &run.context,
-                &run.keys,
-                &mut run.scratch.borrow()
-            )
-            .is_err()
-    );
+    assert!(crate::layouts::CIRingBridge::new(&run.standard, &run.standard).is_err());
     assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
     assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
     assert_eq!(left.k(), before.k());
@@ -1089,8 +1158,13 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     )
     .unwrap();
     assert!(
-        CIBootstrappingContext::<BE, f64>::compile(&run.standard, params.base2k.into(), &short_plan, &mut run.scratch.borrow())
-            .is_err()
+        CIBootstrappingContext::<STD, f64>::compile(
+            &run.standard,
+            params.base2k.into(),
+            &short_plan,
+            &mut run.std_scratch.borrow()
+        )
+        .is_err()
     );
     assert!(CIBootstrappingContext::<BE, f64>::compile(&run.ci, params.base2k.into(), &plan, &mut run.scratch.borrow()).is_err());
     let raw = run.keys.standard_to_ci.into_core();
@@ -1100,15 +1174,9 @@ pub fn test_conjugate_invariant_bootstrapping<BE>(
     };
     run.keys.standard_to_ci = crate::layouts::CKKSKey::from_raw_parts(raw, wrong_ring).unwrap();
     assert!(
-        run.standard
-            .ckks_ci_bootstrap(
-                &run.ci,
-                left,
-                &run.inputs[0],
-                &run.context,
-                &run.keys,
-                &mut run.scratch.borrow()
-            )
+        crate::layouts::CIRingBridge::new(&run.ci, &run.standard)
+            .unwrap()
+            .bootstrap(left, &run.inputs[0], &run.context, &run.keys, &mut run.std_scratch.borrow())
             .is_err()
     );
     assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());

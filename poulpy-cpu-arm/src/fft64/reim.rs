@@ -1,5 +1,8 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
+use crate::FFT64NeonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
 use poulpy_cpu_ref::reference::fft64::{
@@ -8,8 +11,6 @@ use poulpy_cpu_ref::reference::fft64::{
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
-
-use super::FFT64Neon;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
 /// dispatching to NEON-accelerated kernels on AArch64 and the portable
@@ -78,35 +79,35 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
+impl<R: CpuRing> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64NeonBackend<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::fft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
+impl<R: CpuRing> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64NeonBackend<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_ref(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
+impl<R: CpuRing> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64NeonBackend<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::ifft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
+impl<R: CpuRing> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64NeonBackend<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_ref(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimArith for FFT64Neon {
+impl<R: CpuRing> ReimArith for FFT64NeonBackend<R> {
     // reim_add / reim_add_assign: defer to the portable autovec impl. The
     // hand-NEON loop (see neon::reim_arith::reim_add_neon) is memory-bandwidth
     // bound at large n; the autovec reference is as fast or faster.
@@ -165,10 +166,10 @@ impl ReimArith for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimArith for FFT64Neon {}
+impl<R: CpuRing> ReimArith for FFT64NeonBackend<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl Reim4BlkMatVec for FFT64Neon {
+impl<R: CpuRing> Reim4BlkMatVec for FFT64NeonBackend<R> {
     #[inline(always)]
     fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
         unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 8>(nrows, dst, u, v, 0) }
@@ -215,10 +216,10 @@ impl Reim4BlkMatVec for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl Reim4BlkMatVec for FFT64Neon {}
+impl<R: CpuRing> Reim4BlkMatVec for FFT64NeonBackend<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl Reim4Convolution for FFT64Neon {
+impl<R: CpuRing> Reim4Convolution for FFT64NeonBackend<R> {
     #[inline(always)]
     fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { crate::neon::reim4_conv::reim4_real_convolution_1coeff_neon(k, dst, a, a_size, b, b_size) }
@@ -250,10 +251,10 @@ impl Reim4Convolution for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl Reim4Convolution for FFT64Neon {}
+impl<R: CpuRing> Reim4Convolution for FFT64NeonBackend<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl I64Ops for FFT64Neon {
+impl<R: CpuRing> I64Ops for FFT64NeonBackend<R> {
     #[inline(always)]
     fn i64_extract_1blk_contiguous(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
         crate::neon::conv_i64::i64_extract_1blk_contiguous_neon(n, offset, rows, blk, dst, src);
@@ -273,9 +274,9 @@ impl I64Ops for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl I64Ops for FFT64Neon {}
+impl<R: CpuRing> I64Ops for FFT64NeonBackend<R> {}
 
-impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
+impl<R: CpuRing> poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64NeonBackend<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)

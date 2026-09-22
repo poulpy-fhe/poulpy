@@ -1,5 +1,10 @@
 //! Rayon-scheduled wrapper for the AVX2 NTT4x30 backend.
 
+use crate::NTT4x30AvxBackend;
+#[cfg(feature = "enable-rayon")]
+use crate::NTT4x30AvxRayonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -37,62 +42,82 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-use super::{NTT4x30Avx, NTT4x30AvxRayon};
+use super::NTT4x30Avx;
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr, parallel_limb_tasks};
 
-poulpy_hal::impl_backend_from!(NTT4x30AvxRayon, NTT4x30Avx, RayonTaskExecutor);
+poulpy_hal::impl_backend_from!(NTT4x30AvxRayonBackend<R>, NTT4x30AvxBackend<R>, RayonTaskExecutor; R: CpuRing);
 
-fn base_module(module: &Module<NTT4x30AvxRayon>) -> &Module<NTT4x30Avx> {
+fn base_module<R: CpuRing>(module: &Module<NTT4x30AvxRayonBackend<R>>) -> &Module<NTT4x30AvxBackend<R>> {
     module.reinterpret()
 }
 
-fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30AvxRayon>) -> VecZnxDftBackendRef<'a, NTT4x30Avx> {
+fn base_dft_ref<'a, R: CpuRing>(
+    a: &'a VecZnxDftBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VecZnxDftBackendRef<'a, NTT4x30AvxBackend<R>> {
     VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
-fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>) -> VecZnxDftBackendMut<'a, NTT4x30Avx> {
+fn base_dft_mut<'a, R: CpuRing>(
+    a: &'a mut VecZnxDftBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VecZnxDftBackendMut<'a, NTT4x30AvxBackend<R>> {
     let shape = a.shape();
     VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_znx_ref<'a>(a: &'a VecZnxBackendRef<'_, NTT4x30AvxRayon>) -> VecZnxBackendRef<'a, NTT4x30Avx> {
+fn base_znx_ref<'a, R: CpuRing>(
+    a: &'a VecZnxBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VecZnxBackendRef<'a, NTT4x30AvxBackend<R>> {
     VecZnx::from_shape(&**a.data(), a.shape())
 }
 
-fn base_znx_mut<'a>(a: &'a mut VecZnxBackendMut<'_, NTT4x30AvxRayon>) -> VecZnxBackendMut<'a, NTT4x30Avx> {
+fn base_znx_mut<'a, R: CpuRing>(
+    a: &'a mut VecZnxBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VecZnxBackendMut<'a, NTT4x30AvxBackend<R>> {
     let shape = a.shape();
     VecZnx::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30AvxRayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx> {
+fn base_scalar_ref<'a, R: CpuRing>(
+    a: &'a ScalarZnxBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> ScalarZnxBackendRef<'a, NTT4x30AvxBackend<R>> {
     ScalarZnx::from_data(&**a.data(), a.n(), a.cols())
 }
 
-fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT4x30AvxRayon>) -> SvpPPolBackendRef<'a, NTT4x30Avx> {
+fn base_svp_ref<'a, R: CpuRing>(
+    a: &'a SvpPPolBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> SvpPPolBackendRef<'a, NTT4x30AvxBackend<R>> {
     SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
-fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30AvxRayon>) -> SvpPPolBackendMut<'a, NTT4x30Avx> {
+fn base_svp_mut<'a, R: CpuRing>(
+    a: &'a mut SvpPPolBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+) -> SvpPPolBackendMut<'a, NTT4x30AvxBackend<R>> {
     let (n, cols, hint) = (a.n(), a.cols(), a.hint());
     SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
-fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30AvxRayon>) -> VecZnxBigBackendMut<'a, NTT4x30Avx> {
+fn base_big_mut<'a, R: CpuRing>(
+    a: &'a mut VecZnxBigBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VecZnxBigBackendMut<'a, NTT4x30AvxBackend<R>> {
     let shape = a.shape();
     VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_big_ref<'a>(
-    a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30AvxRayon>,
-) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT4x30Avx> {
+fn base_big_ref<'a, R: CpuRing>(
+    a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT4x30AvxBackend<R>> {
     VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
-fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30AvxRayon>) -> VmpPMatBackendRef<'a, NTT4x30Avx> {
+fn base_vmp_ref<'a, R: CpuRing>(
+    a: &'a VmpPMatBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VmpPMatBackendRef<'a, NTT4x30AvxBackend<R>> {
     VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
-fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30AvxRayon>) -> VmpPMatBackendMut<'a, NTT4x30Avx> {
+fn base_vmp_mut<'a, R: CpuRing>(
+    a: &'a mut VmpPMatBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+) -> VmpPMatBackendMut<'a, NTT4x30AvxBackend<R>> {
     let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
     VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
@@ -101,15 +126,15 @@ use poulpy_cpu_rayon::parallel_chunk_len;
 
 macro_rules! parallel_binary {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(res: &mut [i64], a: &[i64], b: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT4x30Avx as $trait>::$method(res, a, b);
+                    return <NTT4x30AvxBackend<R> as $trait>::$method(res, a, b);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
                     .zip(b.par_chunks(chunk))
-                    .for_each(|((res, a), b)| <NTT4x30Avx as $trait>::$method(res, a, b));
+                    .for_each(|((res, a), b)| <NTT4x30AvxBackend<R> as $trait>::$method(res, a, b));
             }
         }
     };
@@ -117,14 +142,14 @@ macro_rules! parallel_binary {
 
 macro_rules! parallel_assign {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT4x30Avx as $trait>::$method(res, a);
+                    return <NTT4x30AvxBackend<R> as $trait>::$method(res, a);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
-                    .for_each(|(res, a)| <NTT4x30Avx as $trait>::$method(res, a));
+                    .for_each(|(res, a)| <NTT4x30AvxBackend<R> as $trait>::$method(res, a));
             }
         }
     };
@@ -132,13 +157,13 @@ macro_rules! parallel_assign {
 
 macro_rules! parallel_unary {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(res: &mut [i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT4x30Avx as $trait>::$method(res);
+                    return <NTT4x30AvxBackend<R> as $trait>::$method(res);
                 };
                 res.par_chunks_mut(chunk)
-                    .for_each(|res| <NTT4x30Avx as $trait>::$method(res));
+                    .for_each(|res| <NTT4x30AvxBackend<R> as $trait>::$method(res));
             }
         }
     };
@@ -146,14 +171,14 @@ macro_rules! parallel_unary {
 
 macro_rules! parallel_shift {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(k: i64, res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT4x30Avx as $trait>::$method(k, res, a);
+                    return <NTT4x30AvxBackend<R> as $trait>::$method(k, res, a);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
-                    .for_each(|(res, a)| <NTT4x30Avx as $trait>::$method(k, res, a));
+                    .for_each(|(res, a)| <NTT4x30AvxBackend<R> as $trait>::$method(k, res, a));
             }
         }
     };
@@ -161,10 +186,10 @@ macro_rules! parallel_shift {
 
 macro_rules! forward_znx {
     ($trait:ident, $method:ident($($arg:ident: $ty:ty),* $(,)?)) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             #[inline(always)]
             fn $method($($arg: $ty),*) {
-                <NTT4x30Avx as $trait>::$method($($arg),*)
+                <NTT4x30AvxBackend<R> as $trait>::$method($($arg),*)
             }
         }
     };
@@ -172,10 +197,10 @@ macro_rules! forward_znx {
 
 macro_rules! forward_znx_const {
     ($trait:ident, $method:ident($($arg:ident: $ty:ty),* $(,)?)) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             #[inline(always)]
             fn $method<const OVERWRITE: bool>($($arg: $ty),*) {
-                <NTT4x30Avx as $trait>::$method::<OVERWRITE>($($arg),*)
+                <NTT4x30AvxBackend<R> as $trait>::$method::<OVERWRITE>($($arg),*)
             }
         }
     };
@@ -189,13 +214,13 @@ parallel_assign!(ZnxSubNegateAssign, znx_sub_negate_assign);
 parallel_shift!(ZnxMulAddPowerOfTwo, znx_muladd_power_of_two);
 parallel_shift!(ZnxMulPowerOfTwo, znx_mul_power_of_two);
 
-impl ZnxMulPowerOfTwoAssign for NTT4x30AvxRayon {
+impl<R: CpuRing> ZnxMulPowerOfTwoAssign for NTT4x30AvxRayonBackend<R> {
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-            return <NTT4x30Avx as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res);
+            return <NTT4x30AvxBackend<R> as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res);
         };
         res.par_chunks_mut(chunk)
-            .for_each(|res| <NTT4x30Avx as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
+            .for_each(|res| <NTT4x30AvxBackend<R> as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
     }
 }
 
@@ -215,18 +240,18 @@ forward_znx!(ZnxNormalizeFirstStepAssign, znx_normalize_first_step_assign(base2k
 forward_znx!(ZnxNormalizeMiddleStepCarryOnly, znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
 forward_znx!(ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
 forward_znx!(ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-impl ZnxExtractDigitAddMul for NTT4x30AvxRayon {
+impl<R: CpuRing> ZnxExtractDigitAddMul for NTT4x30AvxRayonBackend<R> {
     #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT4x30Avx as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
+        <NTT4x30AvxBackend<R> as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRayon {
+impl<R: CpuRing> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRayonBackend<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
-        <NTT4x30Avx as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
             base2k, lsh, a, carry,
         )
     }
@@ -241,7 +266,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRay
         carry: &mut [i64],
     ) {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
-        <NTT4x30Avx as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
             base2k, lsh, padding, res, a, carry,
         )
     }
@@ -255,14 +280,16 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRay
         carry: &mut [i64],
     ) {
         assert!(carry.len() >= res.len());
-        <NTT4x30Avx as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
             base2k, lsh, padding, res, carry,
         )
     }
 
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT4x30Avx as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
+            base2k, lsh, res, src,
+        );
     }
 
     #[inline(always)]
@@ -274,51 +301,51 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRay
         src: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Avx as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        );
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30AvxRayon {
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        <NTT4x30Avx as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(table, data)
+impl<R: CpuRing> NttDFTExecute<NttTable<Primes30, R>> for NTT4x30AvxRayonBackend<R> {
+    fn ntt_dft_execute(table: &NttTable<Primes30, R>, data: &mut [u64]) {
+        <NTT4x30AvxBackend<R> as NttDFTExecute<NttTable<Primes30, R>>>::ntt_dft_execute(table, data)
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30AvxRayon {
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        <NTT4x30Avx as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(table, data)
+impl<R: CpuRing> NttDFTExecute<NttTableInv<Primes30, R>> for NTT4x30AvxRayonBackend<R> {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, R>, data: &mut [u64]) {
+        <NTT4x30AvxBackend<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_dft_execute(table, data)
     }
 }
 
-impl NttFromZnx64 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttFromZnx64 for NTT4x30AvxRayonBackend<R> {
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
-        <NTT4x30Avx as NttFromZnx64>::ntt_from_znx64(res, a)
+        <NTT4x30AvxBackend<R> as NttFromZnx64>::ntt_from_znx64(res, a)
     }
 }
 
-impl NttToZnx128 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttToZnx128 for NTT4x30AvxRayonBackend<R> {
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
-        <NTT4x30Avx as NttToZnx128>::ntt_to_znx128(res, divisor_is_n, a)
+        <NTT4x30AvxBackend<R> as NttToZnx128>::ntt_to_znx128(res, divisor_is_n, a)
     }
 }
 
 macro_rules! forward_ntt_binary {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(res: &mut [u64], a: &[u64], b: &[u64]) {
-                <NTT4x30Avx as $trait>::$method(res, a, b)
+                <NTT4x30AvxBackend<R> as $trait>::$method(res, a, b)
             }
         }
     };
 }
 macro_rules! forward_ntt_assign {
     ($trait:ident, $method:ident) => {
-        impl $trait for NTT4x30AvxRayon {
+        impl<R: CpuRing> $trait for NTT4x30AvxRayonBackend<R> {
             fn $method(res: &mut [u64], a: &[u64]) {
-                <NTT4x30Avx as $trait>::$method(res, a)
+                <NTT4x30AvxBackend<R> as $trait>::$method(res, a)
             }
         }
     };
@@ -330,69 +357,69 @@ forward_ntt_binary!(NttSub, ntt_sub);
 forward_ntt_assign!(NttSubAssign, ntt_sub_assign);
 forward_ntt_assign!(NttSubNegateAssign, ntt_sub_negate_assign);
 forward_ntt_assign!(NttNegate, ntt_negate);
-impl NttNegateAssign for NTT4x30AvxRayon {
+impl<R: CpuRing> NttNegateAssign for NTT4x30AvxRayonBackend<R> {
     fn ntt_negate_assign(res: &mut [u64]) {
-        <NTT4x30Avx as NttNegateAssign>::ntt_negate_assign(res)
+        <NTT4x30AvxBackend<R> as NttNegateAssign>::ntt_negate_assign(res)
     }
 }
-impl NttZero for NTT4x30AvxRayon {
+impl<R: CpuRing> NttZero for NTT4x30AvxRayonBackend<R> {
     fn ntt_zero(res: &mut [u64]) {
-        <NTT4x30Avx as NttZero>::ntt_zero(res)
+        <NTT4x30AvxBackend<R> as NttZero>::ntt_zero(res)
     }
 }
 forward_ntt_assign!(NttCopy, ntt_copy);
 
-impl NttMulBbb for NTT4x30AvxRayon {
+impl<R: CpuRing> NttMulBbb for NTT4x30AvxRayonBackend<R> {
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
-        <NTT4x30Avx as NttMulBbb>::ntt_mul_bbb(meta, ell, res, a, b)
+        <NTT4x30AvxBackend<R> as NttMulBbb>::ntt_mul_bbb(meta, ell, res, a, b)
     }
 }
-impl NttMulBbc for NTT4x30AvxRayon {
+impl<R: CpuRing> NttMulBbc for NTT4x30AvxRayonBackend<R> {
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Avx as NttMulBbc>::ntt_mul_bbc(meta, ell, res, a, b)
+        <NTT4x30AvxBackend<R> as NttMulBbc>::ntt_mul_bbc(meta, ell, res, a, b)
     }
 }
-impl NttCFromB for NTT4x30AvxRayon {
+impl<R: CpuRing> NttCFromB for NTT4x30AvxRayonBackend<R> {
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
-        <NTT4x30Avx as NttCFromB>::ntt_c_from_b(n, res, a)
+        <NTT4x30AvxBackend<R> as NttCFromB>::ntt_c_from_b(n, res, a)
     }
 }
-impl NttMulBbc1ColX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttMulBbc1ColX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Avx as NttMulBbc1ColX2>::ntt_mul_bbc_1col_x2(meta, ell, res, a, b)
+        <NTT4x30AvxBackend<R> as NttMulBbc1ColX2>::ntt_mul_bbc_1col_x2(meta, ell, res, a, b)
     }
     fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Avx as NttMulBbc1ColX2>::ntt_mul_bbc_tile4_x2(meta, len, res, a, b)
+        <NTT4x30AvxBackend<R> as NttMulBbc1ColX2>::ntt_mul_bbc_tile4_x2(meta, len, res, a, b)
     }
 }
-impl NttMulBbc2ColsX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttMulBbc2ColsX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Avx as NttMulBbc2ColsX2>::ntt_mul_bbc_2cols_x2(meta, ell, res, a, b)
+        <NTT4x30AvxBackend<R> as NttMulBbc2ColsX2>::ntt_mul_bbc_2cols_x2(meta, ell, res, a, b)
     }
 }
-impl NttExtract1BlkContiguous for NTT4x30AvxRayon {
+impl<R: CpuRing> NttExtract1BlkContiguous for NTT4x30AvxRayonBackend<R> {
     fn ntt_extract_1blk_contiguous(n: usize, rows: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-        <NTT4x30Avx as NttExtract1BlkContiguous>::ntt_extract_1blk_contiguous(n, rows, blk, dst, src)
+        <NTT4x30AvxBackend<R> as NttExtract1BlkContiguous>::ntt_extract_1blk_contiguous(n, rows, blk, dst, src)
     }
 }
-impl NttPackLeft1BlkX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttPackLeft1BlkX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Avx as NttPackLeft1BlkX2>::ntt_pack_left_1blk_x2(dst, a, rows, stride, blk)
+        <NTT4x30AvxBackend<R> as NttPackLeft1BlkX2>::ntt_pack_left_1blk_x2(dst, a, rows, stride, blk)
     }
 }
-impl NttPackRight1BlkX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttPackRight1BlkX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Avx as NttPackRight1BlkX2>::ntt_pack_right_1blk_x2(dst, a, rows, stride, blk)
+        <NTT4x30AvxBackend<R> as NttPackRight1BlkX2>::ntt_pack_right_1blk_x2(dst, a, rows, stride, blk)
     }
 }
-impl NttPairwisePackLeft1BlkX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttPairwisePackLeft1BlkX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Avx as NttPairwisePackLeft1BlkX2>::ntt_pairwise_pack_left_1blk_x2(dst, a, b, rows, stride, blk)
+        <NTT4x30AvxBackend<R> as NttPairwisePackLeft1BlkX2>::ntt_pairwise_pack_left_1blk_x2(dst, a, b, rows, stride, blk)
     }
 }
-impl NttPairwisePackRight1BlkX2 for NTT4x30AvxRayon {
+impl<R: CpuRing> NttPairwisePackRight1BlkX2 for NTT4x30AvxRayonBackend<R> {
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Avx as NttPairwisePackRight1BlkX2>::ntt_pairwise_pack_right_1blk_x2(dst, a, b, rows, stride, blk)
+        <NTT4x30AvxBackend<R> as NttPairwisePackRight1BlkX2>::ntt_pairwise_pack_right_1blk_x2(dst, a, b, rows, stride, blk)
     }
 }
 
@@ -402,7 +429,7 @@ macro_rules! forward_i128_big {
     };
 }
 
-impl I128BigOps for NTT4x30AvxRayon {
+impl<R: CpuRing> I128BigOps for NTT4x30AvxRayonBackend<R> {
     forward_i128_big!(i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]));
     forward_i128_big!(i128_add(res: &mut [i128], a: &[i128], b: &[i128]));
     forward_i128_big!(i128_add_assign(res: &mut [i128], a: &[i128]));
@@ -421,21 +448,21 @@ impl I128BigOps for NTT4x30AvxRayon {
     forward_i128_big!(i128_from_small(res: &mut [i128], a: &[i64]));
 }
 
-impl I128NormalizeOps for NTT4x30AvxRayon {
+impl<R: CpuRing> I128NormalizeOps for NTT4x30AvxRayonBackend<R> {
     #[inline(always)]
     fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_add_small_carry(carry, a)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_add_small_carry(carry, a)
     }
 
     #[inline(always)]
     fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src)
     }
 
     #[inline(always)]
     fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
         assert!(a.len() >= carry.len());
-        <NTT4x30Avx as I128NormalizeOps>::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry)
     }
 
     #[inline(always)]
@@ -448,13 +475,15 @@ impl I128NormalizeOps for NTT4x30AvxRayon {
         carry: &mut [i128],
     ) {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
-        <NTT4x30Avx as I128NormalizeOps>::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
     }
 
-    const FUSE_NORMALIZE: bool = <NTT4x30Avx as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+    const FUSE_NORMALIZE: bool = <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
 
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT4x30Avx as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
+            base2k, lsh, res, src,
+        )
     }
 
     fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
@@ -465,35 +494,35 @@ impl I128NormalizeOps for NTT4x30AvxRayon {
         src: &mut [i128],
         carry: &mut [i128],
     ) {
-        <NTT4x30Avx as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        )
+        <NTT4x30AvxBackend<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry)
     }
 
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry)
     }
     fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry)
     }
     fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry)
     }
     fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry)
     }
     fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <NTT4x30Avx as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry)
+        <NTT4x30AvxBackend<R> as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry)
     }
 }
 
-impl BigWordHadamardProduct for NTT4x30AvxRayon {
+impl<R: CpuRing> BigWordHadamardProduct for NTT4x30AvxRayonBackend<R> {
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
     }
 }
 
-unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalVecZnxImpl for NTT4x30AvxRayonBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
@@ -509,7 +538,7 @@ unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT4x30Avx, Self>(
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT4x30AvxBackend<R>, Self>(
             res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
         );
     }
@@ -524,13 +553,15 @@ unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx, Self>(base2k, k, a_offset, a, a_col, carry);
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30AvxBackend<R>, Self>(
+            base2k, k, a_offset, a, a_col, carry,
+        );
     }
 }
-unsafe impl HalModuleImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalModuleImpl for NTT4x30AvxRayonBackend<R> {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
-unsafe impl HalVmpImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30AvxRayonBackend<R> {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         super::vmp::vmp_prepare_tmp_bytes_avx(module.n())
     }
@@ -543,7 +574,7 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
     ) {
         let bytes = super::vmp::vmp_prepare_tmp_bytes_avx(res.n());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_prepare_avx_pm(base_module(module), &mut base_vmp_mut(res), a, tmp);
+        super::vmp::vmp_prepare_avx_pm(base_module::<R>(module), &mut base_vmp_mut::<R>(res), a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -575,20 +606,20 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_avx::<SerialTaskExecutor>(
-                base_module(module),
-                &mut base_dft_mut(res),
-                &base_dft_ref(a),
-                &base_vmp_ref(b),
+            super::vmp::vmp_apply_dft_to_dft_avx::<SerialTaskExecutor, _>(
+                base_module::<R>(module),
+                &mut base_dft_mut::<R>(res),
+                &base_dft_ref::<R>(a),
+                &base_vmp_ref::<R>(b),
                 limb_offset,
                 tmp,
             );
         } else {
-            super::vmp::vmp_apply_dft_to_dft_avx::<RayonTaskExecutor>(
-                base_module(module),
-                &mut base_dft_mut(res),
-                &base_dft_ref(a),
-                &base_vmp_ref(b),
+            super::vmp::vmp_apply_dft_to_dft_avx::<RayonTaskExecutor, _>(
+                base_module::<R>(module),
+                &mut base_dft_mut::<R>(res),
+                &base_dft_ref::<R>(a),
+                &base_vmp_ref::<R>(b),
                 limb_offset,
                 tmp,
             );
@@ -624,20 +655,20 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_add_avx::<SerialTaskExecutor>(
-                base_module(module),
-                &mut base_dft_mut(res),
-                &base_dft_ref(a),
-                &base_vmp_ref(b),
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<SerialTaskExecutor, _>(
+                base_module::<R>(module),
+                &mut base_dft_mut::<R>(res),
+                &base_dft_ref::<R>(a),
+                &base_vmp_ref::<R>(b),
                 limb_offset,
                 tmp,
             );
         } else {
-            super::vmp::vmp_apply_dft_to_dft_add_avx::<RayonTaskExecutor>(
-                base_module(module),
-                &mut base_dft_mut(res),
-                &base_dft_ref(a),
-                &base_vmp_ref(b),
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<RayonTaskExecutor, _>(
+                base_module::<R>(module),
+                &mut base_dft_mut::<R>(res),
+                &base_dft_ref::<R>(a),
+                &base_vmp_ref::<R>(b),
                 limb_offset,
                 tmp,
             );
@@ -651,10 +682,10 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
         first_row: usize,
         row_step: usize,
     ) {
-        NTT4x30Avx::vmp_extract_selected_rows(
-            base_module(module),
-            &mut base_vmp_mut(res),
-            &base_vmp_ref(a),
+        NTT4x30AvxBackend::<R>::vmp_extract_selected_rows(
+            base_module::<R>(module),
+            &mut base_vmp_mut::<R>(res),
+            &base_vmp_ref::<R>(a),
             first_row,
             row_step,
         )
@@ -665,7 +696,7 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
     }
 }
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayonBackend<R> {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -707,54 +738,55 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayon 
         );
         let bytes = metadata_bytes + workers * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<RayonTaskExecutor>(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
+        super::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<RayonTaskExecutor, _>(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
+            &base_dft_ref::<R>(a),
             dsize,
             product_limbs,
-            &base_vmp_ref(pmat),
+            &base_vmp_ref::<R>(pmat),
             tmp,
         );
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
-    module: &Module<NTT4x30AvxRayon>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30AvxRayon>,
+pub(crate) fn vmp_apply_digits_strided_known_zero_prefix<R: CpuRing>(
+    module: &Module<NTT4x30AvxRayonBackend<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30AvxRayonBackend<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
     dsize: usize,
     zero_prefix: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30AvxRayon>,
-    scratch: &mut ScratchArena<'_, NTT4x30AvxRayon>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30AvxRayonBackend<R>>,
+    scratch: &mut ScratchArena<'_, NTT4x30AvxRayonBackend<R>>,
 ) {
-    let bytes = <NTT4x30AvxRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
-        module,
-        res.size(),
-        a.cols(),
-        a.size(),
-        dsize,
-        pmat.rows(),
-        pmat.cols_in(),
-        pmat.cols_out(),
-        pmat.size(),
-    );
-    let (tmp, _) = crate::hal_impl::take_host_typed::<NTT4x30AvxRayon, u64>(scratch.borrow(), bytes / size_of::<u64>());
-    super::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<RayonTaskExecutor>(
-        base_module(module),
-        &mut base_dft_mut(res),
-        &base_dft_ref(a),
+    let bytes =
+        <NTT4x30AvxRayonBackend<R> as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
+            module,
+            res.size(),
+            a.cols(),
+            a.size(),
+            dsize,
+            pmat.rows(),
+            pmat.cols_in(),
+            pmat.cols_out(),
+            pmat.size(),
+        );
+    let (tmp, _) = crate::hal_impl::take_host_typed::<NTT4x30AvxRayonBackend<R>, u64>(scratch.borrow(), bytes / size_of::<u64>());
+    super::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<RayonTaskExecutor, _>(
+        base_module::<R>(module),
+        &mut base_dft_mut::<R>(res),
+        &base_dft_ref::<R>(a),
         dsize,
         product_limbs,
-        &base_vmp_ref(pmat),
+        &base_vmp_ref::<R>(pmat),
         zero_prefix,
         tmp,
     );
 }
 
-unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalConvolutionImpl for NTT4x30AvxRayonBackend<R> {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
             * super::convolution::cnv_prepare_tmp_bytes(module.n())
@@ -1034,7 +1066,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         super::convolution::cnv_prepare_self::<_, RayonTaskExecutor>(module, left, right, a, tmp);
     }
 }
-unsafe impl HalVecZnxBigImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalVecZnxBigImpl for NTT4x30AvxRayonBackend<R> {
     poulpy_cpu_ref::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
 
     fn vec_znx_big_normalize(
@@ -1050,20 +1082,20 @@ unsafe impl HalVecZnxBigImpl for NTT4x30AvxRayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i128>(scratch.borrow(), 3 * res.n());
-        poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Avx, Self>(
+        poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30AvxBackend<R>, Self>(
             res,
             res_base2k,
             res_k,
             res_offset,
             res_col,
-            &base_big_ref(a),
+            &base_big_ref::<R>(a),
             a_base2k,
             a_col,
             carry,
         );
     }
 }
-unsafe impl HalSvpImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalSvpImpl for NTT4x30AvxRayonBackend<R> {
     fn svp_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
@@ -1071,11 +1103,11 @@ unsafe impl HalSvpImpl for NTT4x30AvxRayon {
         a: &ScalarZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::svp_prepare(
-            base_module(module),
-            &mut base_svp_mut(res),
+        NTT4x30AvxBackend::<R>::svp_prepare(
+            base_module::<R>(module),
+            &mut base_svp_mut::<R>(res),
             res_col,
-            &base_scalar_ref(a),
+            &base_scalar_ref::<R>(a),
             a_col,
         );
     }
@@ -1087,7 +1119,13 @@ unsafe impl HalSvpImpl for NTT4x30AvxRayon {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::svp_ppol_copy(base_module(module), &mut base_svp_mut(res), res_col, &base_svp_ref(a), a_col);
+        NTT4x30AvxBackend::<R>::svp_ppol_copy(
+            base_module::<R>(module),
+            &mut base_svp_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+        );
     }
 
     fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
@@ -1105,14 +1143,14 @@ unsafe impl HalSvpImpl for NTT4x30AvxRayon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx>();
-        NTT4x30Avx::svp_apply_dft(
-            base_module(module),
-            &mut base_dft_mut(res),
+        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30AvxBackend<R>>();
+        NTT4x30AvxBackend::<R>::svp_apply_dft(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
             res_col,
-            &base_svp_ref(a),
+            &base_svp_ref::<R>(a),
             a_col,
-            &base_znx_ref(b),
+            &base_znx_ref::<R>(b),
             b_col,
             &mut base_scratch,
         );
@@ -1127,13 +1165,13 @@ unsafe impl HalSvpImpl for NTT4x30AvxRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        NTT4x30Avx::svp_apply_dft_to_dft(
-            base_module(module),
-            &mut base_dft_mut(res),
+        NTT4x30AvxBackend::<R>::svp_apply_dft_to_dft(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
             res_col,
-            &base_svp_ref(a),
+            &base_svp_ref::<R>(a),
             a_col,
-            &base_dft_ref(b),
+            &base_dft_ref::<R>(b),
             b_col,
         );
     }
@@ -1145,12 +1183,18 @@ unsafe impl HalSvpImpl for NTT4x30AvxRayon {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::svp_apply_dft_to_dft_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_svp_ref(a), a_col);
+        NTT4x30AvxBackend::<R>::svp_apply_dft_to_dft_assign(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+        );
     }
 }
-unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
+unsafe impl<R: CpuRing> HalVecZnxDftImpl for NTT4x30AvxRayonBackend<R> {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        NTT4x30Avx::vec_znx_idft_normalize_consume_tmp_bytes(base_module(module), res_size, a_size)
+        NTT4x30AvxBackend::<R>::vec_znx_idft_normalize_consume_tmp_bytes(base_module::<R>(module), res_size, a_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1166,13 +1210,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_res = base_znx_mut(res);
-        let mut base_a = base_dft_mut(a);
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx>();
+        let mut base_res = base_znx_mut::<R>(res);
+        let mut base_a = base_dft_mut::<R>(a);
+        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30AvxBackend<R>>();
         if let Some((add, add_col)) = addend {
-            let base_add = base_znx_ref(add);
-            NTT4x30Avx::vec_znx_idft_normalize_consume(
-                base_module(module),
+            let base_add = base_znx_ref::<R>(add);
+            NTT4x30AvxBackend::<R>::vec_znx_idft_normalize_consume(
+                base_module::<R>(module),
                 &mut base_res,
                 res_base2k,
                 res_k,
@@ -1184,8 +1228,8 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
                 &mut base_scratch,
             );
         } else {
-            NTT4x30Avx::vec_znx_idft_normalize_consume(
-                base_module(module),
+            NTT4x30AvxBackend::<R>::vec_znx_idft_normalize_consume(
+                base_module::<R>(module),
                 &mut base_res,
                 res_base2k,
                 res_k,
@@ -1210,23 +1254,23 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
-            return NTT4x30Avx::vec_znx_dft_apply(
-                base_module(module),
+            return NTT4x30AvxBackend::<R>::vec_znx_dft_apply(
+                base_module::<R>(module),
                 step,
                 offset,
-                &mut base_dft_mut(res),
+                &mut base_dft_mut::<R>(res),
                 res_col,
-                &base_znx_ref(a),
+                &base_znx_ref::<R>(a),
                 a_col,
             );
         }
 
-        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        poulpy_hal::layouts::check_degree::<NTT4x30AvxBackend<R>>(module.n(), res.n());
         assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();
-        let module = base_module(module);
+        let module = base_module::<R>(module);
         let data: &mut [u32] = cast_slice_mut(res.raw_mut());
         data.par_chunks_mut(4 * n * cols).enumerate().for_each_init(
             || vec![0u64; 4 * n],
@@ -1244,7 +1288,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        NTT4x30Avx::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+        NTT4x30AvxBackend::<R>::vec_znx_idft_apply_tmp_bytes(base_module::<R>(module)).max(
             poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
         )
     }
@@ -1258,18 +1302,18 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         if !parallel_limb_tasks(res.size()) {
-            let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx>();
-            return NTT4x30Avx::vec_znx_idft_apply(
-                base_module(module),
-                &mut base_big_mut(res),
+            let mut base_scratch = scratch.borrow().into_backend::<NTT4x30AvxBackend<R>>();
+            return NTT4x30AvxBackend::<R>::vec_znx_idft_apply(
+                base_module::<R>(module),
+                &mut base_big_mut::<R>(res),
                 res_col,
-                &base_dft_ref(a),
+                &base_dft_ref::<R>(a),
                 a_col,
                 &mut base_scratch,
             );
         }
 
-        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        poulpy_hal::layouts::check_degree::<NTT4x30AvxBackend<R>>(module.n(), res.n());
         assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         let n = res.n();
         let res_cols = res.cols();
@@ -1285,7 +1329,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         );
         let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker);
         let res_ptr = SendPtr::new(res.raw_mut().as_mut_ptr());
-        let module = base_module(module);
+        let module = base_module::<R>(module);
         RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
             let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * res_cols + res_col)), n) };
             if limb < min_size {
@@ -1310,16 +1354,16 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a_col: usize,
     ) {
         if !parallel_limb_tasks(res.size()) {
-            return NTT4x30Avx::vec_znx_idft_apply_tmpa(
-                base_module(module),
-                &mut base_big_mut(res),
+            return NTT4x30AvxBackend::<R>::vec_znx_idft_apply_tmpa(
+                base_module::<R>(module),
+                &mut base_big_mut::<R>(res),
                 res_col,
-                &mut base_dft_mut(a),
+                &mut base_dft_mut::<R>(a),
                 a_col,
             );
         }
 
-        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        poulpy_hal::layouts::check_degree::<NTT4x30AvxBackend<R>>(module.n(), res.n());
         assert_eq!(
             a.n(),
             res.n(),
@@ -1332,7 +1376,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
         let a_data: &[u32] = cast_slice(a.raw());
-        let module = base_module(module);
+        let module = base_module::<R>(module);
         res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
             || vec![0u64; 4 * n],
             |tmp, (limb, group)| {
@@ -1361,13 +1405,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_add(
-            base_module(module),
-            &mut base_dft_mut(res),
+        NTT4x30AvxBackend::<R>::vec_znx_dft_add(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
             res_col,
-            &base_dft_ref(a),
+            &base_dft_ref::<R>(a),
             a_col,
-            &base_dft_ref(b),
+            &base_dft_ref::<R>(b),
             b_col,
         )
     }
@@ -1379,7 +1423,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_add_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
+        NTT4x30AvxBackend::<R>::vec_znx_dft_add_assign(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_dft_ref::<R>(a),
+            a_col,
+        )
     }
 
     fn vec_znx_dft_sub(
@@ -1391,13 +1441,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_sub(
-            base_module(module),
-            &mut base_dft_mut(res),
+        NTT4x30AvxBackend::<R>::vec_znx_dft_sub(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
             res_col,
-            &base_dft_ref(a),
+            &base_dft_ref::<R>(a),
             a_col,
-            &base_dft_ref(b),
+            &base_dft_ref::<R>(b),
             b_col,
         )
     }
@@ -1409,7 +1459,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_sub_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
+        NTT4x30AvxBackend::<R>::vec_znx_dft_sub_assign(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_dft_ref::<R>(a),
+            a_col,
+        )
     }
 
     fn vec_znx_dft_sub_negate_assign(
@@ -1419,7 +1475,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_sub_negate_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
+        NTT4x30AvxBackend::<R>::vec_znx_dft_sub_negate_assign(
+            base_module::<R>(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_dft_ref::<R>(a),
+            a_col,
+        )
     }
 
     fn vec_znx_dft_copy(
@@ -1431,25 +1493,25 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Avx::vec_znx_dft_copy(
-            base_module(module),
+        NTT4x30AvxBackend::<R>::vec_znx_dft_copy(
+            base_module::<R>(module),
             step,
             offset,
-            &mut base_dft_mut(res),
+            &mut base_dft_mut::<R>(res),
             res_col,
-            &base_dft_ref(a),
+            &base_dft_ref::<R>(a),
             a_col,
         )
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-        NTT4x30Avx::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
+        NTT4x30AvxBackend::<R>::vec_znx_dft_zero(base_module::<R>(module), &mut base_dft_mut::<R>(res), res_col)
     }
 
-    type AutomorphismPlan = <NTT4x30Avx as HalVecZnxDftImpl>::AutomorphismPlan;
+    type AutomorphismPlan = <NTT4x30AvxBackend<R> as HalVecZnxDftImpl>::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-        NTT4x30Avx::vec_znx_dft_automorphism_plan(base_module(module), n, p)
+        NTT4x30AvxBackend::<R>::vec_znx_dft_automorphism_plan(base_module::<R>(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -1460,7 +1522,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        super::vec_znx_dft::vec_znx_dft_automorphism(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
+        super::vec_znx_dft::vec_znx_dft_automorphism(plan, &mut base_dft_mut::<R>(res), res_col, &base_dft_ref::<R>(a), a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -1479,33 +1541,33 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
     ) {
         let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor, _>(
                 plan,
-                &mut base_dft_mut(res),
+                &mut base_dft_mut::<R>(res),
                 res_col,
-                &base_dft_ref(a),
+                &base_dft_ref::<R>(a),
                 a_col,
             );
         } else {
-            super::vec_znx_dft::vec_znx_dft_automorphism_add::<RayonTaskExecutor>(
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<RayonTaskExecutor, _>(
                 plan,
-                &mut base_dft_mut(res),
+                &mut base_dft_mut::<R>(res),
                 res_col,
-                &base_dft_ref(a),
+                &base_dft_ref::<R>(a),
                 a_col,
             );
         }
     }
 }
 
-impl poulpy_hal::execution::ScratchWorkers for NTT4x30AvxRayon {
+impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for NTT4x30AvxRayonBackend<R> {
     const PREPARE: usize = 4;
     const APPLY: usize = 8;
     const VMP: usize = 8;
     const IDFT: usize = 8;
 }
 
-impl poulpy_cpu_rayon::RayonTuning for NTT4x30AvxRayon {
+impl<R: CpuRing> poulpy_cpu_rayon::RayonTuning for NTT4x30AvxRayonBackend<R> {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
@@ -1516,7 +1578,7 @@ mod tests {
     use poulpy_cpu_ref::reference::znx::ZnxAdd;
     use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
 
-    use super::NTT4x30AvxRayon;
+    use crate::NTT4x30AvxRayon;
 
     #[test]
     fn coefficient_add_matches_wrapping_arithmetic() {

@@ -6,7 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
-- `Backend::cyclotomic_order` reports the module's ambient cyclotomic order, defaulting to `2N` for the standard negacyclic ring.
+- `Backend::CYCLOTOMIC_ORDER_FACTOR` defines the ambient cyclotomic order per coefficient, defaulting to 2 for the standard negacyclic ring.
 
 - `PrimeSet::MAX_LOG_N` describes the supported negacyclic NTT degree and root order.
   It defaults to 16 for compatibility with existing custom prime sets.
@@ -62,7 +62,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-ckks`
 
 - Validate all EvalMod plaintext parameters before evaluation so ring mismatches leave the destination unchanged.
-- Add conjugate invariant bootstrapping through a standard ring of twice the degree, with internal ring conversion and dedicated switching keys. `ckks_ci_bootstrap` refreshes one real ciphertext; `ckks_ci_bootstrap_pair` explicitly packs two. S2C-first without EvalRound+ uses one EvalMod for a single input. Both preserve CI provenance, scale, and slot metadata.
+- Add `CIRingBridge` between a CI backend and a standard backend of twice the degree, with internal ring conversion and dedicated switching keys. `bootstrap` refreshes one real ciphertext; `bootstrap_pair` explicitly packs two. S2C-first without EvalRound+ uses one EvalMod for a single input. Both preserve CI provenance, scale, and slot metadata; prepared keys and transforms retain their backend types.
 - Compile S2C-first normalization into the initial transform. CI bootstrap allocations reserve one trace bit, and return keys cover the retained output scale. Outputs recover the input scale after extraction; paired CI inputs use one inbound key switch.
 - Add CI bootstrapping presets for `2^15` and `2^16` real slots at scale `2^35`, with 19-bit minimum measured precision, covering single and paired evaluation and both ring switching keys.
 
@@ -92,7 +92,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - CI NTT4x30 transforms and NTT3x42 IFMA basis changes use SIMD kernels.
   Real-slot FFT convolution uses AVX-512 or NEON kernels; NEON also specializes real-slot matrix products.
 
-- Add conjugate invariant module constructors and ring arithmetic for FFT64, NTT4x30, and IFMA CPU backends, including Rayon wrappers. The `n`-coefficient basis has ambient order `4n`.
+- Add dedicated `FFT64CI`, `NTT4x30CI`, and `NTT3x42CI` backend variants for the supported CPU families, including Rayon wrappers. Ring selection is static, CI and standard prepared data have distinct types, and standard modules carry no CI transform tables. The CI `n`-coefficient basis has ambient order `4n`.
 
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.
   The scalar 29-bit and 31-bit prime sets also support this limit.

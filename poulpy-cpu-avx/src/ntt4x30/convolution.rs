@@ -218,7 +218,7 @@ fn prepare<BE, E: TaskExecutor>(
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30>>
+        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
         + NttFromZnx64,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -314,7 +314,7 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30>>
+        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
         + NttFromZnx64,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -330,7 +330,7 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30>>
+        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
         + NttFromZnx64,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -347,7 +347,7 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30>>
+        + NttDFTExecute<poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
         + NttFromZnx64,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,

@@ -1,5 +1,5 @@
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CKKSModuleInfos, CKKSResult as Result, CKKSRing, CKKSRingKind, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSMeta, CKKSModuleInfos, CKKSResult as Result, CKKSRingKind, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSImagOps},
     layouts::{
         BootstrappingKeys, CIBootstrappingContext, CIBootstrappingKeys, CIBootstrappingKeysLayout, CKKSCiphertextOwned,
@@ -18,16 +18,18 @@ use poulpy_hal::{
     layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut},
 };
 
-pub(crate) fn ckks_ci_bootstrap_tmp_bytes_reference<BE, F>(
+pub(crate) fn ckks_ci_bootstrap_tmp_bytes_reference<BE, CI, F>(
     standard_module: &Module<BE>,
-    ci_module: &Module<BE>,
-    ct_out: &CKKSCiphertextOwned<BE>,
-    ct_in: &CKKSCiphertextOwned<BE>,
+    ci_module: &Module<CI>,
+    ct_out: &CKKSCiphertextOwned<CI>,
+    ct_in: &CKKSCiphertextOwned<CI>,
     ctx: &CIBootstrappingContext<BE, F>,
     keys_layout: &CIBootstrappingKeysLayout,
 ) -> usize
 where
     BE: Backend,
+    CI: Backend<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Module<CI>: GLWENormalize<CI>,
     Module<BE>: ModuleN + GLWEKeyswitch<BE> + GLWENormalize<BE> + CKKSAddOps<BE> + CKKSImagOps<BE> + CKKSBootstrappingOps<BE>,
 {
     let ctx = &ctx.standard;
@@ -72,19 +74,23 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_ci_bootstrap_reference<BE, F, K, S>(
+pub(crate) fn ckks_ci_bootstrap_reference<BE, CI, F, K, S>(
     standard_module: &Module<BE>,
-    ci_module: &Module<BE>,
-    left_out: &mut CKKSCiphertextOwned<BE>,
-    right_out: Option<&mut CKKSCiphertextOwned<BE>>,
-    left_in: &CKKSCiphertextOwned<BE>,
-    right_in: Option<&CKKSCiphertextOwned<BE>>,
+    ci_module: &Module<CI>,
+    left_out: &mut CKKSCiphertextOwned<CI>,
+    right_out: Option<&mut CKKSCiphertextOwned<CI>>,
+    left_in: &CKKSCiphertextOwned<CI>,
+    right_in: Option<&CKKSCiphertextOwned<CI>>,
     ctx: &CIBootstrappingContext<BE, F>,
     keys: &CIBootstrappingKeys<K, S>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
+    CI: Backend<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    for<'a> CI::BufRef<'a>: HostDataRef,
+    for<'a> CI::BufMut<'a>: HostDataMut,
+    Module<CI>: GLWENormalize<CI> + CKKSModuleAlloc<CI>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: ModuleN
@@ -98,7 +104,7 @@ where
     S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     F: Sync,
 {
-    validate_ci_bootstrap(standard_module, ci_module, left_out, right_out.as_deref(), left_in, right_in)?;
+    validate_ci_bootstrap(ci_module, left_out, right_out.as_deref(), left_in, right_in)?;
 
     let ctx = &ctx.standard;
     crate::ckks_ensure!(
@@ -185,13 +191,16 @@ where
     refreshed.set_k(bootstrap_k);
     standard_module.ckks_bootstrap(&mut refreshed, &packed, ctx, &keys.bootstrap_keys, scratch)?;
     standard_module.glwe_keyswitch_assign(&mut refreshed, &keys.standard_to_ci.as_core().to_backend_ref(), scratch);
-    fold_complex_to_real(ci_module, left_out, &refreshed, scratch);
-    crate::ckks_set_log_delta_normalized(ci_module, left_out, left_in.log_delta(), scratch);
-
+    {
+        let mut ci_scratch = scratch.borrow().into_backend::<CI>();
+        fold_complex_to_real(ci_module, left_out, &refreshed, &mut ci_scratch);
+        crate::ckks_set_log_delta_normalized(ci_module, left_out, left_in.log_delta(), &mut ci_scratch);
+    }
     if let Some(right_out) = right_out {
         standard_module.ckks_div_i_assign(&mut refreshed, scratch)?;
-        fold_complex_to_real(ci_module, right_out, &refreshed, scratch);
-        crate::ckks_set_log_delta_normalized(ci_module, right_out, left_in.log_delta(), scratch);
+        let mut ci_scratch = scratch.borrow().into_backend::<CI>();
+        fold_complex_to_real(ci_module, right_out, &refreshed, &mut ci_scratch);
+        crate::ckks_set_log_delta_normalized(ci_module, right_out, left_in.log_delta(), &mut ci_scratch);
     }
     Ok(())
 }
@@ -233,41 +242,22 @@ where
     Ok(())
 }
 
-fn validate_ci_bootstrap<BE: Backend>(
-    standard_module: &Module<BE>,
-    ci_module: &Module<BE>,
-    left_out: &CKKSCiphertextOwned<BE>,
-    right_out: Option<&CKKSCiphertextOwned<BE>>,
-    left_in: &CKKSCiphertextOwned<BE>,
-    right_in: Option<&CKKSCiphertextOwned<BE>>,
-) -> Result<()>
-where
-    Module<BE>: ModuleN,
-{
-    let ci_ring = CKKSRing {
-        kind: CKKSRingKind::ConjugateInvariant,
-        n: ci_module.n().into(),
-    };
-    ci_ring.check("CI bootstrap module", ci_module.ckks_ring())?;
-    CKKSRing {
-        kind: CKKSRingKind::Standard,
-        n: standard_module.n().into(),
-    }
-    .check("CI bootstrap standard module", standard_module.ckks_ring())?;
+fn validate_ci_bootstrap<CI: Backend>(
+    ci_module: &Module<CI>,
+    left_out: &CKKSCiphertextOwned<CI>,
+    right_out: Option<&CKKSCiphertextOwned<CI>>,
+    left_in: &CKKSCiphertextOwned<CI>,
+    right_in: Option<&CKKSCiphertextOwned<CI>>,
+) -> Result<()> {
+    let ci_ring = ci_module.ckks_ring();
     for ct in [Some(left_in), Some(left_out), right_in, right_out].into_iter().flatten() {
         ci_ring.check_ciphertext("CI bootstrap", ct)?;
         crate::layouts::validation::validate_storage_capacity("CI bootstrap ciphertext", ct)?;
         crate::ckks_ensure!(
-            ct.base2k().as_usize() <= BE::MAX_BASE2K,
+            ct.base2k().as_usize() <= CI::MAX_BASE2K,
             "CI ciphertext radix exceeds the backend limit"
         );
     }
-    crate::ckks_ensure!(
-        standard_module.n() == 2 * ci_module.n(),
-        "CI bootstrapping requires standard degree 2N (got CI N={} and standard N={})",
-        ci_module.n(),
-        standard_module.n()
-    );
     crate::ckks_ensure!(
         left_in.n().as_usize() == ci_module.n() && left_out.n().as_usize() == ci_module.n(),
         "CI ciphertext degree does not match the CI module"

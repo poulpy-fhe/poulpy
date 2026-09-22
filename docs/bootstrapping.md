@@ -290,10 +290,20 @@ cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::boots
 
 ## Conjugate invariant ciphertexts
 
-`standard_module.ckks_ci_bootstrap(ci_module, out, input, context, keys, scratch)` refreshes one degree-`N` CI ciphertext through a degree-`2N` standard ring.
+Construct the two rings with distinct backend types, then validate their bridge:
+
+```rust,ignore
+let ci = Module::<NTT4x30CIRef>::new(n);
+let standard = Module::<NTT4x30Ref>::new(2 * n);
+let bridge = CIRingBridge::new(&ci, &standard)?;
+bridge.bootstrap(out, input, context, keys, scratch)?;
+```
+
+`CIRingBridge` requires matching coefficient storage, a CI module of degree `N`, and a standard module of degree `2N`.
+Prepared transforms, contexts, and switching keys remain on their original backend; no prepared-buffer reinterpretation is involved.
 The internal standard ciphertext carries real slots.
 With an S2C-first context without EvalRound+, this runs one EvalMod.
-The separate `ckks_ci_bootstrap_pair` entry point packs two inputs into the real and imaginary parts and evaluates both nonlinear branches.
+The separate `bridge.bootstrap_pair` entry point packs two inputs into the real and imaginary parts and evaluates both nonlinear branches.
 
 Compile a `CIBootstrappingContext` under the standard module with full-slot transforms (`log_slots = log2(N)`), including for sparsely packed inputs.
 The ordinary C2S-first and S2C-first recipes, scale accounting, and optional sparse-secret encapsulation apply.
@@ -307,7 +317,7 @@ The standard pipeline retains its output scale through the return switch and tra
 The extra bit compensates for the trace's factor of two.
 The return key encrypts under the embedded CI secret, so its modulus, including auxiliary bits and gadget rounding, must respect the CI secret's bound.
 
-`ckks_ci_bootstrap_tmp_bytes` sizes the shared scratch arena.
+`bridge.bootstrap_tmp_bytes` sizes the shared scratch arena, allocated on the standard backend.
 The bridge also allocates its standard working ciphertexts.
 Both entry points return CI-tagged ciphertexts and preserve input scale and slot count; the pair requires matching input layouts and metadata and matching output layouts.
 Conversion is internal.

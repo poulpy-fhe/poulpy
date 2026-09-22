@@ -69,49 +69,35 @@ pub mod source {
 }
 
 pub use scalar_znx_fill::ScalarZnxFill;
+pub mod ring;
 
-pub use fft64::{FFT64Ref, FFT64ReimTable};
-pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
-pub use reference::fft64::module::{FFT64Mode, FFT64ModuleConfig};
-
-pub use crate::reference::ntt4x30::vec_znx_dft::NTTModuleConfig;
+pub use fft64::{FFT64CIRef, FFT64Ref, FFT64RefBackend, FFT64ReimTable};
+pub use ntt4x30::{NTT4x30CIRef, NTT4x30Ref, NTT4x30RefBackend, NTT4x30RefHandle};
 
 #[cfg(test)]
-crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64Ref, crate::FFT64ModuleConfig::conjugate_invariant());
+crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
 
 #[cfg(test)]
-crate::conjugate_invariant_test_suite!(
-    ci_ntt4x30ref,
-    crate::NTT4x30Ref,
-    crate::NTTModuleConfig::conjugate_invariant()
-);
+crate::conjugate_invariant_test_suite!(ci_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
 
 #[cfg(all(test, feature = "enable-core"))]
-crate::conjugate_invariant_core_test_suite!(
-    ci_core_fft64ref,
-    crate::FFT64Ref,
-    crate::FFT64ModuleConfig::conjugate_invariant()
-);
+crate::conjugate_invariant_core_test_suite!(ci_core_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
 
 #[cfg(all(test, feature = "enable-core"))]
-crate::conjugate_invariant_core_test_suite!(
-    ci_core_ntt4x30ref,
-    crate::NTT4x30Ref,
-    crate::NTTModuleConfig::conjugate_invariant()
-);
+crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
 
 #[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64ref,
+    crate::FFT64CIRef,
     crate::FFT64Ref,
-    crate::FFT64ModuleConfig::conjugate_invariant(),
     poulpy_ckks::test_suite::FFT64_PARAMS_F64
 );
 
 #[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30ref,
+    crate::NTT4x30CIRef,
     crate::NTT4x30Ref,
-    crate::NTTModuleConfig::conjugate_invariant(),
     poulpy_ckks::test_suite::NTT4X30_PARAMS_F64
 );

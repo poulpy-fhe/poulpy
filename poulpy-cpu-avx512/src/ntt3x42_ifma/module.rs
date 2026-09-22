@@ -6,9 +6,12 @@
 //!   handle destruction path.
 //! - [`module_new`]: constructor used by the OEP `HalImpl::new` shim.
 
+#[cfg(feature = "enable-ifma")]
+use crate::NTT3x42IfmaBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::ptr::NonNull;
 
-use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
@@ -29,31 +32,31 @@ use poulpy_hal::{
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT3x42Ifma>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT3x42IfmaHandle {
+pub struct NTT3x42IfmaHandle<R: CpuRing = poulpy_cpu_ref::ring::Standard> {
     /// Forward tables for every degree the module serves, indexed by
     /// `log2(degree) - log2(MIN_DEGREE)`; the last entry is the module's own.
-    pub(crate) tables_ntt: Vec<Ntt3x42IfmaTable<Primes42>>,
+    pub(crate) tables_ntt: Vec<Ntt3x42IfmaTable<Primes42, R>>,
     /// Inverse tables, same indexing.
-    pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42>>,
+    pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42, R>>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl NTT3x42IfmaHandle {
-    const LOG_MIN_DEGREE: usize = NTT3x42Ifma::MIN_DEGREE.ilog2() as usize;
+impl<R: CpuRing> NTT3x42IfmaHandle<R> {
+    const LOG_MIN_DEGREE: usize = NTT3x42IfmaBackend::<R>::MIN_DEGREE.ilog2() as usize;
 
     /// The forward table for degree `n`, a power of two the module serves.
-    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42> {
+    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42, R> {
         &self.tables_ntt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
     }
 
     /// The inverse table for degree `n`.
-    pub(crate) fn table_intt_for(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42> {
+    pub(crate) fn table_intt_for(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42, R> {
         &self.tables_intt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
     }
 }
 
-impl Backend for NTT3x42Ifma {
+impl<R: CpuRing> Backend for NTT3x42IfmaBackend<R> {
     const MIN_DEGREE: usize = 8;
     const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
 
@@ -64,16 +67,9 @@ impl Backend for NTT3x42Ifma {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT3x42IfmaHandle;
+    type Handle = NTT3x42IfmaHandle<R>;
     type Location = poulpy_hal::layouts::Host;
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        module.n() as i64
-            * if handle(module).table_ntt_for(module.n()).ci.is_some() {
-                4
-            } else {
-                2
-            }
-    }
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -222,7 +218,7 @@ impl Backend for NTT3x42Ifma {
 /// The borrow lives for `&Module<NTT3x42Ifma>` and is sound under the
 /// no-aliasing assumption documented on `Module`.
 #[inline(always)]
-pub(crate) fn handle(module: &Module<NTT3x42Ifma>) -> &NTT3x42IfmaHandle {
+pub(crate) fn handle<R: CpuRing>(module: &Module<NTT3x42IfmaBackend<R>>) -> &NTT3x42IfmaHandle<R> {
     unsafe { &*module.ptr() }
 }
 
@@ -254,40 +250,39 @@ fn assert_runtime_support() {
 /// Verifies AVX-512-IFMA availability at runtime, then heap-allocates a
 /// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of every
 /// degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
-pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
+pub(crate) fn module_new<R: CpuRing>(n: u64) -> Module<NTT3x42IfmaBackend<R>> {
     assert!(
-        n as usize >= NTT3x42Ifma::MIN_DEGREE,
+        n as usize >= NTT3x42IfmaBackend::<R>::MIN_DEGREE,
         "NTT3x42Ifma requires n >= {}, got {n}",
-        NTT3x42Ifma::MIN_DEGREE
+        NTT3x42IfmaBackend::<R>::MIN_DEGREE
     );
-    poulpy_cpu_ref::NTTModuleConfig::default().new_module::<NTT3x42Ifma>(n)
+    <NTT3x42IfmaBackend<R> as poulpy_cpu_ref::hal_defaults::NTT4x30ModuleDefault>::module_new_default(n)
 }
 
-unsafe impl poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory for NTT3x42IfmaHandle {
+unsafe impl<R: CpuRing> poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory for NTT3x42IfmaHandle<R> {
     fn assert_ntt_runtime_support() {
         assert_runtime_support();
     }
-    fn create_ntt_handle(n: usize, config: poulpy_cpu_ref::NTTModuleConfig) -> Self {
+    fn create_ntt_handle(n: usize) -> Self {
         assert!(
             n.is_power_of_two()
-                && n >= NTT3x42Ifma::MIN_DEGREE
-                && n <= (1usize
-                    << (<Primes42 as poulpy_hal::layouts::PrimeSet>::MAX_LOG_N - u32::from(config.is_conjugate_invariant())))
+                && n >= NTT3x42IfmaBackend::<R>::MIN_DEGREE
+                && n <= (1usize << (<Primes42 as poulpy_hal::layouts::PrimeSet>::MAX_LOG_N - u32::from(R::IS_CI)))
         );
-        NTT3x42IfmaHandle {
+        NTT3x42IfmaHandle::<R> {
             table_cache: Default::default(),
-            tables_ntt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=n.ilog2() as usize)
-                .map(|log_degree| Ntt3x42IfmaTable::new_with_config(1usize << log_degree, config))
+            tables_ntt: (NTT3x42IfmaHandle::<R>::LOG_MIN_DEGREE..=n.ilog2() as usize)
+                .map(|log_degree| Ntt3x42IfmaTable::new(1usize << log_degree))
                 .collect(),
-            tables_intt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=n.ilog2() as usize)
-                .map(|log_degree| Ntt3x42IfmaTableInv::new_with_config(1usize << log_degree, config))
+            tables_intt: (NTT3x42IfmaHandle::<R>::LOG_MIN_DEGREE..=n.ilog2() as usize)
+                .map(|log_degree| Ntt3x42IfmaTableInv::new(1usize << log_degree))
                 .collect(),
             meta_bbc: Bbc126IfmaMeta::new(),
         }
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {
+unsafe impl<R: CpuRing> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

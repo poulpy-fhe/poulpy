@@ -20,6 +20,8 @@
 //!   42-bit prime residues into two `u64` words per coefficient.
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
+use poulpy_cpu_ref::ring::CpuRing;
+
 pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
 mod execution;
@@ -69,15 +71,27 @@ mod tests;
 ///
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42Ifma;
+pub struct NTT3x42IfmaBackend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
+
+/// Standard negacyclic backend.
+pub type NTT3x42Ifma = NTT3x42IfmaBackend<poulpy_cpu_ref::ring::Standard>;
+/// Conjugate-invariant backend.
+pub type NTT3x42CIIfma = NTT3x42IfmaBackend<poulpy_cpu_ref::ring::ConjugateInvariant>;
 
 /// Rayon-parallel AVX512-IFMA backend.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42IfmaRayon;
+pub struct NTT3x42IfmaRayonBackend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
+
+/// Standard negacyclic Rayon backend.
+#[cfg(feature = "enable-rayon")]
+pub type NTT3x42IfmaRayon = NTT3x42IfmaRayonBackend<poulpy_cpu_ref::ring::Standard>;
+/// Conjugate-invariant Rayon backend.
+#[cfg(feature = "enable-rayon")]
+pub type NTT3x42CIIfmaRayon = NTT3x42IfmaRayonBackend<poulpy_cpu_ref::ring::ConjugateInvariant>;
 
 #[cfg(feature = "enable-rayon")]
 pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
 
 #[cfg(feature = "enable-rayon")]
-poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);
+poulpy_hal::impl_backend_from!(NTT3x42IfmaRayonBackend<R>, NTT3x42IfmaBackend<R>, NTT3x42IfmaRayonExecutor; R: CpuRing);

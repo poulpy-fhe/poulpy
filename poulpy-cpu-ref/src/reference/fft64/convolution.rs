@@ -16,7 +16,7 @@ use crate::{
 use poulpy_hal::execution::TaskExecutor;
 
 pub fn convolution_prepare_left<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
@@ -33,7 +33,7 @@ pub fn convolution_prepare_left<BE>(
 }
 
 pub fn convolution_prepare_right<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
@@ -50,7 +50,7 @@ pub fn convolution_prepare_right<BE>(
 }
 
 fn convolution_prepare<R, BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
@@ -119,7 +119,7 @@ fn convolution_prepare<R, BE>(
 }
 
 pub fn convolution_prepare_self<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -339,7 +339,6 @@ pub fn convolution_apply_dft<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
-    real: bool,
     tmp: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
@@ -366,7 +365,7 @@ pub fn convolution_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    if real {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
         BE::reim4_real_convolution_apply(
             m,
             min_size,
@@ -412,7 +411,6 @@ pub fn convolution_apply_dft_add<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
-    real: bool,
     tmp: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
@@ -439,7 +437,7 @@ pub fn convolution_apply_dft_add<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    if real {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
         BE::reim4_real_convolution_apply_accumulate(
             m,
             min_size,
@@ -483,7 +481,6 @@ pub fn convolution_pairwise_apply_dft<BE>(
     b: &CnvPVecRBackendRef<'_, BE>,
     col_i: usize,
     col_j: usize,
-    real: bool,
     tmp: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
@@ -491,7 +488,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        convolution_apply_dft::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, real, tmp);
+        convolution_apply_dft::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 
@@ -518,7 +515,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    if real {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
         BE::reim4_real_convolution_pairwise_apply(
             m,
             min_size,

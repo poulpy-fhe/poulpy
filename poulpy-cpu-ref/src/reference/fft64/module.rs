@@ -1,3 +1,4 @@
+use crate::ring::{CpuRing, RingData, Standard};
 use std::fmt::Debug;
 
 use bytemuck::Zeroable;
@@ -7,45 +8,6 @@ use crate::{
     layouts::{Backend, Module},
     reference::fft64::reim::{ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
 };
-
-/// Evaluation transform used by an FFT64 module.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FFT64Mode {
-    /// Negacyclic transform for `Z[X]/(X^n + 1)`.
-    #[default]
-    Standard,
-    /// Real transform for the conjugate-invariant subring of
-    /// `Z[X]/(X^(2n) + 1)`.
-    ConjugateInvariant,
-}
-
-/// Construction options for FFT64-family modules.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct FFT64ModuleConfig {
-    /// Evaluation transform used by the module.
-    pub mode: FFT64Mode,
-}
-
-impl FFT64ModuleConfig {
-    /// Builds an FFT64 module with these options.
-    pub fn new_module<BE: Backend>(self, n: u64) -> Module<BE>
-    where
-        BE::Handle: FFT64HandleFactory,
-    {
-        assert!(n >= BE::MIN_DEGREE as u64, "module degree is below the backend minimum");
-        BE::Handle::assert_fft64_runtime_support();
-        let handle = BE::Handle::create_fft64_handle(n as usize, self);
-        let ptr = std::ptr::NonNull::from(Box::leak(Box::new(handle)));
-        unsafe { Module::from_nonnull(ptr, n) }
-    }
-
-    /// Selects the conjugate-invariant transform.
-    pub const fn conjugate_invariant() -> Self {
-        Self {
-            mode: FFT64Mode::ConjugateInvariant,
-        }
-    }
-}
 
 struct ConjugateInvariantPlan<F> {
     pack_swaps: Vec<(usize, usize)>,
@@ -59,102 +21,43 @@ struct ConjugateInvariantPlan<F> {
 }
 
 /// Forward and inverse evaluation transforms for one ring degree.
-pub struct FFT64Plan<F>
+pub struct FFT64Plan<F, R: CpuRing = Standard>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
-    mode: FFT64Mode,
-    ci: Option<ConjugateInvariantPlan<F>>,
+    ci: R::Data<ConjugateInvariantPlan<F>>,
 }
 
-impl<F> FFT64Plan<F>
+impl<F, R: CpuRing> FFT64Plan<F, R>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    /// Creates the plan for `Z[X]/(X^n + 1)`.
+    /// Creates the transform plan selected by the backend ring type.
     pub fn new(n: usize) -> Self {
-        Self::new_with_mode(n, FFT64Mode::Standard)
-    }
-
-    pub fn new_with_mode(n: usize, mode: FFT64Mode) -> Self {
         assert!(
             n >= 2 && n.is_power_of_two(),
             "ring degree must be a power of two >= 2, got {n}"
         );
         let m = n >> 1;
-        match mode {
-            FFT64Mode::Standard => Self {
-                fft: ReimFFTTable::new(m),
-                ifft: ReimIFFTTable::new(m),
-                mode,
-                ci: None,
+        Self {
+            fft: if R::IS_CI {
+                ReimFFTTable::new_cyclic(m)
+            } else {
+                ReimFFTTable::new(m)
             },
-            FFT64Mode::ConjugateInvariant => {
-                let pack = |source: usize| {
-                    let y = if source.is_multiple_of(2) {
-                        source >> 1
-                    } else {
-                        n - 1 - (source >> 1)
-                    };
-                    if y.is_multiple_of(2) { y >> 1 } else { m + (y >> 1) }
-                };
-                let log_m = m.trailing_zeros();
-                let bit_reverse = |value: usize| {
-                    if m == 1 {
-                        0
-                    } else {
-                        value.reverse_bits() >> (usize::BITS - log_m)
-                    }
-                };
-                let paired = |source: usize| {
-                    if source < m {
-                        bit_reverse(source)
-                    } else {
-                        m + bit_reverse(n - source)
-                    }
-                };
-                let bit_reverse = (0..m).map(bit_reverse).collect();
-                let angle = F::PI() / F::from(2 * n).unwrap();
-                let mut cos = Vec::with_capacity(m);
-                let mut sin = Vec::with_capacity(m);
-                let mut rotation_cos = Vec::with_capacity(m);
-                let mut rotation_sin = Vec::with_capacity(m);
-                let rotation_angle = F::PI() / F::from(m).unwrap();
-                for k in 0..m {
-                    let theta = angle * F::from(k).unwrap();
-                    cos.push(theta.cos());
-                    sin.push(theta.sin());
-                    let rotation = rotation_angle * F::from(k).unwrap();
-                    rotation_cos.push(rotation.cos());
-                    rotation_sin.push(rotation.sin());
-                }
-                Self {
-                    fft: ReimFFTTable::new_cyclic(m),
-                    ifft: ReimIFFTTable::new_cyclic(m),
-                    mode,
-                    ci: Some(ConjugateInvariantPlan {
-                        pack_swaps: permutation_swaps(n, pack),
-                        paired_swaps: permutation_swaps(n, paired),
-                        cos,
-                        sin,
-                        rotation_cos,
-                        rotation_sin,
-                        bit_reverse,
-                        sqrt_two: F::from(2).unwrap().sqrt(),
-                    }),
-                }
-            }
+            ifft: if R::IS_CI {
+                ReimIFFTTable::new_cyclic(m)
+            } else {
+                ReimIFFTTable::new(m)
+            },
+            ci: R::Data::new(|| ConjugateInvariantPlan::new(n)),
         }
     }
 
-    pub fn mode(&self) -> FFT64Mode {
-        self.mode
-    }
-
     pub fn is_conjugate_invariant(&self) -> bool {
-        self.mode == FFT64Mode::ConjugateInvariant
+        R::IS_CI
     }
 
     pub fn fft(&self) -> &ReimFFTTable<F> {
@@ -166,10 +69,7 @@ where
     }
 
     pub fn divisor(&self) -> F {
-        match self.mode {
-            FFT64Mode::Standard => F::from(self.fft.m()).unwrap(),
-            FFT64Mode::ConjugateInvariant => F::from(4 * self.fft.m()).unwrap(),
-        }
+        F::from(if R::IS_CI { 4 * self.fft.m() } else { self.fft.m() }).unwrap()
     }
 
     pub fn forward<BE>(&self, data: &mut [F])
@@ -177,7 +77,7 @@ where
         BE: ReimFFTExecute<ReimFFTTable<F>, F> + ReimFFTExecute<ReimIFFTTable<F>, F>,
     {
         assert_eq!(data.len(), self.fft.m() << 1);
-        if let Some(ci) = &self.ci {
+        if let Some(ci) = self.ci.get() {
             apply_swaps(data, &ci.paired_swaps);
             ci_dct3_preprocess(data, ci);
             BE::reim_dft_execute(&self.ifft, data);
@@ -194,7 +94,7 @@ where
         BE: ReimFFTExecute<ReimFFTTable<F>, F> + ReimFFTExecute<ReimIFFTTable<F>, F>,
     {
         assert_eq!(data.len(), self.fft.m() << 1);
-        if let Some(ci) = &self.ci {
+        if let Some(ci) = self.ci.get() {
             apply_swaps(data, &ci.pack_swaps);
             BE::reim_dft_execute(&self.fft, data);
             ci_dct2_postprocess(data, ci);
@@ -394,29 +294,25 @@ where
 }
 
 /// Complete geometric family of FFT plans up to a maximum ring degree.
-pub struct FFT64PlanSet<F>
+pub struct FFT64PlanSet<F, R: CpuRing = Standard>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    plans: Vec<FFT64Plan<F>>,
+    plans: Vec<FFT64Plan<F, R>>,
     max_n: usize,
 }
 
-impl<F> FFT64PlanSet<F>
+impl<F, R: CpuRing> FFT64PlanSet<F, R>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
     pub fn new(max_n: usize) -> Self {
-        Self::new_with_mode(max_n, FFT64Mode::Standard)
-    }
-
-    pub fn new_with_mode(max_n: usize, mode: FFT64Mode) -> Self {
         assert!(
             max_n >= 2 && max_n.is_power_of_two(),
             "maximum ring degree must be a power of two >= 2, got {max_n}"
         );
         let plans = (1..=max_n.ilog2() as usize)
-            .map(|log_n| FFT64Plan::new_with_mode(1usize << log_n, mode))
+            .map(|log_n| FFT64Plan::new(1usize << log_n))
             .collect();
         Self { plans, max_n }
     }
@@ -425,7 +321,7 @@ where
         self.max_n
     }
 
-    pub fn for_ring(&self, n: usize) -> &FFT64Plan<F> {
+    pub fn for_ring(&self, n: usize) -> &FFT64Plan<F, R> {
         assert!(
             n >= 2 && n.is_power_of_two() && n <= self.max_n,
             "unsupported ring degree {n}; maximum is {}",
@@ -434,7 +330,7 @@ where
         &self.plans[n.ilog2() as usize - 1]
     }
 
-    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F> {
+    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F, R> {
         self.for_ring(slots.checked_mul(2).expect("slot count overflow"))
     }
 }
@@ -446,9 +342,10 @@ where
 /// defaults share the same FFT64 handle contract across scalar and accelerated backends.
 pub trait FFTModuleHandle<F>: poulpy_hal::api::ModuleN
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
+    type Ring: CpuRing;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
 
     fn get_fft_table_for(&self, n: usize) -> &ReimFFTTable<F> {
         self.get_fft_plan(n).fft()
@@ -467,9 +364,10 @@ where
 /// The handle must be fully initialized before `Module::new()` returns.
 pub unsafe trait FFTHandleProvider<F>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
+    type Ring: CpuRing;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
 }
 
 /// Construct FFT64 backend handles for [`Module::new`](crate::api::ModuleNew::new).
@@ -481,7 +379,7 @@ where
 /// drop via [`crate::layouts::Backend::destroy`].
 pub unsafe trait FFT64HandleFactory: Sized {
     /// Builds a fully initialized handle for ring dimension `n`.
-    fn create_fft64_handle(n: usize, config: FFT64ModuleConfig) -> Self;
+    fn create_fft64_handle(n: usize) -> Self;
 
     /// Optional runtime capability check (default: no-op).
     fn assert_fft64_runtime_support() {}
@@ -489,23 +387,82 @@ pub unsafe trait FFT64HandleFactory: Sized {
 
 impl<BE: Backend<ZnxWord = i64>> FFTModuleHandle<BE::DftWord> for Module<BE>
 where
-    BE::DftWord: Float + FloatConst + Debug,
+    BE::DftWord: Float + FloatConst + Debug + Send + Sync,
     BE::Handle: FFTHandleProvider<BE::DftWord>,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord> {
+    type Ring = <BE::Handle as FFTHandleProvider<BE::DftWord>>::Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord, Self::Ring> {
         unsafe { (&*self.ptr()).get_fft_plan(n) }
+    }
+}
+
+impl<F> ConjugateInvariantPlan<F>
+where
+    F: Float + FloatConst,
+{
+    fn new(n: usize) -> Self {
+        let m = n >> 1;
+        let pack = |source: usize| {
+            let y = if source.is_multiple_of(2) {
+                source >> 1
+            } else {
+                n - 1 - (source >> 1)
+            };
+            if y.is_multiple_of(2) { y >> 1 } else { m + (y >> 1) }
+        };
+        let log_m = m.trailing_zeros();
+        let bit_reverse = |value: usize| {
+            if m == 1 {
+                0
+            } else {
+                value.reverse_bits() >> (usize::BITS - log_m)
+            }
+        };
+        let paired = |source: usize| {
+            if source < m {
+                bit_reverse(source)
+            } else {
+                m + bit_reverse(n - source)
+            }
+        };
+        let bit_reverse = (0..m).map(bit_reverse).collect();
+        let angle = F::PI() / F::from(2 * n).unwrap();
+        let mut cos = Vec::with_capacity(m);
+        let mut sin = Vec::with_capacity(m);
+        let mut rotation_cos = Vec::with_capacity(m);
+        let mut rotation_sin = Vec::with_capacity(m);
+        let rotation_angle = F::PI() / F::from(m).unwrap();
+        for k in 0..m {
+            let theta = angle * F::from(k).unwrap();
+            cos.push(theta.cos());
+            sin.push(theta.sin());
+            let rotation = rotation_angle * F::from(k).unwrap();
+            rotation_cos.push(rotation.cos());
+            rotation_sin.push(rotation.sin());
+        }
+        Self {
+            pack_swaps: permutation_swaps(n, pack),
+            paired_swaps: permutation_swaps(n, paired),
+            cos,
+            sin,
+            rotation_cos,
+            rotation_sin,
+            bit_reverse,
+            sqrt_two: F::from(2).unwrap().sqrt(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FFT64Mode, FFT64Plan};
+    use super::FFT64Plan;
     use crate::FFT64Ref;
+    use crate::ring::ConjugateInvariant;
 
     #[test]
     fn conjugate_invariant_fft_matches_direct_dct() {
         for n in [2usize, 4, 8, 16, 32] {
-            let plan = FFT64Plan::<f64>::new_with_mode(n, FFT64Mode::ConjugateInvariant);
+            let plan = FFT64Plan::<f64, ConjugateInvariant>::new(n);
             let coeffs = (0..n).map(|i| (i as f64 + 1.0) / 17.0).collect::<Vec<_>>();
             let want = (0..n)
                 .map(|j| {
@@ -530,7 +487,7 @@ mod tests {
     #[test]
     fn conjugate_invariant_fft_multiplication_matches_ambient_ring() {
         for n in [8usize, 16, 32] {
-            let plan = FFT64Plan::<f64>::new_with_mode(n, FFT64Mode::ConjugateInvariant);
+            let plan = FFT64Plan::<f64, ConjugateInvariant>::new(n);
             let a = (0..n).map(|i| (i as f64 - 3.0) / 11.0).collect::<Vec<_>>();
             let b = (0..n).map(|i| (5.0 - i as f64) / 13.0).collect::<Vec<_>>();
             let unfold = |value: &[f64]| {

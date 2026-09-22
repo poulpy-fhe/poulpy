@@ -58,11 +58,8 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// or [`Device`](crate::layouts::Device).
     type Location: Location;
 
-    /// Returns the ambient cyclotomic order at the module's maximum degree.
-    /// The default is `2N`, for the standard negacyclic ring.
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        2 * module.n() as i64
-    }
+    /// Ambient cyclotomic order divided by the coefficient dimension.
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
 
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;
@@ -426,7 +423,7 @@ impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
 impl<BE: Backend> CyclotomicOrder for Module<BE> {
     fn cyclotomic_order(&self) -> i64 {
-        BE::cyclotomic_order(self)
+        BE::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
     }
 }
 

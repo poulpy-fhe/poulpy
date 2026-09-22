@@ -1,3 +1,12 @@
+#[cfg(feature = "enable-ifma")]
+use crate::NTT3x42IfmaBackend;
+#[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
+use crate::NTT3x42IfmaRayonBackend;
+use crate::NTT4x30Avx512Backend;
+#[cfg(feature = "enable-rayon")]
+use crate::NTT4x30Avx512RayonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::mem::size_of;
 
 #[cfg(feature = "enable-ifma")]
@@ -48,7 +57,7 @@ trait ModUpBackend: Backend {
     );
 }
 
-impl ModUpBackend for NTT4x30Avx512 {
+impl<R: CpuRing> ModUpBackend for NTT4x30Avx512Backend<R> {
     fn product_known_zero_prefix(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -71,7 +80,7 @@ impl ModUpBackend for NTT4x30Avx512 {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -85,7 +94,7 @@ impl ModUpBackend for NTT4x30Avx512 {
 }
 
 #[cfg(feature = "enable-rayon")]
-impl ModUpBackend for NTT4x30Avx512Rayon {
+impl<R: CpuRing> ModUpBackend for NTT4x30Avx512RayonBackend<R> {
     fn product_known_zero_prefix(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -110,7 +119,7 @@ impl ModUpBackend for NTT4x30Avx512Rayon {
 }
 
 #[cfg(feature = "enable-ifma")]
-impl ModUpBackend for NTT3x42Ifma {
+impl<R: CpuRing> ModUpBackend for NTT3x42IfmaBackend<R> {
     fn product_known_zero_prefix(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -130,7 +139,7 @@ impl ModUpBackend for NTT3x42Ifma {
             1,
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor>(
+        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor, _>(
             res,
             a,
             dsize,
@@ -143,7 +152,7 @@ impl ModUpBackend for NTT3x42Ifma {
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl ModUpBackend for NTT3x42IfmaRayon {
+impl<R: CpuRing> ModUpBackend for NTT3x42IfmaRayonBackend<R> {
     fn product_known_zero_prefix(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -326,9 +335,16 @@ macro_rules! impl_encapsulated_mod_up {
 }
 
 impl_encapsulated_mod_up!(NTT4x30Avx512);
+impl_encapsulated_mod_up!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_encapsulated_mod_up!(NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_encapsulated_mod_up!(crate::NTT4x30CIAvx512Rayon);
 #[cfg(feature = "enable-ifma")]
 impl_encapsulated_mod_up!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_encapsulated_mod_up!(crate::NTT3x42CIIfma);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_encapsulated_mod_up!(NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+impl_encapsulated_mod_up!(crate::NTT3x42CIIfmaRayon);

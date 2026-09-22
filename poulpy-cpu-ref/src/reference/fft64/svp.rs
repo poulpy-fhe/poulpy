@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub fn svp_prepare<'r, 'a, BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,
     a: &ScalarZnxBackendRef<'a, BE>,
@@ -28,7 +28,7 @@ pub fn svp_prepare<'r, 'a, BE>(
 }
 
 pub fn svp_apply_dft_to_dft<'r, 'a, BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,
@@ -59,7 +59,7 @@ pub fn svp_apply_dft_to_dft<'r, 'a, BE>(
 }
 
 pub fn svp_apply_dft_to_dft_assign<'r, 'a, BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,

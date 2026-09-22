@@ -131,16 +131,21 @@ For questions or guidance, feel free to open an issue or discussion in the repos
 
 ## Conjugate invariant rings
 
-`FFT64ModuleConfig::conjugate_invariant().new_module::<FFT64Ref>(n)` and
-`NTTModuleConfig::conjugate_invariant().new_module::<NTT4x30Ref>(n)` select
+`Module::<FFT64CIRef>::new(n)` and `Module::<NTT4x30CIRef>::new(n)` select
 an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
 The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
-cyclotomic order is `4n`. `Module::new` selects the standard negacyclic ring.
-The same constructors serve the corresponding accelerated CPU and Rayon backends.
+cyclotomic order is `4n`. `FFT64Ref` and `NTT4x30Ref` retain the standard ring.
+Accelerated CPU and Rayon backends have corresponding CI siblings, such as
+`FFT64CIAvx512`, `NTT4x30CIAvx`, and `NTT3x42CIIfmaRayon`.
 NTT modules support invariant degrees up to `2^17` with the current prime sets.
+
+The ring is selected by the backend type. Standard plans store no CI tables,
+and CI plans own their required tables directly. The two rings have distinct
+module handles and prepared-data types; layout compatibility only connects
+implementations of the same ring.
 
 Transforms, polynomial products, and automorphisms use this basis. Sparse
 operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so rotation and `X^p - 1` operations reject it.
-Prepared objects and keys must stay with the ring configuration that produced
-them; their layouts do not carry a ring tag.
+CKKS provides `CIRingBridge` for conversion through a standard module of
+degree `2n`, with explicit switching keys.

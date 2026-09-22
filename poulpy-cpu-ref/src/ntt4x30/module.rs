@@ -11,21 +11,22 @@
 //! - The [`NttHandleProvider`] impl for [`NTT4x30RefHandle`], wiring the handle into
 //!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
 
+use crate::NTT4x30RefBackend;
+use crate::ring::CpuRing;
+
 use std::ptr::NonNull;
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host, Module},
+    layouts::{Backend, Host},
 };
 
 use crate::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     types::Q120bScalar,
-    vec_znx_dft::{NTTModuleConfig, NttHandleFactory, NttHandleProvider, NttModuleHandle, NttPlan, NttPlanSet},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
-
-use crate::NTT4x30Ref;
 
 /// Opaque handle for the [`NTT4x30Ref`](crate::NTT4x30Ref) backend.
 ///
@@ -36,16 +37,16 @@ use crate::NTT4x30Ref;
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT4x30Ref>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT4x30RefHandle {
-    ring_plans: NttPlanSet<Primes30>,
+pub struct NTT4x30RefHandle<R: CpuRing = crate::ring::Standard> {
+    ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
+impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for NTT4x30RefBackend<R> {}
 
-impl Backend for NTT4x30Ref {
+impl<R: CpuRing> Backend for NTT4x30RefBackend<R> {
     const MAX_BASE2K: usize = 52;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
@@ -55,16 +56,9 @@ impl Backend for NTT4x30Ref {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30RefHandle;
+    type Handle = NTT4x30RefHandle<R>;
     type Location = Host;
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        module.n() as i64
-            * if module.get_ntt_plan(module.n()).is_conjugate_invariant() {
-                4
-            } else {
-                2
-            }
-    }
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -168,11 +162,11 @@ impl Backend for NTT4x30Ref {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl NttHandleFactory for NTT4x30RefHandle {
-    fn create_ntt_handle(n: usize, config: NTTModuleConfig) -> Self {
+unsafe impl<R: CpuRing> NttHandleFactory for NTT4x30RefHandle<R> {
+    fn create_ntt_handle(n: usize) -> Self {
         NTT4x30RefHandle {
             table_cache: Default::default(),
-            ring_plans: NttPlanSet::new_with_config(n, config),
+            ring_plans: NttPlanSet::new(n),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -183,8 +177,9 @@ unsafe impl NttHandleFactory for NTT4x30RefHandle {
 ///
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised by the [`NttHandleFactory`] impl above.
-unsafe impl NttHandleProvider for NTT4x30RefHandle {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+unsafe impl<R: CpuRing> NttHandleProvider for NTT4x30RefHandle<R> {
+    type Ring = R;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
         self.ring_plans.for_ring(n)
     }
 
@@ -197,7 +192,7 @@ unsafe impl NttHandleProvider for NTT4x30RefHandle {
     }
 }
 
-unsafe impl crate::table_cache::ModuleTableCacheProvider for NTT4x30RefHandle {
+unsafe impl<R: CpuRing> crate::table_cache::ModuleTableCacheProvider for NTT4x30RefHandle<R> {
     fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
         &self.table_cache
     }

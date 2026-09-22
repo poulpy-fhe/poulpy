@@ -3,6 +3,9 @@
 // `PrimeSet` is needed in scope on x86 (the scalar fallback paths use
 // `Primes30::Q[prime]`); on aarch64 the NEON kernels never reference it,
 // hence the allow(unused_imports).
+use crate::NTT4x30NeonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::ntt4x30::arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref};
 #[allow(unused_imports)]
@@ -17,8 +20,6 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
     primes::{PrimeSet, Primes30},
 };
-
-use super::NTT4x30Neon;
 
 // On aarch64, the q120b lazy-modular kernels and the i64↔q120b↔i128↔q120c
 // conversion kernels are NEON; on other targets we fall back to the scalar
@@ -43,9 +44,9 @@ use crate::neon::{
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::ntt4x30::{arithmetic::add_bbb_ref, types::Q_SHIFTED};
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
+impl<R: CpuRing> NttDFTExecute<NttTable<Primes30, R>> for NTT4x30NeonBackend<R> {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTable<Primes30, R>, data: &mut [u64]) {
         #[cfg(target_arch = "aarch64")]
         {
             ntt_neon::<Primes30>(table, data);
@@ -57,9 +58,9 @@ impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
+impl<R: CpuRing> NttDFTExecute<NttTableInv<Primes30, R>> for NTT4x30NeonBackend<R> {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, R>, data: &mut [u64]) {
         #[cfg(target_arch = "aarch64")]
         {
             intt_neon::<Primes30>(table, data);
@@ -71,7 +72,7 @@ impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
     }
 }
 
-impl NttFromZnx64 for NTT4x30Neon {
+impl<R: CpuRing> NttFromZnx64 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         #[cfg(target_arch = "aarch64")]
@@ -85,7 +86,7 @@ impl NttFromZnx64 for NTT4x30Neon {
     }
 }
 
-impl NttToZnx128 for NTT4x30Neon {
+impl<R: CpuRing> NttToZnx128 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -99,7 +100,7 @@ impl NttToZnx128 for NTT4x30Neon {
     }
 }
 
-impl NttAdd for NTT4x30Neon {
+impl<R: CpuRing> NttAdd for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -113,7 +114,7 @@ impl NttAdd for NTT4x30Neon {
     }
 }
 
-impl NttAddAssign for NTT4x30Neon {
+impl<R: CpuRing> NttAddAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -133,7 +134,7 @@ impl NttAddAssign for NTT4x30Neon {
     }
 }
 
-impl NttSub for NTT4x30Neon {
+impl<R: CpuRing> NttSub for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -153,7 +154,7 @@ impl NttSub for NTT4x30Neon {
     }
 }
 
-impl NttSubAssign for NTT4x30Neon {
+impl<R: CpuRing> NttSubAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -173,7 +174,7 @@ impl NttSubAssign for NTT4x30Neon {
     }
 }
 
-impl NttSubNegateAssign for NTT4x30Neon {
+impl<R: CpuRing> NttSubNegateAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -193,7 +194,7 @@ impl NttSubNegateAssign for NTT4x30Neon {
     }
 }
 
-impl NttNegate for NTT4x30Neon {
+impl<R: CpuRing> NttNegate for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -213,7 +214,7 @@ impl NttNegate for NTT4x30Neon {
     }
 }
 
-impl NttNegateAssign for NTT4x30Neon {
+impl<R: CpuRing> NttNegateAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -233,21 +234,21 @@ impl NttNegateAssign for NTT4x30Neon {
     }
 }
 
-impl NttZero for NTT4x30Neon {
+impl<R: CpuRing> NttZero for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl NttCopy for NTT4x30Neon {
+impl<R: CpuRing> NttCopy for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
     }
 }
 
-impl NttMulBbb for NTT4x30Neon {
+impl<R: CpuRing> NttMulBbb for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -261,7 +262,7 @@ impl NttMulBbb for NTT4x30Neon {
     }
 }
 
-impl NttMulBbc for NTT4x30Neon {
+impl<R: CpuRing> NttMulBbc for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         #[cfg(target_arch = "aarch64")]
@@ -275,7 +276,7 @@ impl NttMulBbc for NTT4x30Neon {
     }
 }
 
-impl NttCFromB for NTT4x30Neon {
+impl<R: CpuRing> NttCFromB for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         #[cfg(target_arch = "aarch64")]
@@ -289,7 +290,7 @@ impl NttCFromB for NTT4x30Neon {
     }
 }
 
-impl NttMulBbc1ColX2 for NTT4x30Neon {
+impl<R: CpuRing> NttMulBbc1ColX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         #[cfg(target_arch = "aarch64")]
@@ -318,7 +319,7 @@ impl NttMulBbc1ColX2 for NTT4x30Neon {
     }
 }
 
-impl NttMulBbc2ColsX2 for NTT4x30Neon {
+impl<R: CpuRing> NttMulBbc2ColsX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         #[cfg(target_arch = "aarch64")]
@@ -332,14 +333,14 @@ impl NttMulBbc2ColsX2 for NTT4x30Neon {
     }
 }
 
-impl NttExtract1BlkContiguous for NTT4x30Neon {
+impl<R: CpuRing> NttExtract1BlkContiguous for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, dst, src);
     }
 }
 
-impl NttPackLeft1BlkX2 for NTT4x30Neon {
+impl<R: CpuRing> NttPackLeft1BlkX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         #[cfg(target_arch = "aarch64")]
@@ -365,7 +366,7 @@ impl NttPackLeft1BlkX2 for NTT4x30Neon {
     }
 }
 
-impl NttPackRight1BlkX2 for NTT4x30Neon {
+impl<R: CpuRing> NttPackRight1BlkX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         #[cfg(target_arch = "aarch64")]
@@ -383,7 +384,7 @@ impl NttPackRight1BlkX2 for NTT4x30Neon {
     }
 }
 
-impl NttPairwisePackLeft1BlkX2 for NTT4x30Neon {
+impl<R: CpuRing> NttPairwisePackLeft1BlkX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         #[cfg(target_arch = "aarch64")]
@@ -412,7 +413,7 @@ impl NttPairwisePackLeft1BlkX2 for NTT4x30Neon {
     }
 }
 
-impl NttPairwisePackRight1BlkX2 for NTT4x30Neon {
+impl<R: CpuRing> NttPairwisePackRight1BlkX2 for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         #[cfg(target_arch = "aarch64")]

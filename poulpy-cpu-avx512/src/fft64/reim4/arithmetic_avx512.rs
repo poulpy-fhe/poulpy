@@ -1085,6 +1085,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
 }
 
 #[target_feature(enable = "avx512f")]
+#[inline]
 pub(crate) unsafe fn reim4_real_convolution_1coeff_avx512(
     k: usize,
     dst: &mut [f64; 8],

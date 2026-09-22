@@ -5,38 +5,40 @@
 //! Each impl asserts byte-identical buffer layouts with the reference backend
 //! for that container family, for every shape.
 
-use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
+use crate::FFT64Avx512Backend;
+use crate::NTT4x30Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
+use poulpy_cpu_ref::{FFT64RefBackend, NTT4x30RefBackend};
 use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};
 
-use crate::FFT64Avx512;
-use crate::NTT4x30Avx512;
 #[cfg(feature = "enable-rayon")]
-use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
+use crate::{FFT64Avx512RayonBackend, NTT4x30Avx512RayonBackend};
 
-unsafe impl VecZnxDftLayoutCompatible<FFT64Avx512> for FFT64Ref {}
-unsafe impl VecZnxDftLayoutCompatible<FFT64Ref> for FFT64Avx512 {}
-unsafe impl VecZnxBigLayoutCompatible<FFT64Avx512> for FFT64Ref {}
-unsafe impl VecZnxBigLayoutCompatible<FFT64Ref> for FFT64Avx512 {}
-unsafe impl SvpPPolLayoutCompatible<FFT64Avx512> for FFT64Ref {}
-unsafe impl SvpPPolLayoutCompatible<FFT64Ref> for FFT64Avx512 {}
+unsafe impl<R: CpuRing> VecZnxDftLayoutCompatible<FFT64Avx512Backend<R>> for FFT64RefBackend<R> {}
+unsafe impl<R: CpuRing> VecZnxDftLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512Backend<R> {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<FFT64Avx512Backend<R>> for FFT64RefBackend<R> {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512Backend<R> {}
+unsafe impl<R: CpuRing> SvpPPolLayoutCompatible<FFT64Avx512Backend<R>> for FFT64RefBackend<R> {}
+unsafe impl<R: CpuRing> SvpPPolLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512Backend<R> {}
 
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxDftLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+unsafe impl<R: CpuRing> VecZnxDftLayoutCompatible<FFT64Avx512RayonBackend<R>> for FFT64RefBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxDftLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
+unsafe impl<R: CpuRing> VecZnxDftLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512RayonBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxBigLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<FFT64Avx512RayonBackend<R>> for FFT64RefBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxBigLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512RayonBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl SvpPPolLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+unsafe impl<R: CpuRing> SvpPPolLayoutCompatible<FFT64Avx512RayonBackend<R>> for FFT64RefBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl SvpPPolLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
+unsafe impl<R: CpuRing> SvpPPolLayoutCompatible<FFT64RefBackend<R>> for FFT64Avx512RayonBackend<R> {}
 
-unsafe impl VecZnxBigLayoutCompatible<NTT4x30Avx512> for NTT4x30Ref {}
-unsafe impl VecZnxBigLayoutCompatible<NTT4x30Ref> for NTT4x30Avx512 {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<NTT4x30Avx512Backend<R>> for NTT4x30RefBackend<R> {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<NTT4x30RefBackend<R>> for NTT4x30Avx512Backend<R> {}
 
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxBigLayoutCompatible<NTT4x30Avx512Rayon> for NTT4x30Ref {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<NTT4x30Avx512RayonBackend<R>> for NTT4x30RefBackend<R> {}
 #[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxBigLayoutCompatible<NTT4x30Ref> for NTT4x30Avx512Rayon {}
+unsafe impl<R: CpuRing> VecZnxBigLayoutCompatible<NTT4x30RefBackend<R>> for NTT4x30Avx512RayonBackend<R> {}

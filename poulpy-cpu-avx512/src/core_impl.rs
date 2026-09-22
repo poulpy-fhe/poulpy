@@ -1,4 +1,13 @@
 #[cfg(feature = "enable-ifma")]
+use crate::NTT3x42IfmaBackend;
+#[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
+use crate::NTT3x42IfmaRayonBackend;
+use crate::NTT4x30Avx512Backend;
+#[cfg(feature = "enable-rayon")]
+use crate::NTT4x30Avx512RayonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
+#[cfg(feature = "enable-ifma")]
 use crate::NTT3x42Ifma;
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 use crate::NTT3x42IfmaRayon;
@@ -31,11 +40,17 @@ use poulpy_hal::{
 };
 
 impl_glwe_tensoring_reference!(FFT64Avx512);
+impl_glwe_tensoring_reference!(crate::FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_tensoring_reference!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_reference!(crate::FFT64CIAvx512Rayon);
 impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
+impl_gglwe_product_digits_strided_reference!(crate::FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_product_digits_strided_reference!(crate::FFT64CIAvx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -50,7 +65,7 @@ trait RankOneTensorDft: Backend {
     );
 }
 
-impl RankOneTensorDft for NTT4x30Avx512 {
+impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512Backend<R> {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
     }
@@ -66,7 +81,7 @@ impl RankOneTensorDft for NTT4x30Avx512 {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_hal::execution::SerialTaskExecutor>(
+            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_hal::execution::SerialTaskExecutor, _>(
                 module, res, cnv_offset, a, b, tmp,
             )
         };
@@ -74,7 +89,7 @@ impl RankOneTensorDft for NTT4x30Avx512 {
 }
 
 #[cfg(feature = "enable-rayon")]
-impl RankOneTensorDft for NTT4x30Avx512Rayon {
+impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512RayonBackend<R> {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
     }
@@ -90,7 +105,7 @@ impl RankOneTensorDft for NTT4x30Avx512Rayon {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_cpu_rayon::RayonTaskExecutor>(
+            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_cpu_rayon::RayonTaskExecutor, _>(
                 module.reinterpret(),
                 &mut crate::ntt4x30_avx512::rayon::base_dft_mut(res),
                 cnv_offset,
@@ -103,7 +118,7 @@ impl RankOneTensorDft for NTT4x30Avx512Rayon {
 }
 
 #[cfg(feature = "enable-ifma")]
-impl RankOneTensorDft for NTT3x42Ifma {
+impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaBackend<R> {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
@@ -119,7 +134,7 @@ impl RankOneTensorDft for NTT3x42Ifma {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor, _>(
                 res, cnv_offset, a, b, tmp,
             )
         };
@@ -127,7 +142,7 @@ impl RankOneTensorDft for NTT3x42Ifma {
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl RankOneTensorDft for NTT3x42IfmaRayon {
+impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaRayonBackend<R> {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
             * crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
@@ -149,7 +164,7 @@ impl RankOneTensorDft for NTT3x42IfmaRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor>(
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor, _>(
                 &mut crate::ntt3x42_ifma::rayon::base_dft_mut(res),
                 cnv_offset,
                 &crate::ntt3x42_ifma::rayon::base_cnv_l_ref(a),
@@ -532,14 +547,21 @@ macro_rules! impl_rank_one_tensoring {
 }
 
 impl_rank_one_tensoring!(NTT4x30Avx512);
+impl_rank_one_tensoring!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_rank_one_tensoring!(NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_rank_one_tensoring!(crate::NTT4x30CIAvx512Rayon);
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_rank_one_tensoring!(crate::NTT3x42CIIfma);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+impl_rank_one_tensoring!(crate::NTT3x42CIIfmaRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
+unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512Backend<R> {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -575,7 +597,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -588,7 +610,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
+unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42IfmaBackend<R> {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -624,7 +646,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor, _>(
             module,
             res,
             a,
@@ -637,145 +659,264 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
 }
 
 impl_glwe_automorphism_reference_full!(FFT64Avx512);
+impl_glwe_automorphism_reference_full!(crate::FFT64CIAvx512);
 impl_glwe_automorphism_reference_full!(NTT4x30Avx512);
+impl_glwe_automorphism_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_automorphism_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_glwe_automorphism_reference_full!(crate::NTT3x42CIIfma);
 
 impl_ggsw_automorphism_reference_full!(FFT64Avx512);
+impl_ggsw_automorphism_reference_full!(crate::FFT64CIAvx512);
 impl_ggsw_automorphism_reference_full!(NTT4x30Avx512);
+impl_ggsw_automorphism_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_ggsw_automorphism_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_ggsw_automorphism_reference_full!(crate::NTT3x42CIIfma);
 
 impl_gglwe_automorphism_reference_full!(FFT64Avx512);
+impl_gglwe_automorphism_reference_full!(crate::FFT64CIAvx512);
 impl_gglwe_automorphism_reference_full!(NTT4x30Avx512);
+impl_gglwe_automorphism_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_gglwe_automorphism_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_gglwe_automorphism_reference_full!(crate::NTT3x42CIIfma);
 
 impl_decryption_reference_full!(FFT64Avx512);
+impl_decryption_reference_full!(crate::FFT64CIAvx512);
 impl_decryption_reference_full!(NTT4x30Avx512);
+impl_decryption_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_decryption_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_decryption_reference_full!(crate::NTT3x42CIIfma);
 
 impl_glwe_trace_reference_full!(FFT64Avx512);
+impl_glwe_trace_reference_full!(crate::FFT64CIAvx512);
 impl_glwe_trace_reference_full!(NTT4x30Avx512);
+impl_glwe_trace_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_trace_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_glwe_trace_reference_full!(crate::NTT3x42CIIfma);
 
 impl_glwe_packing_reference_full!(FFT64Avx512);
+impl_glwe_packing_reference_full!(crate::FFT64CIAvx512);
 impl_glwe_packing_reference_full!(NTT4x30Avx512);
+impl_glwe_packing_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_packing_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_glwe_packing_reference_full!(crate::NTT3x42CIIfma);
 
 impl_conversion_reference_full!(FFT64Avx512);
+impl_conversion_reference_full!(crate::FFT64CIAvx512);
 impl_conversion_reference_full!(NTT4x30Avx512);
+impl_conversion_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_conversion_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_conversion_reference_full!(crate::NTT3x42CIIfma);
 
 impl_glwe_keyswitch_reference_full!(FFT64Avx512);
+impl_glwe_keyswitch_reference_full!(crate::FFT64CIAvx512);
 impl_glwe_keyswitch_reference_full!(NTT4x30Avx512);
+impl_glwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_keyswitch_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_glwe_keyswitch_reference_full!(crate::NTT3x42CIIfma);
 
 impl_gglwe_keyswitch_reference_full!(FFT64Avx512);
+impl_gglwe_keyswitch_reference_full!(crate::FFT64CIAvx512);
 impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512);
+impl_gglwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_gglwe_keyswitch_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_gglwe_keyswitch_reference_full!(crate::NTT3x42CIIfma);
 
 impl_ggsw_keyswitch_reference_full!(FFT64Avx512);
+impl_ggsw_keyswitch_reference_full!(crate::FFT64CIAvx512);
 impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512);
+impl_ggsw_keyswitch_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_ggsw_keyswitch_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_ggsw_keyswitch_reference_full!(crate::NTT3x42CIIfma);
 
 impl_lwe_keyswitch_reference_full!(FFT64Avx512);
+impl_lwe_keyswitch_reference_full!(crate::FFT64CIAvx512);
 impl_lwe_keyswitch_reference_full!(NTT4x30Avx512);
+impl_lwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_lwe_keyswitch_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_lwe_keyswitch_reference_full!(crate::NTT3x42CIIfma);
 
 impl_encryption_reference_full!(FFT64Avx512);
+impl_encryption_reference_full!(crate::FFT64CIAvx512);
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512, fft64);
+poulpy_cpu_ref::impl_sampling_host!(crate::FFT64CIAvx512, fft64);
 impl_encryption_reference_full!(NTT4x30Avx512);
+impl_encryption_reference_full!(crate::NTT4x30CIAvx512);
 poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512, ntt4x30);
+poulpy_cpu_ref::impl_sampling_host!(crate::NTT4x30CIAvx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 impl_encryption_reference_full!(NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
+impl_encryption_reference_full!(crate::NTT3x42CIIfma);
+#[cfg(feature = "enable-ifma")]
 poulpy_cpu_ref::impl_sampling_host!(NTT3x42Ifma, ntt4x30);
+#[cfg(feature = "enable-ifma")]
+poulpy_cpu_ref::impl_sampling_host!(crate::NTT3x42CIIfma, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Avx512);
+impl_glwe_external_product_reference_full!(crate::FFT64CIAvx512);
 impl_glwe_external_product_reference_full!(NTT4x30Avx512);
+impl_glwe_external_product_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_external_product_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_glwe_external_product_reference_full!(crate::NTT3x42CIIfma);
 
 impl_gglwe_external_product_reference_full!(FFT64Avx512);
+impl_gglwe_external_product_reference_full!(crate::FFT64CIAvx512);
 impl_gglwe_external_product_reference_full!(NTT4x30Avx512);
+impl_gglwe_external_product_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_gglwe_external_product_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_gglwe_external_product_reference_full!(crate::NTT3x42CIIfma);
 
 impl_ggsw_external_product_reference_full!(FFT64Avx512);
+impl_ggsw_external_product_reference_full!(crate::FFT64CIAvx512);
 impl_ggsw_external_product_reference_full!(NTT4x30Avx512);
+impl_ggsw_external_product_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_ggsw_external_product_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_ggsw_external_product_reference_full!(crate::NTT3x42CIIfma);
 
 impl_linear_transformation_reference_full!(FFT64Avx512);
+impl_linear_transformation_reference_full!(crate::FFT64CIAvx512);
 impl_linear_transformation_reference_full!(NTT4x30Avx512);
+impl_linear_transformation_reference_full!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-ifma")]
 impl_linear_transformation_reference_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+impl_linear_transformation_reference_full!(crate::NTT3x42CIIfma);
 
 #[cfg(feature = "enable-rayon")]
 impl_glwe_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_glwe_automorphism_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ggsw_automorphism_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ggsw_automorphism_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_gglwe_automorphism_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_decryption_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_decryption_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_trace_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_glwe_trace_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_glwe_packing_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_packing_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_conversion_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_conversion_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_glwe_keyswitch_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_keyswitch_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_gglwe_keyswitch_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ggsw_keyswitch_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ggsw_keyswitch_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_lwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_lwe_keyswitch_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_encryption_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_encryption_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
+poulpy_cpu_ref::impl_sampling_host!(crate::FFT64CIAvx512Rayon, fft64);
+#[cfg(feature = "enable-rayon")]
 impl_glwe_external_product_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_external_product_reference_full!(crate::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_gglwe_external_product_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ggsw_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl_ggsw_external_product_reference_full!(crate::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_linear_transformation_reference_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_linear_transformation_reference_full!(crate::FFT64CIAvx512Rayon);
 
 #[cfg(feature = "enable-rayon")]
 mod ntt4x30_rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_automorphism_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_ggsw_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_automorphism_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_gglwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_automorphism_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_decryption_reference_full!(NTT4x30Avx512Rayon);
+    impl_decryption_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_glwe_trace_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_trace_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_glwe_packing_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_packing_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_conversion_reference_full!(NTT4x30Avx512Rayon);
+    impl_conversion_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_glwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_keyswitch_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_lwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
+    impl_lwe_keyswitch_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_encryption_reference_full!(NTT4x30Avx512Rayon);
+    impl_encryption_reference_full!(crate::NTT4x30CIAvx512Rayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512Rayon, ntt4x30);
+    poulpy_cpu_ref::impl_sampling_host!(crate::NTT4x30CIAvx512Rayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_glwe_external_product_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_gglwe_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_external_product_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_ggsw_external_product_reference_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_external_product_reference_full!(crate::NTT4x30CIAvx512Rayon);
     impl_linear_transformation_reference_full!(NTT4x30Avx512Rayon);
+    impl_linear_transformation_reference_full!(crate::NTT4x30CIAvx512Rayon);
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -783,20 +924,37 @@ mod ifma_rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_automorphism_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_ggsw_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_automorphism_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_gglwe_automorphism_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_automorphism_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_decryption_reference_full!(NTT3x42IfmaRayon);
+    impl_decryption_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_glwe_trace_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_trace_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_glwe_packing_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_packing_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_conversion_reference_full!(NTT3x42IfmaRayon);
+    impl_conversion_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_keyswitch_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_gglwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_keyswitch_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_ggsw_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_keyswitch_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_lwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
+    impl_lwe_keyswitch_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_encryption_reference_full!(NTT3x42IfmaRayon);
+    impl_encryption_reference_full!(crate::NTT3x42CIIfmaRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
+    poulpy_cpu_ref::impl_sampling_host!(crate::NTT3x42CIIfmaRayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_glwe_external_product_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_gglwe_external_product_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_ggsw_external_product_reference_full!(NTT3x42IfmaRayon);
+    impl_ggsw_external_product_reference_full!(crate::NTT3x42CIIfmaRayon);
     impl_linear_transformation_reference_full!(NTT3x42IfmaRayon);
+    impl_linear_transformation_reference_full!(crate::NTT3x42CIIfmaRayon);
 }

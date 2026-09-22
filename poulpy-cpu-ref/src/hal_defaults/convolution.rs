@@ -215,7 +215,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_default<R>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
@@ -225,7 +225,6 @@ where
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
@@ -236,22 +235,12 @@ where
         let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft::<Self>(
-            cnv_offset,
-            &mut res_ref,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            module.get_fft_plan(module.n()).is_conjugate_invariant(),
-            tmp,
-        );
+        convolution_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add_default<R>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
@@ -261,7 +250,6 @@ where
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
@@ -272,17 +260,7 @@ where
         let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_add::<Self>(
-            cnv_offset,
-            &mut res_ref,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            module.get_fft_plan(module.n()).is_conjugate_invariant(),
-            tmp,
-        );
+        convolution_apply_dft_add::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -300,7 +278,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_pairwise_apply_dft_default<R>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
@@ -310,7 +288,6 @@ where
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
@@ -321,17 +298,7 @@ where
         let per_worker = convolution_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_pairwise_apply_dft::<Self>(
-            cnv_offset,
-            &mut res_ref,
-            res_col,
-            a,
-            b,
-            i,
-            j,
-            module.get_fft_plan(module.n()).is_conjugate_invariant(),
-            tmp,
-        );
+        convolution_pairwise_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_prepare_self_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -418,7 +385,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttPackLeft1BlkX2
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -447,7 +414,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -698,7 +665,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + NttPackLeft1BlkX2
             + 'static,

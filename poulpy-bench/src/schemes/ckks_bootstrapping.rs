@@ -52,7 +52,7 @@ where
         precision = Some(run.precision());
     });
     if let Some((re, im)) = precision {
-        let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+        let backend = crate::backend_name::<BE>();
         println!(
             "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
             re.avg_log2_prec,
@@ -85,7 +85,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let backend = crate::backend_name::<BE>();
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {

@@ -1,10 +1,13 @@
+use crate::FFT64Avx512Backend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use std::ptr::NonNull;
 
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
         convolution::I64Ops,
-        module::{FFT64HandleFactory, FFT64ModuleConfig, FFT64Plan, FFT64PlanSet, FFTHandleProvider, FFTModuleHandle},
+        module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_ref, reim_zero_ref},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
@@ -16,13 +19,9 @@ use poulpy_cpu_ref::reference::{
         ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
     },
 };
-use poulpy_hal::{
-    AlignedBuf, alloc_aligned,
-    layouts::{Backend, Module},
-};
+use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
 
 use crate::{
-    FFT64Avx512,
     fft64::{
         convolution::{
             i64_convolution_by_const_1coeff_avx512, i64_convolution_by_const_2coeffs_avx512, i64_extract_1blk_contiguous_avx512,
@@ -77,14 +76,14 @@ use crate::{
 /// The handle is destroyed via [`Backend::destroy()`](poulpy_hal::layouts::Backend::destroy)
 /// when the module is dropped, which reconstructs the `Box` from the raw pointer and drops it.
 #[repr(C)]
-pub struct FFT64Avx512Handle {
-    ring_plans: FFT64PlanSet<f64>,
+pub struct FFT64Avx512Handle<R: CpuRing = poulpy_cpu_ref::ring::Standard> {
+    ring_plans: FFT64PlanSet<f64, R>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
+impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64Avx512Backend<R> {}
 
-impl Backend for FFT64Avx512 {
+impl<R: CpuRing> Backend for FFT64Avx512Backend<R> {
     const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
 
     // The AVX-512 complex multiply steps eight complex slots at a time with no
@@ -98,16 +97,9 @@ impl Backend for FFT64Avx512 {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64Avx512Handle;
+    type Handle = FFT64Avx512Handle<R>;
     type Location = poulpy_hal::layouts::Host;
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        module.n() as i64
-            * if module.get_fft_plan(module.n()).is_conjugate_invariant() {
-                4
-            } else {
-                2
-            }
-    }
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -207,11 +199,11 @@ impl Backend for FFT64Avx512 {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
-    fn create_fft64_handle(n: usize, config: FFT64ModuleConfig) -> Self {
-        FFT64Avx512Handle {
+unsafe impl<R: CpuRing> FFT64HandleFactory for FFT64Avx512Handle<R> {
+    fn create_fft64_handle(n: usize) -> Self {
+        FFT64Avx512Handle::<R> {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new_with_mode(n, config.mode),
+            ring_plans: FFT64PlanSet::new(n),
         }
     }
 
@@ -225,13 +217,14 @@ unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
     }
 }
 
-unsafe impl FFTHandleProvider<f64> for FFT64Avx512Handle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+unsafe impl<R: CpuRing> FFTHandleProvider<f64> for FFT64Avx512Handle<R> {
+    type Ring = R;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
         self.ring_plans.for_ring(n)
     }
 }
 
-impl ZnxAdd for FFT64Avx512 {
+impl<R: CpuRing> ZnxAdd for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -240,7 +233,7 @@ impl ZnxAdd for FFT64Avx512 {
     }
 }
 
-impl ZnxAddAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxAddAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -249,7 +242,7 @@ impl ZnxAddAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxSub for FFT64Avx512 {
+impl<R: CpuRing> ZnxSub for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -258,7 +251,7 @@ impl ZnxSub for FFT64Avx512 {
     }
 }
 
-impl ZnxSubAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxSubAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -267,7 +260,7 @@ impl ZnxSubAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxSubNegateAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxSubNegateAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -276,7 +269,7 @@ impl ZnxSubNegateAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxAutomorphism for FFT64Avx512 {
+impl<R: CpuRing> ZnxAutomorphism for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -285,7 +278,7 @@ impl ZnxAutomorphism for FFT64Avx512 {
     }
 }
 
-impl ZnxAutomorphismRotate for FFT64Avx512 {
+impl<R: CpuRing> ZnxAutomorphismRotate for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -294,14 +287,14 @@ impl ZnxAutomorphismRotate for FFT64Avx512 {
     }
 }
 
-impl ZnxCopy for FFT64Avx512 {
+impl<R: CpuRing> ZnxCopy for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_ref(res, a);
     }
 }
 
-impl ZnxNegate for FFT64Avx512 {
+impl<R: CpuRing> ZnxNegate for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         unsafe {
@@ -310,7 +303,7 @@ impl ZnxNegate for FFT64Avx512 {
     }
 }
 
-impl ZnxNegateAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxNegateAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         unsafe {
@@ -319,7 +312,7 @@ impl ZnxNegateAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxMulAddPowerOfTwo for FFT64Avx512 {
+impl<R: CpuRing> ZnxMulAddPowerOfTwo for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -328,7 +321,7 @@ impl ZnxMulAddPowerOfTwo for FFT64Avx512 {
     }
 }
 
-impl ZnxMulPowerOfTwo for FFT64Avx512 {
+impl<R: CpuRing> ZnxMulPowerOfTwo for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -337,7 +330,7 @@ impl ZnxMulPowerOfTwo for FFT64Avx512 {
     }
 }
 
-impl ZnxMulPowerOfTwoAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxMulPowerOfTwoAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         unsafe {
@@ -346,21 +339,21 @@ impl ZnxMulPowerOfTwoAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxRotate for FFT64Avx512 {
+impl<R: CpuRing> ZnxRotate for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate::<Self>(p, res, src);
     }
 }
 
-impl ZnxZero for FFT64Avx512 {
+impl<R: CpuRing> ZnxZero for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_ref(res);
     }
 }
 
-impl ZnxSwitchRing for FFT64Avx512 {
+impl<R: CpuRing> ZnxSwitchRing for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -369,7 +362,7 @@ impl ZnxSwitchRing for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeFinalStep for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeFinalStep for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -378,7 +371,7 @@ impl ZnxNormalizeFinalStep for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeFinalStepAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeFinalStepAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -387,7 +380,7 @@ impl ZnxNormalizeFinalStepAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeFirstStep for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeFirstStep for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_first_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -396,7 +389,7 @@ impl ZnxNormalizeFirstStep for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeFirstStepCarryOnly for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeFirstStepCarryOnly for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -405,7 +398,7 @@ impl ZnxNormalizeFirstStepCarryOnly for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeFirstStepAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeFirstStepAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -414,7 +407,7 @@ impl ZnxNormalizeFirstStepAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeMiddleStep for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeMiddleStep for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -423,7 +416,7 @@ impl ZnxNormalizeMiddleStep for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeMiddleStepCarryOnly for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeMiddleStepCarryOnly for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -432,7 +425,7 @@ impl ZnxNormalizeMiddleStepCarryOnly for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeMiddleStepAssign for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeMiddleStepAssign for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -441,7 +434,7 @@ impl ZnxNormalizeMiddleStepAssign for FFT64Avx512 {
     }
 }
 
-impl ZnxExtractDigitAddMul for FFT64Avx512 {
+impl<R: CpuRing> ZnxExtractDigitAddMul for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
@@ -450,7 +443,7 @@ impl ZnxExtractDigitAddMul for FFT64Avx512 {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx512 {
+impl<R: CpuRing> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
@@ -504,7 +497,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx512 {
     }
 }
 
-impl ZnxNormalizeDigit for FFT64Avx512 {
+impl<R: CpuRing> ZnxNormalizeDigit for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
@@ -513,21 +506,21 @@ impl ZnxNormalizeDigit for FFT64Avx512 {
     }
 }
 
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx512 {
+impl<R: CpuRing> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         ReimFFTAvx512::reim_dft_execute(table, data);
     }
 }
 
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx512 {
+impl<R: CpuRing> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ReimIFFTAvx512::reim_dft_execute(table, data);
     }
 }
 
-impl ReimArith for FFT64Avx512 {
+impl<R: CpuRing> ReimArith for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         unsafe { reim_from_znx_i64_bnd50_fma(res, a) }
@@ -604,7 +597,7 @@ impl ReimArith for FFT64Avx512 {
     }
 }
 
-impl Reim4BlkMatVec for FFT64Avx512 {
+impl<R: CpuRing> Reim4BlkMatVec for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         unsafe { reim4_extract_1blk_from_reim_contiguous_avx512(m, rows, blk, dst, src) }
@@ -641,7 +634,7 @@ impl Reim4BlkMatVec for FFT64Avx512 {
     }
 }
 
-impl Reim4Convolution for FFT64Avx512 {
+impl<R: CpuRing> Reim4Convolution for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { reim4_real_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }
@@ -750,7 +743,7 @@ impl Reim4Convolution for FFT64Avx512 {
     }
 }
 
-impl I64Ops for FFT64Avx512 {
+impl<R: CpuRing> I64Ops for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe { crate::znx_avx512::znx_hadamard_product_i64_avx512(res, a, b) }
@@ -777,14 +770,14 @@ impl I64Ops for FFT64Avx512 {
     }
 }
 
-impl BigWordHadamardProduct for FFT64Avx512 {
+impl<R: CpuRing> BigWordHadamardProduct for FFT64Avx512Backend<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle {
+unsafe impl<R: CpuRing> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

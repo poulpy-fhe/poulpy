@@ -14,6 +14,9 @@
 //!
 //! All implementations use the default `_ref` implementations.
 
+use crate::FFT64RefBackend;
+use crate::ring::CpuRing;
+
 use std::fmt::Debug;
 
 use crate::reference::fft64::{
@@ -25,7 +28,6 @@ use bytemuck::Zeroable;
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
-use super::FFT64Ref;
 use crate::reference::fft64::module::FFT64Plan;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT.
@@ -33,12 +35,12 @@ use crate::reference::fft64::module::FFT64Plan;
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
 /// in the CPU CKKS encoding implementation.
-pub struct FFT64ReimTable<F: Float + FloatConst + Debug + Zeroable> {
+pub struct FFT64ReimTable<F: Float + FloatConst + Debug + Zeroable + Send + Sync> {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64ReimTable<F> {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFT<F> for FFT64ReimTable<F> {
     fn m(&self) -> usize {
         self.fft.m()
     }
@@ -52,7 +54,7 @@ impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64ReimTab
     }
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
     fn new(m: usize) -> Self {
         Self {
             fft: ReimFFTTable::new(m),
@@ -61,7 +63,7 @@ impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFTNew<F> for FFT64Reim
     }
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64Plan<F> {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFT<F> for FFT64Plan<F> {
     fn m(&self) -> usize {
         self.fft().m()
     }
@@ -75,25 +77,25 @@ impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64Plan<F>
     }
 }
 
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Ref {
+impl<R: CpuRing> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64RefBackend<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_ref(table.m(), table.omg(), data);
     }
 }
 
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Ref {
+impl<R: CpuRing> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64RefBackend<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_ref(table.m(), table.omg(), data);
     }
 }
 
-impl ReimArith for FFT64Ref {}
+impl<R: CpuRing> ReimArith for FFT64RefBackend<R> {}
 
-impl Reim4BlkMatVec for FFT64Ref {}
+impl<R: CpuRing> Reim4BlkMatVec for FFT64RefBackend<R> {}
 
-impl Reim4Convolution for FFT64Ref {}
+impl<R: CpuRing> Reim4Convolution for FFT64RefBackend<R> {}
 
-impl I64Ops for FFT64Ref {}
+impl<R: CpuRing> I64Ops for FFT64RefBackend<R> {}
 
 #[cfg(test)]
 mod contract_tests {

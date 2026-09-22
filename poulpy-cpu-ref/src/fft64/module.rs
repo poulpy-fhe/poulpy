@@ -12,18 +12,17 @@
 //!   trait from `poulpy-hal`, which provides typed access to the FFT tables from
 //!   a `Module<FFT64Ref>` and other FFT64-family backends.
 
+use crate::FFT64RefBackend;
+use crate::ring::CpuRing;
+
 use std::ptr::NonNull;
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host, Module},
+    layouts::{Backend, Host},
 };
 
-use crate::reference::fft64::module::{
-    FFT64HandleFactory, FFT64ModuleConfig, FFT64Plan, FFT64PlanSet, FFTHandleProvider, FFTModuleHandle,
-};
-
-use super::FFT64Ref;
+use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 
 /// Opaque handle for the [`FFT64Ref`](crate::FFT64Ref) backend.
 ///
@@ -34,14 +33,14 @@ use super::FFT64Ref;
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<FFT64Ref>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct FFT64RefHandle {
-    ring_plans: FFT64PlanSet<f64>,
+pub struct FFT64RefHandle<R: CpuRing = crate::ring::Standard> {
+    ring_plans: FFT64PlanSet<f64, R>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
+impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64RefBackend<R> {}
 
-impl Backend for FFT64Ref {
+impl<R: CpuRing> Backend for FFT64RefBackend<R> {
     const MAX_BASE2K: usize = 19;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
@@ -51,16 +50,9 @@ impl Backend for FFT64Ref {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64RefHandle;
+    type Handle = FFT64RefHandle<R>;
     type Location = Host;
-    fn cyclotomic_order(module: &Module<Self>) -> i64 {
-        module.n() as i64
-            * if module.get_fft_plan(module.n()).is_conjugate_invariant() {
-                4
-            } else {
-                2
-            }
-    }
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -163,22 +155,23 @@ impl Backend for FFT64Ref {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl FFT64HandleFactory for FFT64RefHandle {
-    fn create_fft64_handle(n: usize, config: FFT64ModuleConfig) -> Self {
+unsafe impl<R: CpuRing> FFT64HandleFactory for FFT64RefHandle<R> {
+    fn create_fft64_handle(n: usize) -> Self {
         FFT64RefHandle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new_with_mode(n, config.mode),
+            ring_plans: FFT64PlanSet::new(n),
         }
     }
 }
 
-unsafe impl FFTHandleProvider<f64> for FFT64RefHandle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+unsafe impl<R: CpuRing> FFTHandleProvider<f64> for FFT64RefHandle<R> {
+    type Ring = R;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
         self.ring_plans.for_ring(n)
     }
 }
 
-unsafe impl crate::table_cache::ModuleTableCacheProvider for FFT64RefHandle {
+unsafe impl<R: CpuRing> crate::table_cache::ModuleTableCacheProvider for FFT64RefHandle<R> {
     fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
         &self.table_cache
     }

@@ -1,3 +1,5 @@
+use poulpy_cpu_ref::ring::CpuRing;
+
 mod automorphism;
 mod convolution;
 mod module;
@@ -54,12 +56,24 @@ mod reim4;
 /// // Use module for FHE operations...
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx512;
+pub struct FFT64Avx512Backend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
+
+/// Standard negacyclic backend.
+pub type FFT64Avx512 = FFT64Avx512Backend<poulpy_cpu_ref::ring::Standard>;
+/// Conjugate-invariant backend.
+pub type FFT64CIAvx512 = FFT64Avx512Backend<poulpy_cpu_ref::ring::ConjugateInvariant>;
 
 /// Rayon-scheduled variant of [`FFT64Avx512`].
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx512Rayon;
+pub struct FFT64Avx512RayonBackend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
+
+/// Standard negacyclic Rayon backend.
+#[cfg(feature = "enable-rayon")]
+pub type FFT64Avx512Rayon = FFT64Avx512RayonBackend<poulpy_cpu_ref::ring::Standard>;
+/// Conjugate-invariant Rayon backend.
+#[cfg(feature = "enable-rayon")]
+pub type FFT64CIAvx512Rayon = FFT64Avx512RayonBackend<poulpy_cpu_ref::ring::ConjugateInvariant>;
 
 #[cfg(test)]
 pub mod tests;

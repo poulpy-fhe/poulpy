@@ -127,7 +127,7 @@ pub fn vec_znx_dft_copy<BE>(
 }
 
 pub fn vec_znx_dft_apply<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -171,7 +171,7 @@ pub fn vec_znx_dft_apply<BE>(
 }
 
 pub fn vec_znx_idft_apply<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -209,7 +209,7 @@ pub fn vec_znx_idft_apply<BE>(
 }
 
 pub fn vec_znx_idft_apply_tmpa<BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &mut VecZnxDftBackendMut<'_, BE>,
@@ -249,7 +249,7 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
 pub fn vec_znx_idft_apply_consume<'a, BE>(
-    plan: &FFT64Plan<f64>,
+    plan: &FFT64Plan<f64, impl crate::ring::CpuRing>,
     mut res: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
@@ -402,7 +402,6 @@ pub struct Fft64AutomorphismPlan {
     pub p: i64,
     pub perm: Vec<u32>,
     pub conj: bool,
-    pub real: bool,
 }
 
 /// Builds the [`Fft64AutomorphismPlan`] for ring dimension `n` and odd `p`.
@@ -416,11 +415,11 @@ pub struct Fft64AutomorphismPlan {
 /// - `p ≡ 3 (mod 4)` maps into the conjugate half. Substituting `-p`
 ///   (now `≡ 1 mod 4`) brings the action back at the cost of a single
 ///   global imag negation, signalled by `conj`.
-pub fn build_fft64_automorphism_plan(n: usize, p: i64, real: bool) -> Fft64AutomorphismPlan {
+pub fn build_fft64_automorphism_plan<BE: Backend>(n: usize, p: i64) -> Fft64AutomorphismPlan {
     assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
     assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
 
-    if real {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
         let order = (4 * n) as i64;
         let mut perm = vec![0; n];
         for (i, source) in perm.iter_mut().enumerate() {
@@ -430,12 +429,7 @@ pub fn build_fft64_automorphism_plan(n: usize, p: i64, real: bool) -> Fft64Autom
             }
             *source = ((exponent - 1) >> 1) as u32;
         }
-        return Fft64AutomorphismPlan {
-            p,
-            perm,
-            conj: false,
-            real: true,
-        };
+        return Fft64AutomorphismPlan { p, perm, conj: false };
     }
 
     let m = n >> 1;
@@ -456,12 +450,7 @@ pub fn build_fft64_automorphism_plan(n: usize, p: i64, real: bool) -> Fft64Autom
         let src: u32 = ((e_src - 1) >> 1) as u32;
         *mi = ir(src);
     }
-    Fft64AutomorphismPlan {
-        p,
-        perm,
-        conj,
-        real: false,
-    }
+    Fft64AutomorphismPlan { p, perm, conj }
 }
 
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
@@ -484,7 +473,14 @@ pub fn vec_znx_dft_automorphism<BE>(
 {
     {
         assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), if plan.real { res.n() } else { res.n() >> 1 });
+        assert_eq!(
+            plan.perm.len(),
+            if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
+                res.n()
+            } else {
+                res.n() >> 1
+            }
+        );
     }
 
     let m: usize = res.n() >> 1;
@@ -493,7 +489,7 @@ pub fn vec_znx_dft_automorphism<BE>(
     let min_size: usize = res_size.min(a_size);
     let perm: &[u32] = &plan.perm;
 
-    if plan.real {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
         for limb in 0..min_size {
             let output = res.at_mut(res_col, limb);
             let input = a.at(a_col, limb);
@@ -541,7 +537,14 @@ pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
 {
     {
         assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), if plan.real { res.n() } else { res.n() >> 1 });
+        assert_eq!(
+            plan.perm.len(),
+            if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
+                res.n()
+            } else {
+                res.n() >> 1
+            }
+        );
     }
 
     let n = res.n();
@@ -552,7 +555,7 @@ pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
     let apply = |limb: usize| {
         let start = n * (limb * cols + res_col);
         let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
-        if plan.real {
+        if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
             let input = a.at(a_col, limb);
             for (value, &source) in res_limb.iter_mut().zip(&plan.perm) {
                 *value += input[source as usize];

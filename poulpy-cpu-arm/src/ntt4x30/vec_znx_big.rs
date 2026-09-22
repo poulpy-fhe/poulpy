@@ -1,6 +1,8 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Neon`](super::NTT4x30Neon).
 
-use super::NTT4x30Neon;
+use crate::NTT4x30NeonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 #[cfg(target_arch = "aarch64")]
 use poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::AssignOp;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
@@ -19,7 +21,7 @@ use crate::neon::vec_znx_big::{
 };
 
 #[cfg(target_arch = "aarch64")]
-impl I128BigOps for NTT4x30Neon {
+impl<R: CpuRing> I128BigOps for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
         vi128_add_neon(res.len(), res, a, b);
@@ -83,9 +85,9 @@ impl I128BigOps for NTT4x30Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl I128BigOps for NTT4x30Neon {}
+impl<R: CpuRing> I128BigOps for NTT4x30NeonBackend<R> {}
 
-impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
+impl<R: CpuRing> poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
@@ -93,7 +95,7 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl I128NormalizeOps for NTT4x30Neon {
+impl<R: CpuRing> I128NormalizeOps for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
         crate::neon::normalization_boundary::nfc_normalize_floor_neon::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
@@ -166,4 +168,4 @@ impl I128NormalizeOps for NTT4x30Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl I128NormalizeOps for NTT4x30Neon {}
+impl<R: CpuRing> I128NormalizeOps for NTT4x30NeonBackend<R> {}

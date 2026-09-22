@@ -117,7 +117,10 @@ where
     fn svp_prepare_default<R>(module: &Module<Self>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, Self>, a_col: usize)
     where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttFromZnx64
+            + NttCFromB,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<Self>,

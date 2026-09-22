@@ -6,7 +6,10 @@
 //! both backends use an i128 `BigWord`, so the AVX-512F mask-form borrow propagation
 //! and the fused `±= normalize(a)` middle/final steps apply unchanged.
 
-use super::NTT3x42Ifma;
+#[cfg(feature = "enable-ifma")]
+use crate::NTT3x42IfmaBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use crate::vec_znx_big_avx512::{
     nfc_final_step_add_assign_avx512, nfc_final_step_add_assign_scalar, nfc_final_step_assign_avx512,
     nfc_final_step_assign_scalar, nfc_final_step_sub_assign_avx512, nfc_final_step_sub_assign_scalar,
@@ -20,7 +23,7 @@ use crate::vec_znx_big_avx512::{
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
-impl I128BigOps for NTT3x42Ifma {
+impl<R: CpuRing> I128BigOps for NTT3x42IfmaBackend<R> {
     #[inline(always)]
     fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
         unsafe { vi128_hadamard_i64_avx512(res.len(), res, a, b) }
@@ -28,7 +31,7 @@ impl I128BigOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
-        // SAFETY: NTT3x42Ifma::new() verifies AVX-512F availability at construction time.
+        // SAFETY: NTT3x42IfmaBackend::<R>::new() verifies AVX-512F availability at construction time.
         unsafe { vi128_add_avx512(res.len(), res, a, b) }
     }
     #[inline(always)]
@@ -89,14 +92,14 @@ impl I128BigOps for NTT3x42Ifma {
     }
 }
 
-impl BigWordHadamardProduct for NTT3x42Ifma {
+impl<R: CpuRing> BigWordHadamardProduct for NTT3x42IfmaBackend<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 
-impl I128NormalizeOps for NTT3x42Ifma {
+impl<R: CpuRing> I128NormalizeOps for NTT3x42IfmaBackend<R> {
     #[inline(always)]
     fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
         assert!(a.len() >= carry.len());

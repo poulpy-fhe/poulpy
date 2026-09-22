@@ -1,5 +1,8 @@
 //! `Znx*` trait impls for [`NTT4x30Neon`](super::NTT4x30Neon).
 
+use crate::NTT4x30NeonBackend;
+use poulpy_cpu_ref::ring::CpuRing;
+
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
@@ -7,8 +10,6 @@ use poulpy_cpu_ref::reference::znx::{
     ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
     ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
 };
-
-use super::NTT4x30Neon;
 
 #[cfg(target_arch = "aarch64")]
 use crate::neon::{
@@ -48,182 +49,182 @@ use poulpy_cpu_ref::reference::znx::{
     znx_sub_negate_assign_ref as kn_sub_negate_assign, znx_sub_ref as kn_sub, znx_switch_ring_ref as kn_switch_ring,
 };
 
-impl ZnxAdd for NTT4x30Neon {
+impl<R: CpuRing> ZnxAdd for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         kn_add(res, a, b);
     }
 }
 
-impl ZnxAddAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxAddAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         kn_add_assign(res, a);
     }
 }
 
-impl ZnxSub for NTT4x30Neon {
+impl<R: CpuRing> ZnxSub for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         kn_sub(res, a, b);
     }
 }
 
-impl ZnxSubAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxSubAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         kn_sub_assign(res, a);
     }
 }
 
-impl ZnxSubNegateAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxSubNegateAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         kn_sub_negate_assign(res, a);
     }
 }
 
-impl ZnxMulAddPowerOfTwo for NTT4x30Neon {
+impl<R: CpuRing> ZnxMulAddPowerOfTwo for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         kn_mul_add_p2(k, res, a);
     }
 }
 
-impl ZnxMulPowerOfTwo for NTT4x30Neon {
+impl<R: CpuRing> ZnxMulPowerOfTwo for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         kn_mul_p2(k, res, a);
     }
 }
 
-impl ZnxMulPowerOfTwoAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxMulPowerOfTwoAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         kn_mul_p2_assign(k, res);
     }
 }
 
-impl ZnxAutomorphism for NTT4x30Neon {
+impl<R: CpuRing> ZnxAutomorphism for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         kn_automorphism(p, res, a);
     }
 }
 
-impl ZnxAutomorphismRotate for NTT4x30Neon {
+impl<R: CpuRing> ZnxAutomorphismRotate for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         kn_automorphism_rotate(p, k, res, a);
     }
 }
 
-impl ZnxCopy for NTT4x30Neon {
+impl<R: CpuRing> ZnxCopy for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_ref(res, a);
     }
 }
 
-impl ZnxNegate for NTT4x30Neon {
+impl<R: CpuRing> ZnxNegate for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         kn_negate(res, src);
     }
 }
 
-impl ZnxNegateAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxNegateAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         kn_negate_assign(res);
     }
 }
 
-impl ZnxRotate for NTT4x30Neon {
+impl<R: CpuRing> ZnxRotate for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate::<Self>(p, res, src);
     }
 }
 
-impl ZnxZero for NTT4x30Neon {
+impl<R: CpuRing> ZnxZero for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_ref(res);
     }
 }
 
-impl ZnxSwitchRing for NTT4x30Neon {
+impl<R: CpuRing> ZnxSwitchRing for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         kn_switch_ring(res, a);
     }
 }
 
-impl ZnxNormalizeFirstStep for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeFirstStep for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_first_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         kn_normalize_first_step::<OVERWRITE>(base2k, lsh, x, a, carry);
     }
 }
 
-impl ZnxNormalizeMiddleStep for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeMiddleStep for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         kn_normalize_middle_step::<OVERWRITE>(base2k, lsh, x, a, carry);
     }
 }
 
-impl ZnxNormalizeFinalStep for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeFinalStep for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         kn_normalize_final_step::<OVERWRITE>(base2k, lsh, x, a, carry);
     }
 }
 
-impl ZnxNormalizeFinalStepAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeFinalStepAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         kn_normalize_final_step_assign(base2k, lsh, x, carry);
     }
 }
 
-impl ZnxNormalizeFirstStepCarryOnly for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeFirstStepCarryOnly for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         kn_normalize_first_step_carry_only(base2k, lsh, x, carry);
     }
 }
 
-impl ZnxNormalizeFirstStepAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeFirstStepAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         kn_normalize_first_step_assign(base2k, lsh, x, carry);
     }
 }
 
-impl ZnxNormalizeMiddleStepCarryOnly for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeMiddleStepCarryOnly for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         kn_normalize_middle_step_carry_only(base2k, lsh, x, carry);
     }
 }
 
-impl ZnxNormalizeMiddleStepAssign for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeMiddleStepAssign for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         kn_normalize_middle_step_assign(base2k, lsh, x, carry);
     }
 }
 
-impl ZnxExtractDigitAddMul for NTT4x30Neon {
+impl<R: CpuRing> ZnxExtractDigitAddMul for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         kn_extract_digit_addmul(base2k, lsh, res, src);
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Neon {
+impl<R: CpuRing> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonBackend<R> {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
@@ -283,7 +284,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Neon {
     }
 }
 
-impl ZnxNormalizeDigit for NTT4x30Neon {
+impl<R: CpuRing> ZnxNormalizeDigit for NTT4x30NeonBackend<R> {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
         kn_normalize_digit(base2k, res, src);

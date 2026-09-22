@@ -5,6 +5,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
+use poulpy_cpu_ref::ring::RingData;
 
 use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q120, store_q120, sub_q120};
 
@@ -401,14 +402,14 @@ unsafe fn intt_iter_red(
 /// Forward Q120 NTT — NEON.
 ///
 /// `data.len()` must be `4 * table.n`.
-pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P, impl poulpy_cpu_ref::ring::CpuRing>, data: &mut [u64]) {
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "ntt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
         return;
     }
     unsafe {
-        if let Some(ci) = &table.ci {
+        if let Some(ci) = table.ci.get() {
             ci_basis_change::<P>(ci, data);
         }
         let begin = data.as_mut_ptr();
@@ -473,7 +474,7 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 /// Inverse Q120 NTT — NEON.
 ///
 /// `data.len()` must be `4 * table.n`.
-pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P, impl poulpy_cpu_ref::ring::CpuRing>, data: &mut [u64]) {
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "intt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
@@ -538,7 +539,7 @@ pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64
         } else {
             ntt_iter_first(begin, end, meta, po_base.add(po_off));
         }
-        if let Some(ci) = &table.ci {
+        if let Some(ci) = table.ci.get() {
             ci_basis_change::<P>(ci, data);
         }
     }

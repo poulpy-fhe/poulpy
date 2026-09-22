@@ -53,6 +53,7 @@ use core::arch::x86_64::{
     __m128i, __m256i, _mm_cvtsi64_si128, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_mul_epu32,
     _mm256_set1_epi64x, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
 };
+use poulpy_cpu_ref::ring::RingData;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
@@ -1081,7 +1082,7 @@ unsafe fn intt_iter_last_fused(
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
-pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P, impl poulpy_cpu_ref::ring::CpuRing>, data: &mut [u64]) {
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1095,7 +1096,7 @@ pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [
     }
 
     unsafe {
-        if let Some(ci) = &table.ci {
+        if let Some(ci) = table.ci.get() {
             ci_basis_change::<P>(ci, data);
         }
         let begin = data.as_mut_ptr() as *mut __m256i;
@@ -1256,7 +1257,7 @@ pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
-pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P, impl poulpy_cpu_ref::ring::CpuRing>, data: &mut [u64]) {
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1405,7 +1406,7 @@ pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &m
                 ntt_iter_first(begin, end, meta, po_base.add(po_avx));
             }
         }
-        if let Some(ci) = &table.ci {
+        if let Some(ci) = table.ci.get() {
             ci_basis_change::<P>(ci, data);
         }
     }
