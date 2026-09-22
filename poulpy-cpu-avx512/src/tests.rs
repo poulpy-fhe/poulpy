@@ -6,36 +6,11 @@ mod core_emulated_tensor;
 fn max_base2k() {
     use poulpy_hal::layouts::{Backend, Module};
 
-    // Cover each backend's minimum degree and a common large degree.
-    const fn limits<B: Backend>() -> [usize; 2] {
-        [Module::<B>::max_base2k(B::MIN_DEGREE), Module::<B>::max_base2k(1 << 16)]
-    }
-
-    assert_eq!(const { limits::<crate::FFT64Avx512>() }, [25, 19]);
-    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [59, 52]);
-    #[cfg(feature = "enable-rayon")]
-    {
-        assert_eq!(const { limits::<crate::FFT64Avx512Rayon>() }, [25, 19]);
-        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [59, 52]);
-    }
-
-    #[cfg(feature = "enable-ifma")]
-    {
-        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [62, 55]);
-        #[cfg(feature = "enable-rayon")]
-        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [62, 55]);
-    }
-}
-
-#[test]
-fn max_base2k_for_failure() {
-    use poulpy_hal::layouts::{Backend, Module};
-
     // A 128-bit target for one output polynomial and 32 independent products.
     const fn limits<B: Backend>() -> [Option<usize>; 2] {
         [
-            Module::<B>::max_base2k_for_failure(1 << 15, 32, 128),
-            Module::<B>::max_base2k_for_failure(1 << 16, 32, 128),
+            Module::<B>::max_base2k(1 << 15, 32, 128),
+            Module::<B>::max_base2k(1 << 16, 32, 128),
         ]
     }
 

@@ -17,13 +17,13 @@ mod derived_scratch;
 mod max_base2k;
 
 #[test]
-fn bootstrapping_presets_respect_max_base2k() {
-    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_for_backend};
+fn bootstrapping_presets_keep_fixture_radices() {
+    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
     use poulpy_core::layouts::LWEInfos;
 
     for preset in all().unwrap() {
-        let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
-        let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();
+        let fft = preset_with_max_base2k(&preset, 19).unwrap();
+        let ntt = preset_with_max_base2k(&preset, 52).unwrap();
         let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
         assert_eq!(
             (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),

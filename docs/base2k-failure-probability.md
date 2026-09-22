@@ -218,7 +218,7 @@ For FFT64, the paper's experiments support limb widths around $K=19$, not $K=52$
 
 ## Selecting a radix for a failure target
 
-`Module::<BE>::max_base2k_for_failure(N, d, failure_bits)` uses the NTT model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for CRT backends, `Some(0)` if no positive radix fits, and `None` for backends without a CRT modulus.
+`Module::<BE>::max_base2k(N, d, failure_bits)` uses the NTT model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for CRT backends, `Some(0)` if no positive radix fits, and `None` for backends without a CRT modulus.
 
 To avoid evaluating or inverting `erfc` in a constant expression, the query uses the conservative envelope
 
@@ -249,4 +249,4 @@ For the actual NTT4x30 modulus, $\log_2Q\simeq119.8861552574811$, $d=32$, and $\
 
 This model assumes independent centered input coefficients and neglects discrete endpoint corrections. Computationally pseudorandom ciphertext components motivate that assumption for suitable FHE operations; IND-CPA alone does not imply joint independence of reused or squared operands. A polynomial whose coefficients are all $-2^{52}$, squared at $N=2^{15}$, produces a coefficient $2^{119}>Q/2$ and wraps. That structured example lies outside this uniform-input model.
 
-The existing `Module::<BE>::max_base2k(N)` remains a degree-only starting recommendation and does not specify a failure target. The probability query returns `None` for FFT: selecting a radix from a numerical-error target requires the calibrated $\sigma_e$ of the actual accumulated kernel discussed above.
+The selector requires the accumulation count and failure target explicitly. It returns `None` for FFT: selecting a radix from a numerical-error target requires the calibrated $\sigma_e$ of the actual accumulated kernel discussed above.

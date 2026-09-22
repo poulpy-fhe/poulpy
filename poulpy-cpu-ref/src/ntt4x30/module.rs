@@ -15,7 +15,7 @@ use std::ptr::NonNull;
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host, PrimeSet},
+    layouts::{Backend, Host},
 };
 
 use crate::reference::ntt4x30::{
@@ -46,7 +46,6 @@ pub struct NTT4x30RefHandle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
 
 impl Backend for NTT4x30Ref {
-    const DFT_MAX_BITS: f64 = Primes30::LOG_Q_PRODUCT;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

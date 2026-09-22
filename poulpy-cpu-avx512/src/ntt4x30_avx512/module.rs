@@ -44,7 +44,6 @@ pub struct NTT4x30Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx512 {}
 
 impl Backend for NTT4x30Avx512 {
-    const DFT_MAX_BITS: f64 = <poulpy_cpu_ref::NTT4x30Ref as Backend>::DFT_MAX_BITS;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

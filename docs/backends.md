@@ -106,40 +106,25 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-The backend and ring degree provide an initial limb size `base2k` for parameter selection.
-Query it with `Module::<BE>::max_base2k(n)`, a `const fn` that requires a power-of-two degree:
-
-```rust
-use poulpy_cpu_ref::FFT64Ref;
-use poulpy_hal::layouts::Module;
-
-const N: usize = 1 << 16;
-const BASE2K: usize = Module::<FFT64Ref>::max_base2k(N); // 19
-```
-
-The degree-only recommendation is `ceil((DFT_MAX_BITS - log2(n)) / 2)`, using 53 bits for `FFT64`, approximately 119.8861552574811 for `NTT4x30`, and 125.99998314565484 for `NTT3x42`.
-At `n = 2^16`, the corresponding recommendations are 19, 52, and 55 bits per limb; at `n = 2^15`, they are 19, 53, and 56.
-For NTT backends, the capacity is `PrimeSet::LOG_Q_PRODUCT = log2(Q)`, precomputed from the exact CRT prime product and stored at `f64` precision.
-These are starting parameters for uniform-input FHE workloads. They do not specify a failure budget or guarantee correctness for arbitrary structured inputs.
-Operation-specific input, accumulation, and floating-point error bounds still apply and can require smaller limbs.
-
-For an explicit NTT failure budget, use the const query `max_base2k_for_failure(n, products, failure_bits)`:
+Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The const query `Module::<BE>::max_base2k(n, products, failure_bits)` uses the probabilistic uniform-input model:
 
 ```rust
 use poulpy_cpu_ref::NTT4x30Ref;
 use poulpy_hal::layouts::Module;
 
 // 32 accumulated products, with a 2^-128 target for the entire polynomial.
-const BASE2K: Option<usize> = Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 32, 128);
+const BASE2K: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128);
 assert_eq!(BASE2K, Some(54));
 ```
 
-This uses the independent centered-uniform input model, a conservative Gaussian tail envelope, and a union bound over output coefficients. It returns the largest radix up to 62 satisfying that envelope; `Some(0)` means no positive radix fits.
-For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
-FFT backends return `None`: their numerical-error distribution requires calibration for the actual kernel and cannot be inferred from significand width.
-See [Failure estimates](base2k-failure-probability.md) for the assumptions and derivation.
+The query uses independent centered-uniform input coefficients, a conservative Gaussian tail envelope, and a union bound over all coefficients of one output polynomial. For `n = 2^16`, 32 products, and 128 failure bits, it selects 54 for `NTT4x30` and 57 for `NTT3x42`. Increasing the accumulation count or tightening the failure target can lower the selected radix.
+For NTT backends, `PrimeSet::LOG_Q_PRODUCT` supplies `log2(Q)` from the actual CRT modulus, approximately 119.8861552574811 for `NTT4x30` and 125.99998314565484 for `NTT3x42`.
+
+The result is the largest radix up to 62 satisfying the Gaussian envelope; `Some(0)` means no positive radix fits. For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
+FFT backends return `None`: their numerical-error distribution requires calibration for the actual accumulated kernel. A significand width alone cannot determine a probability-based radix.
+See [Failure estimates](base2k-failure-probability.md) for the formula, assumptions, and comparison with worst-case bounds.
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
-A larger `base2k` represents the same precision in fewer limbs, at the cost of more expensive elementary operations.
+A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.
 
 Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.
 

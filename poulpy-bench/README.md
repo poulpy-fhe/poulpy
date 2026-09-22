@@ -171,6 +171,7 @@ cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- --list 
 `n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
 Each case checks its measured precision against the preset's advertised minimum.
+Registrations pass an explicit fixture radix to `bench_ckks_bootstrapping::<BE, FIXTURE_BASE2K>`: 19 for FFT and 52 for NTT. These are benchmark shapes; probability-based parameter selection uses `Module::<BE>::max_base2k(n, products, failure_bits)` with the workload's own budget.
 
 ```sh
 # List the logN15 cases without allocating bootstrapping keys

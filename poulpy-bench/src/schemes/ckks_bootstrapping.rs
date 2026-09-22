@@ -1,8 +1,9 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
 //! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! at a radix supported by the backend. Criterion's name filter selects a preset by its name. The setup, the
-//! bootstrap call, and the precision measurement are the shared
+//! at an explicitly chosen fixture radix. Criterion's name filter selects a
+//! preset by its name. The setup, bootstrap call, and precision measurement use
+//! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks.
 
@@ -14,7 +15,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{TestContextBackend, TestContextHostModule, TestContextModule},
-        presets::{BootstrappingPresetRun, preset_for_backend},
+        presets::{BootstrappingPresetRun, preset_with_max_base2k},
     },
 };
 use poulpy_core::layouts::{
@@ -73,7 +74,11 @@ where
     }
 }
 
-pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
+/// Exercises every preset at the caller's fixture radix limit.
+///
+/// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
+/// guarantee. The registered FFT and NTT fixtures use 19 and 52 respectively.
+pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
@@ -89,7 +94,7 @@ where
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
         runner_ckks_bootstrapping::<BE>(&mut group, preset);
     }
     group.finish();

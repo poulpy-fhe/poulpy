@@ -107,7 +107,7 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     ///
     /// Unlike the per-prime [`Self::LOG_Q`], this retains the fractional part
     /// of the logarithm. It is the capacity used by
-    /// [`crate::layouts::Module::max_base2k_for_failure`] for uniform signed-limb
+    /// [`crate::layouts::Module::max_base2k`] for uniform signed-limb
     /// products with centered CRT reconstruction. Summing the per-prime bit widths can
     /// overestimate this capacity.
     const LOG_Q_PRODUCT: f64;

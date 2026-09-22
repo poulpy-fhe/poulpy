@@ -26,17 +26,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
-    /// DFT-domain bit capacity used by [`Module::max_base2k`] for FHE parameter
-    /// selection: the floating-point significand width for FFT backends, or
-    /// `log2(Q)` for NTT backends, where `Q` is the composite modulus (see
-    /// [`crate::layouts::PrimeSet::LOG_Q_PRODUCT`]). NTT capacities retain the
-    /// fractional part of the logarithm to `f64` precision.
-    ///
-    /// Storage-only backends without DFT products use zero. Operation-specific
-    /// input, rounding and accumulation bounds still apply. This does not limit
-    /// coefficient-only operations such as uniform sampling at radix `1..=62`.
-    const DFT_MAX_BITS: f64;
-
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
     /// Within a limb, columns are contiguous blocks in column order, each of
@@ -296,30 +285,6 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Initial FHE limb-radix recommendation at ring degree `n`:
-    /// `ceil((B::DFT_MAX_BITS - log2(n)) / 2)`.
-    ///
-    /// This degree-only heuristic assumes ordinary uniform-input FHE workloads.
-    /// It does not specify a failure budget. Use [`Self::max_base2k_for_failure`]
-    /// to select an NTT radix for an accumulation count and failure target.
-    /// FFT parameters additionally require the operation's numerical-error model.
-    ///
-    /// This can be evaluated without constructing a module. Use the operand's
-    /// degree, which may be smaller than the module's maximum degree. Returns
-    /// zero if the DFT capacity leaves no positive radix. Operation-specific
-    /// input, rounding and accumulation bounds still apply.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is not a power of two or is below [`Backend::MIN_DEGREE`].
-    #[inline]
-    pub const fn max_base2k(n: usize) -> usize {
-        assert!(n.is_power_of_two(), "n must be a power of two");
-        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
-        // Float-to-integer casts saturate negative values to zero.
-        ((B::DFT_MAX_BITS - n.ilog2() as f64) / 2.0).ceil() as usize
-    }
-
     /// Selects an NTT limb radix for a uniform-input Gaussian failure model.
     ///
     /// `products` is the number of polynomial products accumulated into one
@@ -349,7 +314,7 @@ impl<B: Backend> Module<B> {
     /// Panics if `n` is not a power of two, is below [`Backend::MIN_DEGREE`],
     /// or if `products` or `failure_bits` is zero.
     #[inline]
-    pub const fn max_base2k_for_failure(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+    pub const fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
         assert!(n.is_power_of_two(), "n must be a power of two");
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
         assert!(products > 0, "products must be positive");
