@@ -27,12 +27,13 @@ use poulpy_core::layouts::{
     GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
 };
 
+use crate::layouts::CIBootstrappingKeysLayout;
+use crate::layouts::CKKSRingKind;
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIBootstrappingKeysLayout,
-        CKKSRingKind, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModType,
-        SparseSecretEncapsulation,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
+        DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModType, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
 };

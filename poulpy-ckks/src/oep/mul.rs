@@ -43,7 +43,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -55,7 +55,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -73,7 +73,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<Self>,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -83,7 +83,7 @@ pub unsafe trait CKKSMulImpl: Backend {
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -93,7 +93,7 @@ pub unsafe trait CKKSMulImpl: Backend {
     fn ckks_square_assign_impl<Dst, T>(
         module: &Module<Self>,
         dst: &mut Dst,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -199,7 +199,7 @@ macro_rules! impl_ckks_mul_reference {
                 dst: &mut Dst,
                 a: &A,
                 b: &B,
-                tsk: &$crate::layouts::CKKSKey<T>,
+                tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -218,7 +218,7 @@ macro_rules! impl_ckks_mul_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &$crate::layouts::CKKSKey<T>,
+                tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -248,7 +248,7 @@ macro_rules! impl_ckks_mul_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 prepared: &$crate::layouts::CKKSPreparedRight<Self>,
-                tsk: &$crate::layouts::CKKSKey<T>,
+                tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -266,7 +266,7 @@ macro_rules! impl_ckks_mul_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &$crate::layouts::CKKSKey<T>,
+                tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -283,7 +283,7 @@ macro_rules! impl_ckks_mul_reference {
             fn ckks_square_assign_impl<Dst, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                tsk: &$crate::layouts::CKKSKey<T>,
+                tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where

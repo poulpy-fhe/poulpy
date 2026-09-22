@@ -21,7 +21,9 @@ use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
-    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank},
+    layouts::{
+        GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory,
+    },
 };
 use poulpy_cpu_ref::NTT4x30Ref;
 use poulpy_hal::AlignedBuf;
@@ -76,8 +78,8 @@ fn main() -> Result<()> {
 
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout());
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut source_xs);
-    let sk_raw = CKKSKey::from_raw_parts(sk_raw, module.ckks_ring())?;
-    let sk = sk_raw.prepare_secret(&module)?;
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout());
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
 
     // One arena sized for every op this example runs.
     let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
@@ -91,14 +93,14 @@ fn main() -> Result<()> {
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
     module.glwe_tensor_key_encrypt_sk(
         &mut tsk,
-        sk_raw.as_core(),
+        &sk_raw,
         &tsk_layout(),
         &mut source_xa,
         &mut source_xe,
         &mut scratch.borrow(),
     );
-    let tsk = CKKSKey::from_raw_parts(tsk, module.ckks_ring())?;
-    let tsk_prepared = tsk.prepare_tensor(&module, &mut scratch.borrow())?;
+    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
+    module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
     // ── 2. encode + encrypt two slot vectors ────────────────────────────────
     let a_re: Vec<f64> = (0..M).map(|i| i as f64 / M as f64 - 0.5).collect();

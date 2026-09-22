@@ -110,7 +110,6 @@ where
                         prepared_automorphism_key(module, &key, p, (p as u8).wrapping_add(53)),
                     );
                 }
-                let keys = crate::layouts::CKKSKey::from_raw_provider(keys, crate::api::CKKSModuleInfos::ckks_ring(module));
                 let prepared = with_scratch::<B, _>(shared, |scratch| module.ckks_prepare_dft_matrix(&dft, scratch)).unwrap();
                 let mut raw = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<B, _>(shared, |scratch| {

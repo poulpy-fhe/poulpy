@@ -17,7 +17,6 @@
 //! `≈ log_delta − log q` bits).
 
 use crate::api::CKKSEncodingOps;
-use crate::api::CKKSModuleInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -187,7 +186,6 @@ fn seq_bootstrap_case<BE, F, E>(
     sk_host.transfer_into(&mut sk_raw);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
-    let sk = crate::layouts::CKKSKey::from_raw_parts(sk, module.ckks_ring()).unwrap();
 
     let mut atks = HashMap::new();
     for p_el in plan.galois_elements() {

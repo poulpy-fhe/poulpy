@@ -129,14 +129,7 @@ pub trait CKKSMulOps<BE: Backend> {
     ///
     /// See the trait-level documentation for the exact metadata rule including
     /// the capacity offset.
-    fn ckks_mul_into<Dst, A, B, H>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        b: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -144,13 +137,7 @@ pub trait CKKSMulOps<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Computes `dst *= a` in-place using tensor-product keyswitching via `tsk`.
-    fn ckks_mul_assign<Dst, A, H>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -177,7 +164,7 @@ pub trait CKKSMulOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -187,25 +174,14 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Computes `dst = a * a` (squaring) using tensor-product keyswitching.
     ///
     /// Equivalent to `ckks_mul_into(dst, a, a, tsk)` with the same metadata rule.
-    fn ckks_square_into<Dst, A, H>(
-        &self,
-        dst: &mut Dst,
-        a: &A,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = dst * dst` (squaring in-place) using tensor-product keyswitching.
-    fn ckks_square_assign<Dst, H>(
-        &self,
-        dst: &mut Dst,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;

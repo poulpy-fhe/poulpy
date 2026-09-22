@@ -116,8 +116,6 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        check_key_rings::<BE, _>(keys, "ckks_bootstrap_mod_up", ring)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_bootstrap_mod_up", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_bootstrap_mod_up", src)?;
         BootstrappingReference::new(self).ckks_bootstrap_mod_up_reference(dst, src, eval_mod, keys, scratch)
@@ -136,13 +134,13 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
         let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        check_key_rings::<BE, _>(keys, "ckks_bootstrap", ring)?;
+
         crate::ckks_ensure!(
             ring.kind == crate::layouts::CKKSRingKind::Standard,
             "bootstrapping requires a standard ring"
         );
         for factor in &ctx.coeffs_to_slots().inner().factors {
-            ring.check("bootstrap context", factor.ring())?;
+            crate::reference::linear_transformation::check_linear_transformation("bootstrap context", ring, factor)?;
         }
         ring.check_ciphertext("ckks_bootstrap", ct_in)?;
         ring.check_ciphertext("ckks_bootstrap", ct_out)?;
@@ -162,13 +160,13 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        check_key_rings::<BE, _>(keys, "ckks_functional_bootstrap", ring)?;
+
         crate::ckks_ensure!(
             ring.kind == crate::layouts::CKKSRingKind::Standard,
             "bootstrapping requires a standard ring"
         );
         for factor in &ctx.coeffs_to_slots().inner().factors {
-            ring.check("bootstrap context", factor.ring())?;
+            crate::reference::linear_transformation::check_linear_transformation("bootstrap context", ring, factor)?;
         }
         for lut in luts {
             lut.check_ring::<BE>(ring)?;
@@ -179,18 +177,4 @@ where
         }
         BootstrappingReference::new(self).ckks_functional_bootstrap_reference(ct_outs, ct_in, ctx, luts, keys, scratch)
     }
-}
-
-pub(crate) fn check_key_rings<BE: Backend, K: BootstrappingKeys<BE>>(
-    keys: &K,
-    op: &'static str,
-    ring: crate::layouts::CKKSRing,
-) -> crate::CKKSResult<()> {
-    ring.check(op, keys.rotation_keys().key_ring())?;
-    ring.check(op, keys.tensor_key().key_ring())?;
-    if let Some((a, b)) = keys.encapsulation_keys() {
-        ring.check(op, a.key_ring())?;
-        ring.check(op, b.key_ring())?;
-    }
-    Ok(())
 }

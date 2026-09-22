@@ -473,8 +473,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         }
 
         let task_bytes = self
-            .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key().as_core())
-            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key().as_core()));
+            .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key())
+            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()));
         let task_bytes = worker_scratch_bytes::<BE>(task_bytes);
         let (arenas, _) = scratch.borrow().split(2, task_bytes);
         let mut arenas = arenas.into_iter();

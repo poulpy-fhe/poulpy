@@ -11,8 +11,8 @@ use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWE
 use poulpy_core::{
     GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetTensorKey,
-        LWEInfos, Rank, TorusPrecision,
+        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetAutomorphismKey,
+        GetTensorKey, LWEInfos, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -80,12 +80,12 @@ impl CKKSInfos for BranchScratchLayout {
 }
 
 fn automorphism_layout_for<'a, BE: Backend, H>(
-    keys: &'a crate::layouts::CKKSKey<H>,
+    keys: &'a H,
     element: i64,
     k: TorusPrecision,
 ) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'a, BE>>
 where
-    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     keys.get_automorphism_key(element, k)
         .with_context(|| format!("PaCo rotation-key layout is missing Galois element {element} at precision {k}"))
@@ -93,10 +93,7 @@ where
 }
 
 /// The relinearization key layout the helper resolves at `k`.
-fn relinearization_layout_for<BE: Backend, H>(
-    keys: &crate::layouts::CKKSKey<H>,
-    k: TorusPrecision,
-) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>
+fn relinearization_layout_for<BE: Backend, H>(keys: &H, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>
 where
     H: GetTensorKey<BE>,
 {
@@ -391,10 +388,10 @@ where
     );
     ckks_ensure!(input.rank().as_usize() == 1, "PaCo encapsulation input must have rank 1");
     let structured_size = input.k().as_usize().div_ceil(context.base2k().as_usize());
-    let switching_key_view = GGLWEPreparedToBackendRef::to_backend_ref(switching_key.as_core());
+    let switching_key_view = GGLWEPreparedToBackendRef::to_backend_ref(switching_key);
     validate_gadget_backend_view(
         "PaCo encapsulation key",
-        switching_key.as_core(),
+        switching_key,
         &switching_key_view,
         context.plan().n(),
         context.base2k(),

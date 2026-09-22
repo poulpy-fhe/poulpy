@@ -7,11 +7,13 @@
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
-use crate::layouts::{LinearTransformation, LinearTransformationPrepared};
 use core::marker::PhantomData;
+use poulpy_core::{
+    LinearTransformationPrepared,
+    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
+};
 use std::collections::{BTreeMap, BTreeSet};
 
-use poulpy_core::layouts::{LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step};
 use poulpy_hal::layouts::{Backend, galois_element};
 
 use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintextOwned};

@@ -36,7 +36,7 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -70,7 +70,7 @@ macro_rules! impl_ckks_eval_mod_reference {
                 res: &mut R,
                 ct: &C,
                 params: &$crate::layouts::eval_mod::EvalMod<F, P>,
-                tsk: &$crate::layouts::CKKSKey<H>,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where

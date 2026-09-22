@@ -24,7 +24,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -40,7 +40,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -55,7 +55,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         dst: &mut R,
         src: &S,
         bsgs: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -74,7 +74,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         dst: &mut R,
         src: &S,
         poly: &ComplexBSGSPolynomial<C>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -99,7 +99,7 @@ macro_rules! impl_ckks_polynomial_evaluation_reference {
                 res: &mut R,
                 poly: &B,
                 power_basis: &G,
-                tsk: &$crate::layouts::CKKSKey<H>,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -125,7 +125,7 @@ macro_rules! impl_ckks_polynomial_evaluation_reference {
                 res: &mut R,
                 poly: &$crate::polynomial::ComplexBSGSPolynomial<C>,
                 power_basis: &G,
-                tsk: &$crate::layouts::CKKSKey<H>,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where

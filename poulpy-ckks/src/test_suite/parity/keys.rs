@@ -36,11 +36,7 @@ pub(crate) fn fixture_gglwe<B: Backend<ZnxWord = i64>>(
     out
 }
 
-pub(crate) fn prepared_tensor_key<B>(
-    module: &Module<B>,
-    layout: &GGLWELayout,
-    seed: u8,
-) -> crate::layouts::CKKSKey<GLWETensorKeyPrepared<B::OwnedBuf, B>>
+pub(crate) fn prepared_tensor_key<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
 where
     B: Backend<ZnxWord = i64>,
     Module<B>: GLWETensorKeyPreparedFactory<B>,
@@ -50,7 +46,7 @@ where
     with_scratch::<B, _>(module.prepare_tensor_key_tmp_bytes(layout), |scratch| {
         module.prepare_tensor_key(&mut prepared, &coefficients, scratch);
     });
-    crate::layouts::CKKSKey::from_raw_parts(prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap()
+    prepared
 }
 
 pub(crate) fn prepared_automorphism_key<B>(

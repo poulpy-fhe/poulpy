@@ -42,7 +42,7 @@ pub trait CKKSEncryptOps<BE: Backend> {
         &self,
         ct: &mut Dct,
         pt: &Dpt,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -92,13 +92,7 @@ pub trait CKKSDecryptOps<BE: Backend> {
         Pt: CKKSInfos,
         Ct: CKKSCtBounds;
 
-    fn ckks_decrypt<Dpt, Dct, S>(
-        &self,
-        pt: &mut Dpt,
-        ct: &Dct,
-        sk: &crate::layouts::CKKSKey<S>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,

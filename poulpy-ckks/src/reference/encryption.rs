@@ -31,7 +31,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         &self,
         ct: &mut Dct,
         pt: &Dpt,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -44,7 +44,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
         Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
     {
-        self.glwe_encrypt_zero_sk(ct, sk.as_core(), enc_infos, source_xe, source_xa, scratch);
+        self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(
             "ckks_encrypt_sk",
             enc_infos.noise_infos().k,
@@ -82,7 +82,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         &self,
         pt: &mut Dpt,
         ct: &Dct,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -92,7 +92,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
-        self.glwe_decrypt(ct, &mut full_pt, sk.as_core(), &mut scratch_1);
+        self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);
 
         CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1)?;
 

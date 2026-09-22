@@ -314,19 +314,19 @@ where
             for width in [2 * b + 3, 5 * b + 1] {
                 let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_mul_tmp_bytes_impl(module, &out, &a, &rhs, key.as_core());
+                let bytes = B::ckks_mul_tmp_bytes_impl(module, &out, &a, &rhs, &key);
                 with_scratch::<B, _>(bytes, |scratch| {
                     B::ckks_mul_into_impl(module, &mut out, &a, &rhs, &key, scratch)
                 })
                 .unwrap();
                 results.push(("mul_into", snapshot::<B, _>(&out)));
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_square_tmp_bytes_impl(module, &out, &a, key.as_core());
+                let bytes = B::ckks_square_tmp_bytes_impl(module, &out, &a, &key);
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_square_into_impl(module, &mut out, &a, &key, scratch)).unwrap();
                 results.push(("square_into", snapshot::<B, _>(&out)));
             }
             let mut assigned = fixture_ciphertext(module, &la, 51);
-            let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, key.as_core());
+            let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, &key);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_assign_impl(module, &mut assigned, &rhs, &key, scratch)
             })
@@ -346,7 +346,7 @@ where
             results.push(("mul_assign", ordinary));
             results.push(("mul_prepared_assign", snapshot::<B, _>(&assigned)));
             let mut assigned = fixture_ciphertext(module, &la, 51);
-            let bytes = B::ckks_square_tmp_bytes_impl(module, &assigned, &assigned, key.as_core());
+            let bytes = B::ckks_square_tmp_bytes_impl(module, &assigned, &assigned, &key);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_square_assign_impl(module, &mut assigned, &key, scratch)
             })

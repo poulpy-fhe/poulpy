@@ -23,7 +23,7 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -32,7 +32,6 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_mod", tsk.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", res)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", ct)?;
         let ring = crate::api::CKKSModuleInfos::ckks_ring(self);

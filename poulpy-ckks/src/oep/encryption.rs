@@ -28,7 +28,7 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         module: &Module<Self>,
         ct: &mut Dct,
         pt: &Pt,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -49,7 +49,7 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         module: &Module<Self>,
         pt: &mut Pt,
         ct: &Dct,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -74,7 +74,7 @@ macro_rules! impl_ckks_encryption_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dct,
                 pt: &Pt,
-                sk: &$crate::layouts::CKKSKey<S>,
+                sk: &S,
                 enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 source_xa: &mut ::poulpy_hal::source::Source,
@@ -109,7 +109,7 @@ macro_rules! impl_ckks_encryption_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 pt: &mut Pt,
                 ct: &Dct,
-                sk: &$crate::layouts::CKKSKey<S>,
+                sk: &S,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where

@@ -360,8 +360,7 @@ fn run_case<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(module, &mut scratch.borrow())
-        .unwrap();
+        .prepare(module, &mut scratch.borrow());
 
     let mut op_scratch = ScratchOwned::<BE>::alloc(boot_tmp);
 

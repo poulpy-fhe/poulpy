@@ -112,9 +112,7 @@ where
             || left_in.log_delta() <= ctx.eval_mod().plan.f_mod_log_delta,
         "CI bootstrap input scale exceeds the C2S-first working scale"
     );
-    let ring = standard_module.ckks_ring();
-    ring.check("CI bootstrap input key", keys.ci_to_standard.key_ring())?;
-    ring.check("CI bootstrap output key", keys.standard_to_ci.key_ring())?;
+
     let standard_base2k = keys.ci_to_standard.base2k();
     crate::ckks_ensure!(
         (1..=BE::MAX_BASE2K).contains(&standard_base2k.as_usize()),
@@ -126,7 +124,7 @@ where
     );
     crate::layouts::validation::validate_gadget_backend_view(
         "CI-to-standard key",
-        keys.ci_to_standard.as_core(),
+        &keys.ci_to_standard,
         &keys.ci_to_standard.to_backend_ref(),
         standard_module.n(),
         standard_base2k,
@@ -148,7 +146,7 @@ where
     crate::ckks_ensure!(output_k > left_in.log_delta(), "CI bootstrap output has no message budget");
     crate::layouts::validation::validate_gadget_backend_view(
         "standard-to-CI key",
-        keys.standard_to_ci.as_core(),
+        &keys.standard_to_ci,
         &keys.standard_to_ci.to_backend_ref(),
         standard_module.n(),
         standard_base2k,
@@ -184,13 +182,13 @@ where
         packed.set_slots(SlotsKind::Complex);
     }
 
-    standard_module.glwe_keyswitch_assign(&mut packed, &keys.ci_to_standard.as_core().to_backend_ref(), scratch);
+    standard_module.glwe_keyswitch_assign(&mut packed, &keys.ci_to_standard.to_backend_ref(), scratch);
 
     let mut refreshed = standard_module.ckks_ciphertext_alloc_from_glwe_infos(&standard_out_layout);
     refreshed.set_meta(left_in.meta());
     refreshed.set_k(bootstrap_k);
     standard_module.ckks_bootstrap(&mut refreshed, &packed, ctx, &keys.bootstrap_keys, scratch)?;
-    standard_module.glwe_keyswitch_assign(&mut refreshed, &keys.standard_to_ci.as_core().to_backend_ref(), scratch);
+    standard_module.glwe_keyswitch_assign(&mut refreshed, &keys.standard_to_ci.to_backend_ref(), scratch);
     {
         let mut ci_scratch = scratch.borrow().into_backend::<CI>();
         fold_complex_to_real(ci_module, left_out, &refreshed, &mut ci_scratch);

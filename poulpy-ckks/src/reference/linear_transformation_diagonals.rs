@@ -13,9 +13,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
+use crate::api::CKKSModuleInfos;
 use crate::{
     CoeffsMeta,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, LinearTransformation},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
@@ -174,13 +175,10 @@ where
             })
         })
         .collect::<Result<_>>()?;
-    Ok(LinearTransformation::from_plaintexts(
-        module,
-        poulpy_core::LinearTransformation {
-            baby_steps: encoded.baby_steps,
-            giant_steps,
-        },
-    )?)
+    Ok(LinearTransformation {
+        baby_steps: encoded.baby_steps,
+        giant_steps,
+    })
 }
 
 #[cfg(test)]

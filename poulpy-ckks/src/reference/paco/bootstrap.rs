@@ -193,11 +193,6 @@ where
     for ct in keys.bootstrapping_keys() {
         ring.check_ciphertext("PaCo key material", ct)?;
     }
-    ring.check("PaCo key material", keys.rotation_keys().key_ring())?;
-    ring.check("PaCo key material", keys.tensor_key().key_ring())?;
-    if let Some(key) = keys.encapsulation_key() {
-        ring.check("PaCo key material", key.key_ring())?;
-    }
 
     ckks_ensure!(
         keys.parameters() == PaCoKeyParameters::from_plan(plan),

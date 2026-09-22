@@ -26,7 +26,7 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         &self,
         ct: &mut Dct,
         pt: &Dpt,
-        sk: &crate::layouts::CKKSKey<S>,
+        sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -37,9 +37,9 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_encrypt_sk", sk.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_encrypt_sk", ct)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_encrypt_sk", pt)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_encrypt_sk", sk.to_backend_ref().n())?;
         BE::ckks_encrypt_sk_impl(self, ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 }
@@ -53,21 +53,15 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
         BE::ckks_decrypt_tmp_bytes_impl(self, pt_infos, ct_infos)
     }
 
-    fn ckks_decrypt<Dpt, Dct, S>(
-        &self,
-        pt: &mut Dpt,
-        ct: &Dct,
-        sk: &crate::layouts::CKKSKey<S>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_decrypt", sk.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_decrypt", pt)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_decrypt", ct)?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_decrypt", sk.to_backend_ref().n())?;
         BE::ckks_decrypt_impl(self, pt, ct, sk, scratch)
     }
 }

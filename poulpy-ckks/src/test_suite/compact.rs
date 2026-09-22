@@ -2,7 +2,6 @@
 //! degree. Every consumer must give the result the dense plaintext of the same
 //! values gives.
 
-use crate::api::CKKSModuleInfos;
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
@@ -322,16 +321,12 @@ where
     F: TestScalar,
 {
     let prec = params.prec();
-    LinearTransformation::from_plaintexts(
-        module,
-        b.build_transform(strategy, |pre_re, pre_im| {
-            let mut pt = module.ckks_pt_vec_alloc_compact(pre_re.len(), params.base2k.into(), prec.k());
-            pt.set_meta_checked(prec.meta()).unwrap();
-            module.ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch).unwrap();
-            pt
-        }),
-    )
-    .unwrap()
+    b.build_transform(strategy, |pre_re, pre_im| {
+        let mut pt = module.ckks_pt_vec_alloc_compact(pre_re.len(), params.base2k.into(), prec.k());
+        pt.set_meta_checked(prec.meta()).unwrap();
+        module.ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch).unwrap();
+        pt
+    })
 }
 
 /// `dec(lt(enc(a), B)) ≈ B·a` with compact diagonals on the prepared path (the
@@ -370,7 +365,6 @@ pub fn test_compact_linear_transformation<BE, F, E>(
         atks.entry(p)
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let ct = ckks_encrypt(
         &params,
         module,

@@ -18,7 +18,6 @@
 //! `sparse_params` (sub-maximal slots, the `RepackImagAsReal` path).
 
 use crate::api::CKKSEncodingOps;
-use crate::api::CKKSModuleInfos;
 use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;
@@ -210,7 +209,6 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     }
 
     // Input: a ciphertext whose coefficients hold the layout of slots (re, im).
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re, im) = test_vector_1::<F>(m);
     let coeffs = coeff_layout(&re, &im, params.n);
     let mut ct = ckks_encrypt_coeffs(
@@ -233,10 +231,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     // computed in arbitrary precision) and bound its log2.
     let mut pt_want = want_plaintext(&module, &ct);
     encoder.encode_reim(&mut pt_want, &re, &im).unwrap();
-    let noise = module
-        .glwe_noise(&ct, &pt_want, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
         noise < bound,
@@ -291,7 +286,6 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     }
 
     // Input: slot-encode (re, im).
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re, im) = test_vector_1::<F>(m);
     let mut ct = ckks_encrypt(
         &params,
@@ -314,10 +308,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     let want = coeff_layout(&re, &im, params.n);
     let mut pt_want = want_plaintext(&module, &ct);
     pt_want.encode_host_floats(&want).unwrap();
-    let noise = module
-        .glwe_noise(&ct, &pt_want, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
         noise < bound,
@@ -374,7 +365,6 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     atks.entry(-1)
         .or_insert_with(|| gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow()));
 
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re, im) = test_vector_1::<F>(m);
     let coeffs = coeff_layout(&re, &im, params.n);
     let ct_in = ckks_encrypt_coeffs(
@@ -401,14 +391,8 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     encoder.encode_reim(&mut pt_real, &re, &zero).unwrap();
     let mut pt_imag = want_plaintext(&module, &ct_imag);
     encoder.encode_reim(&mut pt_imag, &im, &zero).unwrap();
-    let noise_real = module
-        .glwe_noise(&ct_real, &pt_real, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
-    let noise_imag = module
-        .glwe_noise(&ct_imag, &pt_imag, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise_real = module.glwe_noise(&ct_real, &pt_real, &sk, &mut scratch.borrow()).std().log2();
+    let noise_imag = module.glwe_noise(&ct_imag, &pt_imag, &sk, &mut scratch.borrow()).std().log2();
     let noise = noise_real.max(noise_imag);
     let bound = noise_bound(log_delta);
     assert!(
@@ -469,7 +453,6 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
         .or_insert_with(|| gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow()));
 
     // Sparse coefficient layout: bitrev(re) at gap, bitrev(im) at N/2 + gap.
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re_full, im_full) = test_vector_1::<F>(params.n / 2);
     let (re, im) = (&re_full[..slots], &im_full[..slots]);
     let brev = |j: usize| ((j as u32).reverse_bits() >> (u32::BITS - log_slots as u32)) as usize;
@@ -505,10 +488,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     let mut pt_want = want_plaintext(&module, &ct_out);
     small.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
-    let noise = module
-        .glwe_noise(&ct_out, &pt_want, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise = module.glwe_noise(&ct_out, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
         noise < bound,
@@ -564,7 +544,6 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     }
 
     // Inputs: ct_real holds slots (re, 0), ct_imag holds slots (im, 0).
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re, im) = test_vector_1::<F>(m);
     let zero = vec![F::from_f64(0.0).unwrap(); m];
     let ct_real = ckks_encrypt(
@@ -599,10 +578,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     let want = coeff_layout(&re, &im, params.n);
     let mut pt_want = want_plaintext(&module, &op_out);
     pt_want.encode_host_floats(&want).unwrap();
-    let noise = module
-        .glwe_noise(&op_out, &pt_want, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise = module.glwe_noise(&op_out, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
         noise < bound,
@@ -660,7 +636,6 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 
     // Input: a single ciphertext holding [re | im] in the real part at 2·slots
     // resolution (imag 0), the repacked-slots form (log_sparsity = 2).
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let (re_full, im_full) = test_vector_1::<F>(params.n / 2);
     let (re, im) = (&re_full[..slots], &im_full[..slots]);
     let small = ReferenceEncoder::<E>::new::<F>(2 * slots).unwrap();
@@ -695,10 +670,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     }
     let mut pt_want = want_plaintext(&module, &op_out);
     pt_want.encode_host_floats(&want).unwrap();
-    let noise = module
-        .glwe_noise(&op_out, &pt_want, sk.as_core(), &mut scratch.borrow())
-        .std()
-        .log2();
+    let noise = module.glwe_noise(&op_out, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
         noise < bound,

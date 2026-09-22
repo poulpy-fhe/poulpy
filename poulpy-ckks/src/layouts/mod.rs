@@ -137,13 +137,17 @@ pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
+pub use bootstrapping::CIBootstrappingContext;
 pub use bootstrapping::{
-    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIBootstrappingContext,
-    EvalRoundPlus, SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
+    SparseSecretEncapsulation,
 };
+pub use bootstrapping_keys::CIBootstrappingKeySet;
+pub use bootstrapping_keys::CIBootstrappingKeys;
+pub use bootstrapping_keys::CIBootstrappingKeysLayout;
+pub use bootstrapping_keys::CIBootstrappingKeysPrepared;
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CIBootstrappingKeySet,
-    CIBootstrappingKeys, CIBootstrappingKeysLayout, CIBootstrappingKeysPrepared, EncapsulationKeysLayout,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
@@ -187,8 +191,4 @@ pub use plaintext::CKKSPlaintextVecHostCodec;
 
 pub use crate::{CKKSRing, CKKSRingKind};
 
-mod key;
-pub use key::CKKSKey;
-
-mod linear_transformation;
-pub use linear_transformation::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};
+pub use poulpy_core::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};

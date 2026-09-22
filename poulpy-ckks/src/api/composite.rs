@@ -91,7 +91,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -336,7 +336,7 @@ pub trait CKKSMulSubOps<BE: Backend> {
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -418,7 +418,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
         dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
         a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&CKKSCiphertext<E, BE::ZnxWord>],
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

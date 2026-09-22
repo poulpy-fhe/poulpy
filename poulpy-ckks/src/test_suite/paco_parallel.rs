@@ -10,7 +10,6 @@
 //!   is pure orchestration.
 
 use crate::api::CKKSEncodingOps;
-use crate::api::CKKSModuleInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
@@ -73,7 +72,7 @@ fn assert_ciphertext_unchanged<BE>(
 fn decrypt_coeffs_host<BE>(
     module: &Module<BE>,
     ct: &crate::layouts::CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     n: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) -> Vec<f64>
@@ -176,7 +175,6 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     sk_host.transfer_into(&mut sk_raw);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
-    let sk = crate::layouts::CKKSKey::from_raw_parts(sk, module.ckks_ring()).unwrap();
 
     let mut atks = HashMap::new();
     for p_el in plan.galois_elements() {
@@ -501,7 +499,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         module.glwe_automorphism_key_encrypt_sk(
             &mut atk,
             p_el,
-            sk_dense_raw.as_core(),
+            &sk_dense_raw,
             &atk_enc,
             &mut xe,
             &mut xa,
@@ -513,7 +511,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_enc);
     module.glwe_tensor_key_encrypt_sk(
         &mut tensor_key,
-        sk_dense_raw.as_core(),
+        &sk_dense_raw,
         &tsk_enc,
         &mut xe,
         &mut xa,
@@ -528,7 +526,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     let mut dense_to_paco = module.glwe_switching_key_alloc_from_infos(&d2p_enc);
     module.glwe_switching_key_encrypt_sk(
         &mut dense_to_paco,
-        sk_dense_raw.as_core(),
+        &sk_dense_raw,
         &sk_paco_raw,
         &d2p_enc,
         &mut xe,
@@ -555,13 +553,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         )
     });
 
-    let ring = module.ckks_ring();
-    let rotation_keys = rotation_keys
-        .into_iter()
-        .map(|(p, key)| (p, crate::layouts::CKKSKey::from_raw_parts(key, ring).unwrap()))
-        .collect();
-    let tensor_key = crate::layouts::CKKSKey::from_raw_parts(tensor_key, ring).unwrap();
-    let dense_to_paco = crate::layouts::CKKSKey::from_raw_parts(dense_to_paco, ring).unwrap();
+    let dense_to_paco = dense_to_paco;
     let keyset = PaCoKeySet::new(&plan, bsk, rotation_keys, tensor_key, Some(dense_to_paco)).unwrap();
     let prepared = keyset.into_prepare(&plan, &module, &mut scratch.borrow()).unwrap();
     let ctx = PaCoContext::<BE, F>::compile(&module, params.base2k.into(), plan, &mut scratch.borrow()).unwrap();

@@ -65,7 +65,10 @@
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, galois_element};
+use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::CyclotomicOrder;
+use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::galois_element;
 
 pub mod api;
 pub mod approximation;
@@ -99,7 +102,7 @@ pub mod prelude {
         CKKSRotateOps, CKKSSubOps,
     };
     pub use crate::layouts::{
-        CKKSCiphertext, CKKSKey, CKKSModuleAlloc, CKKSPlaintext, CKKSRing, CKKSRingKind, PolynomialApproximation,
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSRing, CKKSRingKind, PolynomialApproximation,
         UnnormalizedCKKSCiphertext,
     };
     pub use crate::{
@@ -223,6 +226,10 @@ impl CKKSRing {
             .into());
         }
         Ok(())
+    }
+
+    pub(crate) fn check_degree(self, op: &'static str, n: Degree) -> CKKSResult<()> {
+        self.check(op, Self { n, ..self })
     }
 
     pub(crate) fn check_ciphertext<C: CKKSInfos + ?Sized>(self, op: &'static str, ct: &C) -> CKKSResult<()> {

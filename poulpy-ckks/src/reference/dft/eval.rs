@@ -20,13 +20,15 @@
 //! packing (imag packed into the right half) through `coeffs_to_slots_repack` /
 //! `slots_to_coeffs_repack`.
 
-use crate::layouts::LinearTransformation;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, LinearTransformationStrategy},
+    layouts::{
+        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
+    },
     reference::linear_transformation::DiagonalProd,
 };
+
 use poulpy_hal::{
     api::CnvPVecAlloc,
     layouts::{Backend, Module, ScratchArena},
@@ -245,7 +247,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -253,7 +255,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -271,7 +273,7 @@ fn eval_factor<BE, P, Dst, H>(
     module: &Module<BE>,
     running: &mut Dst,
     factor: &LinearTransformation<P>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -279,7 +281,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;

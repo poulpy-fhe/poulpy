@@ -74,7 +74,7 @@ where
 /// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
 /// has no single existing API equivalent.
 struct CKKSBSGSOps<'a, H> {
-    key: &'a crate::layouts::CKKSKey<H>,
+    key: &'a H,
 }
 
 impl<BE: Backend, V, P, A, R, K: GetTensorKey<BE>> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps<'_, K>
@@ -332,7 +332,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -358,7 +358,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -389,7 +389,7 @@ where
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -411,7 +411,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("polynomial evaluation", tsk.key_ring())?;
         ckks_ensure!(
             poly.baby_steps() > 0,
             "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
@@ -453,7 +452,7 @@ where
             res,
             &mut baby_steps,
             power_basis,
-            tsk.as_core(),
+            tsk,
             &mut scratch.borrow(),
         )?;
 
@@ -470,7 +469,7 @@ where
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -492,7 +491,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("polynomial evaluation", tsk.key_ring())?;
         let poly_re = &poly.re;
         let poly_im = &poly.im;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
@@ -577,7 +575,7 @@ where
             res,
             &mut baby_steps,
             power_basis,
-            tsk.as_core(),
+            tsk,
             &mut scratch.borrow(),
         )?;
 

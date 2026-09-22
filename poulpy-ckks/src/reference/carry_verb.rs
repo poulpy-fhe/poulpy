@@ -223,8 +223,6 @@ macro_rules! ckks_carry_verb_reference {
                     Ok(())
                 }
 
-
-
                 fn [<ckks_ $verb _pt_vec_into_reference>]<Dst, A, P>(
                     &self,
                     dst: &mut Dst,

@@ -59,7 +59,7 @@ pub trait CKKSMulReference<BE: Backend> {
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -93,7 +93,7 @@ pub trait CKKSMulReference<BE: Backend> {
         &self,
         dst: &mut Dst,
         a: &A,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -136,10 +136,6 @@ pub trait CKKSMulReference<BE: Backend> {
         let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
-            ring: crate::layouts::CKKSRing {
-                kind: a.ring_kind(),
-                n: a.n(),
-            },
             prep,
             size,
             log_delta: a.log_delta(),
@@ -159,7 +155,7 @@ pub trait CKKSMulReference<BE: Backend> {
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -223,7 +219,7 @@ pub trait CKKSMulReference<BE: Backend> {
         &self,
         dst: &mut Dst,
         a: &A,
-        tsk: &crate::layouts::CKKSKey<T>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -251,12 +247,7 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    fn ckks_square_assign_reference<Dst, T>(
-        &self,
-        dst: &mut Dst,
-        tsk: &crate::layouts::CKKSKey<T>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_square_assign_reference<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
@@ -457,7 +448,7 @@ enum StampOrder {
 fn tensor_mul_core<BE, M, Dst, T>(
     module: &M,
     dst: &mut Dst,
-    tsk: &crate::layouts::CKKSKey<T>,
+    tsk: &T,
     tensor_k: TorusPrecision,
     stamp: MulStamp,
     order: StampOrder,
@@ -496,7 +487,7 @@ where
     if matches!(order, StampOrder::AfterApply) {
         do_stamp(dst);
     }
-    module.glwe_tensor_relinearize(dst, &tmp, tsk.as_core(), &mut scratch_local);
+    module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
     Ok(())
 }
 

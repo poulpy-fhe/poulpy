@@ -14,8 +14,8 @@ use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
     GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared,
     GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-    GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
-    prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
+    ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena, ZnxWord};
 
@@ -102,10 +102,10 @@ pub trait PaCoKeys<BE: Backend> {
     type BootstrappingKey: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Prepared automorphism-key type used by PaCo rotations and folds.
-    type AutomorphismKey: poulpy_core::layouts::GetAutomorphismKey<BE>;
+    type AutomorphismKey: GetAutomorphismKey<BE>;
 
     /// Collection that resolves automorphism keys by Galois element.
-    type RotationKeys: poulpy_core::layouts::GetAutomorphismKey<BE>;
+    type RotationKeys: GetAutomorphismKey<BE>;
 
     /// Prepared tensor (relinearization) key used by the product fold.
     type TensorKey: GetTensorKey<BE>;
@@ -120,13 +120,13 @@ pub trait PaCoKeys<BE: Backend> {
     fn bootstrapping_keys(&self) -> &[Self::BootstrappingKey; 4];
 
     /// Automorphism keys for all Galois elements required by the plan.
-    fn rotation_keys(&self) -> &crate::layouts::CKKSKey<Self::RotationKeys>;
+    fn rotation_keys(&self) -> &Self::RotationKeys;
 
     /// Relinearization key for the ciphertext product fold.
-    fn tensor_key(&self) -> &crate::layouts::CKKSKey<Self::TensorKey>;
+    fn tensor_key(&self) -> &Self::TensorKey;
 
     /// Optional dense-to-PaCo encapsulation key.
-    fn encapsulation_key(&self) -> Option<&crate::layouts::CKKSKey<Self::SwitchingKey>>;
+    fn encapsulation_key(&self) -> Option<&Self::SwitchingKey>;
 }
 
 /// Validated, unprepared PaCo key material.
@@ -137,9 +137,9 @@ pub trait PaCoKeys<BE: Backend> {
 pub struct PaCoKeySet<D: Data, W: ZnxWord> {
     parameters: PaCoKeyParameters,
     bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
-    rotation_keys: HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>>,
-    tensor_key: crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
-    encapsulation_key: Option<crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>>,
+    rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    tensor_key: GLWETensorKey<D, W>,
+    encapsulation_key: Option<GLWESwitchingKey<D, W>>,
 }
 
 /// Eagerly prepared PaCo key material ready for a backend pipeline.
@@ -149,33 +149,33 @@ pub struct PaCoKeySet<D: Data, W: ZnxWord> {
 pub struct PaCoKeysPrepared<D: Data, BE: Backend> {
     parameters: PaCoKeyParameters,
     bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
-    rotation_keys: crate::layouts::CKKSKey<HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>,
-    tensor_key: crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>>,
-    encapsulation_key: Option<crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>>,
+    rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
+    tensor_key: GLWETensorKeyPrepared<D, BE>,
+    encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
 }
 
 /// Owned components returned by [`PaCoKeySet::into_parts`].
 pub type PaCoKeySetParts<D, W> = (
     PaCoKeyParameters,
     [CKKSCiphertext<D, W>; 4],
-    HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>>,
-    crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
-    Option<crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>>,
+    HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    GLWETensorKey<D, W>,
+    Option<GLWESwitchingKey<D, W>>,
 );
 
 /// Owned components returned by [`PaCoKeysPrepared::into_parts`].
 pub type PaCoKeysPreparedParts<D, BE> = (
     PaCoKeyParameters,
     [CKKSCiphertext<D, <BE as Backend>::ZnxWord>; 4],
-    HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<D, BE>>>,
-    crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>>,
-    Option<crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>>,
+    HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
+    GLWETensorKeyPrepared<D, BE>,
+    Option<GLWESwitchingKeyPrepared<D, BE>>,
 );
 
 type PreparedGadgetKeys<D, BE> = (
-    crate::layouts::CKKSKey<HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>,
-    crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>>,
-    Option<crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>>,
+    HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
+    GLWETensorKeyPrepared<D, BE>,
+    Option<GLWESwitchingKeyPrepared<D, BE>>,
 );
 
 trait ActiveCiphertextStorage {
@@ -203,9 +203,9 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     pub fn new(
         plan: &PaCoPlan,
         bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
-        rotation_keys: HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>>,
-        tensor_key: crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
-        encapsulation_key: Option<crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>>,
+        rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
+        tensor_key: GLWETensorKey<D, W>,
+        encapsulation_key: Option<GLWESwitchingKey<D, W>>,
     ) -> Result<Self>
     where
         GLWESwitchingKey<D, W>: GLWESwitchingKeyDegrees,
@@ -216,7 +216,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             &rotation_keys,
             &tensor_key,
             encapsulation_key.as_ref(),
-            |key| key.p(),
+            GLWEAutomorphismKey::p,
         )?;
 
         Ok(Self {
@@ -271,7 +271,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             &self.rotation_keys,
             &self.tensor_key,
             self.encapsulation_key.as_ref(),
-            |key| key.p(),
+            GLWEAutomorphismKey::p,
         )?;
 
         let (rotation_keys, tensor_key, encapsulation_key) = prepare_gadget_keys(
@@ -337,7 +337,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             &rotation_keys,
             &tensor_key,
             encapsulation_key.as_ref(),
-            |key| key.p(),
+            GLWEAutomorphismKey::p,
         )?;
         let (rotation_keys, tensor_key, encapsulation_key) =
             prepare_gadget_keys(module, &rotation_keys, &tensor_key, encapsulation_key.as_ref(), scratch)?;
@@ -353,9 +353,9 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
 
 fn prepare_gadget_keys<D, W, BE>(
     module: &Module<BE>,
-    rotation_keys: &HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>>,
-    tensor_key: &crate::layouts::CKKSKey<GLWETensorKey<D, W>>,
-    encapsulation_key: Option<&crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>>,
+    rotation_keys: &HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    tensor_key: &GLWETensorKey<D, W>,
+    encapsulation_key: Option<&GLWESwitchingKey<D, W>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PreparedGadgetKeys<D, BE>>
 where
@@ -370,12 +370,12 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>,
 {
-    let mut required_scratch = module.prepare_tensor_key_tmp_bytes(tensor_key.as_core());
+    let mut required_scratch = module.prepare_tensor_key_tmp_bytes(tensor_key);
     for key in rotation_keys.values() {
-        required_scratch = required_scratch.max(module.glwe_automorphism_key_prepare_tmp_bytes(key.as_core()));
+        required_scratch = required_scratch.max(module.glwe_automorphism_key_prepare_tmp_bytes(key));
     }
     if let Some(key) = encapsulation_key {
-        required_scratch = required_scratch.max(module.glwe_switching_key_prepare_tmp_bytes(key.as_core()));
+        required_scratch = required_scratch.max(module.glwe_switching_key_prepare_tmp_bytes(key));
     }
     ensure!(
         scratch.available() >= required_scratch,
@@ -383,28 +383,26 @@ where
         scratch.available(),
     );
 
-    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-    for key in rotation_keys.values() {
-        ring.check("key preparation", key.key_ring())?;
+    let mut prepared_rotations = HashMap::with_capacity(rotation_keys.len());
+    for (&element, key) in rotation_keys {
+        let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(key);
+        module.glwe_automorphism_key_prepare(&mut prepared, key, scratch);
+        prepared_rotations.insert(element, prepared);
     }
-    ring.check("key preparation", tensor_key.key_ring())?;
-    if let Some(key) = encapsulation_key {
-        ring.check("key preparation", key.key_ring())?;
-    }
-    let prepared_rotations = rotation_keys
-        .iter()
-        .map(|(&p, key)| Ok((p, key.prepare_automorphism(module, scratch)?)))
-        .collect::<Result<_>>()?;
-    let prepared_tensor = tensor_key.prepare_tensor(module, scratch)?;
-    let prepared_encapsulation = encapsulation_key
-        .map(|key| key.prepare_switching(module, scratch))
-        .transpose()?;
 
-    Ok((
-        crate::layouts::CKKSKey::from_keys(prepared_rotations, ring)?,
-        prepared_tensor,
-        prepared_encapsulation,
-    ))
+    let prepared_tensor = {
+        let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
+        module.prepare_tensor_key(&mut prepared, tensor_key, scratch);
+        prepared
+    };
+
+    let prepared_encapsulation = encapsulation_key.map(|key| {
+        let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
+        module.glwe_switching_key_prepare(&mut prepared, key, scratch);
+        prepared
+    });
+
+    Ok((prepared_rotations, prepared_tensor, prepared_encapsulation))
 }
 
 impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
@@ -414,17 +412,17 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     }
 
     /// Returns the unprepared automorphism-key map.
-    pub fn rotation_keys(&self) -> &HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKey<D, W>>> {
+    pub fn rotation_keys(&self) -> &HashMap<i64, GLWEAutomorphismKey<D, W>> {
         &self.rotation_keys
     }
 
     /// Returns the unprepared tensor key.
-    pub fn tensor_key(&self) -> &crate::layouts::CKKSKey<GLWETensorKey<D, W>> {
+    pub fn tensor_key(&self) -> &GLWETensorKey<D, W> {
         &self.tensor_key
     }
 
     /// Returns the optional unprepared dense-to-PaCo switching key.
-    pub fn encapsulation_key(&self) -> Option<&crate::layouts::CKKSKey<GLWESwitchingKey<D, W>>> {
+    pub fn encapsulation_key(&self) -> Option<&GLWESwitchingKey<D, W>> {
         self.encapsulation_key.as_ref()
     }
 
@@ -449,9 +447,9 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     pub fn new(
         plan: &PaCoPlan,
         bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
-        rotation_keys: HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<D, BE>>>,
-        tensor_key: crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>>,
-        encapsulation_key: Option<crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>>,
+        rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
+        tensor_key: GLWETensorKeyPrepared<D, BE>,
+        encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
     ) -> Result<Self> {
         validate_material(
             plan,
@@ -462,7 +460,6 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
             GetGaloisElement::p,
         )?;
 
-        let rotation_keys = crate::layouts::CKKSKey::from_keys(rotation_keys, tensor_key.key_ring())?;
         Ok(Self {
             parameters: PaCoKeyParameters::from_plan(plan),
             bootstrapping_keys,
@@ -483,17 +480,17 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     }
 
     /// Returns the prepared automorphism-key map.
-    pub fn rotation_keys(&self) -> &crate::layouts::CKKSKey<HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>> {
+    pub fn rotation_keys(&self) -> &HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>> {
         &self.rotation_keys
     }
 
     /// Returns the prepared tensor key.
-    pub fn tensor_key(&self) -> &crate::layouts::CKKSKey<GLWETensorKeyPrepared<D, BE>> {
+    pub fn tensor_key(&self) -> &GLWETensorKeyPrepared<D, BE> {
         &self.tensor_key
     }
 
     /// Returns the optional prepared dense-to-PaCo switching key.
-    pub fn encapsulation_key(&self) -> Option<&crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<D, BE>>> {
+    pub fn encapsulation_key(&self) -> Option<&GLWESwitchingKeyPrepared<D, BE>> {
         self.encapsulation_key.as_ref()
     }
 
@@ -502,7 +499,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
         (
             self.parameters,
             self.bootstrapping_keys,
-            self.rotation_keys.into_keys(),
+            self.rotation_keys,
             self.tensor_key,
             self.encapsulation_key,
         )
@@ -530,15 +527,15 @@ where
         &self.bootstrapping_keys
     }
 
-    fn rotation_keys(&self) -> &crate::layouts::CKKSKey<Self::RotationKeys> {
+    fn rotation_keys(&self) -> &Self::RotationKeys {
         &self.rotation_keys
     }
 
-    fn tensor_key(&self) -> &crate::layouts::CKKSKey<Self::TensorKey> {
+    fn tensor_key(&self) -> &Self::TensorKey {
         &self.tensor_key
     }
 
-    fn encapsulation_key(&self) -> Option<&crate::layouts::CKKSKey<Self::SwitchingKey>> {
+    fn encapsulation_key(&self) -> Option<&Self::SwitchingKey> {
         self.encapsulation_key.as_ref()
     }
 }
@@ -547,9 +544,9 @@ where
 fn validate_material<B, A, T, S>(
     plan: &PaCoPlan,
     bootstrapping_keys: &[B; 4],
-    rotation_keys: &HashMap<i64, crate::layouts::CKKSKey<A>>,
-    tensor_key: &crate::layouts::CKKSKey<T>,
-    encapsulation_key: Option<&crate::layouts::CKKSKey<S>>,
+    rotation_keys: &HashMap<i64, A>,
+    tensor_key: &T,
+    encapsulation_key: Option<&S>,
     automorphism_element: impl Fn(&A) -> i64,
 ) -> Result<()>
 where
@@ -568,13 +565,6 @@ where
     };
     for ct in bootstrapping_keys {
         ring.check_ciphertext("PaCo key material", ct)?;
-    }
-    for key in rotation_keys.values() {
-        ring.check("PaCo key material", key.key_ring())?;
-    }
-    ring.check("PaCo key material", tensor_key.key_ring())?;
-    if let Some(key) = encapsulation_key {
-        ring.check("PaCo key material", key.key_ring())?;
     }
 
     let cyclotomic_order = n
@@ -643,7 +633,7 @@ where
 
     let order_u64 = u64::try_from(cyclotomic_order).context("PaCo cyclotomic order must be positive")?;
     for (&label, key) in rotation_keys {
-        let key_element = automorphism_element(key.as_core());
+        let key_element = automorphism_element(key);
         ensure!(
             label == key_element,
             "PaCo rotation-key map label {label} does not match key Galois element {key_element}",
@@ -654,7 +644,7 @@ where
         );
         validate_gadget_key(
             &format!("PaCo rotation key {label}"),
-            key.as_core(),
+            key,
             n,
             base2k,
             bootstrapping_keys[0].max_size(),
@@ -668,17 +658,11 @@ where
         );
     }
 
-    validate_gadget_key(
-        "PaCo tensor key",
-        tensor_key.as_core(),
-        n,
-        base2k,
-        bootstrapping_keys[0].max_size(),
-    )?;
+    validate_gadget_key("PaCo tensor key", tensor_key, n, base2k, bootstrapping_keys[0].max_size())?;
 
     if let Some(key) = encapsulation_key {
         let input_size = (plan.log_q() as usize).div_ceil(base2k.as_usize());
-        validate_gadget_key("PaCo encapsulation key", key.as_core(), n, base2k, input_size)?;
+        validate_gadget_key("PaCo encapsulation key", key, n, base2k, input_size)?;
         ensure!(
             key.input_degree().as_usize() == n,
             "PaCo encapsulation-key input degree {} does not match plan degree {n}",

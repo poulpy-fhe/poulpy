@@ -411,7 +411,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, tsk.as_core());
+    let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk);
     let mut mul_scratch = ScratchOwned::<BE>::alloc(exact_bytes);
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut mul_scratch.borrow())

@@ -6,12 +6,11 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::layouts::LinearTransformation;
-use poulpy_core::layouts::{GetAutomorphismKey, IntPolyInfos};
+use poulpy_core::layouts::IntPolyInfos;
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -48,19 +47,19 @@ pub unsafe trait DFTImpl:
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_coeffs_to_slots_impl<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Encode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -75,7 +74,7 @@ pub unsafe trait DFTImpl:
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Decode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -92,7 +91,7 @@ pub unsafe trait DFTImpl:
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<Self, Encode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -110,7 +109,7 @@ pub unsafe trait DFTImpl:
         ct_real: &Src,
         ct_imag: &Src,
         dft: &DFTMatrix<Self, Decode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -127,7 +126,7 @@ pub unsafe trait DFTImpl:
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<Self, Encode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -144,7 +143,7 @@ pub unsafe trait DFTImpl:
         op_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<Self, Decode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -185,7 +184,7 @@ macro_rules! impl_ckks_dft_reference {
         unsafe impl $crate::oep::DFTImpl for $be {
             fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, $crate::layouts::LinearTransformation<P>>,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<$crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>>
             where
@@ -199,8 +198,8 @@ macro_rules! impl_ckks_dft_reference {
             fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dst,
-                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, $crate::layouts::LinearTransformation<P>>,
-                keys: &$crate::layouts::CKKSKey<H>,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
+                keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where

@@ -2,10 +2,10 @@
 use crate::api::{
     CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalScale,
 };
-use crate::layouts::LinearTransformation;
 use crate::layouts::{CKKSModuleAlloc, DFTMatrix, Decode, Encode, Repack, Split, Standard};
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
+
 use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
@@ -17,7 +17,7 @@ pub(crate) fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -37,7 +37,7 @@ pub(crate) fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -66,7 +66,7 @@ pub(crate) fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
     ct_imag: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -112,7 +112,7 @@ pub(crate) fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
     ct_real: &Src,
     ct_imag: &Src,
     dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -142,7 +142,7 @@ pub(crate) fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
     ct_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -198,7 +198,7 @@ pub(crate) fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
     op_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
-    keys: &crate::layouts::CKKSKey<H>,
+    keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where

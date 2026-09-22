@@ -3,10 +3,12 @@ use poulpy_core::layouts::GLWEInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Module};
 
+use crate::api::CKKSModuleInfos;
+use crate::layouts::CKKSEncodingBuffer;
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos},
-    layouts::{CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef},
+    api::{CKKSEncodingOps, CKKSEncodingScalar},
+    layouts::{CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef},
     oep::CKKSEncodingImpl,
 };
 

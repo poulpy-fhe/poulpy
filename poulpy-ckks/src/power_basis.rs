@@ -23,13 +23,7 @@ pub trait PowerBasisInsert<D: Data, W: ZnxWord> {
 /// CKKS computation of the power basis entries used by BSGS evaluation.
 pub trait PowerBasisGen<BE: Backend> {
     /// Recursively computes and stores X^`n` (monomial basis).
-    fn gen_power<H>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -40,7 +34,7 @@ pub trait PowerBasisGen<BE: Backend> {
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -56,7 +50,7 @@ pub trait PowerBasisGen<BE: Backend> {
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -109,20 +103,14 @@ impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D
 }
 
 impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
-    fn gen_power<H>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
         let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-        ring.check("power-basis generation", tsk.key_ring())?;
+
         for power in 1..=n.max(1) {
             if let Some(value) = self.get_stored(power) {
                 ring.check_ciphertext("power-basis generation", value)?;
@@ -156,20 +144,14 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         Ok(())
     }
 
-    fn gen_power_chebyshev<H>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn gen_power_chebyshev<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
         let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-        ring.check("power-basis generation", tsk.key_ring())?;
+
         for power in 1..=n.max(1) {
             if let Some(value) = self.get_stored(power) {
                 ring.check_ciphertext("power-basis generation", value)?;
@@ -230,7 +212,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -239,7 +221,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         H: GetTensorKey<BE>,
     {
         let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-        ring.check("power-basis generation", tsk.key_ring())?;
+
         for power in 1..=degree.max(1) {
             if let Some(value) = self.get_stored(power) {
                 ring.check_ciphertext("power-basis generation", value)?;

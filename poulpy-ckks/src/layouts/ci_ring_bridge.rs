@@ -4,7 +4,6 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSModuleInfos, CKKSResult as Result, CKKSRingKind,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSImagOps},
-    delegates::bootstrapping::check_key_rings,
     layouts::{BootstrappingKeys, CKKSCiphertextOwned, CKKSModuleAlloc},
 };
 
@@ -104,11 +103,6 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos,
     {
-        check_key_rings::<BE, _>(
-            &keys.bootstrap_keys,
-            "ckks_ci_bootstrap",
-            crate::CKKSModuleInfos::ckks_ring(self.standard),
-        )?;
         crate::reference::ci_bootstrapping::ckks_ci_bootstrap_reference(
             self.standard,
             self.ci,
@@ -146,11 +140,6 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         S: poulpy_core::layouts::GGLWEPreparedToBackendRef<BE> + poulpy_core::layouts::GGLWEInfos,
     {
-        check_key_rings::<BE, _>(
-            &keys.bootstrap_keys,
-            "ckks_ci_bootstrap_pair",
-            crate::CKKSModuleInfos::ckks_ring(self.standard),
-        )?;
         crate::reference::ci_bootstrapping::ckks_ci_bootstrap_reference(
             self.standard,
             self.ci,

@@ -12,7 +12,6 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
-use crate::api::CKKSModuleInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
@@ -85,7 +84,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[Cpx],
     bound: f64,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
@@ -175,7 +174,6 @@ where
             atks.entry(p_el)
                 .or_insert_with(|| gen_atk(&params, module, p_el, &sk_raw, &mut scratch.borrow()));
         }
-        let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
         let mut ct = ckks_encrypt(
             &params,
             module,
@@ -240,7 +238,6 @@ where
                 .or_insert_with(|| gen_atk(&params, &module, p_el, &sk_raw, &mut scratch.borrow()));
         }
 
-        let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
         let (a_re, a_im) = unit_circle_vector::<F>(m);
         let v = to_cpx(&a_re, &a_im);
         let mut ct = ckks_encrypt(

@@ -21,7 +21,7 @@ where
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -39,8 +39,7 @@ where
                     .check_ciphertext("ckks_eval_poly_real_const_coeffs_from_power_basis", power_basis.get(power)?)?;
             }
         }
-        crate::api::CKKSModuleInfos::ckks_ring(self)
-            .check("ckks_eval_poly_real_const_coeffs_from_power_basis", tsk.key_ring())?;
+
         crate::api::CKKSModuleInfos::ckks_ring(self)
             .check_ciphertext("ckks_eval_poly_real_const_coeffs_from_power_basis", res)?;
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis_impl::<R, B, A, G, H>(self, res, poly, power_basis, tsk, scratch)
@@ -51,7 +50,7 @@ where
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -75,8 +74,7 @@ where
                 )?;
             }
         }
-        crate::api::CKKSModuleInfos::ckks_ring(self)
-            .check("ckks_eval_poly_complex_const_coeffs_from_power_basis", tsk.key_ring())?;
+
         crate::api::CKKSModuleInfos::ckks_ring(self)
             .check_ciphertext("ckks_eval_poly_complex_const_coeffs_from_power_basis", res)?;
         BE::ckks_eval_poly_complex_const_coeffs_from_power_basis_impl::<R, C, A, G, H>(self, res, poly, power_basis, tsk, scratch)
@@ -87,7 +85,7 @@ where
         dst: &mut R,
         src: &S,
         bsgs: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -99,7 +97,7 @@ where
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), bsgs)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_poly_real_const_coeffs", tsk.key_ring())?;
+
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_real_const_coeffs", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_real_const_coeffs", src)?;
         BE::ckks_eval_poly_real_const_coeffs_impl::<R, S, B, H>(self, dst, src, bsgs, tsk, scratch)
@@ -110,7 +108,7 @@ where
         dst: &mut R,
         src: &S,
         poly: &ComplexBSGSPolynomial<C>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -126,7 +124,7 @@ where
         );
         check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.re)?;
         check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.im)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_poly_complex_const_coeffs", tsk.key_ring())?;
+
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_complex_const_coeffs", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_complex_const_coeffs", src)?;
         BE::ckks_eval_poly_complex_const_coeffs_impl::<R, S, C, H>(self, dst, src, poly, tsk, scratch)

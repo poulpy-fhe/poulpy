@@ -6,6 +6,7 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
+use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -70,14 +71,14 @@ pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
     ct: &C,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     lut: &ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
-    conj_key: &crate::layouts::CKKSKey<K>,
-    tsk: &crate::layouts::CKKSKey<H>,
+    conj_key: &K,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
@@ -121,7 +122,7 @@ pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
     layout: &GLWELayout,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PowerBasis<CKKSCiphertextOwned<BE>>>
 where
@@ -168,14 +169,14 @@ pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
     res: &mut R,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
-    conj_key: &crate::layouts::CKKSKey<K>,
-    tsk: &crate::layouts::CKKSKey<H>,
+    conj_key: &K,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
@@ -237,7 +238,7 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
     cos_bsgs: &BSGSPolynomial<CKKSPlaintextOwned<BE>>,
     log_interval_reduction: usize,
     affine: &CKKSPlaintextOwned<BE>,
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where

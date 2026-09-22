@@ -22,9 +22,9 @@
 use anyhow::Result;
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
-    api::{CKKSEncodingHostOps, CKKSModuleInfos},
-    layouts::{CKKSCiphertext, CKKSKey, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -32,8 +32,9 @@ use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
     layouts::{
-        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWESecretPrepared, GLWETensorKeyPrepared},
+        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
+        prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
     },
 };
 use poulpy_cpu_ref::NTT4x30Ref;
@@ -90,8 +91,8 @@ const ABS_ERROR_TOLERANCE: f64 = 5e-5;
 /// Long-lived objects prepared during setup.
 struct SetupArtifacts {
     module: Module<BackendImpl>,
-    sk: CKKSKey<SecretKeyPrepared>,
-    tsk_prepared: CKKSKey<TensorKeyPrepared>,
+    sk: SecretKeyPrepared,
+    tsk_prepared: TensorKeyPrepared,
     scratch: ScratchOwned<BackendImpl>,
 }
 
@@ -203,8 +204,8 @@ fn setup() -> Result<SetupArtifacts> {
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout());
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut source_xs);
 
-    let sk_raw = CKKSKey::from_raw_parts(sk_raw, module.ckks_ring())?;
-    let sk = sk_raw.prepare_secret(&module)?;
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout());
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
     println!("  prepared secret key");
 
     let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
@@ -229,7 +230,7 @@ fn setup() -> Result<SetupArtifacts> {
         let mut scratch_local = scratch.borrow();
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
-            sk_raw.as_core(),
+            &sk_raw,
             &tsk_layout(),
             &mut source_xe,
             &mut source_xa,
@@ -237,8 +238,11 @@ fn setup() -> Result<SetupArtifacts> {
         );
     }
 
-    let tsk = CKKSKey::from_raw_parts(tsk, module.ckks_ring())?;
-    let tsk_prepared = tsk.prepare_tensor(&module, &mut scratch.borrow())?;
+    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
+    {
+        let mut scratch_local = scratch.borrow();
+        module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch_local);
+    }
     println!("  prepared tensor key");
 
     Ok(SetupArtifacts {

@@ -23,7 +23,6 @@ where
         *sk.dist_mut() = Distribution::TernaryProb(2.0 / 3.0);
         let mut prepared = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut prepared, &sk);
-        let prepared = crate::layouts::CKKSKey::from_raw_parts(prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap();
         for sparse in [0, 2] {
             for slots in [SlotsKind::Real, SlotsKind::Complex] {
                 let ct_layout = layout(params, rank, 4 * params.base2k + 3, params.base2k, sparse, slots);

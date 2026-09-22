@@ -14,7 +14,6 @@
 //! |----------|----------------|
 //! | [`test_rotate_assign`] | in-place rotation for each requested shift |
 
-use crate::api::CKKSModuleInfos;
 use crate::{CKKSCompositionError, CKKSInfos, api::CKKSRotateOps};
 use std::collections::HashMap;
 
@@ -58,7 +57,6 @@ pub fn test_rotate_aligned<BE, F, E>(
         atks.insert(gal, atk);
     }
 
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let ct = ckks_encrypt(
         &params,
         module,
@@ -118,7 +116,6 @@ pub fn test_rotate_smaller_output<BE, F, E>(
         atks.insert(gal, atk);
     }
 
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
     let ct = ckks_encrypt(
         &params,
         module,
@@ -177,7 +174,6 @@ pub fn test_rotate_assign<BE, F, E>(
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
-    let atks = crate::layouts::CKKSKey::from_keys(atks, module.ckks_ring()).unwrap();
 
     for &r in rotations {
         let (want_re, want_im) = want_rotate(&re1, &im1, r, m);
@@ -240,8 +236,7 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let empty_keys: HashMap<i64, crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>> = HashMap::new();
-    let empty_keys = crate::layouts::CKKSKey::from_keys(empty_keys, module.ckks_ring()).unwrap();
+    let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let err = module
         .ckks_rotate_assign(&mut ct, 1, &empty_keys, &mut scratch.borrow())
         .unwrap_err();

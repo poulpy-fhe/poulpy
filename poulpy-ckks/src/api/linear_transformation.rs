@@ -35,7 +35,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -43,11 +43,12 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
-    LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep, LinearTransformationLayout,
-    LinearTransformationPlan, LinearTransformationStrategy, layouts::prepared::PreparedDiagonal, optimal_bsgs_giant_step,
+    LinearTransformation, LinearTransformationBabySteps, LinearTransformationDiagonal as Diagonal,
+    LinearTransformationGiantStep as GiantStep, LinearTransformationLayout, LinearTransformationPlan,
+    LinearTransformationPrepared, LinearTransformationStrategy, layouts::prepared::PreparedDiagonal, optimal_bsgs_giant_step,
 };
 
-/// The CKKS encoding scale (`log_delta`) of a linear-transformation diagonal.
+/// CKKS scale and ring validation for a linear-transformation diagonal.
 ///
 /// The CKKS scale / key-size bookkeeping reads it (together with the
 /// scheme-agnostic [`LWEInfos::k`]) off the transform's first diagonal,
@@ -64,6 +65,9 @@ pub use poulpy_core::{
 pub trait LtDiagonalScale {
     /// `log2` of the diagonal plaintext's scaling factor.
     fn lt_log_scale(&self) -> usize;
+
+    /// Validates the diagonal's ring kind and compact degree for evaluation.
+    fn lt_check_ring(&self, op: &'static str, ring: crate::CKKSRing) -> Result<()>;
 }
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
@@ -137,12 +141,12 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     // ----- eval (caller-supplied baby cache) -----
 
@@ -163,14 +167,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         src: &Src,
         babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_eval_linear_transformation_into`]).
@@ -179,13 +183,13 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----
 
@@ -201,14 +205,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         dst: &mut Dst,
         src: &Src,
         lt: &LinearTransformation<P>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
     /// [`Self::ckks_eval_linear_transformation_self_into`]).
@@ -216,13 +220,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 }
-
-pub use crate::layouts::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};

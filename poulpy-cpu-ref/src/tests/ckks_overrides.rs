@@ -58,7 +58,7 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
         res: &mut R,
         poly: &B,
         power_basis: &G,
-        tsk: &poulpy_ckks::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
@@ -82,7 +82,7 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
         res: &mut R,
         poly: &poulpy_ckks::polynomial::ComplexBSGSPolynomial<C>,
         power_basis: &G,
-        tsk: &poulpy_ckks::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
@@ -128,7 +128,7 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         res: &mut R,
         ct: &C,
         params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
-        tsk: &poulpy_ckks::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
@@ -153,11 +153,6 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
 }
 
 struct NoTensorKey;
-impl NoTensorKey {
-    fn for_module<BE: Backend>(module: &Module<BE>) -> poulpy_ckks::layouts::CKKSKey<Self> {
-        poulpy_ckks::layouts::CKKSKey::from_raw_provider(Self, poulpy_ckks::api::CKKSModuleInfos::ckks_ring(module))
-    }
-}
 impl<BE: Backend> GetTensorKey<BE> for NoTensorKey {
     fn get_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("linear polynomial dispatch must not request a tensor key")
@@ -220,13 +215,7 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     COMPLEX_CALLS.with(|calls| calls.set(0));
     let real = polynomial(&module);
     module
-        .ckks_eval_poly_real_const_coeffs(
-            &mut dst,
-            &src,
-            &real,
-            &NoTensorKey::for_module(&module),
-            &mut scratch.borrow(),
-        )
+        .ckks_eval_poly_real_const_coeffs(&mut dst, &src, &real, &NoTensorKey, &mut scratch.borrow())
         .unwrap();
     assert_eq!(REAL_CALLS.with(Cell::get), 1);
     let complex = ComplexBSGSPolynomial {
@@ -234,13 +223,7 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         im: polynomial(&module),
     };
     module
-        .ckks_eval_poly_complex_const_coeffs(
-            &mut dst,
-            &src,
-            &complex,
-            &NoTensorKey::for_module(&module),
-            &mut scratch.borrow(),
-        )
+        .ckks_eval_poly_complex_const_coeffs(&mut dst, &src, &complex, &NoTensorKey, &mut scratch.borrow())
         .unwrap();
     assert_eq!(COMPLEX_CALLS.with(Cell::get), 1);
 }
@@ -292,13 +275,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
     EVAL_MOD_CALLS.with(|calls| calls.set(0));
     assert!(
         module
-            .ckks_eval_mod(
-                &mut dst,
-                &src,
-                &params,
-                &NoTensorKey::for_module(&module),
-                &mut scratch.borrow()
-            )
+            .ckks_eval_mod(&mut dst, &src, &params, &NoTensorKey, &mut scratch.borrow())
             .is_err()
     );
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
@@ -377,13 +354,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             let expected_bytes = reference.ckks_eval_mod_tmp_bytes(&expected, &src, &params, &key_infos);
             let mut expected_scratch = ScratchOwned::<crate::FFT64Ref>::alloc(expected_bytes);
             reference
-                .ckks_eval_mod(
-                    &mut expected,
-                    &src,
-                    &params,
-                    &NoTensorKey::for_module(&module),
-                    &mut expected_scratch.borrow(),
-                )
+                .ckks_eval_mod(&mut expected, &src, &params, &NoTensorKey, &mut expected_scratch.borrow())
                 .unwrap();
 
             // Bypass the independent EvalMod dispatch probe and exercise its
@@ -397,7 +368,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             assert_eq!(exact.available(), bytes);
             MAX_COPY_CAPACITY.set(0);
             module
-                .ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey::for_module(&module), &mut exact)
+                .ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, &mut exact)
                 .unwrap();
             assert_eq!(MAX_COPY_CAPACITY.get(), capacity);
             assert_eq!(dst.data().raw(), expected.data().raw());

@@ -66,7 +66,7 @@ where
         res: &mut R,
         input: &I,
         approximation: &PolynomialApproximation<P>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -82,7 +82,7 @@ where
         if let Some(affine) = &approximation.affine {
             crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("approximation", affine)?;
         }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_eval_approximation", tsk.key_ring())?;
+
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_approximation", res)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_approximation", input)?;
         let required = approximation.consumed_bits(input.log_delta());

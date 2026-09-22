@@ -1,10 +1,12 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
-use crate::api::{CKKSCopyOps, CKKSModuleInfos, CKKSRotateOps};
+use crate::api::CKKSCopyOps;
+use crate::api::CKKSModuleInfos;
+use crate::api::CKKSRotateOps;
 
 impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
@@ -20,15 +22,14 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         dst: &mut Dst,
         src: &Src,
         k: i64,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_rotate_into", keys.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_into", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_into", src)?;
         let p = self.ckks_galois_element(k);
@@ -42,21 +43,15 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
                 rotation: k,
                 k: src.k().into(),
             })?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_rotate_into", key.n())?;
         BE::ckks_rotate_into_impl(self, dst, src, &key, scratch)
     }
 
-    fn ckks_rotate_assign<Dst, H>(
-        &self,
-        dst: &mut Dst,
-        k: i64,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_rotate_assign", keys.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_assign", dst)?;
         let p = self.ckks_galois_element(k);
         if p == 1 {
@@ -69,6 +64,7 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
                 rotation: k,
                 k: dst.k().into(),
             })?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_rotate_assign", key.n())?;
         BE::ckks_rotate_assign_impl(self, dst, &key, scratch)
     }
 }

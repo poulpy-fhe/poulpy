@@ -147,7 +147,7 @@ where
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -156,7 +156,6 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_add_ct_into", tsk.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", a)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", b)?;
@@ -412,7 +411,7 @@ where
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -421,7 +420,6 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_sub_ct_into", tsk.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", a)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", b)?;
@@ -581,7 +579,7 @@ where
         dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
         a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&CKKSCiphertext<E, BE::ZnxWord>],
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -598,7 +596,7 @@ where
         for value in b {
             ring.check_ciphertext("ckks_dot_product_ct", *value)?;
         }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_dot_product_ct", tsk.key_ring())?;
+
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;

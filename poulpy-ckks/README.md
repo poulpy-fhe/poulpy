@@ -105,18 +105,12 @@ host transfers, scratch views, and prepared operands retain their identity.
 Compact plaintexts must have a degree that embeds in the module; scalar
 coefficient banks need the same ring kind but may have arbitrary lengths.
 
-Secret and evaluation keys use `CKKSKey<K>`. Import a Core key with
-`CKKSKey::from_raw_parts(raw, module.ckks_ring())`, supplying the ring actually
-used to generate it. Prepare it through `prepare_secret`, `prepare_tensor`,
-`prepare_automorphism`, or `prepare_switching`; these validate the module and
-preserve the tag. Build a key collection with `CKKSKey::from_keys(keys, ring)`;
-this checks every member once and binds the immutable collection to that ring.
-Custom providers implement the Core lookup traits and are imported with
-`CKKSKey::from_raw_provider(provider, ring)`, asserting that every key they
-return, including lazy preparations, belongs to that ring. Prepared linear transformations and baby-step caches also
-retain their evaluation ring. CKKS operations reject incompatible operands,
-outputs, keys, and caches before changing their destination. Raw Core access
-and explicit imports rely on the caller to preserve the declared basis.
+Secret and evaluation keys use the Core key types and preparation methods.
+Prepared keys, diagonals, and baby-step caches carry the backend type, so CI
+and standard prepared objects cannot be mixed. Raw key coefficients have no
+ring tag: callers must prepare them with the backend used to generate them.
+CKKS validates ciphertext/plaintext ring metadata and prepared operand degrees
+at operation boundaries, before changing the destination.
 
 ## Crate organization
 

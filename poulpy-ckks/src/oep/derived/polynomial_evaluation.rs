@@ -20,7 +20,7 @@ pub(crate) fn polynomial_input<BE, S, H>(
     module: &Module<BE>,
     src: &S,
     transform: PolynomialInputTransform,
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
@@ -58,7 +58,7 @@ pub(crate) fn ckks_eval_poly_real_const_coeffs_derived<BE: Backend, R, S, B, H>(
     dst: &mut R,
     src: &S,
     bsgs: &B,
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -94,7 +94,7 @@ pub(crate) fn ckks_eval_poly_complex_const_coeffs_derived<BE: Backend, R, S, C, 
     dst: &mut R,
     src: &S,
     poly: &ComplexBSGSPolynomial<C>,
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where

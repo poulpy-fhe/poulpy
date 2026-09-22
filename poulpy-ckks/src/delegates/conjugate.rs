@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::{api::CKKSModuleInfos, ckks_ensure};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::GetAutomorphismKey;
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use crate::{
@@ -23,15 +24,14 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         dst: &mut Dst,
         src: &Src,
         k: i64,
-        keys: &crate::layouts::CKKSKey<H>,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_conjugate_rotate_into", keys.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", dst)?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", src)?;
         ckks_ensure!(
@@ -46,20 +46,15 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 rotation: k,
                 k: src.k().into(),
             })?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_conjugate_rotate_into", key.n())?;
         BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)
     }
 
-    fn ckks_conjugate_assign<Dst, H>(
-        &self,
-        dst: &mut Dst,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_conjugate_assign", keys.key_ring())?;
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_assign", dst)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
@@ -72,6 +67,7 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 rotation: 0,
                 k: dst.k().into(),
             })?;
+        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_conjugate_assign", key.n())?;
         BE::ckks_conjugate_assign_impl(self, dst, &key, scratch)
     }
 }

@@ -48,7 +48,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -86,7 +86,7 @@ where
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &crate::layouts::CKKSKey<H>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -119,7 +119,7 @@ fn eval_mod<R, C, P, F, BE, H>(
     res: &mut R,
     ct: &C,
     params: &EvalMod<F, P>,
-    tsk: &crate::layouts::CKKSKey<H>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where

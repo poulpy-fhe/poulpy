@@ -683,10 +683,7 @@ pub fn gen_sk_with_raw<BE>(
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
-) -> (
-    crate::layouts::CKKSKey<BackendGLWESecret<BE>>,
-    crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
-)
+) -> (BackendGLWESecret<BE>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -698,11 +695,7 @@ where
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, params.hw, &mut source);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
-    let sk_raw = crate::layouts::CKKSKey::from_raw_parts(sk_raw, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap();
-    (
-        sk_raw,
-        crate::layouts::CKKSKey::from_raw_parts(sk, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap(),
-    )
+    (sk_raw, sk)
 }
 
 /// Generates a prepared secret key (convenience wrapper around [`gen_sk_with_raw`]).
@@ -711,7 +704,7 @@ pub fn gen_sk<BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
-) -> crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>
+) -> GLWESecretPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -726,7 +719,7 @@ pub fn gen_tsk<BE>(
     module: &Module<BE>,
     sk_raw: &BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> crate::layouts::CKKSKey<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>
+) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -738,7 +731,7 @@ where
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &tsk_infos, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
     module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
-    crate::layouts::CKKSKey::from_raw_parts(tsk_prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap()
+    tsk_prepared
 }
 
 /// Generates a prepared automorphism key for rotation (`index ≥ 0`) or
@@ -749,7 +742,7 @@ pub fn gen_atk<BE>(
     galois_element: i64,
     sk_raw: &BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> crate::layouts::CKKSKey<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>
+) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -761,7 +754,7 @@ where
     module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &atk_infos, &mut xe, &mut xa, scratch);
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, scratch);
-    crate::layouts::CKKSKey::from_raw_parts(atk_prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap()
+    atk_prepared
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
@@ -773,7 +766,7 @@ pub fn gen_switching_key<BE>(
     sk_out: &BackendGLWESecret<BE>,
     k_in: usize,
     scratch: &mut ScratchArena<'_, BE>,
-) -> crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>>
+) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -785,7 +778,7 @@ where
     module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &infos, &mut xe, &mut xa, scratch);
     let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
     module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch);
-    crate::layouts::CKKSKey::from_raw_parts(ksk_prepared, crate::api::CKKSModuleInfos::ckks_ring(module)).unwrap()
+    ksk_prepared
 }
 
 /// Generates the sparse-secret encapsulation key-switching keys
@@ -805,8 +798,8 @@ pub fn gen_encapsulation_keys<BE>(
     k_out: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (
-    crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>>,
-    crate::layouts::CKKSKey<GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>>,
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
 )
 where
     BE: TestContextBackend,
@@ -834,7 +827,7 @@ pub fn ckks_encrypt<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     re: &[F],
     im: &[F],
@@ -860,7 +853,7 @@ pub fn ckks_encrypt_coeffs<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     coeffs: &[F],
     prec: CKKSLayout,
@@ -898,7 +891,7 @@ pub fn ckks_encrypt_with_prec<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     re: &[F],
     im: &[F],
@@ -936,7 +929,7 @@ where
 pub fn ckks_encrypt_pt<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     host_pt: &CKKSPlaintextOwned<HostBytesBackend>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -1020,7 +1013,7 @@ pub fn assert_canonical_at_k<BE: TestContextBackend>(label: &str, ct: &CKKSCiphe
 pub fn ckks_decrypt_with_prec<BE>(
     module: &Module<BE>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     prec: CKKSLayout,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord>>
@@ -1041,7 +1034,7 @@ pub fn ckks_decrypt_decode<BE, F, E>(
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (Vec<F>, Vec<F>)
 where
@@ -1214,7 +1207,7 @@ pub fn assert_decrypt_precision<BE, F, E>(
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want_re: &[F],
     want_im: &[F],
     scratch: &mut ScratchArena<'_, BE>,
@@ -1264,7 +1257,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertextOwned<BE>,
-    sk: &crate::layouts::CKKSKey<GLWESecretPrepared<BE::OwnedBuf, BE>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want_re: &[F],
     want_im: &[F],
     log_delta: usize,
@@ -1295,7 +1288,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // shift the message scale twice). `full_pt` carries `ct_compact`'s metadata so
     // the extracts re-precision it exactly as `ckks_decrypt` would.
     let mut full_pt = module.glwe_plaintext_alloc_from_infos(ct);
-    module.glwe_decrypt(ct, &mut full_pt, sk.as_core(), scratch);
+    module.glwe_decrypt(ct, &mut full_pt, sk, scratch);
     let full_pt = CKKSPlaintext::from_inner(full_pt, ct.meta(), ct.ring_kind());
 
     // ── Ring-domain check: the decryption is a valid plaintext. ──────────────
