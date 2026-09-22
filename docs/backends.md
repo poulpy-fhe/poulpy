@@ -109,19 +109,21 @@ let module = Module::<BackendImpl>::new(n as u64);
 Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The const query `Module::<BE>::max_base2k(n, products, failure_bits)` uses the probabilistic uniform-input model:
 
 ```rust
-use poulpy_cpu_ref::NTT4x30Ref;
+use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
 use poulpy_hal::layouts::Module;
 
 // 32 accumulated products, with a 2^-128 target for the entire polynomial.
 const BASE2K: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128);
 assert_eq!(BASE2K, Some(54));
+const FFT_BASE2K: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128);
+assert_eq!(FFT_BASE2K, Some(19));
 ```
 
-The query uses independent centered-uniform input coefficients, a conservative Gaussian tail envelope, and a union bound over all coefficients of one output polynomial. For `n = 2^16`, 32 products, and 128 failure bits, it selects 54 for `NTT4x30` and 57 for `NTT3x42`. Increasing the accumulation count or tightening the failure target can lower the selected radix.
+The query uses independent centered-uniform input coefficients, a conservative Gaussian tail envelope, and a union bound over all coefficients of one output polynomial. For `n = 2^16`, 32 products, and 128 failure bits, it selects 19 for `FFT64`, 54 for `NTT4x30`, and 57 for `NTT3x42`. Increasing the accumulation count or tightening the failure target can lower the selected radix.
 For NTT backends, `PrimeSet::LOG_Q_PRODUCT` supplies `log2(Q)` from the actual CRT modulus, approximately 119.8861552574811 for `NTT4x30` and 125.99998314565484 for `NTT3x42`.
 
 The result is the largest radix up to 62 satisfying the Gaussian envelope; `Some(0)` means no positive radix fits. For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
-FFT backends return `None`: their numerical-error distribution requires calibration for the actual accumulated kernel. A significand width alone cannot determine a probability-based radix.
+FFT64 backends explicitly opt into a stochastic roundoff model covering transforms, complex products, and sequential accumulation before one inverse FFT. It assumes approximately uncorrelated roundoff and twiddle-error contributions; these are model estimates, not certified far-tail bounds. Backends with neither a CRT modulus nor an enabled FFT64 model return `None`.
 See [Failure estimates](base2k-failure-probability.md) for the formula, assumptions, and comparison with worst-case bounds.
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.

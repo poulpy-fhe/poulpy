@@ -23,6 +23,7 @@ pub struct FFT64NeonHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
 impl Backend for FFT64Neon {
+    const FFT64_ERROR_MODEL: bool = true;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

@@ -84,6 +84,7 @@ pub struct FFT64AvxHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
 
 impl Backend for FFT64Avx {
+    const FFT64_ERROR_MODEL: bool = true;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

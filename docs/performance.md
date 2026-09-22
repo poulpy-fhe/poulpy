@@ -10,7 +10,7 @@ Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own
    Without IFMA, start with packed `NTT4x30` on x86 for a full CKKS pipeline; `FFT64` can be faster for a small, switch-heavy workload.
 2. Within a family, take the widest ISA your CPU supports — run the [capability report](#3-compilation-options) to see which ones this machine has.
    In our measurements the ordering between backends did not change with the thread count.
-3. Select NTT limbs with `Module::<BE>::max_base2k(n, products, failure_bits)` for the actual accumulation count and failure target. At `n = 2^16`, 32 products and a `2^-128` polynomial target give 54 for `NTT4x30` and 57 for `NTT3x42`. FFT selection requires a calibrated numerical-error model.
+3. Select limbs with `Module::<BE>::max_base2k(n, products, failure_bits)` for the actual accumulation count and failure target. At `n = 2^16`, 32 products and a `2^-128` polynomial target give 19 for `FFT64`, 54 for `NTT4x30`, and 57 for `NTT3x42` under their respective probabilistic models.
 4. Tune `dsize`: it sets key size and the key's auxiliary precision together, and has a smaller, machine-dependent effect on speed. `dsize = 4` is a reasonable starting point.
 5. Give the Rayon backends a handful of threads, not all of them, and measure where your own knee is.
 
@@ -137,8 +137,8 @@ NTT3x42Ifma          poulpy-cpu-avx512   yes  no     --features enable-ifma   RU
 
 Select the limb size with the `const fn` `Module::<BE>::max_base2k(n, products, failure_bits)`.
 Here `products` is the number of polynomial products accumulated into one output, and `failure_bits` sets its estimated whole-polynomial failure target to `2^(-failure_bits)`.
-With 32 products and a `2^-128` target over one degree-`2^16` output polynomial, the uniform-input Gaussian model selects 54 for `NTT4x30` and 57 for `NTT3x42`.
-The query returns `None` for FFT until a kernel-specific numerical-error model is available; the FFT radices in the benchmark tables are explicit fixture parameters, not limits derived from significand width.
+With 32 products and a `2^-128` target over one degree-`2^16` output polynomial, the probabilistic models select 19 for `FFT64`, 54 for `NTT4x30`, and 57 for `NTT3x42`.
+FFT64 uses a stochastic roundoff model for the transforms, complex products, and sequential accumulation. The benchmark tables retain their measured fixture parameters; a full circuit must budget its own accumulation counts, failure targets, and coefficient-word headroom.
 See [Backends](backends.md#choosing-a-subfamily) for a compile-time example and [Failure estimates](base2k-failure-probability.md) for the model.
 Within the numerical bounds of the operation and circuit, larger limbs improve performance by a wide margin.
 

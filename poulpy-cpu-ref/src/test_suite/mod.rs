@@ -1,5 +1,6 @@
 //! Kernel parity tests shared by CPU backend crates.
 
+pub mod fft64_error;
 pub mod normalization;
 pub mod normalization_i128;
 pub mod ntt;

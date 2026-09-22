@@ -64,27 +64,32 @@ The $Q/2$ threshold is essential: $Q$ denotes the modulus, not the maximum cente
 
 ## FFT64 backend: numerical error
 
-Let $\sigma_F(N,K)$ be the measured standard deviation, per coefficient, of the numerical error in **one polynomial multiplication**, including forward FFTs, pointwise multiplication, and inverse FFT. It differs from $\sigma_c$, which measures the size of the exact integer result.
-
-Assuming independent, approximately centered Gaussian multiplication errors,
+For FFT64, model the numerical error after two forward transforms per product, $d$ sequentially accumulated complex products, and one inverse transform. Let $u=2^{-53}$ and $L=\log_2N-1$ be the number of stages in the split-complex transform. The helper uses
 
 $$
-\sigma_e^2=d\,\sigma_F(N,K)^2.
+R(N,d)=5L+\max\!\left(\frac23+\frac{d+1}{6}-\frac{1}{3d},\;\frac{d+1/2}{3}\right),
+\qquad
+\boxed{\sigma_e\simeq u\,\sigma_c\sqrt{R(N,d)}
+=\frac{2^{2K-53}\sqrt{NdR(N,d)}}{12}.}
 $$
 
-Rounding recovers the integer coefficient when the accumulated numerical error has magnitude below $1/2$. Thus
+This is a first-order stochastic roundoff model: arithmetic relative errors are centered and uncorrelated with variance $u^2/3$, and intermediate complex values are approximately isotropic. It allows mean squared complex twiddle error $2u^2$, including table construction, and treats its propagated contributions as uncorrelated. This twiddle allowance is an RMS assumption, not a maximum error guarantee for `sin` and `cos`.
+
+The term $5L$ covers the transforms, including twiddle errors. The remaining variance uses the larger of two accumulation models:
+
+- Separate complex products and additions contribute $2/3+(d+1)/6-1/(3d)$.
+- Two fused updates per complex product contribute $(d+1/2)/3$, since both updates round a growing partial sum.
+
+Including these partial-sum errors prevents underestimating error by simply multiplying single-product error by $\sqrt d$. Inverse scaling by $N/2$ is exact in binary floating point. All current FFT64 backends opt into this common envelope. Statistical FFT roundoff analysis is described by [Weinstein](https://www.ll.mit.edu/r-d/publications/roundoff-noise-floating-point-fast-fourier-transform-computation); [§6.1 of the FHE paper](https://eprint.iacr.org/2023/771) uses measured multiplication-error variance and a Gaussian model.
+
+Rounding recovers the integer coefficient when $|e_j|<1/2$. Assuming approximately centered Gaussian output errors gives
 
 $$
-\boxed{
-\widehat p_{\mathrm{FFT}}
-=\operatorname{erfc}\!\left(\frac{1/2}{\sqrt{2}\,\sigma_e}\right)
-=\operatorname{erfc}\!\left(\frac{1}{\sqrt{8d}\,\sigma_F(N,K)}\right).
-}
+\boxed{\widehat p_{\mathrm{FFT}}
+=\operatorname{erfc}\!\left(\frac{1}{\sqrt8\,\sigma_e}\right).}
 $$
 
-This agrees with §6.1 and Lemma 6.1 of [the original paper](https://eprint.iacr.org/2023/771), with $d=2\ell$. Under its additional assumption of independent Gaussian coordinates, the probability that any coefficient fails is $1-[1-\widehat p_{\mathrm{FFT}}]^N$.
-
-For a kernel that accumulates products in the Fourier domain before one inverse FFT, calibrate $\sigma_e$ for that kernel directly; $\sqrt d\,\sigma_F$ need not describe its errors. An integer result below $2^{53}$ alone does not ensure correct rounding.
+Kernel tests compare the predicted error scale with exact NTT results. They do not certify Gaussian far tails or independence of reused twiddle errors. Correlated inputs or a different accumulation algorithm require a corresponding model.
 
 ## Any coefficient, and logarithms
 
@@ -99,7 +104,7 @@ $$
 }
 $$
 
-The union bound requires no independence between output coefficients; its numerical estimate still inherits the Gaussian approximation. The $N$ inside $\sigma_c$ counts products in one coefficient, while the $N$ outside counts output coefficients. For $m$ output polynomials in a vector–matrix product, replace the outside factor $N$ by $mN$; $d$ is the inner dimension. For FFT, dependence on $N$ is already included in $\sigma_F(N,K)$.
+The union bound requires no independence between output coefficients; its numerical estimate still inherits the Gaussian approximation. The $N$ inside $\sigma_c$ counts products in one coefficient, while the $N$ outside counts output coefficients. For $m$ output polynomials in a vector–matrix product, replace the outside factor $N$ by $mN$; $d$ is the inner dimension. For FFT, dependence on $N$ is already included in $\sigma_e(N,K,d)$.
 
 ## Why probabilistic bounds allow larger limbs
 
@@ -146,7 +151,7 @@ For FFT64, the paper's experiments support limb widths around $K=19$, not $K=52$
 
 ## Selecting a radix for a failure target
 
-`Module::<BE>::max_base2k(N, d, failure_bits)` uses the NTT model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for CRT backends, `Some(0)` if no positive radix fits, and `None` for backends without a CRT modulus.
+`Module::<BE>::max_base2k(N, d, failure_bits)` uses the corresponding NTT or FFT64 model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for supported backends, `Some(0)` if no positive radix fits, and `None` for backends with neither a CRT modulus nor an enabled FFT64 error model.
 
 To avoid evaluating or inverting `erfc` in a constant expression, the query uses the conservative envelope
 
@@ -154,7 +159,7 @@ $$
 \operatorname{erfc}(x)\le e^{-x^2},\qquad x\ge0.
 $$
 
-Together with the union bound, it suffices that
+For NTT, together with the union bound, it suffices that
 
 $$
 \left(\frac{Q/2}{\sqrt{2}\,\sigma_c}\right)^2
@@ -177,7 +182,23 @@ For the actual NTT4x30 modulus, $\log_2Q\simeq119.8861552574811$, $d=32$, and $\
 
 This model assumes independent centered input coefficients and neglects discrete endpoint corrections. Computationally pseudorandom ciphertext components motivate that assumption for suitable FHE operations; IND-CPA alone does not imply joint independence of reused or squared operands. A polynomial whose coefficients are all $-2^{52}$, squared at $N=2^{15}$, produces a coefficient $2^{119}>Q/2$ and wraps. That structured example lies outside this uniform-input model.
 
-The selector requires the accumulation count and failure target explicitly. It returns `None` for FFT: selecting a radix from a numerical-error target requires the calibrated $\sigma_e$ of the actual accumulated kernel discussed above.
+For FFT64, the same envelope requires
+
+$$
+\sigma_e\le\frac{1}{\sqrt{8\ln2\,(\lambda+\log_2N)}}.
+$$
+
+Substituting the roundoff model gives the const-evaluable limit
+
+$$
+K\le\frac12\left[
+53+\log_2 12
+-\frac12\bigl(\log_2N+\log_2d+\log_2R(N,d)\bigr)
+-\frac12\log_2\!\left(8\ln2\,(\lambda+\log_2N)\right)
+\right].
+$$
+
+With $N=2^{16}$, $d=32$, and $\lambda=128$, the helper selects $K=19$: $\sigma_e\simeq0.03412$ and the modeled polynomial failure envelope is at most $2^{-138.903}$. Tightening the target to $\lambda=256$ or increasing the count to $d=128$ selects $K=18$. The helper applies the same downward rounding and numerical margin as for NTT.
 
 ## Reserve headroom for coefficient-domain additions
 

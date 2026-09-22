@@ -1,5 +1,6 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
+mod fft64_error;
 
 #[test]
 fn max_base2k() {
@@ -13,11 +14,11 @@ fn max_base2k() {
         ]
     }
 
-    assert_eq!(const { limits::<crate::FFT64Avx>() }, [None, None]);
+    assert_eq!(const { limits::<crate::FFT64Avx>() }, [Some(19), Some(19)]);
     assert_eq!(const { limits::<crate::NTT4x30Avx>() }, [Some(54), Some(54)]);
     #[cfg(feature = "enable-rayon")]
     {
-        assert_eq!(const { limits::<crate::FFT64AvxRayon>() }, [None, None]);
+        assert_eq!(const { limits::<crate::FFT64AvxRayon>() }, [Some(19), Some(19)]);
         assert_eq!(const { limits::<crate::NTT4x30AvxRayon>() }, [Some(54), Some(54)]);
     }
 }

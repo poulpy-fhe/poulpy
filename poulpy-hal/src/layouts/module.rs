@@ -26,6 +26,18 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
+    /// Opts into the split-complex FFT64 stochastic roundoff model used by
+    /// [`Module::max_base2k`]. Sharing an `f64` word alone does not opt in.
+    ///
+    /// Applies to radix-2 FFT stages, ordinary complex products and sequential
+    /// accumulation, followed by one inverse FFT and exact power-of-two scaling.
+    /// Assumes centered independent arithmetic roundoff with variance `2^-106/3`
+    /// and mean squared complex twiddle error at most `2 * 2^-106`, treating
+    /// their propagated contributions as uncorrelated. The model covers both
+    /// separate multiply/add and two-FMA accumulator updates.
+    /// This models the error distribution; it is not a worst-case guarantee.
+    const FFT64_ERROR_MODEL: bool = false;
+
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
     /// Within a limb, columns are contiguous blocks in column order, each of
@@ -285,25 +297,32 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Selects an NTT limb radix for a uniform-input Gaussian failure model.
+    /// Selects a limb radix for a uniform-input Gaussian failure model.
     ///
     /// `products` is the number of polynomial products accumulated into one
     /// output polynomial of degree `n`. `failure_bits` requests an estimated
-    /// probability at most `2^(-failure_bits)` that any of its coefficients
-    /// leaves the centered CRT range. Both arguments must be positive.
+    /// probability at most `2^(-failure_bits)` that any coefficient fails CRT
+    /// reconstruction or FFT integer rounding. Both arguments must be positive.
     ///
     /// The model assumes independent, centered uniform input coefficients in
-    /// `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. It uses
-    /// `sigma = 2^(2*b) * sqrt(n * products) / 12` and the conservative Gaussian
-    /// tail envelope `erfc(x) <= exp(-x*x)`, followed by a union bound over `n`
-    /// output coefficients. This is a parameter estimate under that model,
-    /// not an arbitrary-input guarantee. Correlated operands and accumulated
-    /// results require a suitable model of their own.
+    /// `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. For NTT,
+    /// `sigma = 2^(2*b) * sqrt(n * products) / 12` and the threshold is `Q/2`.
+    /// For backends opting into [`Backend::FFT64_ERROR_MODEL`], the rounding
+    /// error model is `sigma_e = 2^(2*b-53) * sqrt(n*d*R) / 12`, where
+    /// `d = products` and
+    /// `R = 5*(log2(n)-1) + max(2/3 + (d+1)/6 - 1/(3*d), (d+1/2)/3)`.
+    /// Its threshold is `1/2`; it includes transforms, products, and rounding
+    /// of sequential partial sums before one inverse transform.
+    ///
+    /// Both use the Gaussian envelope `erfc(x) <= exp(-x*x)` and a union bound
+    /// over `n` output coefficients. This is a parameter estimate under the
+    /// stated model, not an arbitrary-input guarantee or a certified far-tail
+    /// bound. Correlated operands and accumulated inputs require a suitable
+    /// model of their own.
     ///
     /// Returns the largest radix up to 62 satisfying that envelope, or
-    /// `Some(0)` if no positive radix does. Returns `None` for FFT or other
-    /// backends without CRT modulus metadata: the FFT significand width does
-    /// not determine its numerical-error distribution.
+    /// `Some(0)` if no positive radix does. Returns `None` for backends with
+    /// neither CRT modulus metadata nor an enabled FFT64 error model.
     ///
     /// This maximum does not reserve coefficient-word headroom for additions
     /// and subtractions outside the DFT domain. Choose a smaller working radix
@@ -326,6 +345,7 @@ impl<B: Backend> Module<B> {
         assert!(failure_bits > 0, "failure_bits must be positive");
         match <B::DftWord as crate::layouts::DftWord>::LOG_CRT_MODULUS {
             Some(log_q) => Some(super::base2k::max_base2k_ntt(log_q, n, products, failure_bits)),
+            None if B::FFT64_ERROR_MODEL => Some(super::base2k::max_base2k_fft64(n, products, failure_bits)),
             None => None,
         }
     }

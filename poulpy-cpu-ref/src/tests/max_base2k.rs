@@ -17,8 +17,88 @@ fn max_base2k_is_const_and_uses_the_requested_budget() {
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128), Some(54));
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 256), Some(53));
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 512, 128), Some(53));
-    assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128), None);
     assert_eq!(Module::<HostBytesBackend>::max_base2k(8, 1, 128), None);
+}
+
+#[test]
+fn max_base2k_fft_is_const_and_uses_the_requested_budget() {
+    const RADIX: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 15, 32, 128);
+    assert_eq!(RADIX, Some(19));
+    assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128), Some(19));
+    assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 32, 256), Some(18));
+    assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 128, 128), Some(18));
+    assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, usize::MAX, usize::MAX), Some(0));
+}
+
+#[test]
+fn max_base2k_fft_is_largest_radix_meeting_the_rounding_error_envelope() {
+    for log_n in 3..=18 {
+        let n = 1usize << log_n;
+        for products in [1, 2, 3, 4, 8, 32, 128, 65_535, usize::MAX] {
+            for failure_bits in [1, 40, 128, 256, 1024, usize::MAX] {
+                let radix = Module::<FFT64Ref>::max_base2k(n, products, failure_bits).unwrap();
+                // Evaluate the rounding threshold directly from the model's
+                // standard deviation, independently of the selector's log formula.
+                let d = products as f64;
+                let scalar_mac = 2.0 / 3.0 + (d + 1.0) / 6.0 - 1.0 / (3.0 * d);
+                let fused_mac = (d + 0.5) / 3.0;
+                let error_factor = 5.0 * (log_n as f64 - 1.0) + scalar_mac.max(fused_mac);
+                let log2_envelope = |k: usize| {
+                    let sigma = 2.0_f64.powi(2 * k as i32 - 53) * (n as f64 * d * error_factor).sqrt() / 12.0;
+                    let x = 0.5 / (std::f64::consts::SQRT_2 * sigma);
+                    log_n as f64 - x * x * std::f64::consts::LOG2_E
+                };
+                if radix > 0 {
+                    assert!(
+                        log2_envelope(radix) <= -(failure_bits as f64),
+                        "degree {n}, products {products}, failure bits {failure_bits}, radix {radix}"
+                    );
+                }
+                if radix < 62 {
+                    assert!(
+                        log2_envelope(radix + 1) > -(failure_bits as f64),
+                        "degree {n}, products {products}, failure bits {failure_bits}, radix {}",
+                        radix + 1
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn max_base2k_fft_decreases_with_degree_accumulation_and_failure_budget() {
+    let counts = [1, 2, 3, 4, 8, 32, 128, 65_535, usize::MAX];
+    let targets = [1, 40, 128, 256, 1024, usize::MAX];
+    for log_n in 3..=18 {
+        let n = 1usize << log_n;
+        for target in targets {
+            let mut previous = 62;
+            for count in counts {
+                let current = Module::<FFT64Ref>::max_base2k(n, count, target).unwrap();
+                assert!(current <= previous);
+                previous = current;
+            }
+        }
+        for count in counts {
+            let mut previous = 62;
+            for target in targets {
+                let current = Module::<FFT64Ref>::max_base2k(n, count, target).unwrap();
+                assert!(current <= previous);
+                previous = current;
+            }
+        }
+    }
+    for count in counts {
+        for target in targets {
+            let mut previous = 62;
+            for log_n in 3..=18 {
+                let current = Module::<FFT64Ref>::max_base2k(1usize << log_n, count, target).unwrap();
+                assert!(current <= previous);
+                previous = current;
+            }
+        }
+    }
 }
 
 #[test]
