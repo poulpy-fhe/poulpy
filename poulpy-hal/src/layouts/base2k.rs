@@ -152,22 +152,31 @@ mod tests {
     }
 
     #[test]
-    fn const_log2_matches_runtime_oracle() {
+    fn const_log2_matches_reference_values() {
         for exponent in -1022..=1023 {
             let power = f64::from_bits(((exponent + 1023) as u64) << 52);
             assert_eq!(log2(power), exponent as f64);
         }
-        for x in [
-            1.000_000_000_000_001,
-            1.5,
-            1.999_999_999_999_999,
-            3.0,
-            31.0,
-            97.0,
-            65_535.0,
-            usize::MAX as f64,
+        // References rounded to f64 from 120-digit evaluations of the exact
+        // binary64 inputs. Runtime f64::log2 has unspecified precision, and
+        // Miri deliberately perturbs it, so it is not a stable oracle.
+        for (x, expected) in [
+            (1.000_000_000_000_001, 1.601_713_251_907_458e-15_f64),
+            (1.5, 0.584_962_500_721_156_2),
+            (1.999_999_999_999_999, 0.999_999_999_999_999_2),
+            (3.0, 1.584_962_500_721_156),
+            (31.0, 4.954_196_310_386_875),
+            (97.0, 6.599_912_842_187_128),
+            (65_535.0, 15.999_977_986_052_736),
+            (u32::MAX as f64, 31.999_999_999_664_098),
+            (u64::MAX as f64, 64.0),
         ] {
-            assert!((log2(x) - x.log2()).abs() < 2e-14, "x = {x}");
+            let actual = log2(x);
+            // All results are positive, so bit distance counts ULPs directly.
+            assert!(
+                actual.to_bits().abs_diff(expected.to_bits()) <= 8,
+                "x = {x}, actual = {actual}, expected = {expected}"
+            );
         }
     }
 }
