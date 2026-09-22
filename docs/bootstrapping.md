@@ -247,23 +247,26 @@ let bootstrap_layout = preset.bootstrap_layout();
 ```
 
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
-Both output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
+All output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
-The standard-ring presets both take inputs at scale `2^35`, offer 560 usable bits (16 rescales at that scale) with at least 19 bits of precision, and use an optimized Han–Ki EvalMod:
+The standard-ring presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 
-| Constructor | Pipeline | Input `k` | Output `k` | Output scale | Net usable bits | Bootstrap `k` |
+| Constructor | Pipeline | Input `k` | Output `k` | Minimum precision | Net usable bits (levels) | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | `2^35` | 560 | 1427 |
-| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | `2^35` | 560 | 1382 |
+| `n15_d35_k180_p18_c2s` | C2S-first | 40 | 180 | 18 bits | 140 (4) | 780 |
+| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 19 bits | 560 (16) | 1427 |
+| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | 19 bits | 560 (16) | 1382 |
 
-C2S-first internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
+The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^49`, and S2C uses the reversed schedule at scale `2^30`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 98, 424, and 60 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 98 - 424 - 60 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
+
+The logN16 C2S-first preset internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
 
 The S2C-first preset uses six internal guard bits for CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed at the bootstrap output; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
 
-Both use weight 1024 for the dense secret, weight 32 for sparse-secret encapsulation, `dsize = 4` for the high-modulus keys, and `dsize = 1` for the dense-to-sparse key. That small key uses 52 gadget bits plus 68 auxiliary bits, ofr a 120-bit modulus cap.
+All presets use weight 1024 for the dense secret and weight 32 for sparse-secret encapsulation. At the nominal radix of 52 bits, logN15 uses `dsize = 1`: its high-modulus keys have 780 rounded gadget bits plus 67 auxiliary bits, totaling 847 bits under the 854-bit dense-secret bound. Its dense-to-sparse key totals 119 bits under the 164-bit sparse-secret bound. LogN16 uses `dsize = 4` for high-modulus keys and `dsize = 1` for the dense-to-sparse key; that small key uses 52 gadget bits plus 68 auxiliary bits, for a 120-bit modulus cap.
 Preset construction validates the ciphertext, gadget, auxiliary, and total key moduli against the configured bounds.
 The key digit counts come from `GGLWELayout::dnum_for_input` (`⌈k / (dsize · base2k)⌉`), the same rounding the key-switch operations apply, with the guard `k_aux = dsize · base2k + log2(N)`.
-`with_base2k` and `with_dsizes` re-derive a preset at another limb radix or digit size, keeping the plan and widths and re-running the same validation; the benchmarks use this to obtain the FFT64 shape (`base2k = 19`, high-modulus `dsize = 7`, dense-to-sparse `dsize = 1`).
+`with_base2k` and `with_dsizes` re-derive a preset at another limb radix or digit size, keeping the plan and widths and re-running the same validation. The test and benchmark runner selects the largest high-modulus digit size up to 7 that fits the bounds at the backend's radix. FFT64 uses `base2k = 19`, high-modulus `dsize = 2` for logN15 (851 total key bits) or 7 for logN16, and dense-to-sparse `dsize = 1`.
 The advertised precision is the minimum slot-wise precision measured on the reference vector at the nominal shape with `f64` DFT matrices; `test_suite::presets::bootstrapping_presets_meet_precision` (registered as an ignored test by the backend crates) and the `ckks_bootstrapping` benchmark assert the measurement against it on exact backends.
 
 The keys are generated by `generate_keys`, which returns the unprepared `BootstrappingKeySet` — the serializable, GPU-resident form — and a `prepare` step preprocesses the whole set for evaluation.

@@ -761,7 +761,7 @@ pub trait VecZnxCopy<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition for 0 <= i < res.n(), res[res_col,j,i] = 0 if j >= live(k, base2k), 2^pad(k, base2k) * floor((draw(reseed(source), j * res.n() + i, base2k) - 2^(base2k - 1)) / 2^pad(k, base2k)) if j = live(k, base2k) - 1, and draw(reseed(source), j * res.n() + i, base2k) - 2^(base2k - 1) otherwise; the other columns of res are untouched
-/// domain     res: a dense VecZnx; base2k in 1..=62; 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
+/// domain     res: a dense VecZnx; base2k in 1..=62 (independent of Backend::MAX_BASE2K, which bounds scheme/product parameters); 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
 /// ensures    res[res_col] is uniform over the torus at precision k and canonical at radix base2k; source advances by the 32 bytes of one seed, and reseed(source) by live(k, base2k) * res.n() draws in increasing limb order, then increasing coefficient order
 /// test       test_vec_znx_fill_uniform
 /// ```

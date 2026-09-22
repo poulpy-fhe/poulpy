@@ -51,35 +51,60 @@ Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy
 
 ### Layer Anatomy
 
-Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same internal four-module pattern:
+HAL, core and CKKS separate the public API from backend dispatch:
 
-```
-   ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌────────────────┐
-   │   api   │────►│   oep   │────►│  delegates  │◄────│    default     │
-   └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
+```text
+public API → delegates → backend *Impl
+                            ├─ reference algorithm
+                            └─ derived default → other operations in the same layer
 ```
 
 | Module | Role |
 |--------|------|
-| `api` | Public traits user code calls. Bounds reference `oep` for the backend capabilities they need. |
-| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. |
-| `reference` | The implementation of every operation: portable compositions of the HAL as safe trait methods, the definition of what each operation computes and the only validated circuit. Every backend runs it unless it overrides an operation with a faster route to the same result. |
-| `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. Composite operations also live here. |
+| `api` | Public traits called by user code. |
+| `delegates` | Implements those traits on `Module<BE>` by calling backend hooks. |
+| `oep` | Backend `*Impl` traits and defaults for derived operations. |
+| `reference` | Reusable portable algorithms; core reference bodies build on HAL. |
+
+The reference HAL kernels live in `poulpy-cpu-ref`. Core algorithms built from
+HAL operations live in `poulpy-core::reference`. Compositions of other core
+operations live in core's private `oep::derived` module and inherit the selected
+backend implementations of their component operations. CKKS follows the same
+rule: its reference algorithms compose core/HAL operations, while private
+derived defaults compose CKKS operations.
 
 ### Overriding at Any Level
 
-`reference` is not a fallback: it is the implementation, and an override is a faster route to the same result (a fused kernel, device-native code, another layout), never a different behaviour. A backend overrides an operation by implementing the corresponding `oep` trait directly instead of the blanket `reference` wiring. An override is validated, not trusted: the parity suite runs the operation on the backend under test and on an attested backend, on the same inputs, and requires the same result. Attestation is transitive: the oracle is `reference`, the portable backend runs it directly, and a backend attested against an attested backend is attested itself, so a new backend need not test against the oracle when an attested one is at hand (a GPU backend against an attested AVX-512 backend, for example). Every OEP method has such a test, and an override is correct only when its parity test passes. No passing parity test, no override. Only the hot-path operations need overrides; everything else runs the `reference` implementation. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
+A backend implements an operation family's `*Impl` trait. It can supply custom
+methods, forward methods to the reference algorithms, and inherit derived
+defaults. Core's forwarding macros provide the complete implementation of a
+family when no custom methods are needed. Reference helpers remain independently
+callable; their availability alone does not select them for public dispatch.
+
+For example, a core reference rotation applies HAL rotation to each GLWE
+polynomial. Derived GGSW rotation calls core GLWE rotation on each row, so it
+reuses a custom GLWE rotation. Overrides must preserve the
+operation's documented results, mutation rules and scratch contract. Core parity
+tests compare caller-selected backends; an already validated backend can
+bootstrap another.
 
 ### Integrating a Backend
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
-2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
+2. Implement each required HAL OEP method and inherit or override its derived defaults.
+3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and each one is accepted only with its parity test passing against an attested backend, attestation being transitive back to `reference` (`core_parity_test_suite!`, the CKKS and bin-fhe parity suites, `cross_backend_test_suite!` and `test_suite::derived` for the HAL).
+A family macro and a handwritten implementation of the same trait are mutually
+exclusive. Use individual family macros when customizing a core backend, and
+validate its implementations with the shared conformance tests. The
+[core backend guide](poulpy-core/docs/core-contracts.md) explains reference
+forwarding, derived defaults, scratch requirements and controlled sampling.
 
-See `poulpy-cpu-ref` for the reference implementation of all four steps.
+See `poulpy-cpu-ref` for the reference implementation of all four steps. Its
+[compiled override example](poulpy-cpu-ref/src/tests/delegating_backend.rs)
+checks reference forwarding and dispatch through custom core methods; the
+[encryption example](poulpy-cpu-ref/examples/core_encryption.rs) shows public API use.
 
 ### Testing a Backend
 
@@ -87,10 +112,13 @@ A new backend does not re-implement the tests. `poulpy-hal` and `poulpy-core` sh
 
 `poulpy-hal` covers the arithmetic primitives (`vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, convolution, serialization, word compatibility) through two macros. `backend_test_suite!` validates one backend against the specification; `cross_backend_test_suite!` runs the same operation on a reference backend and on the backend under test and compares.
 
-`poulpy-core` splits its suites by the question each answers, and neither subsumes the other:
+`poulpy-core` provides complementary checks:
 
-* `core_backend_test_suite!` (**noise**) encrypts, operates, decrypts, and compares the residual noise against the analytic bound: *does this backend implement the scheme?* Verification reads coefficients, so it is host-only.
-* `core_parity_test_suite!` (**parity**) runs one operation on a reference backend and on the backend under test over identical uniform inputs, and asserts byte equality: *does this backend agree with the reference?* It needs no secrets, encryption or noise model, so a device backend can run it.
+* `core_backend_test_suite!` checks scheme correctness by encrypting, operating, decrypting and comparing residual noise against the analytic bound. Verification reads coefficients, so it is host-only.
+* `core_parity_test_suite!` compares integer outputs and metadata from caller-selected `backend_ref` and `backend_test` implementations on identical inputs.
+* `core_encryption_parity_test_suite!` compares encryption and decryption for the selected pair with identical sampled inputs. Optional controlled-sampling support handles backends with different random streams.
+
+A validated backend can bootstrap another for the same operations and parameter ranges. The accelerated Rayon suites exercise this transitivity by comparing with their serial siblings.
 
 A bound is a weak oracle: a gadget-product accumulator one limb too narrow passes the key-switch noise sweep comfortably. Byte equality is not weak, but on its own it cannot tell you the reference is right.
 
@@ -101,9 +129,45 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | HAL, per backend | yes | yes | yes | yes |
 | HAL, cross backend | `NTT4x30Ref` vs `FFT64Ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` |
 | Core noise | `FFT64Ref`, `NTT4x30Ref` | — | — | — |
-| Core parity | reference side | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| Core parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| CKKS parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
 
-The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, so an accelerated backend proves itself by byte-parity against the reference rather than by re-running the model.
+The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
+
+Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
+AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
+sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts only;
+CKKS runs natively, with an additional optional NEON run under QEMU.
+
+Each x86 backend job compiles its test binary separately, then enforces a five-minute
+test execution budget. SDE uses bounded degrees for ordinary HAL/core sweeps and
+focused large-ring tensor cases; it retains the rank, precision, offset, scratch,
+and statistical sampling checks. Native runs retain the exhaustive large-ring
+sweeps. The test log reports individual durations. Cold compilation is separately
+timed and cached.
+
+Run the portable core parity and encryption suites with:
+
+```sh
+cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-core -- \
+  core_parity core_encryption --test-threads=2
+```
+
+CKKS keeps its independent mathematical conformance tests and adds caller-selected
+circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
+`Quad` on all 16 CPU backend types, with Rayon variants compared against their
+serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
+runs include the `ckks_parity` groups, including controlled-sampling encryption.
+See [implementing a CKKS backend](poulpy-ckks/docs/ckks-contracts.md).
+
+Run portable CKKS parity, the full conformance suite, or the
+[polynomial example](poulpy-cpu-ref/examples/ckks_poly2.rs) with:
+
+```sh
+cargo test -p poulpy-cpu-ref --lib --profile ci --features enable-ckks -- ckks_parity
+cargo test -p poulpy-cpu-ref --profile ci --features enable-ckks
+cargo run -p poulpy-cpu-ref --example ckks_poly2 --features enable-ckks
+```
 
 ## Bivariate Polynomial Representation
 

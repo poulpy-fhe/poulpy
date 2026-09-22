@@ -1,24 +1,18 @@
 use crate::CKKSResult as Result;
-use poulpy_core::{
-    GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
-};
-use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
-use crate::api::{CKKSModuleInfos, CKKSRotateOps};
+use crate::api::{CKKSCopyOps, CKKSModuleInfos, CKKSRotateOps};
 
-impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE>
-where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE> + GaloisElement,
-{
+impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos).max(self.glwe_shift_tmp_bytes(ct_infos.size()))
+        BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos).max(BE::ckks_copy_tmp_bytes_impl(self, ct_infos, ct_infos))
     }
 
     fn ckks_rotate_into<Dst, Src, H>(
@@ -39,7 +33,7 @@ where
         crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_into", src)?;
         let p = self.ckks_galois_element(k);
         if p == 1 {
-            return crate::ckks_shift_stamp_unary(self, "rotate", dst, src, 0, 0, 0, scratch);
+            return self.ckks_copy(dst, src, scratch);
         }
         let key = keys
             .get_automorphism_key(p, src.k())

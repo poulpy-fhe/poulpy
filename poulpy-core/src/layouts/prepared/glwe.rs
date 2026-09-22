@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
 
-/// DFT-domain (prepared) variant of [`GLWE`].
+/// DFT-domain (prepared) variant of [`GLWE`](crate::layouts::GLWE).
 ///
 /// Stores polynomials in the frequency domain of the backend's DFT/NTT
 /// transform, enabling O(N log N) polynomial multiplication.

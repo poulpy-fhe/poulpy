@@ -1,8 +1,8 @@
 use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps,
+        CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
@@ -20,6 +20,7 @@ where
     Self: CKKSEncryptOps<BE>
         + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
+        + CKKSCopyOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSSubOps<BE>
         + CKKSNegOps<BE>
@@ -65,11 +66,14 @@ where
             .max(self.ckks_add_tmp_bytes(ct_infos.max_size()));
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
-            .max(self.ckks_decrypt_tmp_bytes(ct_infos))
+            .max(self.ckks_decrypt_tmp_bytes(pt_prec, ct_infos))
+            .max(self.ckks_copy_tmp_bytes(ct_infos, ct_infos))
             .max(self.ckks_add_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_add_one_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_add_pt_vec_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_add_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_sub_one_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_pt_vec_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_neg_tmp_bytes(ct_infos.max_size()))

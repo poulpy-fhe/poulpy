@@ -38,13 +38,19 @@ use crate::{
 pub const PRECISION_LOG_BUDGET: usize = 8;
 
 /// Keeps the nominal preset when its radix fits the backend, otherwise uses
-/// the FFT digit shape (7 high-modulus limbs, 1 dense-to-sparse limb) at the
-/// backend's radix limit. Re-derivation validates the key modulus bounds.
+/// the FFT digit shape at the backend's radix limit: up to 7 high-modulus
+/// limbs, reduced to fit the modulus bounds, and 1 dense-to-sparse limb.
 pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
     if preset.base2k() <= BE::MAX_BASE2K {
         Ok(preset.clone())
     } else {
-        preset.with_base2k(BE::MAX_BASE2K)?.with_dsizes(7, 1)
+        let preset = preset.with_base2k(BE::MAX_BASE2K)?;
+        for dsize in (2..=7).rev() {
+            if let Ok(adapted) = preset.with_dsizes(dsize, 1) {
+                return Ok(adapted);
+            }
+        }
+        preset.with_dsizes(1, 1)
     }
 }
 
@@ -172,7 +178,7 @@ where
         assert_eq!(run.output.log_delta(), run.input.log_delta());
         assert_eq!(
             run.output.k().as_usize() - run.input.k().as_usize(),
-            16 * run.input.log_delta()
+            run.preset.output_k() - run.preset.input_k()
         );
         run
     }
@@ -233,7 +239,7 @@ where
 /// against the precision the preset advertises.
 ///
 /// Every backend runs the preset at a supported radix with `f64` DFT matrices
-/// and must reach the advertised precision. Full logN16 bootstraps are slow,
+/// and must reach the advertised precision. Full-size bootstraps are slow,
 /// so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>()
 where

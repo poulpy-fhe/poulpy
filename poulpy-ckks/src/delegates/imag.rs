@@ -1,20 +1,11 @@
 use crate::CKKSResult as Result;
 use crate::{api::CKKSModuleInfos, ckks_ensure};
-use poulpy_core::{
-    GLWECopy, GLWENegate, GLWERotate, GLWEShift,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
-};
-use poulpy_hal::{
-    api::ModuleN,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSImagOps, oep::CKKSImagImpl};
 
-impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE>
-where
-    Module<BE>: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-{
+impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
     fn ckks_mul_i_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_mul_i_tmp_bytes_impl(self, res_size)
     }

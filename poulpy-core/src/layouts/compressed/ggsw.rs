@@ -24,7 +24,7 @@ use std::{
 
 /// Seed-compressed GGSW (gadget GSW) ciphertext layout.
 ///
-/// Stores only the body components of a [`GGSW`] ciphertext; the mask
+/// Stores only the body components of a [`GGSW`](crate::layouts::GGSW) ciphertext; the mask
 /// polynomials are regenerated deterministically from 32-byte PRNG
 /// seeds during decompression.
 #[derive(PartialEq, Eq, Clone)]
@@ -195,7 +195,7 @@ pub trait GGSWCompressedSeed {
     fn seed(&self) -> &Vec<[u8; 32]>;
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGSWCompressedSeed for GGSWCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGSWCompressedSeed for GGSWCompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.seed
     }
@@ -389,7 +389,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSWCompressed<D, W> {
     }
 }
 
-/// Trait for decompressing a [`GGSWCompressed`] into a standard [`GGSW`].
+/// Trait for decompressing a [`GGSWCompressed`] into a standard [`GGSW`](crate::layouts::GGSW).
 ///
 /// Iterates over every (row, column) entry, decompressing each
 /// compressed GLWE individually via [`GLWEDecompress`].

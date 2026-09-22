@@ -85,6 +85,7 @@ impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64Avx512Backend<R>
 
 impl<R: CpuRing> Backend for FFT64Avx512Backend<R> {
     const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     // The AVX-512 complex multiply steps eight complex slots at a time with no
     // tail, so the smallest ring this backend serves has n / 2 = 8 slots.

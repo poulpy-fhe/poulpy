@@ -1,7 +1,7 @@
 //! Public CKKS-facing API for the homomorphic DFT (CoeffsToSlots / SlotsToCoeffs).
 //!
-//! A thin trait on [`Module`] over the free functions in
-//! [`crate::reference::dft`], so callers write `module.ckks_coeffs_to_slots(...)`.
+//! Calls dispatch through [`crate::oep::DFTImpl`], including the selected
+//! generic DFT operation used by derived format wrappers.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
@@ -29,6 +29,11 @@ use crate::{
 /// are the `Standard` format; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
+///
+/// Evaluation and preparation use the shared
+/// [`CKKSAllOpsTmpBytes::ckks_all_ops_with_atk_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_with_atk_tmp_bytes)
+/// budget for the widest ciphertext, factor plaintext, and key layouts in the
+/// transform. Backend overrides must honor that same budget.
 pub trait CKKSDFTOps<BE: Backend> {
     /// Prepares an unprepared [`DFTMatrix`] into its resident
     /// convolution-domain form [`DFTMatrixPrepared`] (see

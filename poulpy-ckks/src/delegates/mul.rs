@@ -1,13 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, ModuleCoreAlloc, TorusPrecision},
-};
-use poulpy_hal::{
-    api::{ModuleN, VecZnxCopy},
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, TorusPrecision};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSMulOps;
 
@@ -32,18 +26,7 @@ fn prepared_mul_k_checked<D: CKKSCtBounds>(dst: &D, prepared_k: usize) -> Result
     Ok(dst.k().max(TorusPrecision(prepared_k)))
 }
 
-impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE>
-where
-    Module<BE>: GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEMulConst<BE>
-        + GLWEMulPlain<BE>
-        + GLWERotate<BE>
-        + GLWETensoring<BE>
-        + ModuleN
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxCopy<BE>,
-{
+impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,

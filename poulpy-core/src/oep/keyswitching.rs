@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
+pub use crate::reference::keyswitching::{GLWEKeyswitchReference, LWEKeyswitchReference};
+
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
 use crate::layouts::{
@@ -58,7 +60,7 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     );
 }
 
-/// Opts a backend into the canonical GGLWE interleaved-digit product.
+/// keyswitch can still dispatch through that implementation.
 #[macro_export]
 macro_rules! impl_gglwe_product_digits_strided_reference {
     ($be:ty) => {
@@ -115,6 +117,37 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 /// # Safety
 /// Implementations must satisfy the documented key-switch semantics, honor layout metadata and
 /// prepared-key interpretation, and keep all reads and writes within the described backend buffers.
+/// # Gadget-digit width contract
+///
+/// An override that fuses the digit loop (rather than forwarding to the reference
+/// body) must reproduce its output widths exactly, because the choice is not
+/// noise-visible: an accumulator one limb too narrow still passes the keyswitch
+/// noise sweep. With `key_size = key.size()` and `res_size = res.size()`, digit
+/// `di` of `0..dsize` contributes to output limb `c` iff
+///
+/// ```text
+/// c < min(key_size - di, compute_size(di))
+/// compute_size(0)  = res_size
+/// compute_size(di) = min(res_size,
+///                        key_size - max(dsize - di - product_limbs, 0))
+///                    for di > 0
+/// ```
+///
+/// Two properties are load-bearing:
+///
+/// - `di == 0` runs at **full** width and is the overwriting pass. The reference
+///   algorithm initializes the output before subsequent digits accumulate into
+///   it, so reversing the digit order requires a different initialization step.
+///   An implementation that writes each output limb exactly once needs no
+///   zeroing but must still match the arithmetic.
+/// - `product_limbs` is the two-limb elementary product plus the coefficient
+///   accumulation growth. Pass `di` consumes `a`'s limbs at offset
+///   `dsize - di - 1`; the product spill reaches further down according to the
+///   ring and matrix shape. Treating this as a constant is silent at small
+///   shapes but truncates live limbs once the accumulation needs a third or
+///   fourth limb.
+///
+/// Validate with parity against a caller-selected comparison backend as well as the noise bound.
 pub unsafe trait GLWEKeyswitchImpl: Backend {
     fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -146,12 +179,17 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
 /// # Safety
 /// Implementations must preserve ciphertext invariants, use scratch space according to the
 /// advertised temporary-size contract, and uphold aliasing guarantees for backend-owned buffers.
-pub unsafe trait GGLWEKeyswitchImpl: Backend {
+pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
         A: GGLWEInfos,
-        K: GGLWEInfos;
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::keyswitching::gglwe_keyswitch_tmp_bytes_derived::<Self, _, _, _, _>(
+            module, res_infos, a_infos, key_infos,
+        )
+    }
 
     fn gglwe_keyswitch<R, A>(
         module: &Module<Self>,
@@ -161,7 +199,10 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos;
+        A: GGLWEToBackendRef<Self> + GGLWEInfos,
+    {
+        crate::oep::derived::keyswitching::gglwe_keyswitch_derived::<Self, _, _, _>(module, res, a, key, scratch)
+    }
 
     fn gglwe_keyswitch_assign<R>(
         module: &Module<Self>,
@@ -169,7 +210,10 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend {
         key: &GGLWEPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+    {
+        crate::oep::derived::keyswitching::gglwe_keyswitch_assign_derived::<Self, _, _>(module, res, key, scratch)
+    }
 }
 
 /// Backend-provided GGSW key-switching operations.
@@ -177,7 +221,7 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend {
 /// # Safety
 /// Implementations must correctly interpret prepared key material for the backend, respect all
 /// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
-pub unsafe trait GGSWKeyswitchImpl: Backend {
+pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::ConversionImpl {
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
         module: &Module<Self>,
         res_infos: &R,
@@ -189,7 +233,12 @@ pub unsafe trait GGSWKeyswitchImpl: Backend {
         R: GGSWInfos,
         A: GGSWInfos,
         K: GGLWEInfos,
-        T: GGLWEInfos;
+        T: GGLWEInfos,
+    {
+        crate::oep::derived::keyswitching::ggsw_keyswitch_tmp_bytes_derived::<Self, _, _, _, _, _>(
+            module, res_infos, a_infos, key_infos, tsk_infos,
+        )
+    }
 
     fn ggsw_keyswitch<R, A>(
         module: &Module<Self>,
@@ -200,7 +249,10 @@ pub unsafe trait GGSWKeyswitchImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWInfos;
+        A: GGSWToBackendRef<Self> + GGSWInfos,
+    {
+        crate::oep::derived::keyswitching::ggsw_keyswitch_derived::<Self, _, _, _>(module, res, a, key, tsk, scratch)
+    }
 
     fn ggsw_keyswitch_assign<R>(
         module: &Module<Self>,
@@ -209,7 +261,10 @@ pub unsafe trait GGSWKeyswitchImpl: Backend {
         tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+    {
+        crate::oep::derived::keyswitching::ggsw_keyswitch_assign_derived::<Self, _, _>(module, res, key, tsk, scratch)
+    }
 }
 
 /// Backend-provided LWE key-switching operations.
@@ -235,315 +290,31 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
         A: LWEToBackendRef<Self> + LWEInfos;
 }
 
-/// Override surface for the GLWE key-switching sub-family.
-///
-/// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::keyswitching::glwe`]
-/// for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
-///
-/// # Gadget-digit width contract
-///
-/// An override that fuses the digit loop (rather than forwarding to the reference
-/// body) must reproduce its output widths exactly, because the choice is not
-/// noise-visible: an accumulator one limb too narrow still passes the keyswitch
-/// noise sweep. With `key_size = key.size()` and `res_size = res.size()`, digit
-/// `di` of `0..dsize` contributes to output limb `c` iff
-///
-/// ```text
-/// c < min(key_size - di, compute_size(di))
-/// compute_size(0)  = res_size
-/// compute_size(di) = min(res_size,
-///                        key_size - max(dsize - di - product_limbs, 0))
-///                    for di > 0
-/// ```
-///
-/// Two properties are load-bearing:
-///
-/// - `di == 0` runs at **full** width and is the overwriting pass. On CPU it is
-///   also what zeroes the limbs the accumulating digits add into, so the digits
-///   cannot be walked in reverse to widen the first pass. An implementation that
-///   writes each output limb exactly once needs no zeroing but must still match
-///   the arithmetic.
-/// - `product_limbs` is the two-limb elementary product plus the coefficient
-///   accumulation growth. Pass `di` consumes `a`'s limbs at offset
-///   `dsize - di - 1`; the product spill reaches further down according to the
-///   ring and matrix shape. Treating this as a constant is silent at small
-///   shapes but truncates live limbs once the accumulation needs a third or
-///   fourth limb.
-///
-/// Assert parity against a reference backend, not only the noise bound.
-pub trait GLWEKeyswitchReference<BE: Backend> {
-    fn glwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos;
-
-    fn glwe_keyswitch_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_keyswitch_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
-}
-
-/// Override surface for the GGLWE key-switching sub-family.
-pub trait GGLWEKeyswitchReference<BE: Backend> {
-    fn gglwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos;
-
-    fn gglwe_keyswitch_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        b: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
-
-    fn gglwe_keyswitch_assign_reference<R>(
-        &self,
-        res: &mut R,
-        a: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
-}
-
-/// Override surface for the GGSW key-switching sub-family.
-pub trait GGSWKeyswitchReference<BE: Backend> {
-    fn ggsw_keyswitch_tmp_bytes_reference<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
-    where
-        R: GGSWInfos,
-        A: GGSWInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos;
-
-    fn ggsw_keyswitch_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos;
-
-    fn ggsw_keyswitch_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
-}
-
-/// Override surface for the LWE key-switching sub-family.
-pub trait LWEKeyswitchReference<BE: Backend> {
-    fn lwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: LWEInfos,
-        A: LWEInfos,
-        K: GGLWEInfos;
-
-    fn lwe_keyswitch_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        A: LWEToBackendRef<BE> + LWEInfos;
-}
-
-unsafe impl<BE: Backend> GLWEKeyswitchImpl for BE
-where
-    Module<BE>: GLWEKeyswitchReference<BE>,
-{
-    fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.glwe_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn glwe_keyswitch<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_keyswitch_reference(res, a, key, scratch)
-    }
-
-    fn glwe_keyswitch_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-    {
-        module.glwe_keyswitch_assign_reference(res, key, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GGLWEKeyswitchImpl for BE
-where
-    Module<BE>: GGLWEKeyswitchReference<BE>,
-{
-    fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.gglwe_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn gglwe_keyswitch<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
-    {
-        module.gglwe_keyswitch_reference(res, a, key, scratch)
-    }
-
-    fn gglwe_keyswitch_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    {
-        module.gglwe_keyswitch_assign_reference(res, key, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GGSWKeyswitchImpl for BE
-where
-    Module<BE>: GGSWKeyswitchReference<BE>,
-{
-    fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
-        module: &Module<BE>,
-        res_infos: &R,
-        a_infos: &A,
-        key_infos: &K,
-        tsk_infos: &T,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: GGSWInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos,
-    {
-        module.ggsw_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos, tsk_infos)
-    }
-
-    fn ggsw_keyswitch<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
-    {
-        module.ggsw_keyswitch_reference(res, a, key, tsk, scratch)
-    }
-
-    fn ggsw_keyswitch_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-    {
-        module.ggsw_keyswitch_assign_reference(res, key, tsk, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> LWEKeyswitchImpl for BE
-where
-    Module<BE>: LWEKeyswitchReference<BE>,
-{
-    fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: LWEInfos,
-        A: LWEInfos,
-        K: GGLWEInfos,
-    {
-        module.lwe_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn lwe_keyswitch<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        A: LWEToBackendRef<BE> + LWEInfos,
-    {
-        module.lwe_keyswitch_reference(res, a, ksk, scratch)
-    }
-}
-
 // === Convenience macros for full-reference opt-in ===
 
-/// Implements [`GLWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::keyswitching::glwe`].
+/// Selects the portable HAL algorithms for this backend operation family.
 #[macro_export]
 macro_rules! impl_glwe_keyswitch_reference_full {
     ($be:ty) => {
-        impl $crate::oep::GLWEKeyswitchReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+        unsafe impl $crate::oep::GLWEKeyswitchImpl for $be {
+            fn glwe_keyswitch_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
+                    module, res_infos, a_infos, key_infos,
                 )
             }
 
-            fn glwe_keyswitch_reference<R, A>(
-                &self,
+            fn glwe_keyswitch<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
@@ -552,139 +323,46 @@ macro_rules! impl_glwe_keyswitch_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::keyswitching::glwe::glwe_keyswitch_reference::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_reference::<$be, _, _, _>(module, res, a, key, scratch)
             }
 
-            fn glwe_keyswitch_assign_reference<R>(
-                &self,
+            fn glwe_keyswitch_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<$be, _, _>(module, res, key, scratch)
             }
         }
     };
 }
 
-/// Implements [`GGLWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::keyswitching::gglwe`].
-#[macro_export]
-macro_rules! impl_gglwe_keyswitch_reference_full {
-    ($be:ty) => {
-        impl $crate::oep::GGLWEKeyswitchReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn gglwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-            where
-                R: $crate::layouts::GGLWEInfos,
-                A: $crate::layouts::GGLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
-                )
-            }
-
-            fn gglwe_keyswitch_reference<R, A>(
-                &self,
-                res: &mut R,
-                a: &A,
-                b: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
-                A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_reference::<$be, _, _, _>(self, res, a, b, scratch)
-            }
-
-            fn gglwe_keyswitch_assign_reference<R>(
-                &self,
-                res: &mut R,
-                a: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_assign_reference::<$be, _, _>(self, res, a, scratch)
-            }
-        }
-    };
-}
-
-/// Implements [`GGSWKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::keyswitching::ggsw`].
-#[macro_export]
-macro_rules! impl_ggsw_keyswitch_reference_full {
-    ($be:ty) => {
-        impl $crate::oep::GGSWKeyswitchReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn ggsw_keyswitch_tmp_bytes_reference<R, A, K, T>(
-                &self,
-                res_infos: &R,
-                a_infos: &A,
-                key_infos: &K,
-                tsk_infos: &T,
-            ) -> usize
-            where
-                R: $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGSWInfos,
-                K: $crate::layouts::GGLWEInfos,
-                T: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_tmp_bytes_reference::<$be, _, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos, tsk_infos,
-                )
-            }
-
-            fn ggsw_keyswitch_reference<R, A>(
-                &self,
-                res: &mut R,
-                a: &A,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
-            {
-                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_reference::<$be, _, _, _>(self, res, a, key, tsk, scratch)
-            }
-
-            fn ggsw_keyswitch_assign_reference<R>(
-                &self,
-                res: &mut R,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
-            {
-                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_assign_reference::<$be, _, _>(self, res, key, tsk, scratch)
-            }
-        }
-    };
-}
-
-/// Implements [`LWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::keyswitching::lwe`].
+/// Selects the portable HAL algorithms for this backend operation family.
 #[macro_export]
 macro_rules! impl_lwe_keyswitch_reference_full {
     ($be:ty) => {
-        impl $crate::oep::LWEKeyswitchReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn lwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+        unsafe impl $crate::oep::LWEKeyswitchImpl for $be {
+            fn lwe_keyswitch_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
             where
                 R: $crate::layouts::LWEInfos,
                 A: $crate::layouts::LWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::keyswitching::lwe::lwe_keyswitch_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
+                    module, res_infos, a_infos, key_infos,
                 )
             }
 
-            fn lwe_keyswitch_reference<R, A>(
-                &self,
+            fn lwe_keyswitch<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 ksk: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
@@ -693,11 +371,29 @@ macro_rules! impl_lwe_keyswitch_reference_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::reference::keyswitching::lwe::lwe_keyswitch_reference::<$be, _, _, _>(self, res, a, ksk, scratch)
+                $crate::reference::keyswitching::lwe::lwe_keyswitch_reference::<$be, _, _, _>(module, res, a, ksk, scratch)
             }
         }
     };
 }
+
+/// Selects the same-layer row composition for this backend.
+#[macro_export]
+macro_rules! impl_gglwe_keyswitch_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGLWEKeyswitchImpl for $be {}
+    };
+}
+
+/// Selects the same-layer row composition for this backend.
+#[macro_export]
+macro_rules! impl_ggsw_keyswitch_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGSWKeyswitchImpl for $be {}
+    };
+}
+
+// Reference helpers remain available through OEP for source compatibility.
 
 #[cfg(test)]
 mod digit_output_size_tests {

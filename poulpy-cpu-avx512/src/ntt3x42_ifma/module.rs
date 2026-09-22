@@ -59,6 +59,7 @@ impl<R: CpuRing> NTT3x42IfmaHandle<R> {
 impl<R: CpuRing> Backend for NTT3x42IfmaBackend<R> {
     const MIN_DEGREE: usize = 8;
     const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q126Scalar;

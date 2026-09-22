@@ -1,24 +1,19 @@
 use crate::CKKSResult as Result;
+use poulpy_core::EncryptionInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk};
 use poulpy_hal::{
-    api::{VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
-    layouts::{Backend, HostDataMut, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
     oep::CKKSEncryptionImpl,
 };
 
-impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE>
-where
-    BE: poulpy_hal::oep::HalVecZnxImpl,
-    Self: GLWEEncryptSk<BE> + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
-{
+impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds,
@@ -49,25 +44,13 @@ where
     }
 }
 
-// The `BE::OwnedBuf: HostDataMut` bound restricts this delegate to host
-// backends; the `CKKSDecryptOps` trait itself carries no host bounds and a device
-// backend provides its own impl.
-impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE>
-where
-    BE: poulpy_hal::oep::HalVecZnxImpl,
-    Self: GLWEDecrypt<BE>
-        + VecZnxLsh<BE>
-        + VecZnxLshTmpBytes
-        + VecZnxRsh<BE>
-        + VecZnxRshTmpBytes
-        + poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-    BE::OwnedBuf: HostDataMut,
-{
-    fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
+impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
+    fn ckks_decrypt_tmp_bytes<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
-        A: CKKSCtBounds,
+        Pt: CKKSInfos,
+        Ct: CKKSCtBounds,
     {
-        BE::ckks_decrypt_tmp_bytes_impl(self, ct_infos)
+        BE::ckks_decrypt_tmp_bytes_impl(self, pt_infos, ct_infos)
     }
 
     fn ckks_decrypt<Dpt, Dct, S>(

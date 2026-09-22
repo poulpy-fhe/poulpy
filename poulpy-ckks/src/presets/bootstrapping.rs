@@ -343,9 +343,49 @@ fn s2c_spec() -> PresetSpec {
     }
 }
 
+/// C2S-first full-slot preset at `N = 2^15` for inputs at scale `2^35`,
+/// producing 180-bit ciphertexts with at least 18 bits of precision.
+///
+/// The input and raised widths are 40 and 780 bits. The output has 140 usable
+/// bits (four levels) at the input scale. Total key moduli are bounded by
+/// 854 bits for the weight-1024 dense secret and 164 bits for the weight-32 sparse secret.
+pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
+    build(
+        PresetSpec {
+            name: "n15_d35_k180_p18_c2s",
+            log_n: 15,
+            base2k: 52,
+            rank: 1,
+            log_delta: 35,
+            output_k: 180,
+            log2_precision: 18,
+            dense_secret_hamming_weight: 1024,
+            sparse_secret_hamming_weight: 32,
+            max_dense_modulus: 854,
+            max_sparse_modulus: 164,
+            key_dsize: 1,
+            dense_to_sparse_dsize: 1,
+            pipeline: BootstrappingPipeline::C2SFirst,
+            log_msg_ratio: 5,
+            c2s_schedule: &[(7, 2048), (7, 16)],
+            c2s_guard_bits: 0,
+            c2s_log_delta: 49,
+            c2s_log_budget: 2,
+            s2c_schedule: &[(7, 16), (7, 2048)],
+            s2c_log_delta: 30,
+            s2c_log_budget: 2,
+            eval_mod: EvalModSpec {
+                log_delta: 53,
+                ..optimized_han_ki()
+            },
+        },
+        CKKSRingKind::Standard,
+    )
+}
+
 /// Every standard-ring preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k720_p19_s2c];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k720_p19_s2c, n15_d35_k180_p18_c2s];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -676,6 +716,47 @@ mod tests {
     use crate::CKKSInfos;
 
     #[test]
+    fn n15_d35_k180_p18_c2s_is_composable_and_within_bounds() {
+        let preset = n15_d35_k180_p18_c2s().unwrap();
+
+        assert_eq!(preset.n(), 1 << 15);
+        assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::C2SFirst);
+        assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
+        assert_eq!(preset.plan().eval_mod().consumed_bits(), 424);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 98);
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 60);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 180, 780));
+        assert_eq!(preset.log2_precision(), 18);
+        assert_eq!(preset.output_layout().log_delta(), 35);
+        assert_eq!(preset.input_layout().meta(), preset.output_layout().meta());
+        assert_eq!(
+            preset.output_layout().log_budget() - preset.input_layout().log_budget(),
+            4 * preset.log_delta()
+        );
+        assert_eq!(
+            (preset.dense_secret_hamming_weight(), preset.max_dense_modulus()),
+            (1024, 854)
+        );
+        assert_eq!(
+            (preset.sparse_secret_hamming_weight(), preset.max_sparse_modulus()),
+            (32, 164)
+        );
+
+        let keys = preset.keys_layout();
+        let encapsulation = keys.encapsulation.as_ref().unwrap();
+        assert_eq!(keys.automorphism_key.dsize.as_usize(), 1);
+        assert_eq!(gadget_k(&keys.automorphism_key), 780);
+        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 67);
+        assert_eq!(keys.automorphism_key.k().as_usize(), 847);
+        assert_eq!(keys.tensor_key.k().as_usize(), 847);
+        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 847);
+        assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
+        assert!(preset.with_dsizes(2, 1).is_err());
+        assert!(preset.with_dsizes(1, 2).is_err());
+        assert!(preset.with_base2k(19).unwrap().with_dsizes(3, 1).is_err());
+    }
+
+    #[test]
     fn n16_d35_k600_p19_c2s_is_composable_and_within_bounds() {
         let preset = n16_d35_k600_p19_c2s().unwrap();
 
@@ -739,7 +820,10 @@ mod tests {
     #[test]
     fn all_lists_every_preset_once() {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
-        assert_eq!(names, ["n16_d35_k600_p19_c2s", "n16_d35_k720_p19_s2c"]);
+        assert_eq!(
+            names,
+            ["n16_d35_k600_p19_c2s", "n16_d35_k720_p19_s2c", "n15_d35_k180_p18_c2s"]
+        );
     }
 
     #[test]
@@ -838,21 +922,33 @@ mod tests {
 
     #[test]
     fn rederived_key_shape_keeps_widths_and_revalidates() {
-        for preset in all().unwrap() {
+        for (preset, fft_dsize) in [
+            (n16_d35_k600_p19_c2s().unwrap(), 7),
+            (n16_d35_k720_p19_s2c().unwrap(), 7),
+            (n15_d35_k180_p18_c2s().unwrap(), 2),
+        ] {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
-            // FFT64 uses 7-limb high-modulus digits and 1-limb dense-to-sparse digits.
-            let fft = preset.with_base2k(19).unwrap().with_dsizes(7, 1).unwrap();
+            let fft = preset.with_base2k(19).unwrap().with_dsizes(fft_dsize, 1).unwrap();
             assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
-            assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+            assert_eq!(
+                (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
+                (19, fft_dsize, 1)
+            );
             assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 19);
             let keys = fft.keys_layout();
-            assert_eq!(keys.automorphism_key.dnum.as_usize(), preset.bootstrap_k().div_ceil(7 * 19));
-            assert_eq!(keys.automorphism_key.k_aux.as_usize(), 7 * 19 + 16);
+            assert_eq!(
+                keys.automorphism_key.dnum.as_usize(),
+                preset.bootstrap_k().div_ceil(fft_dsize * 19)
+            );
+            assert_eq!(keys.automorphism_key.k_aux.as_usize(), fft_dsize * 19 + preset.log_n());
             assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
 
             let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
-            assert_eq!(small_key.k().as_usize(), 92);
+            assert_eq!(
+                small_key.k().as_usize(),
+                preset.log_modulus().div_ceil(19) * 19 + 19 + preset.log_n()
+            );
             assert!(small_key.k().as_usize() <= fft.max_sparse_modulus());
 
             // Oversized digits are rejected for both secret bounds.

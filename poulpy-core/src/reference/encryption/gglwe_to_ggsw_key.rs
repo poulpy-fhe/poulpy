@@ -15,7 +15,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GGLWEToGGSWKeyEncryptSkReference<BE: Backend> {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

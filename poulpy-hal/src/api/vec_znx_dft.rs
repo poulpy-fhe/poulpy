@@ -82,7 +82,7 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// domain     res: a dense VecZnxBig; a: a VecZnxDft of the same degree; a is read, not clobbered
 /// requires   scratch >= vec_znx_idft_apply_tmp_bytes()
 /// ensures    the selected column is inverse-transformed into big words; result limbs from a.size() onward are zero and a is unchanged
-/// test       test_vec_znx_idft_apply, test_vec_znx_idft_apply_alloc
+/// test       test_vec_znx_idft_apply
 /// ```
 pub trait VecZnxIdftApply<B: Backend> {
     /// Writes the inverse DFT of `a` into `res`.

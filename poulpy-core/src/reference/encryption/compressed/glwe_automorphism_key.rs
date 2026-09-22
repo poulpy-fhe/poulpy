@@ -18,7 +18,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEAutomorphismKeyCompressedEncryptSkReference<BE: Backend> {
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

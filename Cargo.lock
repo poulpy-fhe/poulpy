@@ -719,6 +719,7 @@ dependencies = [
  "dashu-int",
  "itertools 0.15.0",
  "once_cell",
+ "paste",
  "poulpy-bench",
  "poulpy-bin-fhe",
  "poulpy-ckks",

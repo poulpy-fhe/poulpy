@@ -77,3 +77,5 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSPow2Reference<BE> for poulpy_hal::layouts::Module<BE> {}

@@ -4,10 +4,10 @@
 //!   decrypt, compare the residual noise against the analytic bound. Judges one
 //!   backend against a model, and is host-only because verification reads
 //!   coefficients.
-//! - [`parity`]: does this backend agree with a reference backend? Run the same
-//!   operation on both over identical inputs and compare the outputs
-//!   byte-for-byte. Needs no secrets, encryption or noise model, so a device
-//!   backend can run it.
+//! - [`parity`]: does this backend agree with the selected comparison backend?
+//!   Run the same operation on both over identical inputs and compare integer
+//!   outputs and metadata. Encryption parity also controls the sampled inputs.
+//!   An already validated backend can bootstrap another through these tests.
 //!
 //! The two are complementary: a bound is a weak oracle (a gadget-product
 //! accumulator one limb too narrow passes the key-switch noise sweep), and

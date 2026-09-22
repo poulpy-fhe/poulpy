@@ -5,13 +5,15 @@
 //! of the hardware-abstraction layer provided by [`poulpy_hal`].
 //! The public operation traits live in [`api`], while their blanket
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
-//! backend extension points in [`oep`]. This makes the crate portable
-//! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
-//! implementation of every operation, the only validated circuit; a backend
-//! override is a faster route to the same result, validated by the parity
-//! suite against an attested backend (attestation is transitive back to the
-//! reference, so any attested backend serves as the oracle) and correct only when that
-//! test passes.
+//! backend extension points in [`oep`]. The crate depends only on generic
+//! backend contracts. [`reference`](mod@crate::reference) contains reusable
+//! algorithms built from HAL operations. Crate-private derived helpers
+//! contain defaults built from other core operations, preserving their backend
+//! dispatch. Backends explicitly implement `*Impl` traits to select or replace
+//! these algorithms. Parity tests compare integer results and metadata between
+//! caller-selected backends, so an already validated backend can bootstrap another.
+//! Sampling has a distribution and reproducibility contract; randomized parity
+//! uses identical sampled inputs.
 //!
 //! # Architecture
 //!
@@ -31,11 +33,11 @@
 //!
 //! ## Scratch-space allocation
 //!
-//! Operations never allocate on the heap internally. Instead, callers
-//! supply a [`poulpy_hal::layouts::ScratchArena`] borrow from which temporaries are
-//! arena-allocated via [`ScratchArenaTakeCore`]. Every operation that needs
-//! scratch space has a companion `*_tmp_bytes` method returning the
-//! required byte count.
+//! Arithmetic operations accept a [`poulpy_hal::layouts::ScratchArena`] for
+//! their temporary backend storage, allocated via [`ScratchArenaTakeCore`].
+//! The corresponding `*_tmp_bytes` query advertises the required arena capacity.
+//! Higher-level planning and polynomial-evaluation policies can own collections
+//! and allocate separately; the arena contract does not prohibit those allocations.
 //!
 //! ## Parameter newtypes
 //!
@@ -66,7 +68,7 @@
 //! | conversion | LWE / GLWE and GGLWE -> GGSW conversions |
 //! | glwe\_packer | On-the-fly GLWE packing with O(log N) memory |
 //! | glwe\_packing | HashMap-based GLWE slot packing |
-//! | glwe\_trace | GLWE trace (sum of automorphisms) |
+//! | glwe\_trace | Normalized GLWE trace (average of automorphisms) |
 //! | noise | Noise-variance estimation for parameter selection |
 //! | dist | Secret-key distribution descriptors |
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
@@ -100,10 +102,6 @@ pub(crate) mod encryption {
         pub(crate) use crate::reference::encryption::gglwe::*;
     }
 
-    pub(crate) mod glwe {
-        pub(crate) use crate::reference::encryption::glwe::*;
-    }
-
     pub(crate) mod glwe_switching_key {
         pub(crate) use crate::reference::encryption::glwe_switching_key::*;
     }
@@ -117,10 +115,6 @@ pub(crate) mod noise {
     }
 
     pub(crate) use crate::reference::noise::*;
-}
-
-pub(crate) mod operations {
-    pub(crate) use crate::reference::operations::*;
 }
 
 pub mod test_suite;

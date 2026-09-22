@@ -8,17 +8,15 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, VecZnxBigAddNormal,
+    EncryptionInfos, LWEFillMask, VecZnxBigAddNormal,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEFillMaskReference<BE: Backend> {
     fn fill_lwe_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
-    where
-        R: LWEToBackendMut<BE>;
-
-    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>;
 }
@@ -35,17 +33,11 @@ where
         assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
         self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
-
-    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
-    where
-        R: LWEToBackendMut<BE>,
-    {
-        let mut source_xa = Source::new(seed_xa);
-        self.fill_lwe_mask_from_source_reference(base2k, res, &mut source_xa);
-    }
 }
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEEncryptSkReference<BE: Backend> {
     fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -70,7 +62,7 @@ pub trait LWEEncryptSkReference<BE: Backend> {
 impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
-        + LWEFillMaskReference<BE>
+        + LWEFillMask<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSum<BE>
@@ -125,7 +117,7 @@ where
         let base2k: usize = res.base2k().into();
         let res_n: usize = res.n().into();
         let res_size = res.size();
-        self.fill_lwe_mask_from_source_reference(base2k, res, source_xa);
+        self.fill_lwe_mask_from_source(base2k, res, source_xa);
 
         // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
         let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);

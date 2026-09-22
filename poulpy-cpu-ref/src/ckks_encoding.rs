@@ -1,8 +1,8 @@
 //! CPU implementation of the CKKS slot-encoding extension point.
 //!
 //! The encoder is written once and is generic over the negacyclic transform:
-//! everything except the transform itself (the slot permutation, the
-//! quantization codec, the plan geometry) is backend- and precision-agnostic.
+//! slot permutation and quantization come from `poulpy-ckks` reference routines.
+//! This module owns the transform families and their cache bindings.
 //! A backend selects its transform by implementing [`CKKSEncodingTransform`]
 //! for each scalar precision it supports, and instantiates the encoder with
 //! [`impl_ckks_encoding!`](crate::impl_ckks_encoding).
@@ -13,111 +13,16 @@
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
-use poulpy_core::layouts::IntPolyInfos;
 use std::marker::PhantomData;
 
-use anyhow::{Context, Result, ensure};
-use poulpy_ckks::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef,
-    api::CKKSEncodingScalar,
-    layouts::{CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
-};
-use poulpy_core::layouts::{GLWEInfos, LWEInfos};
-use poulpy_hal::{
-    GALOISGENERATOR,
-    api::{NegacyclicFFT, NegacyclicFFTNew},
-    layouts::{Backend, HostDataMut, HostDataRef},
-};
-use rand_distr::num_traits::NumCast;
+use anyhow::{Result, ensure};
+use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
-/// CPU-private CKKS slot permutation for one transform dimension.
-///
-/// This is public only because exported CPU implementation macros refer to it
-/// from their expansion crate. It is not part of the generic CKKS API.
-#[doc(hidden)]
-pub struct CpuEncodingPlan {
-    slots: usize,
-    slot_scatter_swaps: Vec<(usize, usize)>,
-}
-
-impl CpuEncodingPlan {
-    fn new(slots: usize) -> Result<Self> {
-        ensure!(
-            slots > 0 && slots.is_power_of_two(),
-            "slot count must be a non-zero power of two"
-        );
-        let two_n = 4 * slots;
-        let log_n = (2 * slots).trailing_zeros();
-        let mut slot_map = Vec::with_capacity(slots);
-        let mut exponent = 1usize;
-        for _ in 0..slots {
-            slot_map.push(((exponent - 1) / 2).reverse_bits() >> (usize::BITS - log_n));
-            exponent = (exponent * GALOISGENERATOR as usize) & (two_n - 1);
-        }
-
-        let mut seen = vec![false; slots];
-        let mut slot_scatter_swaps = Vec::new();
-        for start in 0..slots {
-            if seen[start] {
-                continue;
-            }
-            let mut current = start;
-            seen[current] = true;
-            loop {
-                let next = slot_map[current];
-                if next == start {
-                    break;
-                }
-                slot_scatter_swaps.push((start, next));
-                current = next;
-                assert!(!seen[current], "CKKS slot map is not a permutation");
-                seen[current] = true;
-            }
-        }
-        Ok(Self {
-            slots,
-            slot_scatter_swaps,
-        })
-    }
-
-    fn slots_to_coeffs_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
-    where
-        F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
-    {
-        ensure!(values.len() == 2 * self.slots);
-        ensure!(fft.m() == self.slots);
-        for &(a, b) in &self.slot_scatter_swaps {
-            values.swap(a, b);
-            values.swap(self.slots + a, self.slots + b);
-        }
-        fft.ifft(values);
-        let inv_slots = F::from(self.slots)
-            .context("slot count is not representable by the encoding scalar")?
-            .recip();
-        values.iter_mut().for_each(|value| *value = *value * inv_slots);
-        Ok(())
-    }
-
-    fn coeffs_to_slots_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
-    where
-        F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
-    {
-        ensure!(values.len() == 2 * self.slots);
-        ensure!(fft.m() == self.slots);
-        fft.fft(values);
-        for &(a, b) in self.slot_scatter_swaps.iter().rev() {
-            values.swap(a, b);
-            values.swap(self.slots + a, self.slots + b);
-        }
-        Ok(())
-    }
-}
+use poulpy_ckks::reference::encoding::EncodingPermutation;
 
 /// Precision-independent slot maps for all powers of two up to `max_slots`.
 pub struct EncodingPlanSet {
-    plans: Vec<CpuEncodingPlan>,
+    plans: Vec<EncodingPermutation>,
     max_slots: usize,
 }
 
@@ -128,12 +33,12 @@ impl EncodingPlanSet {
             "maximum slot count must be a non-zero power of two"
         );
         let plans = (0..=max_slots.ilog2() as usize)
-            .map(|log_slots| CpuEncodingPlan::new(1usize << log_slots))
+            .map(|log_slots| EncodingPermutation::new(1usize << log_slots))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { plans, max_slots })
     }
 
-    pub fn for_slots(&self, slots: usize) -> Result<&CpuEncodingPlan> {
+    pub fn for_slots(&self, slots: usize) -> Result<&EncodingPermutation> {
         ensure!(
             slots > 0 && slots.is_power_of_two(),
             "slot count must be a non-zero power of two, got {slots}"
@@ -216,7 +121,7 @@ where
     }
 
     #[doc(hidden)]
-    pub fn for_slots(&self, slots: usize) -> Result<(&CpuEncodingPlan, &T)> {
+    pub fn for_slots(&self, slots: usize) -> Result<(&EncodingPermutation, &T)> {
         Ok((self.maps.for_slots(slots)?, self.ffts.for_slots(slots)?))
     }
 }
@@ -237,164 +142,9 @@ pub trait CKKSEncodingTransform<F> {
     type Fft: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Send + Sync + 'static;
 }
 
-fn coefficient_gap<P>(pt: &P, coeff_count: usize) -> Result<usize>
-where
-    P: GLWEInfos,
-{
-    let n = pt.n().as_usize();
-    ensure!(
-        pt.rank().as_usize() == 0,
-        "CKKS plaintext encoding expects rank zero, got {}",
-        pt.rank()
-    );
-    ensure!(coeff_count > 0, "coefficient count must be non-zero");
-    ensure!(
-        coeff_count <= n && n.is_multiple_of(coeff_count),
-        "coefficient count {coeff_count} must divide plaintext degree {n}"
-    );
-    let gap = n / coeff_count;
-    ensure!(gap.is_power_of_two(), "coefficient gap {gap} must be a power of two");
-    Ok(gap)
-}
-
-#[doc(hidden)]
-pub fn encode_coeffs_into<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
-where
-    BE: Backend<ZnxWord = i64>,
-    F: CKKSEncodingScalar + NumCast,
-    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    let coeffs = coeffs.as_slice();
-    let gap = coefficient_gap(pt, coeffs.len())?;
-    let log_delta = pt.log_delta();
-    let log_budget = pt.log_budget();
-    let scale = F::from_usize(log_delta)
-        .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
-        .exp2();
-    let base2k = pt.base2k().as_usize();
-    let k = pt.encoded_k().as_usize();
-    let mut backend = pt.to_backend_mut();
-
-    if log_delta + log_budget <= 63 {
-        let data: Vec<i64> = coeffs
-            .iter()
-            .enumerate()
-            .map(|(index, &x)| {
-                (x * scale)
-                    .round()
-                    .to_i64()
-                    .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
-            })
-            .collect::<Result<_>>()?;
-        backend.data_mut().encode_vec_i64_strided(base2k, 0, k, gap, &data);
-    } else {
-        let data: Vec<i128> = coeffs
-            .iter()
-            .enumerate()
-            .map(|(index, &x)| {
-                (x * scale)
-                    .round()
-                    .to_i128()
-                    .with_context(|| format!("CKKS coefficient {index} is not representable as an i128 at scale 2^{log_delta}"))
-            })
-            .collect::<Result<_>>()?;
-        backend.data_mut().encode_vec_i128_strided(base2k, 0, k, gap, &data);
-    }
-    Ok(())
-}
-
-#[doc(hidden)]
-pub fn decode_coeffs_into<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
-where
-    BE: Backend<ZnxWord = i64>,
-    F: CKKSEncodingScalar,
-    P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    let coeffs = coeffs.as_mut_slice();
-    let gap = coefficient_gap(pt, coeffs.len())?;
-    let log_delta = pt.log_delta();
-    let log_budget = pt.log_budget();
-    ensure!(
-        log_delta + log_budget <= 127,
-        "CKKS host decoding supports at most 127 torus bits, got {}",
-        log_delta + log_budget
-    );
-    let scale =
-        (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
-    let base2k = pt.base2k().as_usize();
-    let k = pt.encoded_k().as_usize();
-    let backend = pt.to_backend_ref();
-
-    if log_delta + log_budget <= 63 {
-        let mut data = vec![0i64; coeffs.len()];
-        backend.data().decode_vec_i64_strided(base2k, 0, k, gap, &mut data);
-        for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i64(value).context("decoded i64 coefficient is not representable by the codec scalar")? * scale;
-        }
-    } else {
-        let mut data = vec![0i128; coeffs.len()];
-        backend.data().decode_vec_i128_strided(base2k, 0, k, gap, &mut data);
-        for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i128(value).context("decoded i128 coefficient is not representable by the codec scalar")? * scale;
-        }
-    }
-    Ok(())
-}
-
-#[doc(hidden)]
-pub fn slots_to_coeffs_assign<F, T, D>(
-    plan: &CpuEncodingPlan,
-    fft: &T,
-    values: &mut CKKSEncodingBuffer<D, F>,
-    conjugate_invariant: bool,
-) -> Result<()>
-where
-    F: CKKSEncodingScalar + NumCast,
-    T: NegacyclicFFT<F>,
-    D: HostDataMut,
-{
-    let values = values.as_mut_slice();
-    if conjugate_invariant {
-        values[plan.slots..].fill(F::zero());
-    }
-    plan.slots_to_coeffs_assign(fft, values)
-}
-
-#[doc(hidden)]
-pub fn coeffs_to_slots_assign<F, T, D>(
-    plan: &CpuEncodingPlan,
-    fft: &T,
-    values: &mut CKKSEncodingBuffer<D, F>,
-    conjugate_invariant: bool,
-) -> Result<()>
-where
-    F: CKKSEncodingScalar,
-    T: NegacyclicFFT<F>,
-    D: HostDataMut,
-{
-    let values = values.as_mut_slice();
-    if conjugate_invariant {
-        values[plan.slots] = F::zero();
-        for j in 1..plan.slots {
-            values[2 * plan.slots - j] = -values[j];
-        }
-    }
-    plan.coeffs_to_slots_assign(fft, values)?;
-    if conjugate_invariant {
-        values[plan.slots..].fill(F::zero());
-    }
-    Ok(())
-}
-
 /// Instantiates the generic CKKS encoder for a backend.
 ///
-/// The encoder body is written once in this module; the backend only supplies
+/// The scheme math comes from the CKKS reference helpers; the backend supplies
 /// its transform through [`CKKSEncodingTransform`](crate::ckks_encoding::CKKSEncodingTransform),
 /// so this expands to a single implementation covering every precision that
 /// backend selects a transform for.
@@ -430,7 +180,8 @@ macro_rules! impl_ckks_encoding {
             where
                 P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                $crate::ckks_encoding::encode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
+                ::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, F, P>(pt, coeffs)
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_decode_coeffs_into_impl<P>(
@@ -441,7 +192,8 @@ macro_rules! impl_ckks_encoding {
             where
                 P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                $crate::ckks_encoding::decode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
+                ::poulpy_ckks::reference::encoding::decode_coeffs_into_host::<$be, F, P>(pt, coeffs)
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_slots_to_coeffs_assign_impl(
@@ -451,12 +203,11 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                $crate::ckks_encoding::slots_to_coeffs_assign(
-                    map,
-                    fft,
-                    values,
-                    ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module),
-                )
+                if ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module) {
+                    map.ci_slots_to_coeffs_assign(fft, values.as_mut_slice())
+                } else {
+                    map.slots_to_coeffs_assign(fft, values.as_mut_slice())
+                }
                 .map_err(::poulpy_ckks::CKKSError::from)
             }
 
@@ -467,12 +218,11 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                $crate::ckks_encoding::coeffs_to_slots_assign(
-                    map,
-                    fft,
-                    values,
-                    ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module),
-                )
+                if ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module) {
+                    map.ci_coeffs_to_slots_assign(fft, values.as_mut_slice())
+                } else {
+                    map.coeffs_to_slots_assign(fft, values.as_mut_slice())
+                }
                 .map_err(::poulpy_ckks::CKKSError::from)
             }
         }

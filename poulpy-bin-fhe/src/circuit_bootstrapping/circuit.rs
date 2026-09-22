@@ -539,7 +539,7 @@ where
                 owned
                     + trace_atk
                         .max(rotate)
-                        .max(module.glwe_pack_tmp_bytes(&res_glwe_layout, &atk_key_infos))
+                        .max(module.glwe_pack_tmp_bytes(&res_glwe_layout, &glwe_atk_layout, &atk_key_infos))
             }
         }
     };

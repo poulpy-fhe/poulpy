@@ -12,13 +12,13 @@ use poulpy_hal::{
 };
 
 use crate::{
-    encryption::lwe::LWEFillMaskReference,
+    api::LWEFillMask,
     layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetBase2k, TorusPrecision},
 };
 
 /// Seed-compressed LWE ciphertext layout.
 ///
-/// Stores only the body (constant term) of an [`LWE`] ciphertext; the
+/// Stores only the body (constant term) of an [`LWE`](crate::layouts::LWE) ciphertext; the
 /// mask coefficients are regenerated deterministically from a 32-byte
 /// PRNG seed during decompression.
 #[derive(PartialEq, Eq, Clone)]
@@ -131,7 +131,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
 
 pub trait LWEDecompress
 where
-    Self: LWEFillMaskReference<Self::Backend> + VecZnxCopy<Self::Backend>,
+    Self: LWEFillMask<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -148,14 +148,14 @@ where
             assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
             self.vec_znx_copy(&mut res.body, 0, &other.data, 0);
         }
-        self.fill_lwe_mask_from_seed_reference(other.base2k().into(), res, other.seed);
+        self.fill_lwe_mask_from_seed(other.base2k().into(), res, other.seed);
         res.set_base2k(other.base2k());
     }
 }
 
 impl<B: Backend> LWEDecompress for Module<B>
 where
-    Self: LWEFillMaskReference<B> + VecZnxCopy<B>,
+    Self: LWEFillMask<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }

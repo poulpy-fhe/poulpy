@@ -222,7 +222,7 @@ fn setup() -> Result<SetupArtifacts> {
     };
     let scratch_bytes = module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &coeff_prec);
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(scratch_bytes);
-    println!("  scratch bytes: {scratch_bytes}");
+    println!("  allocated scratch");
 
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
     {

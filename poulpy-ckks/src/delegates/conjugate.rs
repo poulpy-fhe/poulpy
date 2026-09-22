@@ -1,9 +1,6 @@
 use crate::CKKSResult as Result;
 use crate::{api::CKKSModuleInfos, ckks_ensure};
-use poulpy_core::{
-    GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use crate::{
@@ -12,10 +9,7 @@ use crate::{
 
 use crate::api::CKKSConjugateOps;
 
-impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE>
-where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE>,
-{
+impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
     fn ckks_conjugate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,

@@ -129,7 +129,8 @@
 //! # Platform support
 //!
 //! - **Required**: AArch64 (Apple Silicon, ARMv8-A and later).
-//! - **Tested under**: native AArch64 hosts.
+//! - **Tested under**: native AArch64 hosts in required CI. Additional HAL and core contract tests under
+//!   QEMU on x86 are opt-in through the manual `run_neon_qemu` workflow input.
 //! - **Not supported**: 32-bit ARM, x86, RISC-V, or any other architecture.
 //!
 //! # Threat model
@@ -218,7 +219,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64neon,
     crate::FFT64CINeon,
     crate::FFT64Neon,
-    poulpy_ckks::test_suite::FFT64_PARAMS_F64
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
 
 #[cfg(all(test, feature = "enable-ckks", feature = "enable-neon"))]
@@ -226,7 +227,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30neon,
     crate::NTT4x30CINeon,
     crate::NTT4x30Neon,
-    poulpy_ckks::test_suite::NTT4X30_PARAMS_F64
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
 
 #[cfg(all(test, feature = "enable-ckks", feature = "enable-neon", feature = "enable-rayon"))]
@@ -234,7 +235,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64neonrayon,
     crate::FFT64CINeonRayon,
     crate::FFT64NeonRayon,
-    poulpy_ckks::test_suite::FFT64_PARAMS_F64
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
 
 #[cfg(all(test, feature = "enable-ckks", feature = "enable-neon", feature = "enable-rayon"))]
@@ -242,5 +243,5 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30neonrayon,
     crate::NTT4x30CINeonRayon,
     crate::NTT4x30NeonRayon,
-    poulpy_ckks::test_suite::NTT4X30_PARAMS_F64
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );

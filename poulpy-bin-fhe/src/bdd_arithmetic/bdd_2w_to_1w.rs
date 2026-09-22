@@ -60,7 +60,7 @@ where
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
         let bdd_bytes = self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos);
         let atk = key.get_automorphism_key(-1, res_infos.k()).unwrap_or_else(|e| panic!("{e}"));
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk);
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, res_infos, &atk);
         glwe_slot_bytes + bdd_bytes.max(pack_bytes)
     }
 
@@ -87,7 +87,7 @@ where
             ggsw_infos,
         ));
         let atk = key.get_automorphism_key(-1, res_infos.k()).unwrap_or_else(|e| panic!("{e}"));
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk);
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, res_infos, &atk);
         glwe_slot_bytes + (threads * bdd_per_thread).max(pack_bytes)
     }
 

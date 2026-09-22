@@ -48,6 +48,7 @@ impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for NTT4x30RefBackend<R> 
 
 impl<R: CpuRing> Backend for NTT4x30RefBackend<R> {
     const MAX_BASE2K: usize = 52;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q120bScalar;

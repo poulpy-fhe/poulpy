@@ -88,11 +88,15 @@ The serial backends require `enable-avx`; the Rayon variants additionally requir
 To implement your own Poulpy backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
-2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
+2. Implement each required HAL OEP method and inherit or override its derived defaults.
+3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and each one is accepted only with its parity test passing against an attested backend, attestation being transitive back to `reference`.
+Use either a family macro or a handwritten implementation of the same core
+`*Impl` trait. Reference helpers remain callable for methods you forward, while
+derived defaults reuse selected backend operations. Validate the resulting
+backend with the shared conformance tests; the [core backend guide](../poulpy-core/docs/core-contracts.md)
+describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:
 

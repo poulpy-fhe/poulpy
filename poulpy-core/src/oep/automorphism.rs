@@ -13,7 +13,7 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait AutomorphismImpl: Backend {
+pub unsafe trait AutomorphismImpl: Backend + crate::oep::ConversionImpl {
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -103,7 +103,12 @@ pub unsafe trait AutomorphismImpl: Backend {
         R: GGSWInfos,
         A: GGSWInfos,
         K: GGLWEInfos,
-        T: GGLWEInfos;
+        T: GGLWEInfos,
+    {
+        crate::oep::derived::automorphism::ggsw_automorphism_tmp_bytes_derived::<Self, _, _, _, _, _>(
+            module, res_infos, a_infos, key_infos, tsk_infos,
+        )
+    }
 
     fn ggsw_automorphism<R, A>(
         module: &Module<Self>,
@@ -114,7 +119,10 @@ pub unsafe trait AutomorphismImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWInfos;
+        A: GGSWToBackendRef<Self> + GGSWInfos,
+    {
+        crate::oep::derived::automorphism::ggsw_automorphism_derived::<Self, _, _, _>(module, res, a, key, tsk, scratch)
+    }
 
     fn ggsw_automorphism_assign<R>(
         module: &Module<Self>,
@@ -123,7 +131,10 @@ pub unsafe trait AutomorphismImpl: Backend {
         tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+    {
+        crate::oep::derived::automorphism::ggsw_automorphism_assign_derived::<Self, _, _>(module, res, key, tsk, scratch)
+    }
 
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
         module: &Module<Self>,
@@ -155,378 +166,29 @@ pub unsafe trait AutomorphismImpl: Backend {
         R: GGLWEToBackendMut<Self> + SetGaloisElement + GetGaloisElement + GGLWEInfos;
 }
 
-/// Override surface for the GLWE-automorphism sub-family.
-///
-/// This trait is intentionally **abstract**: it carries no HAL supertraits and no default
-/// method bodies. A backend may provide its own kernels for some or all methods without
-/// satisfying any HAL trait.
-///
-/// To run the reference implementation, forward each method to the corresponding
-/// `glwe_automorphism_reference::*` free function — those carry the HAL bounds in their
-/// own `where` clauses, so the requirement only kicks in for methods that actually use
-/// the reference implementation.
-pub trait GLWEAutomorphismReference<BE: Backend> {
-    fn glwe_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos;
-
-    fn glwe_automorphism_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_automorphism_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
-
-    fn glwe_automorphism_add_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_automorphism_add_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
-
-    fn glwe_automorphism_sub_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_automorphism_sub_negate_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_automorphism_sub_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
-
-    fn glwe_automorphism_sub_negate_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
-}
-
-/// Override surface for the GGSW-automorphism sub-family.
-///
-/// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::ggsw`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
-pub trait GGSWAutomorphismReference<BE: Backend> {
-    fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
-        &self,
-        res_infos: &R,
-        a_infos: &A,
-        key_infos: &K,
-        tsk_infos: &T,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: GGSWInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos;
-
-    fn ggsw_automorphism_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos;
-
-    fn ggsw_automorphism_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
-}
-
-/// Override surface for the GGLWE key-automorphism sub-family.
-///
-/// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::reference::automorphism::gglwe`] for the reference bodies, the implementation an impl of this trait forwards to or reproduces exactly, as its parity test verifies.
-pub trait GGLWEAutomorphismReference<BE: Backend> {
-    fn glwe_automorphism_key_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos;
-
-    fn glwe_automorphism_key_automorphism_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
-
-    fn glwe_automorphism_key_automorphism_assign_reference<R>(
-        &self,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos;
-}
-
-unsafe impl<BE> AutomorphismImpl for BE
-where
-    BE: Backend,
-    Module<BE>: GLWEAutomorphismReference<BE> + GGSWAutomorphismReference<BE> + GGLWEAutomorphismReference<BE>,
-{
-    fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.glwe_automorphism_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn glwe_automorphism<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_reference(res, a, key, scratch)
-    }
-
-    fn glwe_automorphism_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_assign_reference(res, key, scratch)
-    }
-
-    fn glwe_automorphism_add<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_add_reference(res, a, key, scratch)
-    }
-
-    fn glwe_automorphism_add_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_add_assign_reference(res, key, scratch)
-    }
-
-    fn glwe_automorphism_sub<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_sub_reference(res, a, key, scratch)
-    }
-
-    fn glwe_automorphism_sub_negate<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_sub_negate_reference(res, a, key, scratch)
-    }
-
-    fn glwe_automorphism_sub_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_sub_assign_reference(res, key, scratch)
-    }
-
-    fn glwe_automorphism_sub_negate_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-    {
-        module.glwe_automorphism_sub_negate_assign_reference(res, key, scratch)
-    }
-
-    fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
-        module: &Module<BE>,
-        res_infos: &R,
-        a_infos: &A,
-        key_infos: &K,
-        tsk_infos: &T,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: GGSWInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos,
-    {
-        module.ggsw_automorphism_tmp_bytes_reference(res_infos, a_infos, key_infos, tsk_infos)
-    }
-
-    fn ggsw_automorphism<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
-    {
-        module.ggsw_automorphism_reference(res, a, key, tsk, scratch)
-    }
-
-    fn ggsw_automorphism_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-    {
-        module.ggsw_automorphism_assign_reference(res, key, tsk, scratch)
-    }
-
-    fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
-        module: &Module<BE>,
-        res_infos: &R,
-        a_infos: &A,
-        key_infos: &K,
-    ) -> usize
-    where
-        R: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos,
-    {
-        module.glwe_automorphism_key_automorphism_tmp_bytes_reference(res_infos, a_infos, key_infos)
-    }
-
-    fn glwe_automorphism_key_automorphism<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    {
-        module.glwe_automorphism_key_automorphism_reference(res, a, key, scratch)
-    }
-
-    fn glwe_automorphism_key_automorphism_assign<R>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
-    {
-        module.glwe_automorphism_key_automorphism_assign_reference(res, key, scratch)
-    }
-}
-
-/// Implements [`GLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::automorphism::glwe`].
-///
-/// Equivalent to writing all 9 forwarders by hand. For partial override (custom kernel for one
-/// or a few methods + defaults for the rest), write the impl block manually instead.
+/// Selects the HAL automorphism algorithms and the derived GGSW defaults.
 #[macro_export]
-macro_rules! impl_glwe_automorphism_reference_full {
+macro_rules! impl_automorphism_reference_full {
     ($be:ty) => {
-        impl $crate::oep::GLWEAutomorphismReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+        unsafe impl $crate::oep::AutomorphismImpl for $be {
+            fn glwe_automorphism_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
+                    module, res_infos, a_infos, key_infos,
                 )
             }
 
-            fn glwe_automorphism_reference<R, A>(
-                &self,
+            fn glwe_automorphism<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
@@ -535,22 +197,22 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_reference::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_reference::<$be, _, _, _>(module, res, a, key, scratch)
             }
 
-            fn glwe_automorphism_assign_reference<R>(
-                &self,
+            fn glwe_automorphism_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_assign_reference::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_assign_reference::<$be, _, _>(module, res, key, scratch)
             }
 
-            fn glwe_automorphism_add_reference<R, A>(
-                &self,
+            fn glwe_automorphism_add<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
@@ -559,11 +221,13 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_add_reference::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_add_reference::<$be, _, _, _>(
+                    module, res, a, key, scratch,
+                )
             }
 
-            fn glwe_automorphism_add_assign_reference<R>(
-                &self,
+            fn glwe_automorphism_add_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -571,12 +235,12 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_add_assign_reference::<$be, _, _>(
-                    self, res, key, scratch,
+                    module, res, key, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_reference<R, A>(
-                &self,
+            fn glwe_automorphism_sub<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
@@ -585,11 +249,13 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_sub_reference::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_sub_reference::<$be, _, _, _>(
+                    module, res, a, key, scratch,
+                )
             }
 
-            fn glwe_automorphism_sub_negate_reference<R, A>(
-                &self,
+            fn glwe_automorphism_sub_negate<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
@@ -599,12 +265,12 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_reference::<$be, _, _, _>(
-                    self, res, a, key, scratch,
+                    module, res, a, key, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_assign_reference<R>(
-                &self,
+            fn glwe_automorphism_sub_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -612,12 +278,12 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_sub_assign_reference::<$be, _, _>(
-                    self, res, key, scratch,
+                    module, res, key, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_negate_assign_reference<R>(
-                &self,
+            fn glwe_automorphism_sub_negate_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -625,78 +291,12 @@ macro_rules! impl_glwe_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference::<$be, _, _>(
-                    self, res, key, scratch,
-                )
-            }
-        }
-    };
-}
-
-/// Implements [`GGSWAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::automorphism::ggsw`].
-#[macro_export]
-macro_rules! impl_ggsw_automorphism_reference_full {
-    ($be:ty) => {
-        impl $crate::oep::GGSWAutomorphismReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
-                &self,
-                res_infos: &R,
-                a_infos: &A,
-                key_infos: &K,
-                tsk_infos: &T,
-            ) -> usize
-            where
-                R: $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGSWInfos,
-                K: $crate::layouts::GGLWEInfos,
-                T: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::automorphism::ggsw::ggsw_automorphism_tmp_bytes_reference::<$be, _, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos, tsk_infos,
+                    module, res, key, scratch,
                 )
             }
 
-            fn ggsw_automorphism_reference<R, A>(
-                &self,
-                res: &mut R,
-                a: &A,
-                key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
-            {
-                $crate::reference::automorphism::ggsw::ggsw_automorphism_reference::<$be, _, _, _>(
-                    self, res, a, key, tsk, scratch,
-                )
-            }
-
-            fn ggsw_automorphism_assign_reference<R>(
-                &self,
-                res: &mut R,
-                key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
-            {
-                $crate::reference::automorphism::ggsw::ggsw_automorphism_assign_reference::<$be, _, _>(
-                    self, res, key, tsk, scratch,
-                )
-            }
-        }
-    };
-}
-
-/// Implements [`GGLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding free function in [`crate::reference::automorphism::gglwe`].
-#[macro_export]
-macro_rules! impl_gglwe_automorphism_reference_full {
-    ($be:ty) => {
-        impl $crate::oep::GGLWEAutomorphismReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_automorphism_key_automorphism_tmp_bytes_reference<R, A, K>(
-                &self,
+            fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
                 a_infos: &A,
                 key_infos: &K,
@@ -707,12 +307,12 @@ macro_rules! impl_gglwe_automorphism_reference_full {
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_tmp_bytes_reference::<$be, _, _, _, _>(
-                    self, res_infos, a_infos, key_infos,
+                    module, res_infos, a_infos, key_infos,
                 )
             }
 
-            fn glwe_automorphism_key_automorphism_reference<R, A>(
-                &self,
+            fn glwe_automorphism_key_automorphism<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
@@ -722,12 +322,12 @@ macro_rules! impl_gglwe_automorphism_reference_full {
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GetGaloisElement + $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_reference::<$be, _, _, _>(
-                    self, res, a, key, scratch,
+                    module, res, a, key, scratch,
                 )
             }
 
-            fn glwe_automorphism_key_automorphism_assign_reference<R>(
-                &self,
+            fn glwe_automorphism_key_automorphism_assign<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -738,9 +338,12 @@ macro_rules! impl_gglwe_automorphism_reference_full {
                     + $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_reference::<$be, _, _>(
-                    self, res, key, scratch,
+                    module, res, key, scratch,
                 )
             }
         }
     };
 }
+
+// Reference helpers remain available through OEP for source compatibility.
+pub use crate::reference::automorphism::{GGLWEAutomorphismReference, GLWEAutomorphismReference};

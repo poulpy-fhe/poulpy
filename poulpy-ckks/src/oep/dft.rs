@@ -1,44 +1,25 @@
-//! Backend extension point for the homomorphic DFT (CoeffsToSlots /
-//! SlotsToCoeffs).
+//! Backend contracts for homomorphic DFT evaluation and matrix generation.
 //!
-//! Mirrors the core `api → oep → delegates ← reference` pattern (cf.
-//! [`poulpy_core::oep`]). [`DFTImpl`] is the backend hook for evaluation and
-//! preparation, [`DFTMatrixImpl`] the hook for matrix generation at a given
-//! scalar precision; [`DFTReference`] / [`DFTMatrixReference`] are the override
-//! surfaces a backend implements (by hand to substitute a fused device
-//! kernel, or via [`impl_ckks_dft_reference`] to inherit the reference chain).
-//! The public [`CKKSDFTOps`](crate::api::CKKSDFTOps) trait delegates through here, so a
-//! backend can replace the *whole-DFT* evaluation — every factor plus the
-//! inter-factor rotations/conjugations and the split/repack glue — with a single
-//! kernel.
+//! Primitive preparation/evaluation use callable algorithms in
+//! [`crate::reference::dft`]. Format wrappers are private derived defaults that
+//! re-enter the selected generic DFT and CKKS arithmetic operations.
 
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::LinearTransformation;
-use poulpy_core::layouts::IntPolyInfos;
-use std::borrow::Borrow;
+use poulpy_core::layouts::{GetAutomorphismKey, IntPolyInfos};
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
     reference::linear_transformation::DiagonalProd,
 };
-use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::CKKSEncodingImpl;
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps, CKKSLinearTransformationOps,
-        CKKSRotateOps, CKKSSubOps, LtDiagonalScale,
-    },
-    layouts::{
-        CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
-    },
-    reference::dft::matrices::DftScalar,
+    api::{CKKSEncodingScalar, LtDiagonalScale},
+    layouts::{DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard},
 };
 
 /// Backend hook for the homomorphic-DFT family.
@@ -46,7 +27,15 @@ use crate::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait DFTImpl: Backend {
+pub unsafe trait DFTImpl:
+    Backend
+    + super::CKKSCopyImpl
+    + super::CKKSConjugateImpl
+    + super::CKKSAddImpl
+    + super::CKKSSubImpl
+    + super::CKKSImagImpl
+    + super::CKKSRotateImpl
+{
     fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -77,7 +66,10 @@ pub unsafe trait DFTImpl: Backend {
     where
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_coeffs_to_slots_assign(module, ct, dft, keys, scratch)
+    }
 
     fn ckks_slots_to_coeffs_impl<P, Dst, H>(
         module: &Module<Self>,
@@ -89,7 +81,10 @@ pub unsafe trait DFTImpl: Backend {
     where
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_slots_to_coeffs_assign(module, ct, dft, keys, scratch)
+    }
 
     fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
         module: &Module<Self>,
@@ -104,7 +99,10 @@ pub unsafe trait DFTImpl: Backend {
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_coeffs_to_slots_split(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
+    }
 
     fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
         module: &Module<Self>,
@@ -119,7 +117,10 @@ pub unsafe trait DFTImpl: Backend {
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_slots_to_coeffs_split(module, op_out, ct_real, ct_imag, dft, keys, scratch)
+    }
 
     fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
         module: &Module<Self>,
@@ -133,7 +134,10 @@ pub unsafe trait DFTImpl: Backend {
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_coeffs_to_slots_repack(module, ct_out, ct_in, dft, keys, scratch)
+    }
 
     fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
         module: &Module<Self>,
@@ -147,17 +151,17 @@ pub unsafe trait DFTImpl: Backend {
         P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self>,
+    {
+        crate::oep::derived::dft::ckks_slots_to_coeffs_repack(module, op_out, ct_in, dft, keys, scratch)
+    }
 }
 
 /// Backend hook for homomorphic-DFT matrix generation at scalar precision `F`.
 ///
-/// Separate from [`DFTImpl`] so the scalar sits at the trait level: the
-/// reference chain ([`DFTMatrixReference`], wired by [`impl_ckks_dft_reference`])
-/// carries its host encoding requirements as impl-level bounds, while a
-/// backend overriding this hook (e.g. generating and encoding the factor
-/// matrices natively on device) implements it directly with no obligations
-/// beyond this signature.
+/// Separate from [`DFTImpl`] so scalar precision belongs to the contract.
+/// Reference matrix generation carries its own scalar and encoding bounds;
+/// custom implementations only need the method's backend-resident signature.
 ///
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
@@ -174,378 +178,61 @@ pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
         Fmt: DftFormat;
 }
 
-/// Override surface for homomorphic-DFT matrix generation at scalar precision
-/// `F`.
-///
-/// Abstract: no method bodies, and no bounds beyond the signature — the
-/// reference implementation's requirements (host matrix generation via
-/// `DftScalar`, backend encoding via `CKKSEncodingImpl`) are impl-level bounds
-/// of the [`impl_ckks_dft_reference`] expansion, invisible to backends that
-/// override [`DFTMatrixImpl`] directly.
-#[doc(hidden)]
-pub trait DFTMatrixReference<BE: Backend, F: CKKSEncodingScalar> {
-    fn ckks_new_dft_matrix_reference<Dir, Fmt>(
-        &self,
-        base2k: Base2K,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
-    where
-        Dir: DftDirection,
-        Fmt: DftFormat,
-        Self: Borrow<Module<BE>>,
-        F: DftScalar,
-        BE: CKKSEncodingImpl<F>,
-        Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    {
-        crate::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, BE, F>(self.borrow(), base2k, literal, scratch)
-    }
-}
-
-unsafe impl<BE, F> DFTMatrixImpl<F> for BE
-where
-    BE: Backend + CKKSEncodingImpl<F>,
-    F: CKKSEncodingScalar + DftScalar,
-    Module<BE>: DFTMatrixReference<BE, F>
-        + CnvPVecAlloc<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSEncodingOps<BE, F>,
-{
-    fn ckks_new_dft_matrix_impl<Dir, Fmt>(
-        module: &Module<BE>,
-        base2k: Base2K,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
-    where
-        Dir: DftDirection,
-        Fmt: DftFormat,
-    {
-        module.ckks_new_dft_matrix_reference::<Dir, Fmt>(base2k, literal, scratch)
-    }
-}
-
-/// Override surface for the homomorphic-DFT family.
-///
-/// Every method has a default body forwarding to the reference algorithms in
-/// [`crate::reference::dft`] (with per-method bounds — the Default layer may
-/// carry bounds; the bound-free override seam is [`DFTImpl`]). A backend opts
-/// in with the one-line [`impl_ckks_dft_reference`] marker; to substitute a
-/// fused kernel for one format, override just that method and inherit the rest.
-#[doc(hidden)]
-pub trait DFTReference<BE: Backend> {
-    fn ckks_prepare_dft_matrix_reference<Dir, Fmt, P>(
-        &self,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
-    where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    {
-        crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, BE, P>(self.borrow(), dft, scratch)
-    }
-
-    fn ckks_dft_evaluate_assign_reference<Dir, Fmt, P, Dst, H>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    {
-        crate::reference::dft::ckks_dft_evaluate_assign(self.borrow(), ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_reference<P, Dst, H>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    {
-        crate::reference::dft::ckks_coeffs_to_slots_assign(self.borrow(), ct, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_reference<P, Dst, H>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    {
-        crate::reference::dft::ckks_slots_to_coeffs_assign(self.borrow(), ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_split_reference<P, Dst, Src, H>(
-        &self,
-        ct_real: &mut Dst,
-        ct_imag: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE>
-            + CnvPVecAlloc<BE>
-            + CKKSModuleAlloc<BE>
-            + CKKSCopyOps<BE>
-            + CKKSConjugateOps<BE>
-            + CKKSAddOps<BE>
-            + CKKSSubOps<BE>
-            + CKKSImagOps<BE>,
-    {
-        crate::reference::dft::ckks_coeffs_to_slots_split(self.borrow(), ct_real, ct_imag, ct_in, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_split_reference<P, Dst, Src, H>(
-        &self,
-        op_out: &mut Dst,
-        ct_real: &Src,
-        ct_imag: &Src,
-        dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
-    {
-        crate::reference::dft::ckks_slots_to_coeffs_split(self.borrow(), op_out, ct_real, ct_imag, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_repack_reference<P, Dst, Src, H>(
-        &self,
-        ct_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE>
-            + CnvPVecAlloc<BE>
-            + CKKSModuleAlloc<BE>
-            + CKKSCopyOps<BE>
-            + CKKSConjugateOps<BE>
-            + CKKSAddOps<BE>
-            + CKKSSubOps<BE>
-            + CKKSImagOps<BE>
-            + CKKSRotateOps<BE>,
-    {
-        crate::reference::dft::ckks_coeffs_to_slots_repack(self.borrow(), ct_out, ct_in, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_repack_reference<P, Dst, Src, H>(
-        &self,
-        op_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-        Self: Borrow<Module<BE>>,
-        Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
-    {
-        crate::reference::dft::ckks_slots_to_coeffs_repack(self.borrow(), op_out, ct_in, dft, keys, scratch)
-    }
-}
-
-unsafe impl<BE> DFTImpl for BE
-where
-    BE: Backend,
-    Module<BE>: DFTReference<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSRotateOps<BE>,
-{
-    fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
-        module: &Module<BE>,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
-    where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
-    {
-        module.ckks_prepare_dft_matrix_reference::<Dir, Fmt, P>(dft, scratch)
-    }
-
-    fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
-        module: &Module<BE>,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_dft_evaluate_assign_reference(ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_impl<P, Dst, H>(
-        module: &Module<BE>,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_coeffs_to_slots_reference(ct, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_impl<P, Dst, H>(
-        module: &Module<BE>,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_slots_to_coeffs_reference(ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
-        ct_real: &mut Dst,
-        ct_imag: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_coeffs_to_slots_split_reference(ct_real, ct_imag, ct_in, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
-        op_out: &mut Dst,
-        ct_real: &Src,
-        ct_imag: &Src,
-        dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_slots_to_coeffs_split_reference(op_out, ct_real, ct_imag, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
-        ct_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_coeffs_to_slots_repack_reference(ct_out, ct_in, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
-        op_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
-        keys: &crate::layouts::CKKSKey<H>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
-    {
-        module.ckks_slots_to_coeffs_repack_reference(op_out, ct_in, dft, keys, scratch)
-    }
-}
-
-/// Wires a backend into the reference homomorphic-DFT chain: implements the
-/// [`DFTReference`] and [`DFTMatrixReference`] marker impls, inheriting every
-/// default-bodied method (which forward to [`crate::reference::dft`]).
-///
-/// For partial override (a fused device kernel for one format, defaults for
-/// the rest), write the impl block by hand, override just the methods you
-/// replace, and inherit the remaining default bodies.
+/// Wires matrix generation and primitive DFT evaluation to their reference algorithms.
 #[macro_export]
 macro_rules! impl_ckks_dft_reference {
     ($be:ty) => {
-        impl $crate::oep::DFTReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
-        impl<F: $crate::api::CKKSEncodingScalar> $crate::oep::DFTMatrixReference<$be, F> for ::poulpy_hal::layouts::Module<$be> {}
+        unsafe impl $crate::oep::DFTImpl for $be {
+            fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, $crate::layouts::LinearTransformation<P>>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<$crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>>
+            where
+                P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + $crate::CKKSCtBounds
+                    + ::poulpy_core::reference::linear_transformation::DiagonalProd<Self>,
+            {
+                $crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, Self, P>(module, dft, scratch)
+            }
+            fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                ct: &mut Dst,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, $crate::layouts::LinearTransformation<P>>,
+                keys: &$crate::layouts::CKKSKey<H>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                P: ::poulpy_core::reference::linear_transformation::DiagonalProd<Self>
+                    + $crate::api::LtDiagonalScale
+                    + ::poulpy_core::layouts::IntPolyInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+            {
+                $crate::reference::dft::ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
+            }
+        }
+        unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::reference::dft::DftScalar> $crate::oep::DFTMatrixImpl<F> for $be
+        where
+            $be: $crate::oep::CKKSEncodingImpl<F>,
+        {
+            fn ckks_new_dft_matrix_impl<Dir, Fmt>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                base2k: ::poulpy_core::layouts::Base2K,
+                literal: &$crate::layouts::DFTPlan,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<$crate::layouts::DFTMatrix<Self, Dir, Fmt>>
+            where
+                Dir: $crate::layouts::DftDirection,
+                Fmt: $crate::layouts::DftFormat,
+            {
+                $crate::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, Self, F>(module, base2k, literal, scratch)
+            }
+        }
     };
 }
 pub use crate::impl_ckks_dft_reference;

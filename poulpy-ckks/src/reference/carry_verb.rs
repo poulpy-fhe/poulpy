@@ -21,12 +21,8 @@ use crate::{
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
 ///
-/// Deliberately heap-allocated (not scratch-carved): uploading host bytes
-/// requires an owned backend buffer (`copy_from_host_bytes` is defined on
-/// `Backend<OwnedBuf = D>` only — the HAL has no host-upload into a borrowed
-/// scratch view), and the value is a degree-1, single-limb monomial, so the
-/// per-call cost is one tiny allocation. Revisit if the HAL grows a
-/// view-targeted host upload.
+/// This currently allocates and uploads a degree-1, single-limb monomial on
+/// each call. The unit-operation scratch query covers the arithmetic workspace.
 pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
@@ -58,7 +54,7 @@ where
     Ok(pt)
 }
 
-/// Generates a `CKKS{Add,Sub}Default` trait: the full default-layer carry-verb
+/// Generates a `CKKS{Add,Sub}Reference` trait: the full reference-layer carry-verb
 /// family (ct–ct, ct–pt-vector, ct–pt-constant, normalized and unnormalized,
 /// plus the one-constant facades and the tmp-bytes accounting).
 ///
@@ -227,21 +223,7 @@ macro_rules! ckks_carry_verb_reference {
                     Ok(())
                 }
 
-                fn [<ckks_ $verb _one_assign_reference>]<Dst>(
-                    &self,
-                    dst: &mut Dst,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWENormalize<BE>
-                        $(+ $PtVecBound<BE>)+
-                        + CKKSPlaintextReference<BE>
-                        + CKKSModuleAlloc<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                {
-                    let one = $crate::reference::carry_verb::ckks_one_pt::<BE, Self>(self, dst.base2k())?;
-                    self.[<ckks_ $verb _pt_const_assign_reference>](dst, 0, &one, 0, scratch)
-                }
+
 
                 fn [<ckks_ $verb _pt_vec_into_reference>]<Dst, A, P>(
                     &self,
@@ -388,6 +370,189 @@ macro_rules! ckks_carry_verb_reference {
                     dst.set_slots(dst.slots().join(added));
                     Ok(())
                 }
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, B>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                a: &A,
+                b: &B,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds,
+            {
+                $Trait::[<ckks_ $verb _into_unnormalized_reference>](module, &mut dst.write_view(), a, b, scratch)
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSInfos,
+            {
+                $Trait::[<ckks_ $verb _assign_unnormalized_reference>](module, &mut dst.write_view(), a, scratch)
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _assign_unnormalized_ref_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, BE::ZnxWord>,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                crate::layouts::CKKSCiphertext<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSInfos,
+            {
+                $Trait::[<ckks_ $verb _assign_unnormalized_reference>](module, dst.inner, a, scratch)
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _pt_vec_into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, P>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                a: &A,
+                pt: &P,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+            {
+                $Trait::[<ckks_ $verb _pt_vec_into_unnormalized_reference>](
+                    module,
+                    &mut dst.write_view(),
+                    a,
+                    pt,
+                    scratch,
+                )
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _pt_vec_assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, P>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                pt: &P,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+            {
+                $Trait::[<ckks_ $verb _pt_vec_assign_unnormalized_reference>](
+                    module,
+                    &mut dst.write_view(),
+                    pt,
+                    scratch,
+                )
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _pt_const_into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, P>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                a: &A,
+                dst_coeff: usize,
+                pt: &P,
+                pt_coeff: usize,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+            {
+                $Trait::[<ckks_ $verb _pt_const_into_unnormalized_reference>](
+                    module,
+                    &mut dst.write_view(),
+                    a,
+                    dst_coeff,
+                    pt,
+                    pt_coeff,
+                    scratch,
+                )
+            }
+
+            /// Reference entry point for an unnormalized ciphertext wrapper.
+            pub fn [<ckks_ $verb _pt_const_assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, P>(
+                module: &::poulpy_hal::layouts::Module<BE>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst_coeff: usize,
+                pt: &P,
+                pt_coeff: usize,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
+            ) -> crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<BE>: $GLWEVerb<BE>
+                    + ::poulpy_core::GLWENormalize<BE>
+                    + ::poulpy_core::GLWEShift<BE>
+                    $(+ $PtVecBound<BE>)+
+                    + ::poulpy_hal::api::VecZnxLshTmpBytes
+                    + ::poulpy_hal::api::VecZnxRshTmpBytes,
+                Dst: ::poulpy_hal::layouts::Data,
+                ::poulpy_core::layouts::GLWE<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+            {
+                $Trait::[<ckks_ $verb _pt_const_assign_unnormalized_reference>](
+                    module,
+                    &mut dst.write_view(),
+                    dst_coeff,
+                    pt,
+                    pt_coeff,
+                    scratch,
+                )
             }
         }
     };

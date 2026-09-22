@@ -523,9 +523,9 @@ fn ship_bootstrap_case<BE, F, E>(
     }
     let measured_bits = -max_err.log2();
     // Gap model: error ~ (2*pi)^2 * mu^3 / (6 * gamma^2), 12.74 bits for
-    // gamma = 2^6 and |mu| <= 0.45; exact backends measure exactly that.
-    // FFT64 (f64 arithmetic) loses ~3 bits over the deep keyswitch chain and
-    // ~2 more to the encapsulation switch at its toy base2k bottom modulus.
+    // gamma = 2^6 and |mu| <= 0.45. The low-precision configuration allows
+    // additional error from the deep keyswitch chain and encapsulation switch
+    // at its smaller bottom modulus.
     let required_bits = if plan.log_delta_work() < 40 { 7.0 } else { 12.0 };
     assert!(
         measured_bits >= required_bits,

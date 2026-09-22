@@ -8,14 +8,16 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillReference},
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWECompressedEncryptSkReference<BE: Backend> {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -39,7 +41,7 @@ pub trait GLWECompressedEncryptSkReference<BE: Backend> {
 
 impl<BE: Backend> GLWECompressedEncryptSkReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFillReference<BE> + VecZnxCopy<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -78,7 +80,7 @@ where
             );
 
             let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-            self.fill_glwe_mask_from_seed_reference(
+            self.fill_glwe_mask_from_seed(
                 res_backend.base2k().into(),
                 &mut full_ct,
                 1,

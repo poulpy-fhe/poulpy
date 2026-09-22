@@ -42,6 +42,7 @@ impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64RefBackend<R> {}
 
 impl<R: CpuRing> Backend for FFT64RefBackend<R> {
     const MAX_BASE2K: usize = 19;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;

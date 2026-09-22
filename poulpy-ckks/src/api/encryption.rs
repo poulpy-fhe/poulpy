@@ -9,7 +9,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSCtBounds, SetCKKSInfos};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 
 /// Secret-key encryption of a CKKS plaintext.
 ///
@@ -85,9 +85,12 @@ pub trait CKKSEncryptOps<BE: Backend> {
 /// supply (`ct.log_budget + pt.log_delta`), and with
 /// `PlaintextBase2KMismatch` on differing `base2k`.
 pub trait CKKSDecryptOps<BE: Backend> {
-    fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
+    /// Scratch for the actual destination allocation and input ciphertext.
+    /// The destination may retain more allocated limbs than its effective precision.
+    fn ckks_decrypt_tmp_bytes<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
-        A: CKKSCtBounds;
+        Pt: CKKSInfos,
+        Ct: CKKSCtBounds;
 
     fn ckks_decrypt<Dpt, Dct, S>(
         &self,

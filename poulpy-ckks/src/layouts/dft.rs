@@ -690,7 +690,7 @@ impl DftFormat for Repack {
 ///
 /// [`ckks_new_dft_matrix`]: crate::reference::dft::ckks_new_dft_matrix
 /// [`ckks_prepare_dft_matrix`]: crate::reference::dft::ckks_prepare_dft_matrix
-/// [`ckks_coeffs_to_slots_repack`]: crate::reference::dft::ckks_coeffs_to_slots_repack
+/// [`ckks_coeffs_to_slots_repack`]: crate::api::CKKSDFTOps::ckks_coeffs_to_slots_repack
 pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
     _marker: PhantomData<(Dir, Fmt)>,
