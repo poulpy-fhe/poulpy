@@ -73,8 +73,8 @@ pub mod source {
 pub use scalar_znx_fill::ScalarZnxFill;
 pub mod ring;
 
-pub use fft64::{FFT64CIRef, FFT64Ref, FFT64RefBackend, FFT64ReimTable};
-pub use ntt4x30::{NTT4x30CIRef, NTT4x30Ref, NTT4x30RefBackend, NTT4x30RefHandle};
+pub use fft64::{FFT64Ref, FFT64ReimTable};
+pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
 
 #[cfg(test)]
 crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
@@ -103,3 +103,11 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     crate::NTT4x30Ref,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
+
+#[cfg(feature = "enable-ckks")]
+mod ckks_comparison;
+
+use crate::ring::Standard as Ring;
+mod ci;
+pub use ci::FFT64Ref as FFT64CIRef;
+pub use ci::NTT4x30Ref as NTT4x30CIRef;

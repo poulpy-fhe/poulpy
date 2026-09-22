@@ -1,19 +1,11 @@
 #[cfg(feature = "enable-ifma")]
-use crate::NTT3x42IfmaBackend;
+use super::NTT3x42Ifma;
 #[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
-use crate::NTT3x42IfmaRayonBackend;
-use crate::NTT4x30Avx512Backend;
-#[cfg(feature = "enable-rayon")]
-use crate::NTT4x30Avx512RayonBackend;
-use poulpy_cpu_ref::ring::CpuRing;
+use super::NTT3x42IfmaRayon;
 
-#[cfg(feature = "enable-ifma")]
-use crate::NTT3x42Ifma;
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-use crate::NTT3x42IfmaRayon;
-use crate::{FFT64Avx512, NTT4x30Avx512};
+use super::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
-use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
+use super::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
     impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
     layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
@@ -34,17 +26,11 @@ use poulpy_hal::{
 };
 
 impl_glwe_tensoring_reference!(FFT64Avx512);
-impl_glwe_tensoring_reference!(crate::FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_tensoring_reference!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference!(crate::FFT64CIAvx512Rayon);
 impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
-impl_gglwe_product_digits_strided_reference!(crate::FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference!(crate::FFT64CIAvx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -59,9 +45,9 @@ trait RankOneTensorDft: Backend {
     );
 }
 
-impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512Backend<R> {
+impl RankOneTensorDft for NTT4x30Avx512 {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
+        super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
@@ -75,7 +61,7 @@ impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512Backend<R> {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_hal::execution::SerialTaskExecutor, _>(
+            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_hal::execution::SerialTaskExecutor>(
                 module, res, cnv_offset, a, b, tmp,
             )
         };
@@ -83,9 +69,9 @@ impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512Backend<R> {
 }
 
 #[cfg(feature = "enable-rayon")]
-impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512RayonBackend<R> {
+impl RankOneTensorDft for NTT4x30Avx512Rayon {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
+        super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
@@ -99,12 +85,12 @@ impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512RayonBackend<R> {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_cpu_rayon::RayonTaskExecutor, _>(
+            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_cpu_rayon::RayonTaskExecutor>(
                 module.reinterpret(),
-                &mut crate::ntt4x30_avx512::rayon::base_dft_mut(res),
+                &mut super::ntt4x30_avx512::rayon::base_dft_mut(res),
                 cnv_offset,
-                &crate::ntt4x30_avx512::rayon::base_cnv_l_ref(a),
-                &crate::ntt4x30_avx512::rayon::base_cnv_r_ref(b),
+                &super::ntt4x30_avx512::rayon::base_cnv_l_ref(a),
+                &super::ntt4x30_avx512::rayon::base_cnv_r_ref(b),
                 tmp,
             )
         };
@@ -112,9 +98,9 @@ impl<R: CpuRing> RankOneTensorDft for NTT4x30Avx512RayonBackend<R> {
 }
 
 #[cfg(feature = "enable-ifma")]
-impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaBackend<R> {
+impl RankOneTensorDft for NTT3x42Ifma {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-        crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+        super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
@@ -128,7 +114,7 @@ impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaBackend<R> {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor, _>(
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
                 res, cnv_offset, a, b, tmp,
             )
         };
@@ -136,10 +122,10 @@ impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaBackend<R> {
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaRayonBackend<R> {
+impl RankOneTensorDft for NTT3x42IfmaRayon {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+            * super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
@@ -150,7 +136,7 @@ impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaRayonBackend<R> {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let per_worker = super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
         let bytes = poulpy_cpu_rayon::workers_within(
             <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
             per_worker,
@@ -158,11 +144,11 @@ impl<R: CpuRing> RankOneTensorDft for NTT3x42IfmaRayonBackend<R> {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor, _>(
-                &mut crate::ntt3x42_ifma::rayon::base_dft_mut(res),
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut(res),
                 cnv_offset,
-                &crate::ntt3x42_ifma::rayon::base_cnv_l_ref(a),
-                &crate::ntt3x42_ifma::rayon::base_cnv_r_ref(b),
+                &super::ntt3x42_ifma::rayon::base_cnv_l_ref(a),
+                &super::ntt3x42_ifma::rayon::base_cnv_r_ref(b),
                 tmp,
             )
         };
@@ -541,21 +527,14 @@ macro_rules! impl_rank_one_tensoring {
 }
 
 impl_rank_one_tensoring!(NTT4x30Avx512);
-impl_rank_one_tensoring!(crate::NTT4x30CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_rank_one_tensoring!(NTT4x30Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(crate::NTT4x30CIAvx512Rayon);
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(NTT3x42Ifma);
-#[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(crate::NTT3x42CIIfma);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(NTT3x42IfmaRayon);
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(crate::NTT3x42CIIfmaRayon);
 
-unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512Backend<R> {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -567,7 +546,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        crate::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a_cols, a_size, dsize, pmat_rows, pmat_cols_in, 1)
+        super::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a_cols, a_size, dsize, pmat_rows, pmat_cols_in, 1)
     }
 
     fn gglwe_product_digits_strided(
@@ -591,7 +570,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor, _>(
+        super::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -604,7 +583,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42IfmaBackend<R> {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -616,7 +595,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in, 1)
+        super::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in, 1)
     }
 
     fn gglwe_product_digits_strided(
@@ -640,7 +619,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor, _>(
+        super::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -652,23 +631,13 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3
     }
 }
 
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::FFT64Avx512, fft64);
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::FFT64CIAvx512, fft64);
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT4x30Avx512, ntt4x30);
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT4x30CIAvx512, ntt4x30);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT3x42Ifma, ntt4x30);
-#[cfg(feature = "enable-ifma")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT3x42CIIfma, ntt4x30);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::FFT64Avx512Rayon, fft64);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::FFT64CIAvx512Rayon, fft64);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT4x30Avx512Rayon, ntt4x30);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT4x30CIAvx512Rayon, ntt4x30);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT3x42IfmaRayon, ntt4x30);
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::impl_cpu_core_defaults!(crate::NTT3x42CIIfmaRayon, ntt4x30);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42IfmaRayon, ntt4x30);

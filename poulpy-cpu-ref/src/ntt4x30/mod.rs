@@ -42,8 +42,6 @@
 //! Compiles and runs on any target supported by the Rust standard library.
 //! No platform-specific intrinsics or assembly are used.
 
-use crate::ring::CpuRing;
-
 mod module;
 mod prim;
 mod vec_znx_big;
@@ -73,10 +71,4 @@ pub use module::NTT4x30RefHandle;
 /// The `Module<NTT4x30Ref>` that holds the NTT tables is also `Send + Sync`, so modules can
 /// be shared across threads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30RefBackend<R: CpuRing = crate::ring::Standard>(std::marker::PhantomData<R>);
-
-/// Standard negacyclic backend.
-pub type NTT4x30Ref = NTT4x30RefBackend<crate::ring::Standard>;
-
-/// Conjugate-invariant reference backend.
-pub type NTT4x30CIRef = NTT4x30RefBackend<crate::ring::ConjugateInvariant>;
+pub struct NTT4x30Ref;

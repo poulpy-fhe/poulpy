@@ -453,6 +453,20 @@ where
     }
 }
 
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> poulpy_hal::api::NegacyclicFFT<F> for FFT64Plan<F> {
+    fn m(&self) -> usize {
+        self.fft().m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        self.fft().execute(data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        self.ifft().execute(data);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::FFT64Plan;

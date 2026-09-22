@@ -1,6 +1,5 @@
-use crate::FFT64NeonBackend;
-use crate::NTT4x30NeonBackend;
-use poulpy_cpu_ref::ring::CpuRing;
+use super::FFT64Neon;
+use super::NTT4x30Neon;
 
 #[allow(unused_imports)]
 use std::mem::size_of;
@@ -39,48 +38,48 @@ where
     (slice, arena)
 }
 
-unsafe impl<R: CpuRing> HalVecZnxImpl for FFT64NeonBackend<R> {
+unsafe impl HalVecZnxImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl<R: CpuRing> HalModuleImpl for FFT64NeonBackend<R> {
+unsafe impl HalModuleImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl<R: CpuRing> HalVmpImpl for FFT64NeonBackend<R> {
+unsafe impl HalVmpImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl<R: CpuRing> HalConvolutionImpl for FFT64NeonBackend<R> {
+unsafe impl HalConvolutionImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl<R: CpuRing> HalVecZnxBigImpl for FFT64NeonBackend<R> {
+unsafe impl HalVecZnxBigImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl<R: CpuRing> HalSvpImpl for FFT64NeonBackend<R> {
+unsafe impl HalSvpImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl<R: CpuRing> HalVecZnxDftImpl for FFT64NeonBackend<R> {
+unsafe impl HalVecZnxDftImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
-unsafe impl<R: CpuRing> HalVecZnxImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalVecZnxImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl<R: CpuRing> HalModuleImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalModuleImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
 #[cfg(target_arch = "aarch64")]
-unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalVmpImpl for NTT4x30Neon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
+        super::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
     }
 
     fn vmp_prepare(
@@ -89,9 +88,9 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(res.n());
+        let bytes = super::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
+        super::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -103,7 +102,7 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         _b_cols_out: usize,
         _b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft(
@@ -114,9 +113,9 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_neon::<poulpy_hal::execution::SerialTaskExecutor, _>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_neon::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -135,7 +134,7 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         _b_cols_out: usize,
         _b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_add(
@@ -146,9 +145,9 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_add_neon::<poulpy_hal::execution::SerialTaskExecutor, _>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_add_neon::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -165,7 +164,7 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
         first_row: usize,
         row_step: usize,
     ) {
-        crate::ntt4x30::vmp::vmp_extract_selected_rows_neon_pm(res, a, first_row, row_step)
+        super::ntt4x30::vmp::vmp_extract_selected_rows_neon_pm(res, a, first_row, row_step)
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
@@ -174,22 +173,22 @@ unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-unsafe impl<R: CpuRing> HalVmpImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalVmpImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl<R: CpuRing> HalConvolutionImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalConvolutionImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 }
 
-unsafe impl<R: CpuRing> HalVecZnxBigImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalVecZnxBigImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl<R: CpuRing> HalSvpImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalSvpImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl<R: CpuRing> HalVecZnxDftImpl for NTT4x30NeonBackend<R> {
+unsafe impl HalVecZnxDftImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

@@ -172,14 +172,14 @@ mod ntt4x30;
 #[cfg(all(test, feature = "enable-neon"))]
 mod tests;
 
-#[cfg(feature = "enable-neon")]
-pub use fft64::{FFT64CINeon, FFT64Neon, FFT64NeonBackend, FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 #[cfg(feature = "enable-rayon")]
-pub use fft64::{FFT64CINeonRayon, FFT64NeonRayon, FFT64NeonRayonBackend};
+pub use fft64::FFT64NeonRayon;
 #[cfg(feature = "enable-neon")]
-pub use ntt4x30::{NTT4x30CINeon, NTT4x30Neon, NTT4x30NeonBackend};
+pub use fft64::{FFT64Neon, FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
+#[cfg(feature = "enable-neon")]
+pub use ntt4x30::NTT4x30Neon;
 #[cfg(feature = "enable-rayon")]
-pub use ntt4x30::{NTT4x30CINeonRayon, NTT4x30NeonRayon, NTT4x30NeonRayonBackend};
+pub use ntt4x30::NTT4x30NeonRayon;
 
 #[cfg(feature = "enable-neon")]
 mod layout_compat;
@@ -245,3 +245,18 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     crate::NTT4x30NeonRayon,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
+
+#[cfg(feature = "enable-neon")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-neon")]
+mod ci;
+#[cfg(feature = "enable-neon")]
+pub use ci::FFT64Neon as FFT64CINeon;
+#[cfg(feature = "enable-neon")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::FFT64NeonRayon as FFT64CINeonRayon;
+#[cfg(feature = "enable-neon")]
+pub use ci::NTT4x30Neon as NTT4x30CINeon;
+#[cfg(feature = "enable-neon")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::NTT4x30NeonRayon as NTT4x30CINeonRayon;

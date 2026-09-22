@@ -1,6 +1,7 @@
 //! Backend handle and module initialisation for [`FFT64Neon`](super::FFT64Neon).
 
-use crate::FFT64NeonBackend;
+use super::super::Ring;
+use super::FFT64Neon;
 use poulpy_cpu_ref::ring::CpuRing;
 
 use std::ptr::NonNull;
@@ -16,14 +17,14 @@ use poulpy_hal::{
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
 /// [`Module::new`](poulpy_hal::api::ModuleNew::new).
 #[repr(C)]
-pub struct FFT64NeonHandle<R: CpuRing = poulpy_cpu_ref::ring::Standard> {
-    ring_plans: FFT64PlanSet<f64, R>,
+pub struct FFT64NeonHandle {
+    ring_plans: FFT64PlanSet<f64, Ring>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64NeonBackend<R> {}
+impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
-impl<R: CpuRing> Backend for FFT64NeonBackend<R> {
+impl Backend for FFT64Neon {
     const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
@@ -34,9 +35,9 @@ impl<R: CpuRing> Backend for FFT64NeonBackend<R> {
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64NeonHandle<R>;
+    type Handle = FFT64NeonHandle;
     type Location = Host;
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if R::IS_CI { 4 } else { 2 };
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if Ring::IS_CI { 4 } else { 2 };
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -136,23 +137,23 @@ impl<R: CpuRing> Backend for FFT64NeonBackend<R> {
 /// # Safety
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
-unsafe impl<R: CpuRing> FFT64HandleFactory for FFT64NeonHandle<R> {
+unsafe impl FFT64HandleFactory for FFT64NeonHandle {
     fn create_fft64_handle(n: usize) -> Self {
-        FFT64NeonHandle::<R> {
+        FFT64NeonHandle {
             table_cache: Default::default(),
             ring_plans: FFT64PlanSet::new(n),
         }
     }
 }
 
-unsafe impl<R: CpuRing> FFTHandleProvider<f64> for FFT64NeonHandle<R> {
-    type Ring = R;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
+unsafe impl FFTHandleProvider<f64> for FFT64NeonHandle {
+    type Ring = Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Ring> {
         self.ring_plans.for_ring(n)
     }
 }
 
-unsafe impl<R: CpuRing> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64NeonHandle<R> {
+unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64NeonHandle {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

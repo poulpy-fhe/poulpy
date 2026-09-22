@@ -42,8 +42,6 @@
 //! - `DftWord = CrtWord<Primes30, u32>` — NTT-domain coefficients (4 × u32, 16 bytes/coeff).
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
-use poulpy_cpu_ref::ring::CpuRing;
-
 pub(crate) mod arithmetic_avx512;
 pub(crate) mod convolution;
 pub(crate) mod mat_vec_avx512;
@@ -82,24 +80,12 @@ mod znx;
 ///
 /// `NTT4x30Avx512` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30Avx512Backend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
-
-/// Standard negacyclic backend.
-pub type NTT4x30Avx512 = NTT4x30Avx512Backend<poulpy_cpu_ref::ring::Standard>;
-/// Conjugate-invariant backend.
-pub type NTT4x30CIAvx512 = NTT4x30Avx512Backend<poulpy_cpu_ref::ring::ConjugateInvariant>;
+pub struct NTT4x30Avx512;
 
 /// Rayon-scheduled AVX-512F NTT4x30 backend.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct NTT4x30Avx512RayonBackend<R: CpuRing = poulpy_cpu_ref::ring::Standard>(std::marker::PhantomData<R>);
-
-/// Standard negacyclic Rayon backend.
-#[cfg(feature = "enable-rayon")]
-pub type NTT4x30Avx512Rayon = NTT4x30Avx512RayonBackend<poulpy_cpu_ref::ring::Standard>;
-/// Conjugate-invariant Rayon backend.
-#[cfg(feature = "enable-rayon")]
-pub type NTT4x30CIAvx512Rayon = NTT4x30Avx512RayonBackend<poulpy_cpu_ref::ring::ConjugateInvariant>;
+pub struct NTT4x30Avx512Rayon;
 
 #[cfg(all(test, feature = "enable-rayon"))]
 mod rayon_tests;

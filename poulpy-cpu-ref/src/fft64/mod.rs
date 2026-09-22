@@ -30,14 +30,13 @@
 //! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 
-use crate::ring::CpuRing;
-
+mod encoding;
 mod module;
-mod reim;
+pub(crate) mod reim;
 mod znx;
 
 pub use crate::reference::fft64::module::FFTModuleHandle;
-pub use reim::FFT64ReimTable;
+pub use encoding::FFT64ReimTable;
 
 /// Reference (portable) CPU backend using f64 FFT.
 ///
@@ -61,10 +60,4 @@ pub use reim::FFT64ReimTable;
 /// be shared across threads. Individual operations require exclusive (`&mut`) access to their
 /// output buffers and scratch space, preventing data races at the API level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64RefBackend<R: CpuRing = crate::ring::Standard>(std::marker::PhantomData<R>);
-
-/// Standard negacyclic backend.
-pub type FFT64Ref = FFT64RefBackend<crate::ring::Standard>;
-
-/// Conjugate-invariant reference backend.
-pub type FFT64CIRef = FFT64RefBackend<crate::ring::ConjugateInvariant>;
+pub struct FFT64Ref;

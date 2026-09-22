@@ -2,8 +2,8 @@
 
 #[macro_export]
 macro_rules! rayon_parallel_binary {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method(res: &mut [i64], a: &[i64], b: &[i64]) {
                 let Some(chunk) = $crate::parallel_chunk_len::<$rayon>(res.len()) else {
@@ -20,8 +20,8 @@ macro_rules! rayon_parallel_binary {
 
 #[macro_export]
 macro_rules! rayon_parallel_assign {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method(res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = $crate::parallel_chunk_len::<$rayon>(res.len()) else {
@@ -37,8 +37,8 @@ macro_rules! rayon_parallel_assign {
 
 #[macro_export]
 macro_rules! rayon_parallel_unary {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method(res: &mut [i64]) {
                 let Some(chunk) = $crate::parallel_chunk_len::<$rayon>(res.len()) else {
@@ -53,8 +53,8 @@ macro_rules! rayon_parallel_unary {
 
 #[macro_export]
 macro_rules! rayon_parallel_shift {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method(k: i64, res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = $crate::parallel_chunk_len::<$rayon>(res.len()) else {
@@ -70,8 +70,8 @@ macro_rules! rayon_parallel_shift {
 
 #[macro_export]
 macro_rules! rayon_forward_znx {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method($($arg: $atype),*) {
                 <$base as $trait>::$method($($arg),*)
@@ -82,8 +82,8 @@ macro_rules! rayon_forward_znx {
 
 #[macro_export]
 macro_rules! rayon_forward_znx_const {
-    ($ring:ident, $rayon:ty, $base:ty, $trait:ident, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
-        impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> $trait for $rayon {
+    ($rayon:ty, $base:ty, $trait:ident, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
+        impl $trait for $rayon {
             #[inline(always)]
             fn $method<const OVERWRITE: bool>($($arg: $atype),*) {
                 <$base as $trait>::$method::<OVERWRITE>($($arg),*)
@@ -96,7 +96,7 @@ macro_rules! rayon_forward_znx_const {
 /// backend `$base`.
 #[macro_export]
 macro_rules! impl_fft64_rayon_backend {
-    ($ring:ident, $rayon:ty, $base:ty, $dft_automorphism:path) => {
+    ($rayon:ty, $base:ty, $dft_automorphism:path) => {
         mod fft64_rayon_backend {
             #[allow(unused_imports)]
             use super::*;
@@ -140,38 +140,38 @@ use $crate::__private::poulpy_hal::{
 
 use $crate::{RayonTaskExecutor, SendPtr};
 
-$crate::__private::poulpy_hal::impl_backend_from!($rayon, $base, $crate::RayonTaskExecutor; $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing);
+$crate::__private::poulpy_hal::impl_backend_from!($rayon, $base, $crate::RayonTaskExecutor);
 
-fn base_module<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(module: &Module<$rayon>) -> &Module<$base> {
+fn base_module(module: &Module<$rayon>) -> &Module<$base> {
     module.reinterpret()
 }
 
-fn base_dft_ref<'a, $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(a: &'a VecZnxDftBackendRef<'_, $rayon>) -> VecZnxDftBackendRef<'a, $base> {
+fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, $rayon>) -> VecZnxDftBackendRef<'a, $base> {
     VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
-fn base_dft_mut<'a, $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(a: &'a mut VecZnxDftBackendMut<'_, $rayon>) -> VecZnxDftBackendMut<'a, $base> {
+fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, $rayon>) -> VecZnxDftBackendMut<'a, $base> {
     let shape = a.shape();
     VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_big_mut<'a, $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(a: &'a mut VecZnxBigBackendMut<'_, $rayon>) -> VecZnxBigBackendMut<'a, $base> {
+fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, $rayon>) -> VecZnxBigBackendMut<'a, $base> {
     let shape = a.shape();
     VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_big_ref<'a, $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(a: &'a VecZnxBigBackendRef<'_, $rayon>) -> VecZnxBigBackendRef<'a, $base> {
+fn base_big_ref<'a>(a: &'a VecZnxBigBackendRef<'_, $rayon>) -> VecZnxBigBackendRef<'a, $base> {
     VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
-$crate::rayon_parallel_binary!($ring, $rayon, $base, ZnxAdd, znx_add);
-$crate::rayon_parallel_assign!($ring, $rayon, $base, ZnxAddAssign, znx_add_assign);
-$crate::rayon_parallel_binary!($ring, $rayon, $base, ZnxSub, znx_sub);
-$crate::rayon_parallel_assign!($ring, $rayon, $base, ZnxSubAssign, znx_sub_assign);
-$crate::rayon_parallel_assign!($ring, $rayon, $base, ZnxSubNegateAssign, znx_sub_negate_assign);
-$crate::rayon_parallel_shift!($ring, $rayon, $base, ZnxMulAddPowerOfTwo, znx_muladd_power_of_two);
-$crate::rayon_parallel_shift!($ring, $rayon, $base, ZnxMulPowerOfTwo, znx_mul_power_of_two);
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ZnxMulPowerOfTwoAssign for $rayon {
+$crate::rayon_parallel_binary!($rayon, $base, ZnxAdd, znx_add);
+$crate::rayon_parallel_assign!($rayon, $base, ZnxAddAssign, znx_add_assign);
+$crate::rayon_parallel_binary!($rayon, $base, ZnxSub, znx_sub);
+$crate::rayon_parallel_assign!($rayon, $base, ZnxSubAssign, znx_sub_assign);
+$crate::rayon_parallel_assign!($rayon, $base, ZnxSubNegateAssign, znx_sub_negate_assign);
+$crate::rayon_parallel_shift!($rayon, $base, ZnxMulAddPowerOfTwo, znx_muladd_power_of_two);
+$crate::rayon_parallel_shift!($rayon, $base, ZnxMulPowerOfTwo, znx_mul_power_of_two);
+impl ZnxMulPowerOfTwoAssign for $rayon {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         let Some(chunk) = $crate::parallel_chunk_len::<$rayon>(res.len()) else {
@@ -181,30 +181,30 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ZnxMulPowerOfTwoAs
             .for_each(|res| <$base as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
     }
 }
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
-$crate::rayon_parallel_assign!($ring, $rayon, $base, ZnxCopy, znx_copy);
-$crate::rayon_parallel_assign!($ring, $rayon, $base, ZnxNegate, znx_negate);
-$crate::rayon_parallel_unary!($ring, $rayon, $base, ZnxNegateAssign, znx_negate_assign);
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxRotate, znx_rotate(p: i64, res: &mut [i64], src: &[i64]));
-$crate::rayon_parallel_unary!($ring, $rayon, $base, ZnxZero, znx_zero);
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxSwitchRing, znx_switch_ring(res: &mut [i64], a: &[i64]));
-$crate::rayon_forward_znx_const!($ring, $rayon, $base, ZnxNormalizeFirstStep, znx_normalize_first_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($ring, $rayon, $base, ZnxNormalizeMiddleStep, znx_normalize_middle_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($ring, $rayon, $base, ZnxNormalizeFinalStep, znx_normalize_final_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeFirstStepCarryOnly, znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeFirstStepAssign, znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeMiddleStepCarryOnly, znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ZnxExtractDigitAddMul for $rayon {
+$crate::rayon_forward_znx!($rayon, $base, ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
+$crate::rayon_parallel_assign!($rayon, $base, ZnxCopy, znx_copy);
+$crate::rayon_parallel_assign!($rayon, $base, ZnxNegate, znx_negate);
+$crate::rayon_parallel_unary!($rayon, $base, ZnxNegateAssign, znx_negate_assign);
+$crate::rayon_forward_znx!($rayon, $base, ZnxRotate, znx_rotate(p: i64, res: &mut [i64], src: &[i64]));
+$crate::rayon_parallel_unary!($rayon, $base, ZnxZero, znx_zero);
+$crate::rayon_forward_znx!($rayon, $base, ZnxSwitchRing, znx_switch_ring(res: &mut [i64], a: &[i64]));
+$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFirstStep, znx_normalize_first_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
+$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeMiddleStep, znx_normalize_middle_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
+$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFinalStep, znx_normalize_final_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepCarryOnly, znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepAssign, znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepCarryOnly, znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
+impl ZnxExtractDigitAddMul for $rayon {
     #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
+impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
@@ -233,23 +233,23 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> poulpy_cpu_ref::re
         <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
     }
 }
-$crate::rayon_forward_znx!($ring, $rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
+$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ReimFFTExecute<ReimFFTTable<f64>, f64> for $rayon {
+impl ReimFFTExecute<ReimFFTTable<f64>, f64> for $rayon {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         <$base as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(table, data)
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ReimFFTExecute<ReimIFFTTable<f64>, f64> for $rayon {
+impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for $rayon {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         <$base as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(table, data)
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ReimArith for $rayon {
+impl ReimArith for $rayon {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         <$base as ReimArith>::reim_from_znx(res, a)
@@ -324,7 +324,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> ReimArith for $ray
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4BlkMatVec for $rayon {
+impl Reim4BlkMatVec for $rayon {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         <$base as Reim4BlkMatVec>::reim4_extract_1blk_contiguous(m, rows, blk, dst, src)
@@ -368,7 +368,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4BlkMatVec for
 }
 
 #[allow(clippy::too_many_arguments)]
-fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool, $ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing>(
+fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
     m: usize,
     min_size: usize,
     offset: usize,
@@ -439,7 +439,7 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool, $ring
     });
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4Convolution for $rayon {
+impl Reim4Convolution for $rayon {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         <$base as Reim4Convolution>::reim4_convolution_1coeff(k, dst, a, a_size, b, b_size)
@@ -471,7 +471,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4Convolution f
                 m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
             );
         }
-        parallel_reim4_convolution_apply::<false, false, $ring>(
+        parallel_reim4_convolution_apply::<false, false>(
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -494,7 +494,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4Convolution f
                 m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
             );
         }
-        parallel_reim4_convolution_apply::<false, true, $ring>(
+        parallel_reim4_convolution_apply::<false, true>(
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -519,7 +519,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4Convolution f
                 m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
             );
         }
-        parallel_reim4_convolution_apply::<true, false, $ring>(
+        parallel_reim4_convolution_apply::<true, false>(
             m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
         );
     }
@@ -533,7 +533,7 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> Reim4Convolution f
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> I64Ops for $rayon {
+impl I64Ops for $rayon {
     #[inline(always)]
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <$base as I64Ops>::i64_hadamard_product(res, a, b)
@@ -556,14 +556,14 @@ impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> I64Ops for $rayon 
     }
 }
 
-impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> BigWordHadamardProduct for $rayon {
+impl BigWordHadamardProduct for $rayon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <$base as BigWordHadamardProduct>::big_word_hadamard_product(res, a, b)
     }
 }
 
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxImpl for $rayon {
+unsafe impl HalVecZnxImpl for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
 
     fn vec_znx_normalize(
@@ -597,10 +597,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxIm
         $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, k, a_offset, a, a_col, carry);
     }
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalModuleImpl for $rayon {
+unsafe impl HalModuleImpl for $rayon {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVmpImpl for $rayon {
+unsafe impl HalVmpImpl for $rayon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         <$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE
             * <Self as FFT64VmpDefault>::vmp_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
@@ -734,17 +734,17 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVmpImpl 
         <Self as FFT64VmpDefault>::vmp_zero_default(module, res)
     }
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalConvolutionImpl for $rayon {
+unsafe impl HalConvolutionImpl for $rayon {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBigImpl for $rayon {
+unsafe impl HalVecZnxBigImpl for $rayon {
     fn vec_znx_big_from_small(
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl>::vec_znx_big_from_small(&mut base_big_mut::<$ring>(res), res_col, a, a_col)
+        <$base as HalVecZnxBigImpl>::vec_znx_big_from_small(&mut base_big_mut(res), res_col, a, a_col)
     }
 
     fn vec_znx_big_add(
@@ -757,12 +757,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_add(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
-            &base_big_ref::<$ring>(b),
+            &base_big_ref(b),
             b_col,
         )
     }
@@ -775,10 +775,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_add_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
@@ -793,10 +793,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_add_small(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
             b,
             b_col,
@@ -811,8 +811,8 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_add_small_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             a_col,
@@ -829,12 +829,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
-            &base_big_ref::<$ring>(b),
+            &base_big_ref(b),
             b_col,
         )
     }
@@ -847,10 +847,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
@@ -863,10 +863,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_negate_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
@@ -881,12 +881,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_small_a(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             a_col,
-            &base_big_ref::<$ring>(b),
+            &base_big_ref(b),
             b_col,
         )
     }
@@ -899,8 +899,8 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_small_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             a_col,
@@ -917,10 +917,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_small_b(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
             b,
             b_col,
@@ -935,8 +935,8 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_sub_small_negate_assign(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             a_col,
@@ -952,11 +952,11 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_inner_sum(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             res_coeff,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
@@ -972,8 +972,8 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         coeffs: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_col_weighted_sum(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             weights,
@@ -993,8 +993,8 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_scalar_product(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
             a,
             a_col,
@@ -1011,20 +1011,20 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_negate(
-            base_module::<$ring>(module),
-            &mut base_big_mut::<$ring>(res),
+            base_module(module),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
 
     fn vec_znx_big_negate_assign(module: &Module<Self>, res: &mut VecZnxBigBackendMut<'_, Self>, res_col: usize) {
-        <$base as HalVecZnxBigImpl>::vec_znx_big_negate_assign(base_module::<$ring>(module), &mut base_big_mut::<$ring>(res), res_col)
+        <$base as HalVecZnxBigImpl>::vec_znx_big_negate_assign(base_module(module), &mut base_big_mut(res), res_col)
     }
 
     fn vec_znx_big_normalize_tmp_bytes(module: &Module<Self>) -> usize {
-        <$base as HalVecZnxBigImpl>::vec_znx_big_normalize_tmp_bytes(base_module::<$ring>(module))
+        <$base as HalVecZnxBigImpl>::vec_znx_big_normalize_tmp_bytes(base_module(module))
     }
 
     fn vec_znx_big_normalize(
@@ -1055,17 +1055,17 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl>::vec_znx_big_automorphism(
-            base_module::<$ring>(module),
+            base_module(module),
             k,
-            &mut base_big_mut::<$ring>(res),
+            &mut base_big_mut(res),
             res_col,
-            &base_big_ref::<$ring>(a),
+            &base_big_ref(a),
             a_col,
         )
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize {
-        <$base as HalVecZnxBigImpl>::vec_znx_big_automorphism_assign_tmp_bytes(base_module::<$ring>(module))
+        <$base as HalVecZnxBigImpl>::vec_znx_big_automorphism_assign_tmp_bytes(base_module(module))
     }
 
     fn vec_znx_big_automorphism_assign(
@@ -1077,18 +1077,18 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxBi
     ) {
         let mut scratch = scratch.borrow().into_backend::<$base>();
         <$base as HalVecZnxBigImpl>::vec_znx_big_automorphism_assign(
-            base_module::<$ring>(module),
+            base_module(module),
             k,
-            &mut base_big_mut::<$ring>(res),
+            &mut base_big_mut(res),
             res_col,
             &mut scratch,
         )
     }
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalSvpImpl for $rayon {
+unsafe impl HalSvpImpl for $rayon {
     poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
 }
-unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDftImpl for $rayon {
+unsafe impl HalVecZnxDftImpl for $rayon {
 
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         3 * module.n() * core::mem::size_of::<i64>()
@@ -1158,10 +1158,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !$crate::parallel_limb_tasks(res.size()) {
             return <$base as HalVecZnxDftImpl>::vec_znx_dft_apply(
-                base_module::<$ring>(module),
+                base_module(module),
                 step,
                 offset,
-                &mut base_dft_mut::<$ring>(res),
+                &mut base_dft_mut(res),
                 res_col,
                 a,
                 a_col,
@@ -1187,7 +1187,7 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <$base as HalVecZnxDftImpl>::vec_znx_idft_apply_tmp_bytes(base_module::<$ring>(module))
+        <$base as HalVecZnxDftImpl>::vec_znx_idft_apply_tmp_bytes(base_module(module))
     }
 
     fn vec_znx_idft_apply(
@@ -1201,10 +1201,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         if !$crate::parallel_limb_tasks(res.size()) {
             let mut scratch = scratch.borrow().into_backend::<$base>();
             return <$base as HalVecZnxDftImpl>::vec_znx_idft_apply(
-                base_module::<$ring>(module),
-                &mut base_big_mut::<$ring>(res),
+                base_module(module),
+                &mut base_big_mut(res),
                 res_col,
-                &base_dft_ref::<$ring>(a),
+                &base_dft_ref(a),
                 a_col,
                 &mut scratch,
             );
@@ -1242,10 +1242,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
     ) {
         if !$crate::parallel_limb_tasks(res.size()) {
             return <$base as HalVecZnxDftImpl>::vec_znx_idft_apply_tmpa(
-                base_module::<$ring>(module),
-                &mut base_big_mut::<$ring>(res),
+                base_module(module),
+                &mut base_big_mut(res),
                 res_col,
-                &mut base_dft_mut::<$ring>(a),
+                &mut base_dft_mut(a),
                 a_col,
             );
         }
@@ -1285,12 +1285,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         b_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_add(
-            base_module::<$ring>(module),
-            &mut base_dft_mut::<$ring>(res),
+            base_module(module),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
-            &base_dft_ref::<$ring>(b),
+            &base_dft_ref(b),
             b_col,
         )
     }
@@ -1303,10 +1303,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         a_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_add_assign(
-            base_module::<$ring>(module),
-            &mut base_dft_mut::<$ring>(res),
+            base_module(module),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
         )
     }
@@ -1321,12 +1321,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         b_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_sub(
-            base_module::<$ring>(module),
-            &mut base_dft_mut::<$ring>(res),
+            base_module(module),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
-            &base_dft_ref::<$ring>(b),
+            &base_dft_ref(b),
             b_col,
         )
     }
@@ -1339,10 +1339,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         a_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_sub_assign(
-            base_module::<$ring>(module),
-            &mut base_dft_mut::<$ring>(res),
+            base_module(module),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
         )
     }
@@ -1355,10 +1355,10 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         a_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_sub_negate_assign(
-            base_module::<$ring>(module),
-            &mut base_dft_mut::<$ring>(res),
+            base_module(module),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
         )
     }
@@ -1373,24 +1373,24 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
         a_col: usize,
     ) {
         <$base as HalVecZnxDftImpl>::vec_znx_dft_copy(
-            base_module::<$ring>(module),
+            base_module(module),
             step,
             offset,
-            &mut base_dft_mut::<$ring>(res),
+            &mut base_dft_mut(res),
             res_col,
-            &base_dft_ref::<$ring>(a),
+            &base_dft_ref(a),
             a_col,
         )
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-        <$base as HalVecZnxDftImpl>::vec_znx_dft_zero(base_module::<$ring>(module), &mut base_dft_mut::<$ring>(res), res_col)
+        <$base as HalVecZnxDftImpl>::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
     }
 
     type AutomorphismPlan = <$base as HalVecZnxDftImpl>::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module::<$ring>(module), n, p)
+        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -1427,12 +1427,12 @@ unsafe impl<$ring: $crate::__private::poulpy_cpu_ref::ring::CpuRing> HalVecZnxDf
             $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
                 $base,
                 poulpy_hal::execution::SerialTaskExecutor,
-            >(plan, &mut base_dft_mut::<$ring>(res), res_col, &base_dft_ref::<$ring>(a), a_col);
+            >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
         } else {
             $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
                 $base,
                 $crate::RayonTaskExecutor,
-            >(plan, &mut base_dft_mut::<$ring>(res), res_col, &base_dft_ref::<$ring>(a), a_col);
+            >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
         }
     }
 }
@@ -1445,7 +1445,6 @@ mod fft64_rayon_tests {
 
     #[test]
     fn coefficient_add_matches_wrapping_arithmetic() {
-        type $ring = $crate::__private::poulpy_cpu_ref::ring::Standard;
         let a = vec![i64::MAX; 1 << 16];
         let b = vec![1; 1 << 16];
         let mut actual = vec![0; 1 << 16];

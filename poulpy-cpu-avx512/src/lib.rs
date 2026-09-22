@@ -163,21 +163,21 @@ mod vec_znx_big_avx512;
 #[cfg(feature = "enable-ifma")]
 mod ntt3x42_ifma;
 
-#[cfg(feature = "enable-avx512f")]
-pub use fft64::{FFT64Avx512, FFT64Avx512Backend, FFT64Avx512ReimTable, FFT64CIAvx512, ReimFFTAvx512, ReimIFFTAvx512};
 #[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
-pub use fft64::{FFT64Avx512Rayon, FFT64Avx512RayonBackend, FFT64CIAvx512Rayon};
+pub use fft64::FFT64Avx512Rayon;
+#[cfg(feature = "enable-avx512f")]
+pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
+#[cfg(feature = "enable-ifma")]
+pub use ntt3x42_ifma::NTT3x42Ifma;
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+pub use ntt3x42_ifma::NTT3x42IfmaRayon;
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 #[doc(hidden)]
 pub use ntt3x42_ifma::NTT3x42IfmaRayonExecutor;
-#[cfg(feature = "enable-ifma")]
-pub use ntt3x42_ifma::{NTT3x42CIIfma, NTT3x42Ifma, NTT3x42IfmaBackend};
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-pub use ntt3x42_ifma::{NTT3x42CIIfmaRayon, NTT3x42IfmaRayon, NTT3x42IfmaRayonBackend};
 #[cfg(feature = "enable-avx512f")]
-pub use ntt4x30_avx512::{NTT4x30Avx512, NTT4x30Avx512Backend, NTT4x30CIAvx512};
+pub use ntt4x30_avx512::NTT4x30Avx512;
 #[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
-pub use ntt4x30_avx512::{NTT4x30Avx512Rayon, NTT4x30Avx512RayonBackend, NTT4x30CIAvx512Rayon};
+pub use ntt4x30_avx512::NTT4x30Avx512Rayon;
 
 /// Public surface for tools that drive [`NTT3x42Ifma`] kernels directly (e.g. the
 /// benches): the precomputed twiddle tables, the prime set, and the
@@ -308,3 +308,25 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     crate::NTT3x42IfmaRayon,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
+
+#[cfg(feature = "enable-avx512f")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-avx512f")]
+mod ci;
+#[cfg(feature = "enable-avx512f")]
+pub use ci::FFT64Avx512 as FFT64CIAvx512;
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::FFT64Avx512Rayon as FFT64CIAvx512Rayon;
+#[cfg(feature = "enable-ifma")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT3x42Ifma as NTT3x42CIIfma;
+#[cfg(feature = "enable-ifma")]
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT3x42IfmaRayon as NTT3x42CIIfmaRayon;
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT4x30Avx512 as NTT4x30CIAvx512;
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT4x30Avx512Rayon as NTT4x30CIAvx512Rayon;

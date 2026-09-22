@@ -1,14 +1,13 @@
-//! Large-coefficient (i128) ring element vector support for [`NTT4x30Ref`](crate::NTT4x30Ref).
+//! Large-coefficient (i128) ring element vector support for [`NTT4x30Ref`](super::NTT4x30Ref).
 //!
 //! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations.
 
-use crate::NTT4x30RefBackend;
-use crate::ring::CpuRing;
+use super::NTT4x30Ref;
 
 use crate::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
-impl<R: CpuRing> I128BigOps for NTT4x30RefBackend<R> {}
-impl<R: CpuRing> I128NormalizeOps for NTT4x30RefBackend<R> {
+impl I128BigOps for NTT4x30Ref {}
+impl I128NormalizeOps for NTT4x30Ref {
     const FUSE_NORMALIZE: bool = false;
 }

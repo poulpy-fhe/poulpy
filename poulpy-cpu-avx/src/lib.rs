@@ -195,14 +195,14 @@ mod ntt4x30;
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
-#[cfg(feature = "enable-avx")]
-pub use fft64::{FFT64Avx, FFT64AvxBackend, FFT64AvxReimTable, FFT64CIAvx, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
-pub use fft64::{FFT64AvxRayon, FFT64AvxRayonBackend, FFT64CIAvxRayon};
+pub use fft64::FFT64AvxRayon;
 #[cfg(feature = "enable-avx")]
-pub use ntt4x30::{NTT4x30Avx, NTT4x30AvxBackend, NTT4x30CIAvx};
+pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
+#[cfg(feature = "enable-avx")]
+pub use ntt4x30::NTT4x30Avx;
 #[cfg(feature = "enable-rayon")]
-pub use ntt4x30::{NTT4x30AvxRayon, NTT4x30AvxRayonBackend, NTT4x30CIAvxRayon};
+pub use ntt4x30::NTT4x30AvxRayon;
 
 #[cfg(feature = "enable-avx")]
 mod layout_compat;
@@ -264,3 +264,18 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     crate::NTT4x30AvxRayon,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
+
+#[cfg(feature = "enable-avx")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-avx")]
+mod ci;
+#[cfg(feature = "enable-avx")]
+pub use ci::FFT64Avx as FFT64CIAvx;
+#[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::FFT64AvxRayon as FFT64CIAvxRayon;
+#[cfg(feature = "enable-avx")]
+pub use ci::NTT4x30Avx as NTT4x30CIAvx;
+#[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::NTT4x30AvxRayon as NTT4x30CIAvxRayon;

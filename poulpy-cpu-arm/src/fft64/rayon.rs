@@ -1,23 +1,22 @@
 //! Rayon-scheduled wrapper for the NEON FFT64 backend.
 
-use crate::FFT64NeonBackend;
+use super::FFT64Neon;
 #[cfg(feature = "enable-rayon")]
-use crate::FFT64NeonRayonBackend;
-use poulpy_cpu_ref::ring::CpuRing;
+use super::FFT64NeonRayon;
 
 use poulpy_hal::layouts::{DataView, DataViewMut, Module, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef};
 use poulpy_hal::oep::HalVecZnxDftImpl;
 
-fn dft_automorphism<R: CpuRing>(
-    module: &Module<FFT64NeonRayonBackend<R>>,
-    plan: &<FFT64NeonBackend<R> as HalVecZnxDftImpl>::AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, FFT64NeonRayonBackend<R>>,
+fn dft_automorphism(
+    module: &Module<FFT64NeonRayon>,
+    plan: &<FFT64Neon as HalVecZnxDftImpl>::AutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, FFT64NeonRayon>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, FFT64NeonRayonBackend<R>>,
+    a: &VecZnxDftBackendRef<'_, FFT64NeonRayon>,
     a_col: usize,
 ) {
     let res_shape = res.shape();
-    FFT64NeonBackend::<R>::vec_znx_dft_automorphism_with_plan(
+    FFT64Neon::vec_znx_dft_automorphism_with_plan(
         module.reinterpret(),
         plan,
         &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
@@ -27,15 +26,15 @@ fn dft_automorphism<R: CpuRing>(
     );
 }
 
-poulpy_cpu_rayon::impl_fft64_rayon_backend!(R, FFT64NeonRayonBackend<R>, FFT64NeonBackend<R>, dft_automorphism);
+poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon, FFT64Neon, dft_automorphism);
 
-impl<R: CpuRing> poulpy_cpu_rayon::RayonTuning for FFT64NeonRayonBackend<R> {
+impl poulpy_cpu_rayon::RayonTuning for FFT64NeonRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }
 
-impl<R: CpuRing> poulpy_hal::execution::ScratchWorkers for FFT64NeonRayonBackend<R> {
+impl poulpy_hal::execution::ScratchWorkers for FFT64NeonRayon {
     const PREPARE: usize = 8;
     const APPLY: usize = 8;
     const VMP: usize = 8;

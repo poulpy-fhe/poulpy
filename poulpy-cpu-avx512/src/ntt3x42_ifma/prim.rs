@@ -1,14 +1,14 @@
-//! Primitive NTT-domain trait implementations for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
+//! Primitive NTT-domain trait implementations for [`NTT3x42Ifma`](super::NTT3x42Ifma).
 //!
 //! This module connects the IFMA backend type to the low-level reference IFMA traits:
 //! NTT execution, b/c domain conversion, BBC multiply-accumulate, and basic
 //! transform-domain arithmetic on the planar 3-prime prep representation.
 
+use super::super::Ring;
 #[cfg(feature = "enable-ifma")]
-use crate::NTT3x42IfmaBackend;
-use poulpy_cpu_ref::ring::CpuRing;
+use super::NTT3x42Ifma;
 
-use crate::ntt3x42_ifma::{
+use super::{
     bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
@@ -268,17 +268,17 @@ unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
 // IFMA NTT execution
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: CpuRing> Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Ring>> for NTT3x42Ifma {
     #[inline(always)]
-    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTable<Primes42, R>, data: &mut [u64]) {
+    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTable<Primes42, Ring>, data: &mut [u64]) {
         // Non-lazy: fully reduce for the public DFT contract.
         unsafe { ntt_avx512::<Primes42>(table, data, false) }
     }
 }
 
-impl<R: CpuRing> Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>> for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Ring>> for NTT3x42Ifma {
     #[inline(always)]
-    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42, R>, data: &mut [u64]) {
+    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42, Ring>, data: &mut [u64]) {
         unsafe { intt_avx512::<Primes42>(table, data) }
     }
 }
@@ -287,14 +287,14 @@ impl<R: CpuRing> Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>> for NTT
 // Domain conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: CpuRing> Ntt3x42IfmaFromZnx64 for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaFromZnx64 for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_from_znx64(res: &mut [u64], a: &[i64]) {
         unsafe { simd_b_from_znx64(a.len(), res, a) };
     }
 }
 
-impl<R: CpuRing> Ntt3x42IfmaToZnx128 for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaToZnx128 for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         unsafe { super::vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128(divisor_is_n, res, a) };
@@ -305,7 +305,7 @@ impl<R: CpuRing> Ntt3x42IfmaToZnx128 for NTT3x42IfmaBackend<R> {
 // IFMA multiply-accumulate
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: CpuRing> Ntt3x42IfmaMulBbc for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaMulBbc for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_mul_bbc(meta: &Bbc126IfmaMeta<Primes42>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         unsafe { vec_mat1col_product_bbc_ifma(meta, ell, res, ntt_coeff, prepared) };
@@ -316,7 +316,7 @@ impl<R: CpuRing> Ntt3x42IfmaMulBbc for NTT3x42IfmaBackend<R> {
 // b -> c conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: CpuRing> Ntt3x42IfmaCFromB for NTT3x42IfmaBackend<R> {
+impl Ntt3x42IfmaCFromB for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         // c format for IFMA = reduced residues: a[k] mod Q[k].
@@ -336,63 +336,63 @@ impl<R: CpuRing> Ntt3x42IfmaCFromB for NTT3x42IfmaBackend<R> {
 // to the NTT4x30 version but uses Q_SHIFTED_NTT3X42IFMA for the 3 active lanes.
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: CpuRing> NttAdd for NTT3x42IfmaBackend<R> {
+impl NttAdd for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         unsafe { simd_add(res, a, b) };
     }
 }
 
-impl<R: CpuRing> NttAddAssign for NTT3x42IfmaBackend<R> {
+impl NttAddAssign for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         unsafe { simd_add_assign(res, a) };
     }
 }
 
-impl<R: CpuRing> NttSub for NTT3x42IfmaBackend<R> {
+impl NttSub for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         unsafe { simd_sub(res, a, b) };
     }
 }
 
-impl<R: CpuRing> NttSubAssign for NTT3x42IfmaBackend<R> {
+impl NttSubAssign for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         unsafe { simd_sub_assign(res, a) };
     }
 }
 
-impl<R: CpuRing> NttSubNegateAssign for NTT3x42IfmaBackend<R> {
+impl NttSubNegateAssign for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         unsafe { simd_sub_negate_assign(res, a) };
     }
 }
 
-impl<R: CpuRing> NttNegate for NTT3x42IfmaBackend<R> {
+impl NttNegate for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         unsafe { simd_negate(res, a) };
     }
 }
 
-impl<R: CpuRing> NttNegateAssign for NTT3x42IfmaBackend<R> {
+impl NttNegateAssign for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         unsafe { simd_negate_assign(res) };
     }
 }
 
-impl<R: CpuRing> NttZero for NTT3x42IfmaBackend<R> {
+impl NttZero for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl<R: CpuRing> NttCopy for NTT3x42IfmaBackend<R> {
+impl NttCopy for NTT3x42Ifma {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
