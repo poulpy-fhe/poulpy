@@ -136,8 +136,8 @@ NTT3x42Ifma          poulpy-cpu-avx512   yes  no     --features enable-ifma   RU
 ## 4. `base2k`
 
 Query the limb-size limit with the `const fn` `Module::<BE>::max_base2k(n)` before choosing parameters.
-For a power-of-two ring degree `n`, its transform bound is `ceil((DFT_MAX_BITS - log2(n)) / 2)`.
-The backend capacities are 53 bits for `FFT64`, 119 for `NTT4x30`, and 125 for `NTT3x42`, giving limits of 19, 52, and 55 at `n = 2^16`.
+For a power-of-two ring degree `n`, its transform bound is `floor((DFT_MAX_BITS + 1 - log2(n)) / 2)`.
+The backend capacities are 53 bits for `FFT64`, approximately 119.8861552574811 for `NTT4x30`, and 125.99998314565484 for `NTT3x42`, giving limits of 19, 52, and 55 at `n = 2^16`.
 See [Backends](backends.md#choosing-a-subfamily) for a compile-time example.
 Within the numerical bounds of the operation and circuit, larger limbs improve performance by a wide margin.
 

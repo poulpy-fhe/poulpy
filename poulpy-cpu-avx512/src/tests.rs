@@ -27,6 +27,25 @@ fn max_base2k() {
     }
 }
 
+#[cfg(feature = "enable-ifma")]
+#[test]
+fn max_base2k_ifma_is_largest_radix_with_centered_product_capacity() {
+    use poulpy_hal::layouts::{Backend, Module, PrimeSet};
+
+    use crate::{NTT3x42Ifma, ntt3x42_ifma::primes::Primes42};
+
+    let q: u128 = Primes42::Q.into_iter().map(u128::from).product();
+    for log_n in NTT3x42Ifma::MIN_DEGREE.ilog2()..=Primes42::MAX_LOG_N {
+        let n = 1usize << log_n;
+        let base2k = Module::<NTT3x42Ifma>::max_base2k(n);
+        // The fractional capacity is very close to 126, but rounding it up
+        // would let products cross the centered CRT reconstruction boundary.
+        let product_bound = (n as u128) << (2 * base2k - 2);
+        assert!(2 * product_bound < q, "degree {n}, radix {base2k}");
+        assert!(2 * (4 * product_bound) >= q, "degree {n}, radix {}", base2k + 1);
+    }
+}
+
 /// Bounds only explicitly emulated CI runs. Native runs retain their original
 /// degrees; all modules are constructed from the same adjusted parameters.
 /// Statistical sampling and explicitly named large-ring suites do not use this

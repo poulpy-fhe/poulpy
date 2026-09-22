@@ -523,7 +523,7 @@ mod limb_range_tests {
     struct NonContiguousDft<const PACKED: bool>;
 
     impl<const PACKED: bool> Backend for NonContiguousDft<PACKED> {
-        const DFT_MAX_BITS: usize = 0;
+        const DFT_MAX_BITS: f64 = 0.0;
 
         type TaskExecutor = crate::execution::SerialTaskExecutor;
         type ZnxWord = i64;

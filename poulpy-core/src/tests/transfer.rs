@@ -21,7 +21,7 @@ fn host_alloc(len: usize) -> Vec<u8> {
 }
 
 impl Backend for SrcBackend {
-    const DFT_MAX_BITS: usize = 0;
+    const DFT_MAX_BITS: f64 = 0.0;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type ZnxWord = i64;
@@ -147,7 +147,7 @@ unsafe impl HalModuleImpl for SrcBackend {
 }
 
 impl Backend for DstBackend {
-    const DFT_MAX_BITS: usize = 0;
+    const DFT_MAX_BITS: f64 = 0.0;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type ZnxWord = i64;

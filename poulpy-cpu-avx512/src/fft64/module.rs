@@ -82,7 +82,7 @@ pub struct FFT64Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
 impl Backend for FFT64Avx512 {
-    const DFT_MAX_BITS: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::DFT_MAX_BITS;
+    const DFT_MAX_BITS: f64 = <poulpy_cpu_ref::FFT64Ref as Backend>::DFT_MAX_BITS;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     // The AVX-512 complex multiply steps eight complex slots at a time with no

@@ -55,7 +55,7 @@ impl NTT3x42IfmaHandle {
 
 impl Backend for NTT3x42Ifma {
     const MIN_DEGREE: usize = 8;
-    const DFT_MAX_BITS: usize = Primes42::LOG_Q_PRODUCT;
+    const DFT_MAX_BITS: f64 = Primes42::LOG_Q_PRODUCT;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

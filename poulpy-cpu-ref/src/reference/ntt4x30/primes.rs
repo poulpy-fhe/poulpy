@@ -51,8 +51,8 @@ impl PrimeSet for Primes29 {
     ];
     const OMEGA: [u32; 4] = [119_931_893, 194_516_551, 403_971_879, 77_050_655];
     const LOG_Q: u64 = 29;
-    const LOG_Q_PRODUCT: usize =
-        (Self::Q[0] as u128 * Self::Q[1] as u128 * Self::Q[2] as u128 * Self::Q[3] as u128).ilog2() as usize;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 115.849_801_192_087_84;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -79,8 +79,8 @@ impl PrimeSet for Primes30 {
     ];
     const OMEGA: [u32; 4] = [195_937_198, 50_863_243, 633_648_745, 87_406_124];
     const LOG_Q: u64 = 30;
-    const LOG_Q_PRODUCT: usize =
-        (Self::Q[0] as u128 * Self::Q[1] as u128 * Self::Q[2] as u128 * Self::Q[3] as u128).ilog2() as usize;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 119.886_155_257_481_1;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -105,8 +105,8 @@ impl PrimeSet for Primes31 {
     ];
     const OMEGA: [u32; 4] = [1_961_488_829, 1_830_410_192, 339_671_193, 245_713_661];
     const LOG_Q: u64 = 31;
-    const LOG_Q_PRODUCT: usize =
-        (Self::Q[0] as u128 * Self::Q[1] as u128 * Self::Q[2] as u128 * Self::Q[3] as u128).ilog2() as usize;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 123.960_718_835_137_7;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -121,7 +121,6 @@ mod tests {
 
     fn check<P: PrimeSetCrt4>() {
         let total: i128 = P::Q.iter().map(|&q| q as i128).product();
-        assert_eq!(P::LOG_Q_PRODUCT, total.ilog2() as usize);
         for (k, &q) in P::Q.iter().enumerate() {
             assert_eq!(u32::BITS - q.leading_zeros(), P::LOG_Q as u32);
             assert!((2..).take_while(|d| d * d <= q as u64).all(|d| !(q as u64).is_multiple_of(d)));
@@ -148,9 +147,13 @@ mod tests {
     }
 
     #[test]
-    fn prime_product_capacity_is_const_and_rounds_down() {
-        const CAPACITIES: [usize; 3] = [Primes29::LOG_Q_PRODUCT, Primes30::LOG_Q_PRODUCT, Primes31::LOG_Q_PRODUCT];
-        assert_eq!(CAPACITIES, [115, 119, 123]);
+    fn prime_product_log_is_const_and_matches_modulus() {
+        const LOG_PRODUCTS: [f64; 3] = [Primes29::LOG_Q_PRODUCT, Primes30::LOG_Q_PRODUCT, Primes31::LOG_Q_PRODUCT];
+        for (log_product, primes) in LOG_PRODUCTS.into_iter().zip([Primes29::Q, Primes30::Q, Primes31::Q]) {
+            let product: u128 = primes.into_iter().map(u128::from).product();
+            let expected = (product as f64).log2();
+            assert!((log_product - expected).abs() <= f64::EPSILON * expected);
+        }
     }
 
     #[test]

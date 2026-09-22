@@ -301,7 +301,7 @@ pub(crate) use impl_host_byte_storage;
 
 impl Backend for HostBytesBackend {
     // Storage/normalization only; this backend does not perform products.
-    const DFT_MAX_BITS: usize = 0;
+    const DFT_MAX_BITS: f64 = 0.0;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = crate::execution::SerialTaskExecutor;
@@ -517,7 +517,7 @@ macro_rules! impl_backend_from {
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
-            const DFT_MAX_BITS: usize = <$from as poulpy_hal::layouts::Backend>::DFT_MAX_BITS;
+            const DFT_MAX_BITS: f64 = <$from as poulpy_hal::layouts::Backend>::DFT_MAX_BITS;
             const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
