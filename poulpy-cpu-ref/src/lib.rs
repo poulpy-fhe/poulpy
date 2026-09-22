@@ -28,6 +28,8 @@
 //! Compiles and runs on any target supported by the Rust standard library.
 //! No platform-specific intrinsics or assembly are used.
 
+mod backend_defaults;
+
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_encoding;
 #[cfg(feature = "enable-ckks")]

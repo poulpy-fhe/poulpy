@@ -514,6 +514,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor, R: CpuRin
     vmp_apply_dft_to_dft_digits_strided_avx_inner::<E, _>(module, res, a, dsize, product_limbs, pmat, None, tmp)
 }
 
+#[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<E: TaskExecutor, R: CpuRing>(
     module: &Module<NTT4x30Avx512Backend<R>>,

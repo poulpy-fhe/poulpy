@@ -1141,6 +1141,7 @@ unsafe impl<R: CpuRing> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3
     }
 }
 
+#[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn vmp_apply_digits_strided_known_zero_prefix<R: CpuRing>(
     module: &Module<NTT3x42IfmaRayonBackend<R>>,

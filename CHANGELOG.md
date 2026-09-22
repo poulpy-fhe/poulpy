@@ -89,6 +89,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend.
+
 - CI NTT4x30 transforms and NTT3x42 IFMA basis changes use SIMD kernels.
   Real-slot FFT convolution uses AVX-512 or NEON kernels; NEON also specializes real-slot matrix products.
 

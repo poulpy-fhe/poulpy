@@ -115,6 +115,11 @@ To implement your own backend (SIMD or accelerator):
 3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to run the reference implementation, or implement the OEP trait directly with a faster route to the same result.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
+CPU backends share their common registrations through `impl_cpu_core_defaults!`
+and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
+transforms, and encapsulated ModUp remain explicit backend choices. Backends
+that override other families can register the individual operation macros.
+
 At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the `reference` implementation, while a direct OEP impl replaces the route, never the result. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand, and each one is accepted only with its parity test passing against an attested backend, attestation being transitive back to `reference`.
 
 Your backend will automatically integrate with the backend-generic layers:
