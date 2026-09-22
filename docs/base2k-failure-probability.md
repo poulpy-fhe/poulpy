@@ -1,5 +1,6 @@
-
 # Failure estimates for base-2^K arithmetic
+
+Independent centered inputs produce cancellation that a hard upper bound cannot use. For the NTT4x30 workload below, accounting for that cancellation permits **54-bit limbs instead of 49-bit limbs**, at a Gaussian-estimated polynomial failure target of $2^{-128}$. Even a rigorous concentration bound under the stated input assumptions permits 53-bit limbs.
 
 Consider one output polynomial in $\mathbb Z[X]/(X^N+1)$:
 
@@ -99,6 +100,89 @@ $$
 $$
 
 The union bound requires no independence between output coefficients; its numerical estimate still inherits the Gaussian approximation. The $N$ inside $\sigma_c$ counts products in one coefficient, while the $N$ outside counts output coefficients. For $m$ output polynomials in a vector–matrix product, replace the outside factor $N$ by $mN$; $d$ is the inner dimension. For FFT, dependence on $N$ is already included in $\sigma_F(N,K)$.
+
+## Why probabilistic bounds allow larger limbs
+
+A hard upper bound budgets for every product having its largest magnitude and every sign reinforcing the same output coefficient. With $M=dN$ products per coefficient, it gives
+
+$$
+|C_j|\le M P^2=dN\,2^{2K-2}.
+$$
+
+This alignment is possible: taking every coefficient of every $A_r$ and $B_r$ equal to $-P$ attains $C_{N-1}=dNP^2$. A guarantee for all bounded inputs must therefore require
+
+$$
+dN\,2^{2K-2}<Q/2.
+$$
+
+Under the independent centered-uniform model, positive and negative contributions cancel. Their variances add, so the standard deviation grows as $\sqrt{M}$ rather than $M$:
+
+$$
+\sigma_c=\frac{P^2\sqrt{M}}{3}.
+$$
+
+To target a polynomial failure estimate at most $2^{-\lambda}$, the Gaussian envelope used by the selector needs only
+
+$$
+z_\lambda\sigma_c\le Q/2,
+\qquad
+z_\lambda=\sqrt{2\ln2\,(\lambda+\log_2N)}.
+$$
+
+Thus the worst-case magnitude and the probabilistic threshold differ by
+
+$$
+\frac{MP^2}{z_\lambda\sigma_c}
+=\frac{3\sqrt{M}}{z_\lambda}.
+$$
+
+The accumulation count enters the hard bound linearly, while it enters the probabilistic threshold through its square root. Tightening the failure target increases $z_\lambda$ only as a square root of the requested number of failure bits. This leaves substantially more of the CRT modulus available for larger limbs.
+
+### Same workload and modulus: 49 bits versus 54 bits
+
+Use the actual NTT4x30 modulus
+
+$$
+Q=1228368857414128610359072845704724481,
+\qquad \log_2Q\simeq119.8861552574811,
+$$
+
+with $N=2^{16}$, $d=32$, and a $2^{-128}$ target over one output polynomial. Here $M=2^{21}$ and $z_{128}\simeq14.129$. For a fixed limb size, the probabilistic threshold is about **307 times smaller** than the hard magnitude bound.
+
+For this odd CRT modulus, the hard condition gives
+
+$$
+K_{\mathrm{hard}}
+=\left\lfloor\frac{\log_2Q+1-\log_2(dN)}{2}\right\rfloor
+=\lfloor49.943078\rfloor=49.
+$$
+
+The Gaussian-envelope selector instead gives $K=54$. These limits concern the **same sum of 32 products**; the deterministic limit for a single product would be $K=52$.
+
+| Criterion | Largest admitted $K$ | Whole-polynomial failure statement at that $K$ | Limbs for 1024-bit precision |
+|---|---:|---|---:|
+| Hard bound for every bounded input | 49 | No CRT overflow | 21 |
+| Hoeffding bound under independent, centered inputs | 53 | $P_{\mathrm{any}}\le2^{-298.408}$ | 20 |
+| Gaussian envelope used by the selector | 54 | $\widehat P_{\mathrm{any}}\le2^{-161.417}$ | 19 |
+
+Both probabilistic choices meet the $2^{-128}$ target under their respective assumptions. At $K=54$, the hard magnitude bound is about 277 times larger than $Q/2$, so a worst-case-only rule would reject a parameter with a very small modeled failure probability.
+
+### The gain also appears without a Gaussian approximation
+
+[Hoeffding's inequality](https://doi.org/10.1080/01621459.1963.10500830), applied to independent, mean-zero products bounded by $P^2$, gives
+
+$$
+P_{\mathrm{any}}
+\le\min\!\left(1,\;2N\exp\!\left[-\frac{Q^2}{8dNP^4}\right]\right).
+$$
+
+For the same workload, this admits $K=53$ at the $2^{-128}$ target; $K=54$ fails this more conservative criterion. The four-bit improvement over the hard limit therefore does not require extrapolating a Gaussian tail. This is a rigorous bound under the stated independence, centering, and magnitude assumptions. Applying it to asymmetric discrete digits requires accounting for their mean; applying it to correlated operands requires a corresponding dependence analysis.
+
+### What the extra radix bits buy
+
+Increasing $K$ from 49 to 54 packs about **10.2% more precision into each limb**. For an illustrative 1024-bit value, $\lceil1024/49\rceil=21$ limbs become $\lceil1024/54\rceil=19$: about **9.5% fewer limbs** to store and transform. A schoolbook product of two such representations uses $19^2=361$ limb pairs instead of $21^2=441$, about **18.1% fewer limb-pair products**.
+
+These are storage and operation-count comparisons, not measured speedups; actual gains depend on the kernel, decomposition, and accumulation counts. The benefit comes from spending an explicit failure budget on the expected input distribution, while a hard upper bound reserves capacity for every possible alignment.
 
 ## Example: N = 2^16, d = 32, K = 52, Q = 2^120
 
