@@ -455,13 +455,14 @@ macro_rules! conjugate_invariant_core_test_suite {
         mod $name {
             #[test]
             fn conjugate_invariant_core_parity() {
-                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(256);
-                let module = poulpy_hal::layouts::Module::<$backend>::new(256);
-                let params = poulpy_hal::test_suite::TestParams {
-                    size: 256,
-                    n: 256,
-                    base2k: 10,
+                let n = if std::env::var_os("POULPY_TEST_EMULATED").is_some_and(|value| value == "1") {
+                    64
+                } else {
+                    256
                 };
+                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(n as u64);
+                let module = poulpy_hal::layouts::Module::<$backend>::new(n as u64);
+                let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
                 let shapes = poulpy_core::test_suite::parity::ParityShapes {
                     ranks: vec![1, 2],
                     dsizes: Some(vec![1, 2]),

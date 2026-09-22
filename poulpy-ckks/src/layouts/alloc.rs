@@ -60,7 +60,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
 
     /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
     /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
-    /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
+    /// [`SetCKKSInfos::set_meta`](crate::SetCKKSInfos::set_meta) (the `_from_infos` variants do this for you).
     fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
         // auto-sizes to `ceil(k / base2k)` limbs, so the integer-poly storage spans
