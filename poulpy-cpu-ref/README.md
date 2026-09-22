@@ -135,3 +135,14 @@ No modifications to those crates are necessary — the HAL provides the extensio
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+
+```sh
+cargo test -p poulpy-cpu-ref --features enable-bin-fhe bin_fhe_parity
+```

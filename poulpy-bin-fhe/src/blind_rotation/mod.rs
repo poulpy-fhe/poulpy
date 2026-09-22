@@ -6,6 +6,12 @@
 //! provided by an LWE ciphertext, producing a fresh GLWE ciphertext whose
 //! constant term decrypts to `f(dec(lwe))` (modulo rounding noise).
 //!
+//! ## User-facing API
+//!
+//! Import operation traits from [`crate::api::blind_rotation`] for module calls
+//! and their scratch queries. The API documentation includes a generic usage
+//! example. Key and plan convenience methods dispatch through the same traits.
+//!
 //! ## Key Structures
 //!
 //! | Type | Role |
@@ -39,14 +45,20 @@
 //! 2. Fill with `encrypt_sk` supplying the GLWE and LWE secret keys.
 //! 3. Prepare with `BlindRotationKeyPrepared::prepare` before any evaluation.
 //!
-//! The compressed variant stores only a 32-byte seed for the mask component,
-//! reducing serialised size at the cost of decompression during preparation.
+//! The compressed variant stores the body and per-element mask seeds. Decompress
+//! it through [`crate::api::BlindRotationKeyDecompress`] before preparation.
+//!
+//! Backend implementations explicitly select operations through [`crate::oep`].
+//! The callable compositions live in [`crate::reference::blind_rotation`]. CGGI
+//! is an algorithm marker, independent of the backend and execution schedule.
+//! Parallel block scheduling is an explicit backend selection; the canonical
+//! composition always accumulates contributions in coefficient order.
 mod algorithms;
 mod encryption;
 pub(crate) mod host_znx;
 mod layouts;
 mod lut;
-mod utils;
+pub(crate) mod utils;
 
 pub use algorithms::*;
 pub use encryption::*;

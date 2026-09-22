@@ -1,12 +1,13 @@
+pub use crate::api::GLWEBlindRetrieval;
 use itertools::Itertools;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::{
     GLWECopy, GLWEZero,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::bdd_arithmetic::{Cmux, Cswap, GetGGSWBit};
+use crate::bdd_arithmetic::{Cmux, GetGGSWBit};
 use poulpy_core::GLWEBytesOf;
 
 /// Stateful accumulator for oblivious retrieval of one GLWE ciphertext from a
@@ -180,94 +181,6 @@ fn add_core<A, S, M, BE>(
         }
         _ => {
             panic!("something went wrong")
-        }
-    }
-}
-
-impl<BE: Backend<ZnxWord = i64> + 'static> GLWEBlindRetrieval<BE> for Module<BE> where
-    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>
-{
-}
-
-/// Oblivious in-place sorting / retrieval of a GLWE vector by an encrypted index.
-///
-/// Where `GLWEBlindSelection` extracts one element from a map given an encrypted
-/// key, `GLWEBlindRetrieval` operates on an ordered `Vec<R>` and performs a
-/// sorting-network-style rearrangement: after
-/// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull],
-/// element `0` of the vector encrypts the input element whose index equals the
-/// encrypted selector.
-///
-/// The rearrangement uses conditional-swap ([`Cswap`]) operations, one per bit
-/// of the selector sub-field.  The `_rev` variant applies the operations in
-/// reverse, useful for undoing the permutation.
-pub trait GLWEBlindRetrieval<BE: Backend + 'static>
-where
-    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>,
-{
-    /// Returns the minimum scratch-space size in bytes required by
-    /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
-    fn glwe_blind_retrieval_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGSWInfos,
-    {
-        self.cswap_tmp_bytes(res_infos, res_infos, k_infos)
-    }
-
-    /// Rearranges `res` in-place so that `res[0]` encrypts the element at the
-    /// encrypted index `(bits >> bit_rsh) % 2^bit_mask`.
-    ///
-    /// Uses a butterfly network of [`Cswap`] gates, iterating from the
-    /// most-significant to the least-significant bit of the selector sub-field.
-    fn glwe_blind_retrieval_statefull<R, K>(
-        &self,
-        res: &mut Vec<R>,
-        bits: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
-    {
-        for i in 0..bit_mask {
-            let t: usize = 1 << (bit_mask - i - 1);
-            let bit = bits.get_bit(bit_rsh + bit_mask - i - 1); // MSB -> LSB traversal
-            for j in 0..t {
-                if j + t < res.len() {
-                    let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
-                }
-            }
-        }
-    }
-
-    /// Reverses the permutation applied by
-    /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
-    ///
-    /// Applies the same butterfly network in reverse order, restoring the original
-    /// element ordering after an oblivious retrieval.
-    fn glwe_blind_retrieval_statefull_rev<R, K>(
-        &self,
-        res: &mut Vec<R>,
-        bits: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
-    {
-        for i in (0..bit_mask).rev() {
-            let t: usize = 1 << (bit_mask - i - 1);
-            let bit = bits.get_bit(bit_rsh + bit_mask - i - 1); // MSB -> LSB traversal
-            for j in 0..t {
-                if j < res.len() && j + t < res.len() {
-                    let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
-                }
-            }
         }
     }
 }

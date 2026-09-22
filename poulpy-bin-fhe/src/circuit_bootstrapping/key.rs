@@ -1,12 +1,9 @@
 use anyhow::Result;
-use itertools::Itertools;
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, Distribution, GGLWEToGGSWKeyEncryptSk, GLWEAutomorphismKeyEncryptSk, GetDistribution,
-    NoiseInfos, TransferInto,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GetDistribution, NoiseInfos, TransferInto,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
-        prepared::GLWESecretPrepared,
+        GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -15,17 +12,12 @@ use std::collections::HashMap;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchOwnedAlloc},
-    layouts::{
-        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, ScratchOwned,
-        WriterTo,
-    },
+    api::ModuleN,
+    layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, ScratchArena, WriterTo},
     source::Source,
 };
 
-use crate::blind_rotation::{
-    BlindRotationAlgo, BlindRotationKey, BlindRotationKeyEncryptSk, BlindRotationKeyInfos, BlindRotationKeyLayout,
-};
+use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyLayout};
 use crate::circuit_bootstrapping::trace_galois_elements;
 
 /// Encryption noise parameters for all three sub-keys of a circuit bootstrapping key bundle.
@@ -107,42 +99,38 @@ impl CircuitBootstrappingKeyInfos for CircuitBootstrappingKeyLayout {
 /// Backend-level trait for encrypting all sub-keys of a
 /// [`CircuitBootstrappingKey`] at once.
 ///
-/// Implemented for `Module<BE>` when the backend supports GGSW, automorphism,
-/// and tensor-switching key encryption.  The module-level implementation
-/// derives a fresh intermediate GLWE secret, prepares it, and delegates to
-/// the individual sub-key encryption routines.
-pub trait CircuitBootstrappingKeyEncryptSk<BRA, BE>
-where
-    BRA: BlindRotationAlgo,
-    BE: Backend,
-{
-    /// Returns the minimum scratch-space size (in bytes) required by
-    /// [`circuit_bootstrapping_key_encrypt_sk`][Self::circuit_bootstrapping_key_encrypt_sk].
-    fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: CircuitBootstrappingKeyInfos;
-
-    /// Encrypts all sub-keys of a circuit bootstrapping key bundle.
-    ///
-    /// The three sub-key components are encrypted in order: ATK, BRK, TSK.
-    /// Scratch space is reused across sub-key encryptions (peak is the maximum
-    /// of the three individual requirements).
-    #[allow(clippy::too_many_arguments)]
-    fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
-        &self,
-        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        sk_lwe: &S0,
-        sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution;
-}
+/// Re-export of the public API. The backend selects its implementation through
+/// [`CircuitBootstrappingKeyEncryptSkImpl`](crate::oep::CircuitBootstrappingKeyEncryptSkImpl).
+/// The canonical implementation prepares the supplied GLWE secret in caller
+/// scratch, then encrypts the component keys through their selected operations.
+pub use crate::api::CircuitBootstrappingKeyEncryptSk;
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA, W> {
+    /// Coefficient-domain blind-rotation key.
+    pub fn blind_rotation_key(&self) -> &BlindRotationKey<D, BRA, W> {
+        &self.brk
+    }
+    /// Mutable blind-rotation key for lifecycle implementations.
+    pub fn blind_rotation_key_mut(&mut self) -> &mut BlindRotationKey<D, BRA, W> {
+        &mut self.brk
+    }
+    /// Coefficient-domain row-expansion key.
+    pub fn tensor_key(&self) -> &GGLWEToGGSWKey<D, W> {
+        &self.tsk
+    }
+    /// Mutable row-expansion key for lifecycle implementations.
+    pub fn tensor_key_mut(&mut self) -> &mut GGLWEToGGSWKey<D, W> {
+        &mut self.tsk
+    }
+    /// Coefficient-domain trace and packing keys, indexed by Galois element.
+    pub fn automorphism_keys(&self) -> &HashMap<i64, GLWEAutomorphismKey<D, W>> {
+        &self.atk
+    }
+    /// Mutable trace and packing keys for lifecycle implementations.
+    pub fn automorphism_keys_mut(&mut self) -> &mut HashMap<i64, GLWEAutomorphismKey<D, W>> {
+        &mut self.atk
+    }
+
     pub fn alloc_from_infos<M, A: CircuitBootstrappingKeyInfos>(module: &M, infos: &A) -> Self
     where
         M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
@@ -231,87 +219,6 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
-    }
-}
-
-impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyEncryptSk<BRA, BE> for Module<BE>
-where
-    Self: GGLWEToGGSWKeyEncryptSk<BE>
-        + BlindRotationKeyEncryptSk<BRA, BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-{
-    fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: CircuitBootstrappingKeyInfos,
-    {
-        self.glwe_automorphism_key_encrypt_sk_tmp_bytes(&infos.atk_infos())
-            .max(self.blind_rotation_key_encrypt_sk_tmp_bytes(&infos.brk_infos()))
-            .max(self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&infos.tsk_infos()))
-    }
-
-    fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
-        &self,
-        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        sk_lwe: &S0,
-        sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
-    {
-        let brk_infos: &BlindRotationKeyLayout = &res.brk_infos();
-        let atk_infos: &GLWEAutomorphismKeyLayout = &res.atk_infos();
-        let tsk_infos: &GGLWEToGGSWKeyLayout = &res.tsk_infos();
-
-        assert_eq!(sk_lwe.n(), brk_infos.n_lwe());
-        assert_eq!(sk_glwe.n(), brk_infos.n_glwe());
-        assert_eq!(sk_glwe.n(), atk_infos.n());
-        assert_eq!(sk_glwe.n(), tsk_infos.n());
-
-        assert!(sk_glwe.dist() != &Distribution::NONE);
-
-        let gal_els: Vec<i64> = res.atk.keys().sorted().copied().collect();
-        for p in gal_els {
-            let atk = res.atk.get_mut(&p).unwrap();
-            let mut atk_scratch: ScratchOwned<BE> = ScratchOwned::alloc(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk));
-            self.glwe_automorphism_key_encrypt_sk(
-                atk,
-                p,
-                sk_glwe,
-                &enc_infos.atk,
-                source_xe,
-                source_xa,
-                &mut atk_scratch.arena(),
-            );
-        }
-
-        let mut sk_glwe_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = self.glwe_secret_prepared_alloc(brk_infos.rank());
-        self.glwe_secret_prepare(&mut sk_glwe_prepared, sk_glwe);
-
-        self.blind_rotation_key_encrypt_sk(
-            &mut res.brk,
-            &sk_glwe_prepared,
-            sk_lwe,
-            &enc_infos.brk,
-            source_xe,
-            source_xa,
-            scratch,
-        );
-
-        let mut tsk_scratch: ScratchOwned<BE> = ScratchOwned::alloc(self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&res.tsk));
-        self.gglwe_to_ggsw_key_encrypt_sk(
-            &mut res.tsk,
-            sk_glwe,
-            &enc_infos.tsk,
-            source_xe,
-            source_xa,
-            &mut tsk_scratch.arena(),
-        );
     }
 }
 

@@ -33,6 +33,7 @@ fn example_max_array<BE, BRA: BlindRotationAlgo>()
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + 'static,
     Module<BE>: ModuleNew<BE>
+        + GLWECopy<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>

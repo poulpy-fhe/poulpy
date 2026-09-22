@@ -307,3 +307,31 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey
         self.keys[0].dnum()
     }
 }
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
+    /// Constructs a key from coefficient-domain elements and its secret distribution.
+    pub fn from_parts(keys: Vec<GGSW<D, W>>, distribution: Distribution) -> Self {
+        assert!(!keys.is_empty());
+        Self {
+            keys,
+            dist: distribution,
+            _phantom: PhantomData,
+        }
+    }
+    /// Coefficient-domain key elements.
+    pub fn keys(&self) -> &[GGSW<D, W>] {
+        &self.keys
+    }
+    /// Mutable coefficient-domain key elements for backend implementations.
+    pub fn keys_mut(&mut self) -> &mut [GGSW<D, W>] {
+        &mut self.keys
+    }
+    /// Secret distribution carried by the key.
+    pub fn distribution(&self) -> Distribution {
+        self.dist
+    }
+    /// Updates distribution metadata after encryption or decompression.
+    pub fn set_distribution(&mut self, distribution: Distribution) {
+        self.dist = distribution;
+    }
+}

@@ -8,10 +8,12 @@
 //! [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite), so no
 //! backend is ever named from this crate.
 
+pub mod parity;
+
 /// Instantiates the whole gate-level suite for one backend.
 ///
 /// ```ignore
-/// poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
+/// poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_correctness, backend = MyBackend);
 /// ```
 #[macro_export]
 macro_rules! bin_fhe_backend_test_suite {
@@ -215,63 +217,87 @@ macro_rules! bin_fhe_backend_test_suite {
     };
 }
 
-/// Asserts that two backends produce byte-identical blind rotations.
-///
-/// ```ignore
-/// poulpy_bin_fhe::bin_fhe_parity_test_suite!(
-///     mod bin_fhe_parity_fft64,
-///     backend_ref = crate::FFT64Avx,
-///     backend_test = crate::FFT64AvxRayon,
-/// );
-/// ```
+/// Registers the complete binary-FHE parity suite for a caller-selected pair.
+/// Inputs and raw keys are shared in coefficient form and prepared independently.
+/// Register this suite beside each backend's explicit scheme opt-in.
 #[macro_export]
 macro_rules! bin_fhe_parity_test_suite {
-    (
-        mod $modname:ident,
-        backend_ref = $backend_ref:ty,
-        backend_test = $backend_test:ty $(,)?
-    ) => {
+    (mod $modname:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
         mod $modname {
-            use poulpy_core::layouts::{GLWE, GLWEInfos};
-            use poulpy_hal::{
-                AlignedBuf,
-                api::ModuleNew,
-                layouts::{Module, ZnxInfos, ZnxView},
-            };
-
-            use $crate::blind_rotation::{CGGI, test_suite::generic_blind_rotation::test_blind_rotation};
-
-            fn coeffs(ct: &GLWE<AlignedBuf, i64>) -> Vec<i64> {
-                let mut out: Vec<i64> = Vec::new();
-                for col in 0..(ct.rank().as_usize() + 1) {
-                    for limb in 0..ct.data().size() {
-                        out.extend_from_slice(ct.data().at(col, limb));
-                    }
-                }
-                out
-            }
-
-            fn assert_parity(n: usize, n_lwe: usize, block_size: usize, extension_factor: usize) {
-                let module_ref: Module<$backend_ref> = Module::new(n as u64);
-                let module_test: Module<$backend_test> = Module::new(n as u64);
-                let want = test_blind_rotation::<CGGI, _, $backend_ref>(&module_ref, n_lwe, block_size, extension_factor);
-                let have = test_blind_rotation::<CGGI, _, $backend_test>(&module_test, n_lwe, block_size, extension_factor);
-                assert_eq!(coeffs(&want), coeffs(&have));
-            }
-
+            use poulpy_hal::layouts::Module;
+            use $crate::test_suite::parity;
             #[test]
-            fn blind_rotation_standard() {
-                assert_parity(512, 224, 1, 1);
+            fn lifecycle() {
+                parity::lifecycle::test_lifecycle_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
-
             #[test]
-            fn blind_rotation_block_binary() {
-                assert_parity(512, 224, 7, 1);
+            fn cmux() {
+                parity::bdd::test_cmux_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
-
             #[test]
-            fn blind_rotation_block_binary_extended() {
-                assert_parity(512, 224, 7, 2);
+            fn cswap() {
+                parity::bdd::test_cswap_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            }
+            #[test]
+            fn glwe_blind_rotation() {
+                parity::bdd::test_glwe_blind_rotation_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            }
+            #[test]
+            fn glwe_blind_selection() {
+                parity::bdd::test_glwe_blind_selection_parity(
+                    &Module::<$backend_ref>::new(64),
+                    &Module::<$backend_test>::new(64),
+                );
+            }
+            #[test]
+            fn glwe_blind_retrieval() {
+                parity::bdd::test_glwe_blind_retrieval_parity(
+                    &Module::<$backend_ref>::new(64),
+                    &Module::<$backend_test>::new(64),
+                );
+            }
+            #[test]
+            fn ggsw_blind_rotation() {
+                parity::bdd::test_ggsw_blind_rotation_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            }
+            #[test]
+            fn execute_bdd_circuit() {
+                parity::bdd::test_execute_bdd_circuit_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            }
+            #[test]
+            fn blind_rotation() {
+                parity::blind_rotation::test_blind_rotation_parity(
+                    &Module::<$backend_ref>::new(64),
+                    &Module::<$backend_test>::new(64),
+                );
+            }
+            #[test]
+            fn circuit_bootstrapping() {
+                parity::circuit_bootstrapping::test_circuit_bootstrapping_parity(
+                    &Module::<$backend_ref>::new(64),
+                    &Module::<$backend_test>::new(64),
+                );
+            }
+        }
+    };
+}
+
+/// Checks selected randomized key operations against the callable references on
+/// one backend, using the same sampler on both paths. This suite additionally
+/// requires the reference bodies' lower-layer capabilities; the paired suite
+/// does not impose them on replacements.
+#[macro_export]
+macro_rules! bin_fhe_reference_test_suite {
+    (mod $modname:ident, backend = $backend:ty $(,)?) => {
+        mod $modname {
+            use poulpy_hal::layouts::Module;
+            #[test]
+            fn blind_rotation_key_lifecycle() {
+                $crate::test_suite::parity::blind_rotation::test_blind_rotation_key_lifecycle(&Module::<$backend>::new(64));
+            }
+            #[test]
+            fn lifecycle_reference() {
+                $crate::test_suite::parity::lifecycle::test_lifecycle_reference(&Module::<$backend>::new(64));
             }
         }
     };

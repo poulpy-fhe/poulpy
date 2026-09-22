@@ -26,7 +26,8 @@ use crate::{
 pub fn test_glwe_blind_selection<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: ModuleNew<BE>
+    Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
+        + ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -126,8 +127,17 @@ where
 
         // How many bits to take
         let bit_size: usize = (32 - bit_start).min(digit);
+        let input_infos: Vec<_> = cts_map.values().map(|ct| &**ct).collect();
+        let mut selection_scratch = ScratchOwned::alloc(module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos));
 
-        module.glwe_blind_selection(&mut res, cts_map, &k_enc_prep, bit_start, bit_size, &mut scratch.borrow());
+        module.glwe_blind_selection(
+            &mut res,
+            cts_map,
+            &k_enc_prep,
+            bit_start,
+            bit_size,
+            &mut selection_scratch.borrow(),
+        );
 
         module.glwe_decrypt(&res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 

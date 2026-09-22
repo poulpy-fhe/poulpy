@@ -185,3 +185,9 @@ pub use ntt4x30::NTT4x30NeonRayon;
 mod layout_compat;
 
 pub mod capabilities;
+
+#[cfg(all(feature = "enable-neon", feature = "enable-bin-fhe"))]
+mod bin_fhe_impl;
+
+#[cfg(all(feature = "enable-bin-fhe", not(feature = "enable-neon")))]
+compile_error!("feature `enable-bin-fhe` requires `enable-neon` so binary-FHE tests cannot silently run without a backend");

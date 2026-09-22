@@ -1,5 +1,5 @@
+#![allow(clippy::too_many_arguments)]
 use itertools::izip;
-use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
@@ -21,15 +21,25 @@ use poulpy_core::{
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
-use crate::blind_rotation::{
-    BlindRotationExecute, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable, mod_switch_2n,
-};
+use crate::api::BlindRotationModSwitch;
+use crate::blind_rotation::{BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable};
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
-impl<BE: Backend<ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
+/// Canonical lower-layer composition for `blind_rotation_execute_tmp_bytes`.
+pub fn blind_rotation_execute_tmp_bytes_ref<BE, G, B>(
+    module: &Module<BE>,
+    block_size: usize,
+    extension_factor: usize,
+    glwe_infos: &G,
+    brk_infos: &B,
+) -> usize
 where
-    Self: VecZnxDftBytesOf
+    G: GLWEInfos,
+    B: BlindRotationKeyInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes
@@ -57,92 +67,286 @@ where
         + Sync,
     BE: HalVecZnxImpl,
 {
-    fn blind_rotation_execute_tmp_bytes<G, B>(
-        &self,
-        block_size: usize,
-        extension_factor: usize,
-        glwe_infos: &G,
-        brk_infos: &B,
-    ) -> usize
-    where
-        G: GLWEInfos,
-        B: BlindRotationKeyInfos,
-    {
-        let brk_size: usize = brk_infos.size();
+    blind_rotation_execute_tmp_bytes_selected::<BE, G, B, false>(module, block_size, extension_factor, glwe_infos, brk_infos)
+}
 
-        if block_size > 1 {
-            let cols: usize = (brk_infos.rank() + 1).into();
-            let dnum: usize = brk_infos.dnum().into();
-            let acc_dft: usize = self.bytes_of_vec_znx_dft(self.n(), cols, dnum) * extension_factor;
-            let acc_big: usize = self.bytes_of_vec_znx_big(self.n(), 1, brk_size);
-            let vmp_res: usize = self.bytes_of_vec_znx_dft(self.n(), cols, brk_size) * extension_factor;
-            let vmp_xai: usize = self.bytes_of_vec_znx_dft(self.n(), 1, brk_size);
-            let acc_dft_add: usize = vmp_res;
-            let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(brk_size, dnum, dnum, 2, 2, brk_size); // GGSW product: (1 x 2) x (2 x 2)
-            let acc: usize = if extension_factor > 1 {
-                BE::bytes_of_vec_znx(self.n(), cols, glwe_infos.size()) * extension_factor
+/// Explicit block scheduling helper; selected by backend wiring, never inferred.
+pub fn blind_rotation_execute_tmp_bytes_parallel<BE, G, B>(
+    module: &Module<BE>,
+    block_size: usize,
+    extension_factor: usize,
+    glwe_infos: &G,
+    brk_infos: &B,
+) -> usize
+where
+    G: GLWEInfos,
+    B: BlindRotationKeyInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + Sync,
+    BE: HalVecZnxImpl,
+{
+    blind_rotation_execute_tmp_bytes_selected::<BE, G, B, true>(module, block_size, extension_factor, glwe_infos, brk_infos)
+}
+
+fn blind_rotation_execute_tmp_bytes_selected<BE, G, B, const PARALLEL: bool>(
+    module: &Module<BE>,
+    block_size: usize,
+    extension_factor: usize,
+    glwe_infos: &G,
+    brk_infos: &B,
+) -> usize
+where
+    G: GLWEInfos,
+    B: BlindRotationKeyInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + Sync,
+    BE: HalVecZnxImpl,
+{
+    assert!(block_size > 0 && extension_factor.is_power_of_two());
+    let copy = module.glwe_copy_tmp_bytes(glwe_infos, glwe_infos);
+    if block_size > 1 || extension_factor > 1 {
+        let cols = brk_infos.rank().as_usize() + 1;
+        let size = brk_infos.size();
+        let dnum = brk_infos.dnum().as_usize();
+        let acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, dnum) * extension_factor;
+        let vmp_res = module.bytes_of_vec_znx_dft(module.n(), cols, size) * extension_factor;
+        let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(size, dnum, dnum, cols, cols, size);
+        let normalize = module.bytes_of_vec_znx_big(module.n(), 1, size)
+            + module
+                .vec_znx_big_normalize_tmp_bytes()
+                .max(module.vec_znx_idft_apply_tmp_bytes());
+        if extension_factor == 1 && PARALLEL {
+            acc_dft
+                + 2 * block_size * vmp_res
+                + (block_size * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
+                    .max(normalize)
+                    .max(copy)
+        } else {
+            let acc = if extension_factor > 1 {
+                BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size()) * extension_factor
             } else {
                 0
             };
-
-            if extension_factor == 1 && BE::TaskExecutor::IS_PARALLEL {
-                acc_dft
-                    + 2 * block_size * vmp_res
-                    + ((block_size * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
-                        | (acc_big
-                            + (self
-                                .vec_znx_big_normalize_tmp_bytes()
-                                .max(self.vec_znx_idft_apply_tmp_bytes()))))
-            } else {
-                acc + acc_dft
-                    + acc_dft_add
-                    + vmp_res
-                    + vmp_xai
-                    + (vmp
-                        | (acc_big
-                            + (self
-                                .vec_znx_big_normalize_tmp_bytes()
-                                .max(self.vec_znx_idft_apply_tmp_bytes()))))
-            }
-        } else {
-            // `glwe_mul_xp_minus_one_assign` runs on the accumulator carved out
-            // of the same arena, so its own scratch is part of the bound.
-            self.glwe_bytes_of_from_infos(glwe_infos)
-                + self
-                    .glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, brk_infos)
-                    .max(self.vec_znx_mul_xp_minus_one_assign_tmp_bytes(glwe_infos.size()))
+            acc + acc_dft + 2 * vmp_res + module.bytes_of_vec_znx_dft(module.n(), 1, size) + vmp.max(normalize).max(copy)
         }
+    } else {
+        module.glwe_bytes_of_from_infos(glwe_infos)
+            + module
+                .glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, brk_infos)
+                .max(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(glwe_infos.size()))
+                .max(module.glwe_normalize_tmp_bytes())
+                .max(copy)
     }
+}
 
-    fn blind_rotation_execute<R, L>(
-        &self,
-        res: &mut R,
-        lwe: &L,
-        lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
-        brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        L: LWEToBackendRef<BE> + LWEInfos,
-    {
-        match brk.dist {
-            Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {
-                if lut.extension_factor() > 1 {
-                    assert!(
-                        matches!(brk.dist, Distribution::BinaryBlock(_)),
-                        "extended blind rotation (extension_factor={}) requires a BinaryBlock key distribution, got {:?}",
-                        lut.extension_factor(),
-                        brk.dist,
-                    );
-                    execute_block_binary_extended(self, res, lwe, lut, brk, scratch)
-                } else if brk.block_size() > 1 {
-                    execute_block_binary(self, res, lwe, lut, brk, scratch);
-                } else {
-                    execute_standard(self, res, lwe, lut, brk, scratch);
-                }
+/// Canonical lower-layer composition for `blind_rotation_execute`.
+pub fn blind_rotation_execute_ref<BE, R, L>(
+    module: &Module<BE>,
+    res: &mut R,
+    lwe: &L,
+    lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
+    brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    L: LWEToBackendRef<BE> + LWEInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + Sync,
+    BE: HalVecZnxImpl,
+{
+    blind_rotation_execute_selected::<BE, R, L, false>(module, res, lwe, lut, brk, scratch)
+}
+
+/// Explicit block scheduling helper; selected by backend wiring, never inferred.
+pub fn blind_rotation_execute_parallel<BE, R, L>(
+    module: &Module<BE>,
+    res: &mut R,
+    lwe: &L,
+    lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
+    brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    L: LWEToBackendRef<BE> + LWEInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + Sync,
+    BE: HalVecZnxImpl,
+{
+    blind_rotation_execute_selected::<BE, R, L, true>(module, res, lwe, lut, brk, scratch)
+}
+
+fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
+    module: &Module<BE>,
+    res: &mut R,
+    lwe: &L,
+    lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
+    brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    L: LWEToBackendRef<BE> + LWEInfos,
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + Sync,
+    BE: HalVecZnxImpl,
+{
+    assert_eq!(module.n(), res.n().as_usize());
+    assert_eq!(res.n(), brk.n_glwe());
+    assert_eq!(res.rank(), brk.rank());
+    assert_eq!(res.base2k(), brk.base2k());
+    assert_eq!(res.base2k(), lut.base2k);
+    assert_eq!(lwe.n(), brk.n_lwe());
+    assert!(lut.extension_factor().is_power_of_two());
+    assert!(brk.block_size() > 0);
+    assert_eq!(brk.n_lwe().as_usize() % brk.block_size(), 0);
+    assert!(lut.data.iter().all(|polynomial| polynomial.n() == res.n()));
+
+    match brk.dist {
+        Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {
+            if lut.extension_factor() > 1 {
+                assert!(
+                    matches!(brk.dist, Distribution::BinaryBlock(_)),
+                    "extended blind rotation (extension_factor={}) requires a BinaryBlock key distribution, got {:?}",
+                    lut.extension_factor(),
+                    brk.dist,
+                );
+                execute_block_binary_extended(module, res, lwe, lut, brk, scratch)
+            } else if brk.block_size() > 1 {
+                execute_block_binary::<_, _, _, BE, PARALLEL>(module, res, lwe, lut, brk, scratch);
+            } else {
+                execute_standard(module, res, lwe, lut, brk, scratch);
             }
-            _ => panic!("invalid CGGI distribution (have you prepared the key?)"),
         }
+        _ => panic!("invalid CGGI distribution (have you prepared the key?)"),
     }
 }
 
@@ -156,7 +360,8 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    M: VecZnxDftBytesOf
+    M: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxRotate<BE>
@@ -207,7 +412,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     let two_n: usize = 2 * n_glwe;
     let two_n_ext: usize = 2 * lut.domain_size();
 
-    mod_switch_2n::<BE, _>(two_n_ext, &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(two_n_ext, &mut lwe_2n, lwe, lut.rotation_direction());
 
     let a: &[i64] = &lwe_2n[1..];
     let b_pos: usize = ((lwe_2n[0] + two_n_ext as i64) & (two_n_ext - 1) as i64) as usize;
@@ -361,7 +566,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     }
 }
 
-fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
+fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static, const PARALLEL: bool>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -371,7 +576,8 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    M: VecZnxDftBytesOf
+    M: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxRotate<BE>
@@ -400,7 +606,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
 
     let cols: usize = (out_tmp.rank() + 1).into();
 
-    mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
 
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];
@@ -422,7 +628,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     let scratch = scratch.borrow();
     let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), cols, dnum);
 
-    if BE::TaskExecutor::IS_PARALLEL {
+    if PARALLEL {
         let (vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
         let (contributions, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
         let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
@@ -593,7 +799,8 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    M: VecZnxRotate<BE>
+    M: BlindRotationModSwitch<BE>
+        + VecZnxRotate<BE>
         + GLWEExternalProduct<BE>
         + GLWEMulXpMinusOne<BE>
         + GLWEAdd<BE>
@@ -632,7 +839,7 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     module.glwe_copy(&mut out_tmp, res, scratch);
 
-    mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
 
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];

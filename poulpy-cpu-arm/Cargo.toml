@@ -13,11 +13,13 @@ documentation = "https://docs.rs/poulpy-cpu-arm"
 doctest = false
 
 [features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-ref/enable-bin-fhe"]
 enable-neon = []
 enable-rayon = ["enable-neon", "dep:rayon", "dep:poulpy-cpu-rayon"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 
 [dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
@@ -52,17 +54,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bench]]
 name = "full"
 harness = false
-required-features = ["enable-neon", "enable-ckks"]
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-neon", "enable-ckks"]
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "light"
 harness = false
-required-features = ["enable-neon", "enable-ckks"]
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "normalize"

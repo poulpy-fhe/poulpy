@@ -27,7 +27,8 @@ use crate::{
 pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: ModuleNew<BE>
+    Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
+        + ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
         + GGSWEncryptSk<BE>

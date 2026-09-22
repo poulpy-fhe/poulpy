@@ -462,6 +462,7 @@ fn assert_f64_word_containers_are_eq() {
 }
 
 #[cfg(feature = "enable-core")]
+#[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
 
 #[cfg(feature = "enable-core")]
@@ -1397,3 +1398,6 @@ poulpy_core::core_parity_test_suite! {
 
 #[cfg(feature = "enable-ckks")]
 mod ckks_overrides;
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_overrides;

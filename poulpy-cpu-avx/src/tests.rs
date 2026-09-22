@@ -203,37 +203,16 @@ poulpy_core::core_parity_test_suite! {
 }
 
 #[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Avx);
 
 #[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = crate::FFT64AvxRayon);
 
 #[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30AvxRayon);
-
-#[cfg(all(
-    feature = "enable-rayon",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    target_feature = "fma"
-))]
-poulpy_bin_fhe::bin_fhe_parity_test_suite!(
-    mod bin_fhe_parity_fft64_rayon,
-    backend_ref = crate::FFT64Avx,
-    backend_test = crate::FFT64AvxRayon,
-);
-
-#[cfg(all(
-    feature = "enable-rayon",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    target_feature = "fma"
-))]
-poulpy_bin_fhe::bin_fhe_parity_test_suite!(
-    mod bin_fhe_parity_ntt4x30_rayon,
-    backend_ref = crate::NTT4x30Avx,
-    backend_test = crate::NTT4x30AvxRayon,
-);
 
 /// On-demand thread-count diagnostic; see `docs/performance.md`.
 #[cfg(feature = "enable-rayon")]

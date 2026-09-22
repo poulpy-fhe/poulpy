@@ -1,19 +1,13 @@
-use itertools::Itertools;
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSWInfos,
-    GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GetAutomorphismKey, LWEInfos, SetGaloisElement,
-    prepared::GLWEAutomorphismKeyPrepared,
+    GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSWInfos, GLWEAutomorphismKeyLayout, GLWEInfos,
+    GetAutomorphismKey, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
 };
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::circuit_bootstrapping::trace_galois_elements;
 use crate::{
-    blind_rotation::{
-        BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, BlindRotationKeyPrepared,
-        BlindRotationKeyPreparedFactory,
-    },
+    blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, BlindRotationKeyPrepared},
     circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos},
 };
 
@@ -40,82 +34,12 @@ impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::Ow
     }
 }
 
-impl<BE: Backend, BRA: BlindRotationAlgo> CircuitBootstrappingKeyPreparedFactory<BRA, BE> for Module<BE> where
-    Self: Sized
-        + BlindRotationKeyPreparedFactory<BRA, BE>
-        + GGLWEToGGSWKeyPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-{
-}
-
 /// Backend-level factory for allocating and preparing
 /// [`CircuitBootstrappingKeyPrepared`] values.
 ///
-/// Implemented for `Module<BE>` when the backend supports preparation of all
-/// three sub-key types.  Default method implementations delegate to the
-/// corresponding sub-key factories.
-pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>
-where
-    Self: Sized
-        + BlindRotationKeyPreparedFactory<BRA, BE>
-        + GGLWEToGGSWKeyPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>,
-{
-    /// Allocates a zero-filled prepared key bundle from a dimension descriptor.
-    fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-        &self,
-        infos: &A,
-    ) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: CircuitBootstrappingKeyInfos,
-    {
-        let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
-        let gal_els: Vec<i64> = trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64);
-
-        CircuitBootstrappingKeyPrepared {
-            brk: BlindRotationKeyPrepared::alloc(self, &infos.brk_infos()),
-            tsk: self.gglwe_to_ggsw_key_prepared_alloc_from_infos(&infos.tsk_infos()),
-            atk: gal_els
-                .iter()
-                .map(|&gal_el| {
-                    let mut key = self.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
-                    key.set_p(gal_el);
-                    (gal_el, key)
-                })
-                .collect(),
-        }
-    }
-
-    fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: CircuitBootstrappingKeyInfos,
-    {
-        self.blind_rotation_key_prepare_tmp_bytes(&infos.brk_infos())
-            .max(self.gglwe_to_ggsw_key_prepare_tmp_bytes(&infos.tsk_infos()))
-            .max(self.glwe_automorphism_key_prepare_tmp_bytes(&infos.atk_infos()))
-    }
-
-    fn circuit_bootstrapping_key_prepare(
-        &self,
-        res: &mut CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        res.brk.prepare(self, &other.brk, scratch);
-        self.gglwe_to_ggsw_key_prepare(&mut res.tsk, &other.tsk, scratch);
-
-        let gal_els: Vec<i64> = res.atk.keys().sorted().copied().collect();
-        for k in gal_els {
-            self.glwe_automorphism_key_prepare(
-                res.atk.get_mut(&k).unwrap(),
-                other.atk.get(&k).unwrap_or_else(|| {
-                    panic!("Galois element {k} is present in the prepared key but missing from the source key")
-                }),
-                scratch,
-            );
-        }
-    }
-}
+/// Re-export of the public API. The backend selects allocation and preparation
+/// through [`CircuitBootstrappingKeyPreparedImpl`](crate::oep::CircuitBootstrappingKeyPreparedImpl).
+pub use crate::api::CircuitBootstrappingKeyPreparedFactory;
 
 /// DFT-prepared circuit bootstrapping key bundle, ready for on-line evaluation.
 ///
@@ -191,5 +115,46 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
             dsize: self.tsk.dsize(),
             rank: self.tsk.rank(),
         }
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyPrepared<D, BRA, B> {
+    /// Prepared blind-rotation key.
+    pub fn blind_rotation_key(&self) -> &BlindRotationKeyPrepared<D, BRA, B> {
+        &self.brk
+    }
+    /// Mutable prepared blind-rotation key for lifecycle implementations.
+    pub fn blind_rotation_key_mut(&mut self) -> &mut BlindRotationKeyPrepared<D, BRA, B> {
+        &mut self.brk
+    }
+    /// Prepared row-expansion key.
+    pub fn tensor_key(&self) -> &GGLWEToGGSWKeyPrepared<D, B> {
+        &self.tsk
+    }
+    /// Mutable prepared row-expansion key for lifecycle implementations.
+    pub fn tensor_key_mut(&mut self) -> &mut GGLWEToGGSWKeyPrepared<D, B> {
+        &mut self.tsk
+    }
+    /// Prepared trace and packing keys, indexed by Galois element.
+    pub fn automorphism_keys(&self) -> &HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>> {
+        &self.atk
+    }
+    /// Mutable prepared trace and packing keys for lifecycle implementations.
+    pub fn automorphism_keys_mut(&mut self) -> &mut HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>> {
+        &mut self.atk
+    }
+    /// Builds a prepared bundle from independently allocated component keys.
+    pub fn from_parts(
+        brk: BlindRotationKeyPrepared<D, BRA, B>,
+        tsk: GGLWEToGGSWKeyPrepared<D, B>,
+        atk: HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>>,
+    ) -> Self {
+        assert_eq!(brk.n(), tsk.n());
+        assert!(!atk.is_empty(), "circuit-bootstrap automorphism keys are empty");
+        assert!(
+            atk.values().all(|key| key.n() == brk.n()),
+            "circuit-bootstrap key degree mismatch"
+        );
+        Self { brk, tsk, atk }
     }
 }

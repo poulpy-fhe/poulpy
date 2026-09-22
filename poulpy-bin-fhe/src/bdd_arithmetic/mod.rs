@@ -53,13 +53,13 @@
 //! No heap allocation occurs on the hot path; callers must size the arena using
 //! the corresponding `*_tmp_bytes` query method.
 mod bdd_1w_to_1w;
-mod bdd_2w_to_1w;
+pub(crate) mod bdd_2w_to_1w;
 mod blind_retrieval;
 mod blind_rotation;
 mod blind_selection;
 mod ciphertexts;
 mod circuits;
-mod eval;
+pub(crate) mod eval;
 mod key;
 
 pub use bdd_1w_to_1w::*;

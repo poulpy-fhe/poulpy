@@ -1,11 +1,12 @@
+pub use crate::api::{BDDKeyEncryptSk, BDDKeyPreparedFactory};
 use crate::bdd_arithmetic::FheUintPreparedDebug;
 use crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos;
 use crate::{
     bdd_arithmetic::{FheUint, UnsignedInteger},
     blind_rotation::BlindRotationAlgo,
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk,
-        CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared, CircuitBootstrappingKeyPreparedFactory,
+        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyLayout,
+        CircuitBootstrappingKeyPrepared,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -13,24 +14,22 @@ use poulpy_hal::AlignedBuf;
 use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey,
-    ModuleCoreAlloc,
+    GGLWEInfos, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey, ModuleCoreAlloc,
 };
-use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk, TransferInto};
+use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, TransferInto};
 use poulpy_core::{
-    GLWEToLWESwitchingKeyEncryptSk, GetDistribution,
+    GetDistribution,
     layouts::{
-        GLWEInfos, GLWESecretToBackendRef, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPreparedFactory, LWEInfos,
-        LWESecretToBackendRef, prepared::GLWEToLWEKeyPrepared,
+        GLWEInfos, GLWESecretToBackendRef, GLWEToLWEKey, GLWEToLWEKeyLayout, LWEInfos, LWESecretToBackendRef,
+        prepared::GLWEToLWEKeyPrepared,
     },
 };
 
 use poulpy_core::NoiseInfos;
-use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_hal::{
     layouts::{
-        Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena,
-        WriterTo, ZnxWord,
+        Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ReaderFrom, ScratchArena, WriterTo,
+        ZnxWord,
     },
     source::Source,
 };
@@ -175,109 +174,9 @@ where
     }
 }
 
-/// Backend-level factory for encrypting a [`BDDKey`] under a secret key.
-///
-/// Implemented for `Module<BE>` when the backend supports circuit-bootstrapping
-/// and switching-key encryption.  Callers should prefer the convenience method
-/// [`BDDKey::encrypt_sk`].
-pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
-    /// Returns the minimum scratch-space size in bytes required by
-    /// [`bdd_key_encrypt_sk`][Self::bdd_key_encrypt_sk].
-    fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: BDDKeyInfos;
-
+impl<D: Data, BRA: BlindRotationAlgo> BDDKey<D, BRA, i64> {
     #[allow(clippy::too_many_arguments)]
-    /// Fills `res` with key material encrypted under `sk_lwe` / `sk_glwe`.
-    ///
-    /// `source_xa` supplies mask randomness; `source_xe` supplies error
-    /// randomness.  The scratch arena must be at least
-    /// [`bdd_key_encrypt_sk_tmp_bytes`][Self::bdd_key_encrypt_sk_tmp_bytes]
-    /// bytes.
-    ///
-    /// When `res.ks_glwe` is `Some`, a fresh intermediate GLWE key is sampled
-    /// from `source_xe` and used as the bridging secret; `ks_lwe` is then
-    /// encrypted under that intermediate key rather than `sk_glwe` directly.
-    fn bdd_key_encrypt_sk<S0, S1>(
-        &self,
-        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        sk_lwe: &S0,
-        sk_glwe: &S1,
-        enc_infos: &BDDEncryptionInfos,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-}
-
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE>
-    for Module<BE>
-where
-    Self: CircuitBootstrappingKeyEncryptSk<BRA, BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
-        + GLWESwitchingKeyEncryptSk<BE>
-        + GLWESecretSampling<BE>,
-{
-    fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: BDDKeyInfos,
-    {
-        self.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&infos.cbt_infos())
-            .max(self.glwe_to_lwe_key_encrypt_sk_tmp_bytes(&infos.ks_lwe_infos()))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn bdd_key_encrypt_sk<S0, S1>(
-        &self,
-        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        sk_lwe: &S0,
-        sk_glwe: &S1,
-        enc_infos: &BDDEncryptionInfos,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        if let Some(key) = &mut res.ks_glwe {
-            let ks_glwe_infos = enc_infos
-                .ks_glwe
-                .as_ref()
-                .expect("ks_glwe enc_infos missing when ks_glwe key exists");
-            let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = self.glwe_secret_alloc(key.rank_out());
-            self.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, source_xe);
-            self.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, ks_glwe_infos, source_xe, source_xa, scratch);
-            self.glwe_to_lwe_key_encrypt_sk(
-                &mut res.ks_lwe,
-                sk_lwe,
-                &sk_out,
-                &enc_infos.ks_lwe,
-                source_xe,
-                source_xa,
-                scratch,
-            );
-        } else {
-            self.glwe_to_lwe_key_encrypt_sk(
-                &mut res.ks_lwe,
-                sk_lwe,
-                sk_glwe,
-                &enc_infos.ks_lwe,
-                source_xe,
-                source_xa,
-                scratch,
-            );
-        }
-
-        self.circuit_bootstrapping_key_encrypt_sk(&mut res.cbt, sk_lwe, sk_glwe, &enc_infos.cbt, source_xe, source_xa, scratch);
-    }
-}
-
-impl<BRA: BlindRotationAlgo> BDDKey<AlignedBuf, BRA, i64> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
+    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = D, ZnxWord = i64>>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -414,64 +313,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepa
     }
 }
 
-/// Backend-level factory for allocating and preparing [`BDDKeyPrepared`] values.
-///
-/// Implemented for `Module<BE>` when the backend supports preparation of all
-/// three constituent sub-keys.  Default method implementations delegate to
-/// the corresponding sub-key factories.
-pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>
-where
-    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
-{
-    fn alloc_bdd_key_from_infos<A>(&self, infos: &A) -> BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: BDDKeyInfos,
-    {
-        let ks_glwe = if let Some(ks_glwe_infos) = &infos.ks_glwe_infos() {
-            Some(self.glwe_switching_key_prepared_alloc_from_infos(ks_glwe_infos))
-        } else {
-            None
-        };
-
-        BDDKeyPrepared {
-            cbt: CircuitBootstrappingKeyPrepared::alloc_from_infos(self, &infos.cbt_infos()),
-            ks_glwe,
-            ks_lwe: self.glwe_to_lwe_key_prepared_alloc_from_infos(&infos.ks_lwe_infos()),
-        }
-    }
-
-    fn prepare_bdd_key_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: BDDKeyInfos,
-    {
-        self.circuit_bootstrapping_key_prepare_tmp_bytes(&infos.cbt_infos())
-            .max(self.glwe_to_lwe_key_prepare_tmp_bytes(&infos.ks_lwe_infos()))
-    }
-
-    fn prepare_bdd_key(
-        &self,
-        res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        res.cbt.prepare(self, &other.cbt, scratch);
-
-        if let Some(key_prep) = &mut res.ks_glwe {
-            if let Some(other) = &other.ks_glwe {
-                self.glwe_switching_key_prepare(key_prep, other, scratch);
-            } else {
-                panic!("incompatible keys: res has Some(ks_glwe) but other has none")
-            }
-        }
-
-        self.glwe_to_lwe_key_prepare(&mut res.ks_lwe, &other.ks_lwe, scratch);
-    }
-}
-impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPreparedFactory<BRA, BE> for Module<BE> where
-    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>
-{
-}
-
 impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
@@ -533,4 +374,70 @@ pub trait FheUintPrepareDebug<
         key: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKey<D, BRA, W> {
+    /// Builds a bundle from its constituent keys for an independent implementation.
+    pub fn from_parts(
+        cbt: CircuitBootstrappingKey<D, BRA, W>,
+        ks_glwe: Option<GLWESwitchingKey<D, W>>,
+        ks_lwe: GLWEToLWEKey<D, W>,
+    ) -> Self {
+        Self { cbt, ks_glwe, ks_lwe }
+    }
+    /// Borrows the circuit, optional bridge and extraction keys.
+    #[allow(clippy::type_complexity)]
+    pub fn parts(
+        &self,
+    ) -> (
+        &CircuitBootstrappingKey<D, BRA, W>,
+        &Option<GLWESwitchingKey<D, W>>,
+        &GLWEToLWEKey<D, W>,
+    ) {
+        (&self.cbt, &self.ks_glwe, &self.ks_lwe)
+    }
+    /// Mutably borrows the components for a selected key-encryption/preparation operation.
+    #[allow(clippy::type_complexity)]
+    pub fn parts_mut(
+        &mut self,
+    ) -> (
+        &mut CircuitBootstrappingKey<D, BRA, W>,
+        &mut Option<GLWESwitchingKey<D, W>>,
+        &mut GLWEToLWEKey<D, W>,
+    ) {
+        (&mut self.cbt, &mut self.ks_glwe, &mut self.ks_lwe)
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyPrepared<D, BRA, BE> {
+    /// Builds a bundle from its constituent keys for an independent implementation.
+    pub fn from_parts(
+        cbt: CircuitBootstrappingKeyPrepared<D, BRA, BE>,
+        ks_glwe: Option<GLWESwitchingKeyPrepared<D, BE>>,
+        ks_lwe: GLWEToLWEKeyPrepared<D, BE>,
+    ) -> Self {
+        Self { cbt, ks_glwe, ks_lwe }
+    }
+    /// Borrows the circuit, optional bridge and extraction keys.
+    #[allow(clippy::type_complexity)]
+    pub fn parts(
+        &self,
+    ) -> (
+        &CircuitBootstrappingKeyPrepared<D, BRA, BE>,
+        &Option<GLWESwitchingKeyPrepared<D, BE>>,
+        &GLWEToLWEKeyPrepared<D, BE>,
+    ) {
+        (&self.cbt, &self.ks_glwe, &self.ks_lwe)
+    }
+    /// Mutably borrows the components for a selected key-encryption/preparation operation.
+    #[allow(clippy::type_complexity)]
+    pub fn parts_mut(
+        &mut self,
+    ) -> (
+        &mut CircuitBootstrappingKeyPrepared<D, BRA, BE>,
+        &mut Option<GLWESwitchingKeyPrepared<D, BE>>,
+        &mut GLWEToLWEKeyPrepared<D, BE>,
+    ) {
+        (&mut self.cbt, &mut self.ks_glwe, &mut self.ks_lwe)
+    }
 }
