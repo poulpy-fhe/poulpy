@@ -28,7 +28,9 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 
     /// DFT-domain bit capacity used by [`Module::max_base2k`] for FHE parameter
     /// selection: the floating-point significand width for FFT backends, or
-    /// the composite modulus bit width for NTT backends.
+    /// `floor(log2(Q))` for NTT backends, where `Q` is the exact composite
+    /// modulus (see [`crate::layouts::PrimeSet::LOG_Q_PRODUCT`]). The modulus's
+    /// bit length, `ceil(log2(Q))`, would overestimate centered CRT capacity.
     ///
     /// Storage-only backends without DFT products use zero. Operation-specific
     /// input, rounding and accumulation bounds still apply. This does not limit
@@ -300,6 +302,13 @@ impl<B: Backend> Module<B> {
     /// This can be evaluated in a constant expression without constructing a
     /// module. Use the operand's degree, which may be smaller than a module's
     /// maximum degree. Returns zero if the DFT capacity leaves no positive radix.
+    ///
+    /// For NTT backends, normalized signed radix-`b` coefficients have magnitude
+    /// at most `2^(b - 1)`. A single negacyclic product is therefore bounded by
+    /// `n * 2^(2*b - 2)`. Centered CRT reconstruction requires this to be below
+    /// `Q / 2`; using `DFT_MAX_BITS = floor(log2(Q))` makes the formula satisfy
+    /// that bound for the odd NTT modulus `Q`.
+    ///
     /// Operation-specific input, rounding and accumulation bounds still apply;
     /// summing multiple products can require a smaller radix.
     ///

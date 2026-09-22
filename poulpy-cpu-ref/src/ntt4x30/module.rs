@@ -15,7 +15,7 @@ use std::ptr::NonNull;
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, Host, PrimeSet},
 };
 
 use crate::reference::ntt4x30::{
@@ -46,8 +46,7 @@ pub struct NTT4x30RefHandle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
 
 impl Backend for NTT4x30Ref {
-    // Four 30-bit CRT primes provide a 120-bit transform modulus.
-    const DFT_MAX_BITS: usize = 120;
+    const DFT_MAX_BITS: usize = Primes30::LOG_Q_PRODUCT;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

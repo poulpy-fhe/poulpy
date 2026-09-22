@@ -103,6 +103,14 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
+    /// `floor(log2(Q[0] * ... * Q[N-1]))`, from the exact prime product.
+    ///
+    /// This rounds down, unlike the per-prime [`Self::LOG_Q`]. It is the
+    /// conservative capacity used by [`crate::layouts::Module::max_base2k`]
+    /// for normalized signed-limb products with centered CRT reconstruction.
+    /// Summing the per-prime bit widths can overestimate this capacity.
+    const LOG_Q_PRODUCT: usize;
+
     /// Maximum log2 of the negacyclic NTT size supported by `OMEGA`.
     /// Defaults to 16 for prime sets using the original `2^17`-th roots.
     const MAX_LOG_N: u32 = 16;

@@ -117,8 +117,11 @@ const N: usize = 1 << 16;
 const BASE2K: usize = Module::<FFT64Ref>::max_base2k(N); // 19
 ```
 
-The transform bound is `ceil((DFT_MAX_BITS - log2(n)) / 2)`, using 53 bits for `FFT64`, 120 for `NTT4x30`, and 126 for `NTT3x42`.
+The transform bound is `ceil((DFT_MAX_BITS - log2(n)) / 2)`, using 53 bits for `FFT64`, 119 for `NTT4x30`, and 125 for `NTT3x42`.
 At `n = 2^16`, the corresponding limits are 19, 52, and 55 bits per limb.
+For NTT backends, the capacity is `PrimeSet::LOG_Q_PRODUCT = floor(log2(Q))`, computed from the exact CRT prime product.
+This ensures a normalized signed-limb product stays within the centered range `(-Q/2, Q/2)`.
+At `n = 2^15`, the limits are also 19, 52, and 55; rounding the NTT modulus capacity up would incorrectly allow one extra bit.
 Operation-specific input, accumulation, and floating-point error bounds still apply and can require smaller limbs.
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs, at the cost of more expensive elementary operations.

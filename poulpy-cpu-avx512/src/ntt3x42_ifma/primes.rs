@@ -40,6 +40,7 @@ impl PrimeSet for Primes42 {
     ];
     const OMEGA: [u64; 3] = [2_628_857_985_221, 3_217_638_597_750, 1_217_792_891_299];
     const LOG_Q: u64 = 42;
+    const LOG_Q_PRODUCT: usize = (Self::Q[0] as u128 * Self::Q[1] as u128 * Self::Q[2] as u128).ilog2() as usize;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -71,6 +72,14 @@ pub fn modq_pow64(x: u64, n: i64, q: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prime_product_capacity_is_const_and_rounds_down() {
+        const CAPACITY: usize = Primes42::LOG_Q_PRODUCT;
+        let product: u128 = Primes42::Q.iter().map(|&q| q as u128).product();
+        assert_eq!(CAPACITY, 125);
+        assert_eq!(CAPACITY, product.ilog2() as usize);
+    }
 
     #[test]
     fn primes42_are_prime() {

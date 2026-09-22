@@ -11,11 +11,11 @@ fn max_base2k() {
     }
 
     assert_eq!(const { limits::<crate::FFT64Neon>() }, [25, 19]);
-    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [59, 52]);
+    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [58, 52]);
     #[cfg(feature = "enable-rayon")]
     {
         assert_eq!(const { limits::<crate::FFT64NeonRayon>() }, [25, 19]);
-        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [59, 52]);
+        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [58, 52]);
     }
 }
 

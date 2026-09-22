@@ -12,18 +12,18 @@ fn max_base2k() {
     }
 
     assert_eq!(const { limits::<crate::FFT64Avx512>() }, [25, 19]);
-    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [59, 52]);
+    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [58, 52]);
     #[cfg(feature = "enable-rayon")]
     {
         assert_eq!(const { limits::<crate::FFT64Avx512Rayon>() }, [25, 19]);
-        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [59, 52]);
+        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [58, 52]);
     }
 
     #[cfg(feature = "enable-ifma")]
     {
-        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [62, 55]);
+        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [61, 55]);
         #[cfg(feature = "enable-rayon")]
-        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [62, 55]);
+        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [61, 55]);
     }
 }
 

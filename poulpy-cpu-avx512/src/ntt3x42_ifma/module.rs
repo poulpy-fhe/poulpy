@@ -17,7 +17,7 @@ use crate::ntt3x42_ifma::{
 };
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Module, PrepareHint},
+    layouts::{Backend, Module, PrepareHint, PrimeSet},
 };
 
 /// Opaque handle for the [`NTT3x42Ifma`](super::NTT3x42Ifma) backend.
@@ -55,8 +55,7 @@ impl NTT3x42IfmaHandle {
 
 impl Backend for NTT3x42Ifma {
     const MIN_DEGREE: usize = 8;
-    // Three 42-bit CRT primes provide a 126-bit transform modulus.
-    const DFT_MAX_BITS: usize = 126;
+    const DFT_MAX_BITS: usize = Primes42::LOG_Q_PRODUCT;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
