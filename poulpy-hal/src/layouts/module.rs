@@ -320,20 +320,17 @@ impl<B: Backend> Module<B> {
     /// accumulations before normalization and any carry-propagation bounds.
     ///
     /// For `m` output polynomials, add `ceil(log2(m))` to `failure_bits` to
-    /// allocate the failure budget by a union bound. This function can be
-    /// evaluated in a constant expression without constructing a module when
-    /// the backend provides a `const` implementation of the trait. Constant
-    /// callers must enable `#![feature(const_trait_impl)]`; runtime calls do
-    /// not require that feature gate.
+    /// allocate the failure budget by a union bound. This runtime query does
+    /// not require constructing a module.
     ///
     /// # Panics
     ///
     /// Panics if `n` is not a power of two, is below [`Backend::MIN_DEGREE`],
     /// or if `products` or `failure_bits` is zero.
     #[inline]
-    pub const fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
+    pub fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
     where
-        B: [const] super::BackendMaxBase2k,
+        B: super::BackendMaxBase2k,
     {
         assert!(n.is_power_of_two(), "n must be a power of two");
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");

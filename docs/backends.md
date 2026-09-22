@@ -106,19 +106,17 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The const query `Module::<BE>::max_base2k(n, products, failure_bits)` delegates to the backend's `BackendMaxBase2k` implementation:
+Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The runtime query `Module::<BE>::max_base2k(n, products, failure_bits)` delegates to the backend's `BackendMaxBase2k` implementation:
 
 ```rust
-#![feature(const_trait_impl)]
-
 use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
 use poulpy_hal::layouts::Module;
 
 // 32 accumulated products, with a 2^-128 target for the entire polynomial.
-const BASE2K: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128);
-assert_eq!(BASE2K, Some(54));
-const FFT_BASE2K: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128);
-assert_eq!(FFT_BASE2K, Some(19));
+let base2k: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128);
+assert_eq!(base2k, Some(54));
+let fft_base2k: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128);
+assert_eq!(fft_base2k, Some(19));
 ```
 
 The query uses independent centered-uniform input coefficients, a conservative Gaussian tail envelope, and a union bound over all coefficients of one output polynomial. For `n = 2^16`, 32 products, and 128 failure bits, it selects 19 for `FFT64`, 54 for `NTT4x30`, and 57 for `NTT3x42`. Increasing the accumulation count or tightening the failure target can lower the selected radix.
@@ -126,7 +124,7 @@ For NTT backends, `PrimeSet::LOG_Q_PRODUCT` supplies `log2(Q)` from the actual C
 
 The result is the largest radix up to 62 satisfying the Gaussian envelope; `Some(0)` means no positive radix fits. For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
 FFT64 backends implement the trait using the shared stochastic roundoff model covering transforms, complex products, and sequential accumulation before one inverse FFT. It assumes approximately uncorrelated roundoff and twiddle-error contributions; these are model estimates, not certified far-tail bounds. An implementation returns `None` when it has no applicable model for the workload, as with the storage-only `HostBytesBackend`.
-Backends provide `impl const BackendMaxBase2k` to make the query available in constant expressions. Constant callers also enable `#![feature(const_trait_impl)]` on the repository's nightly toolchain; runtime callers do not need this feature gate. They can reuse `poulpy_hal::layouts::{max_base2k_ntt, max_base2k_fft64}` or supply a model for their own arithmetic. The module validates the common input constraints before forwarding the query. Storage delegation through `impl_backend_from!` does not choose a model; wrappers that preserve the arithmetic explicitly forward `BackendMaxBase2k` as well.
+Backends implement `BackendMaxBase2k` with an ordinary trait method; the query needs no module instance. They can reuse `poulpy_hal::layouts::{max_base2k_ntt, max_base2k_fft64}` or supply a model for their own arithmetic. The module validates the common input constraints before forwarding the query. Storage delegation through `impl_backend_from!` does not choose a model; wrappers that preserve the arithmetic explicitly forward `BackendMaxBase2k` as well.
 See [Failure estimates](base2k-failure-probability.md) for the formula, assumptions, and comparison with worst-case bounds.
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.

@@ -154,8 +154,6 @@
 //! and their trait implementations from `poulpy_hal::oep`. All other items are
 //! implementation details subject to change without notice.
 
-#![feature(const_trait_impl)]
-
 #[cfg(all(feature = "enable-neon", not(target_arch = "aarch64")))]
 compile_error!("feature `enable-neon` requires target_arch = \"aarch64\".");
 

@@ -313,7 +313,7 @@ impl Backend for HostBytesBackend {
 }
 
 // Storage-only backend: no transform arithmetic to model.
-impl const BackendMaxBase2k for HostBytesBackend {
+impl BackendMaxBase2k for HostBytesBackend {
     fn max_base2k(_n: usize, _products: usize, _failure_bits: usize) -> Option<usize> {
         None
     }

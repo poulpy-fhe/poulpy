@@ -1,4 +1,3 @@
-#![feature(const_trait_impl)]
 #![allow(clippy::too_many_arguments)]
 
 //! Reference (portable) CPU backend for the Poulpy lattice cryptography library.

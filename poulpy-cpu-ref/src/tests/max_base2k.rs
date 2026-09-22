@@ -11,9 +11,9 @@ use poulpy_hal::{
 use crate::{FFT64Ref, NTT4x30Ref, reference::ntt4x30::primes::Primes30};
 
 #[test]
-fn max_base2k_is_const_and_uses_the_requested_budget() {
-    const RADIX: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 15, 32, 128);
-    assert_eq!(RADIX, Some(54));
+fn max_base2k_uses_the_requested_budget() {
+    let radix: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 15, 32, 128);
+    assert_eq!(radix, Some(54));
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128), Some(54));
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 256), Some(53));
     assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 16, 512, 128), Some(53));
@@ -21,9 +21,9 @@ fn max_base2k_is_const_and_uses_the_requested_budget() {
 }
 
 #[test]
-fn max_base2k_fft_is_const_and_uses_the_requested_budget() {
-    const RADIX: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 15, 32, 128);
-    assert_eq!(RADIX, Some(19));
+fn max_base2k_fft_uses_the_requested_budget() {
+    let radix: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 15, 32, 128);
+    assert_eq!(radix, Some(19));
     assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128), Some(19));
     assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 32, 256), Some(18));
     assert_eq!(Module::<FFT64Ref>::max_base2k(1 << 16, 128, 128), Some(18));

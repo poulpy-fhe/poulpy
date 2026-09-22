@@ -83,7 +83,7 @@ pub struct FFT64AvxHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
 
-impl const poulpy_hal::layouts::BackendMaxBase2k for FFT64Avx {
+impl poulpy_hal::layouts::BackendMaxBase2k for FFT64Avx {
     fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
         Some(poulpy_hal::layouts::max_base2k_fft64(n, products, failure_bits))
     }

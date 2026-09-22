@@ -1,4 +1,4 @@
-use std::f64::consts::{LN_2, LOG2_E};
+use std::f64::consts::LN_2;
 
 use super::Backend;
 
@@ -9,11 +9,9 @@ use super::Backend;
 /// reuse [`max_base2k_ntt`] or [`max_base2k_fft64`], or supply a different model
 /// with documented input-distribution and numerical-error assumptions.
 ///
-/// Use `impl const` to support queries in constant expressions. Implementing
-/// the const trait and calling it in constants require `#![feature(const_trait_impl)]`.
 /// Storage or handle delegation alone does not imply that two backends share a model;
 /// wrappers that preserve the arithmetic can explicitly forward this trait.
-pub const trait BackendMaxBase2k: Backend {
+pub trait BackendMaxBase2k: Backend {
     /// Estimates the largest supported limb radix for `products` accumulated
     /// polynomial products of degree `n`, targeting a probability at most
     /// `2^(-failure_bits)` that any coefficient of the output polynomial fails.
@@ -53,7 +51,7 @@ pub const trait BackendMaxBase2k: Backend {
 ///
 /// Panics if `log2_modulus` is not finite and positive, `n` is not a power of
 /// two, or `products` or `failure_bits` is zero.
-pub const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failure_bits: usize) -> usize {
+pub fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failure_bits: usize) -> usize {
     assert!(
         log2_modulus.is_finite() && log2_modulus > 0.0,
         "the modulus logarithm must be finite and positive"
@@ -63,12 +61,12 @@ pub const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failur
     assert!(failure_bits > 0, "the failure target must be positive");
 
     let log2_n = n.ilog2() as f64;
-    let log2_variance = log2_n + log2(products as f64);
-    let log2_tail = log2(2.0 * LN_2 * (failure_bits as f64 + log2_n));
+    let log2_variance = log2_n + (products as f64).log2();
+    let log2_tail = (2.0 * LN_2 * (failure_bits as f64 + log2_n)).log2();
     // Leave a small margin against upward rounding at an integer threshold.
     // Float-to-integer casts saturate negative values to zero.
-    let radix = ((log2_modulus + 2.584_962_500_721_156 - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
-    if radix > 62 { 62 } else { radix }
+    let radix = ((log2_modulus + 6.0_f64.log2() - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
+    radix.min(62)
 }
 
 /// Selects an FFT64 radix using a first-order stochastic roundoff model.
@@ -100,7 +98,7 @@ pub const fn max_base2k_ntt(log2_modulus: f64, n: usize, products: usize, failur
 ///
 /// Panics if `n` is not a power of two at least 2, or `products` or
 /// `failure_bits` is zero.
-pub const fn max_base2k_fft64(n: usize, products: usize, failure_bits: usize) -> usize {
+pub fn max_base2k_fft64(n: usize, products: usize, failure_bits: usize) -> usize {
     assert!(n >= 2 && n.is_power_of_two(), "FFT degree must be a power of two >= 2");
     assert!(products > 0, "the number of accumulated products must be positive");
     assert!(failure_bits > 0, "the failure target must be positive");
@@ -110,38 +108,17 @@ pub const fn max_base2k_fft64(n: usize, products: usize, failure_bits: usize) ->
     // Floating-point count arithmetic avoids usize overflow for large counts.
     let scalar_mac = 2.0 / 3.0 + (d + 1.0) / 6.0 - 1.0 / (3.0 * d);
     let fused_mac = (d + 0.5) / 3.0;
-    let mac_variance = if scalar_mac > fused_mac { scalar_mac } else { fused_mac };
+    let mac_variance = scalar_mac.max(fused_mac);
     let variance_factor = 5.0 * (log2_n - 1.0) + mac_variance;
-    let log2_variance = log2_n + log2(d) + log2(variance_factor);
-    let log2_tail = log2(8.0 * LN_2 * (failure_bits as f64 + log2_n));
-    let radix = ((53.0 + 3.584_962_500_721_156 - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
-    if radix > 62 { 62 } else { radix }
-}
-
-/// Computes log2 for the positive normal inputs used by the selector.
-const fn log2(x: f64) -> f64 {
-    assert!(x.is_finite() && x >= f64::MIN_POSITIVE);
-    let bits = x.to_bits();
-    let exponent = ((bits >> 52) & 0x7ff) as i32 - 1023;
-    let mantissa = f64::from_bits((bits & ((1_u64 << 52) - 1)) | (1023_u64 << 52));
-    // ln(m) = 2 * atanh((m - 1) / (m + 1)). With 1 <= m < 2,
-    // the series argument is below 1/3; 20 terms put truncation below 3e-21.
-    let z = (mantissa - 1.0) / (mantissa + 1.0);
-    let z_squared = z * z;
-    let mut term = z;
-    let mut sum = 0.0;
-    let mut i = 0;
-    while i < 20 {
-        sum += term / (2 * i + 1) as f64;
-        term *= z_squared;
-        i += 1;
-    }
-    exponent as f64 + (2.0 * LOG2_E) * sum
+    let log2_variance = log2_n + d.log2() + variance_factor.log2();
+    let log2_tail = (8.0 * LN_2 * (failure_bits as f64 + log2_n)).log2();
+    let radix = ((53.0 + 12.0_f64.log2() - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
+    radix.min(62)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BackendMaxBase2k, log2, max_base2k_fft64, max_base2k_ntt};
+    use super::{BackendMaxBase2k, max_base2k_fft64, max_base2k_ntt};
     use crate as poulpy_hal;
     use crate::layouts::{HostBytesBackend, Module};
 
@@ -151,7 +128,7 @@ mod tests {
     // Reuse storage without inheriting the source backend's radix model.
     crate::impl_backend_from!(CustomModelBackend, HostBytesBackend);
 
-    impl const BackendMaxBase2k for CustomModelBackend {
+    impl BackendMaxBase2k for CustomModelBackend {
         fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
             // Distinct contributions detect dropped or reordered arguments.
             Some(n.ilog2() as usize + 2 * products + failure_bits / 128)
@@ -159,24 +136,21 @@ mod tests {
     }
 
     #[test]
-    fn max_base2k_dispatches_to_the_backend_in_const_expressions() {
-        const RADIX: Option<usize> = Module::<CustomModelBackend>::max_base2k(16, 3, 256);
-        const UNSUPPORTED: Option<usize> = Module::<HostBytesBackend>::max_base2k(16, 3, 256);
-        assert_eq!(RADIX, Some(12));
-        assert_eq!(UNSUPPORTED, None);
+    fn max_base2k_dispatches_to_the_backend() {
+        let radix: Option<usize> = Module::<CustomModelBackend>::max_base2k(16, 3, 256);
+        let unsupported: Option<usize> = Module::<HostBytesBackend>::max_base2k(16, 3, 256);
+        assert_eq!(radix, Some(12));
+        assert_eq!(unsupported, None);
         assert_eq!(Module::<CustomModelBackend>::max_base2k(32, 5, 128), Some(16));
     }
 
     const LOG2_Q: f64 = 119.886_155_257_481_1;
-    const RADIX_N15: usize = max_base2k_ntt(LOG2_Q, 1 << 15, 32, 128);
-    const RADIX_N16: usize = max_base2k_ntt(LOG2_Q, 1 << 16, 32, 128);
-    const RADIX_N16_256: usize = max_base2k_ntt(LOG2_Q, 1 << 16, 32, 256);
 
     #[test]
-    fn probability_radix_const_examples() {
-        assert_eq!(RADIX_N15, 54);
-        assert_eq!(RADIX_N16, 54);
-        assert_eq!(RADIX_N16_256, 53);
+    fn probability_radix_examples() {
+        assert_eq!(max_base2k_ntt(LOG2_Q, 1 << 15, 32, 128), 54);
+        assert_eq!(max_base2k_ntt(LOG2_Q, 1 << 16, 32, 128), 54);
+        assert_eq!(max_base2k_ntt(LOG2_Q, 1 << 16, 32, 256), 53);
         assert_eq!(max_base2k_ntt(1.0, 1 << 16, 32, 128), 0);
         assert_eq!(max_base2k_ntt(1024.0, 8, 1, 1), 62);
     }
@@ -206,41 +180,11 @@ mod tests {
     }
 
     #[test]
-    fn fft_probability_radix_const_examples() {
-        const N15: usize = max_base2k_fft64(1 << 15, 32, 128);
-        const N16: usize = max_base2k_fft64(1 << 16, 32, 128);
-        const STRICTER: usize = max_base2k_fft64(1 << 16, 32, 256);
-        assert_eq!((N15, N16, STRICTER), (19, 19, 18));
+    fn fft_probability_radix_examples() {
+        assert_eq!(max_base2k_fft64(1 << 15, 32, 128), 19);
+        assert_eq!(max_base2k_fft64(1 << 16, 32, 128), 19);
+        assert_eq!(max_base2k_fft64(1 << 16, 32, 256), 18);
         assert_eq!(max_base2k_fft64(1 << 16, 128, 128), 18);
         assert_eq!(max_base2k_fft64(1usize << (usize::BITS - 1), usize::MAX, usize::MAX), 0);
-    }
-
-    #[test]
-    fn const_log2_matches_reference_values() {
-        for exponent in -1022..=1023 {
-            let power = f64::from_bits(((exponent + 1023) as u64) << 52);
-            assert_eq!(log2(power), exponent as f64);
-        }
-        // References rounded to f64 from 120-digit evaluations of the exact
-        // binary64 inputs. Runtime f64::log2 has unspecified precision, and
-        // Miri deliberately perturbs it, so it is not a stable oracle.
-        for (x, expected) in [
-            (1.000_000_000_000_001, 1.601_713_251_907_458e-15_f64),
-            (1.5, 0.584_962_500_721_156_2),
-            (1.999_999_999_999_999, 0.999_999_999_999_999_2),
-            (3.0, 1.584_962_500_721_156),
-            (31.0, 4.954_196_310_386_875),
-            (97.0, 6.599_912_842_187_128),
-            (65_535.0, 15.999_977_986_052_736),
-            (u32::MAX as f64, 31.999_999_999_664_098),
-            (u64::MAX as f64, 64.0),
-        ] {
-            let actual = log2(x);
-            // All results are positive, so bit distance counts ULPs directly.
-            assert!(
-                actual.to_bits().abs_diff(expected.to_bits()) <= 8,
-                "x = {x}, actual = {actual}, expected = {expected}"
-            );
-        }
     }
 }

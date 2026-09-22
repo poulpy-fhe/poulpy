@@ -151,9 +151,9 @@ For FFT64, the paper's experiments support limb widths around $K=19$, not $K=52$
 
 ## Selecting a radix for a failure target
 
-`Module::<BE>::max_base2k(N, d, failure_bits)` delegates to the backend's `BackendMaxBase2k` trait implementation. Current arithmetic backends use the corresponding NTT or FFT64 model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The result is a `const`-evaluable `Option<usize>`: `Some(K)` for supported backends, `Some(0)` if no positive radix fits, and `None` when the backend implementation has no applicable model for the workload. Backends use `impl const BackendMaxBase2k` to preserve constant evaluation; constant callers enable `#![feature(const_trait_impl)]`. Selecting the model is independent of the DFT storage word.
+`Module::<BE>::max_base2k(N, d, failure_bits)` delegates to the backend's `BackendMaxBase2k` trait implementation. Current arithmetic backends use the corresponding NTT or FFT64 model above. A positive `failure_bits` value $\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any coefficient of one output polynomial fails. The query returns an `Option<usize>`: `Some(K)` for supported backends, `Some(0)` if no positive radix fits, and `None` when the backend implementation has no applicable model for the workload. The query runs at runtime and uses standard floating-point logarithms, without constructing a module. Selecting the model is independent of the DFT storage word.
 
-To avoid evaluating or inverting `erfc` in a constant expression, the query uses the conservative envelope
+To obtain a simple closed-form limit, the query uses the conservative envelope
 
 $$
 \operatorname{erfc}(x)\le e^{-x^2},\qquad x\ge0.
@@ -188,7 +188,7 @@ $$
 \sigma_e\le\frac{1}{\sqrt{8\ln2\,(\lambda+\log_2N)}}.
 $$
 
-Substituting the roundoff model gives the const-evaluable limit
+Substituting the roundoff model gives the limit
 
 $$
 K\le\frac12\left[

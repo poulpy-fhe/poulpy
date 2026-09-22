@@ -7,19 +7,19 @@ fn max_base2k() {
     use poulpy_hal::layouts::{BackendMaxBase2k, Module};
 
     // A 128-bit target for one output polynomial and 32 independent products.
-    const fn limits<B: [const] BackendMaxBase2k>() -> [Option<usize>; 2] {
+    fn limits<B: BackendMaxBase2k>() -> [Option<usize>; 2] {
         [
             Module::<B>::max_base2k(1 << 15, 32, 128),
             Module::<B>::max_base2k(1 << 16, 32, 128),
         ]
     }
 
-    assert_eq!(const { limits::<crate::FFT64Neon>() }, [Some(19), Some(19)]);
-    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [Some(54), Some(54)]);
+    assert_eq!(limits::<crate::FFT64Neon>(), [Some(19), Some(19)]);
+    assert_eq!(limits::<crate::NTT4x30Neon>(), [Some(54), Some(54)]);
     #[cfg(feature = "enable-rayon")]
     {
-        assert_eq!(const { limits::<crate::FFT64NeonRayon>() }, [Some(19), Some(19)]);
-        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [Some(54), Some(54)]);
+        assert_eq!(limits::<crate::FFT64NeonRayon>(), [Some(19), Some(19)]);
+        assert_eq!(limits::<crate::NTT4x30NeonRayon>(), [Some(54), Some(54)]);
     }
 }
 
