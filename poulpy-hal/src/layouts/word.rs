@@ -70,7 +70,14 @@ impl BigWord for i128 {}
 /// Implementors range from plain elements (`f64` for split-complex FFT
 /// backends) to packed CRT-lane blocks. There is deliberately no `Eq`/`Hash`
 /// bound so that `f64` qualifies.
-pub trait DftWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq + 'static {}
+pub trait DftWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq + 'static {
+    /// Logarithm of the CRT modulus, when this word represents CRT residues.
+    ///
+    /// Enables the uniform-input NTT model used by
+    /// [`Module::max_base2k_for_failure`](crate::layouts::Module::max_base2k_for_failure).
+    /// Floating-point and storage-only words have no CRT modulus.
+    const LOG_CRT_MODULUS: Option<f64> = None;
+}
 
 /// Split-complex FFT representation over `f64` (spqlios ordering).
 impl DftWord for f64 {}

@@ -35,6 +35,7 @@
 //! DFT-domain operations require `n == n_full == N`. Flat accessors
 //! (`raw`, `as_ptr`) panic on a window.
 
+mod base2k;
 mod convolution;
 mod crt;
 mod encoding;

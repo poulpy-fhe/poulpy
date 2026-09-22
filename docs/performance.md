@@ -135,10 +135,12 @@ NTT3x42Ifma          poulpy-cpu-avx512   yes  no     --features enable-ifma   RU
 
 ## 4. `base2k`
 
-Query the limb-size limit with the `const fn` `Module::<BE>::max_base2k(n)` before choosing parameters.
-For a power-of-two ring degree `n`, its transform bound is `floor((DFT_MAX_BITS + 1 - log2(n)) / 2)`.
-The backend capacities are 53 bits for `FFT64`, approximately 119.8861552574811 for `NTT4x30`, and 125.99998314565484 for `NTT3x42`, giving limits of 19, 52, and 55 at `n = 2^16`.
-See [Backends](backends.md#choosing-a-subfamily) for a compile-time example.
+Get a starting limb-size recommendation with the `const fn` `Module::<BE>::max_base2k(n)` before choosing parameters.
+For a power-of-two ring degree `n`, its initial recommendation is `ceil((DFT_MAX_BITS - log2(n)) / 2)`.
+The backend capacities are 53 bits for `FFT64`, approximately 119.8861552574811 for `NTT4x30`, and 125.99998314565484 for `NTT3x42`, giving recommendations of 19, 52, and 55 at `n = 2^16`.
+For an explicit NTT accumulation count and failure budget, use `Module::<BE>::max_base2k_for_failure(n, products, failure_bits)`. With 32 products and a `2^-128` target over one degree-`2^16` output polynomial, the uniform-input Gaussian model selects 54 for `NTT4x30` and 57 for `NTT3x42`.
+The probability query returns `None` for FFT until a kernel-specific numerical-error model is available.
+See [Backends](backends.md#choosing-a-subfamily) for compile-time examples and [Failure estimates](base2k-failure-probability.md) for the model.
 Within the numerical bounds of the operation and circuit, larger limbs improve performance by a wide margin.
 
 A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the limb count — linearly for the transforms and the key traffic, quadratically for the tensor product.

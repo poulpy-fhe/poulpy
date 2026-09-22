@@ -107,8 +107,8 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     ///
     /// Unlike the per-prime [`Self::LOG_Q`], this retains the fractional part
     /// of the logarithm. It is the capacity used by
-    /// [`crate::layouts::Module::max_base2k`] for normalized signed-limb products
-    /// with centered CRT reconstruction. Summing the per-prime bit widths can
+    /// [`crate::layouts::Module::max_base2k_for_failure`] for uniform signed-limb
+    /// products with centered CRT reconstruction. Summing the per-prime bit widths can
     /// overestimate this capacity.
     const LOG_Q_PRODUCT: f64;
 
@@ -197,7 +197,9 @@ unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
 /// Byte-layout contract: `n` consecutive `P::Lanes<T>::LEN`-lane CRT blocks per
 /// limb, in the NTT ordering of `P`. Cross-backend interchange also
 /// requires the relevant layout-compatibility marker.
-impl<P: PrimeSet, T: LaneElem> DftWord for CrtWord<P, T> {}
+impl<P: PrimeSet, T: LaneElem> DftWord for CrtWord<P, T> {
+    const LOG_CRT_MODULUS: Option<f64> = Some(P::LOG_Q_PRODUCT);
+}
 
 impl<P: PrimeSet, T: LaneElem> Add for CrtWord<P, T> {
     type Output = Self;

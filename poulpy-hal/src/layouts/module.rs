@@ -296,21 +296,18 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Maximum FHE limb radix at ring degree `n`:
-    /// `floor((B::DFT_MAX_BITS + 1 - log2(n)) / 2)`.
+    /// Initial FHE limb-radix recommendation at ring degree `n`:
+    /// `ceil((B::DFT_MAX_BITS - log2(n)) / 2)`.
     ///
-    /// This can be evaluated in a constant expression without constructing a
-    /// module. Use the operand's degree, which may be smaller than a module's
-    /// maximum degree. Returns zero if the DFT capacity leaves no positive radix.
+    /// This degree-only heuristic assumes ordinary uniform-input FHE workloads.
+    /// It does not specify a failure budget. Use [`Self::max_base2k_for_failure`]
+    /// to select an NTT radix for an accumulation count and failure target.
+    /// FFT parameters additionally require the operation's numerical-error model.
     ///
-    /// For NTT backends, normalized signed radix-`b` coefficients have magnitude
-    /// at most `2^(b - 1)`. A single negacyclic product is therefore bounded by
-    /// `n * 2^(2*b - 2)`. Centered CRT reconstruction requires this to be below
-    /// `Q / 2`, or equivalently `b < (log2(Q) + 1 - log2(n)) / 2`. For the
-    /// odd NTT modulus `Q`, this gives the floor in the formula above.
-    ///
-    /// Operation-specific input, rounding and accumulation bounds still apply;
-    /// summing multiple products can require a smaller radix.
+    /// This can be evaluated without constructing a module. Use the operand's
+    /// degree, which may be smaller than the module's maximum degree. Returns
+    /// zero if the DFT capacity leaves no positive radix. Operation-specific
+    /// input, rounding and accumulation bounds still apply.
     ///
     /// # Panics
     ///
@@ -320,7 +317,47 @@ impl<B: Backend> Module<B> {
         assert!(n.is_power_of_two(), "n must be a power of two");
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
         // Float-to-integer casts saturate negative values to zero.
-        ((B::DFT_MAX_BITS + 1.0 - n.ilog2() as f64) / 2.0).floor() as usize
+        ((B::DFT_MAX_BITS - n.ilog2() as f64) / 2.0).ceil() as usize
+    }
+
+    /// Selects an NTT limb radix for a uniform-input Gaussian failure model.
+    ///
+    /// `products` is the number of polynomial products accumulated into one
+    /// output polynomial of degree `n`. `failure_bits` requests an estimated
+    /// probability at most `2^(-failure_bits)` that any of its coefficients
+    /// leaves the centered CRT range. Both arguments must be positive.
+    ///
+    /// The model assumes independent, centered uniform input coefficients in
+    /// `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. It uses
+    /// `sigma = 2^(2*b) * sqrt(n * products) / 12` and the conservative Gaussian
+    /// tail envelope `erfc(x) <= exp(-x*x)`, followed by a union bound over `n`
+    /// output coefficients. This is a parameter estimate under that model,
+    /// not an arbitrary-input guarantee. Correlated operands and accumulated
+    /// results require a suitable model of their own.
+    ///
+    /// Returns the largest radix up to 62 satisfying that envelope, or
+    /// `Some(0)` if no positive radix does. Returns `None` for FFT or other
+    /// backends without CRT modulus metadata: the FFT significand width does
+    /// not determine its numerical-error distribution.
+    ///
+    /// For `m` output polynomials, add `ceil(log2(m))` to `failure_bits` to
+    /// allocate the failure budget by a union bound. This function can be
+    /// evaluated in a constant expression without constructing a module.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is not a power of two, is below [`Backend::MIN_DEGREE`],
+    /// or if `products` or `failure_bits` is zero.
+    #[inline]
+    pub const fn max_base2k_for_failure(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+        assert!(n.is_power_of_two(), "n must be a power of two");
+        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
+        assert!(products > 0, "products must be positive");
+        assert!(failure_bits > 0, "failure_bits must be positive");
+        match <B::DftWord as crate::layouts::DftWord>::LOG_CRT_MODULUS {
+            Some(log_q) => Some(super::base2k::max_base2k_ntt(log_q, n, products, failure_bits)),
+            None => None,
+        }
     }
 
     /// Creates a backend module for ring degree `N`.

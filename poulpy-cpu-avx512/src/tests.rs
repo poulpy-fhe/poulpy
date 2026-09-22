@@ -12,37 +12,46 @@ fn max_base2k() {
     }
 
     assert_eq!(const { limits::<crate::FFT64Avx512>() }, [25, 19]);
-    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [58, 52]);
+    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [59, 52]);
     #[cfg(feature = "enable-rayon")]
     {
         assert_eq!(const { limits::<crate::FFT64Avx512Rayon>() }, [25, 19]);
-        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [58, 52]);
+        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [59, 52]);
     }
 
     #[cfg(feature = "enable-ifma")]
     {
-        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [61, 55]);
+        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [62, 55]);
         #[cfg(feature = "enable-rayon")]
-        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [61, 55]);
+        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [62, 55]);
     }
 }
 
-#[cfg(feature = "enable-ifma")]
 #[test]
-fn max_base2k_ifma_is_largest_radix_with_centered_product_capacity() {
-    use poulpy_hal::layouts::{Backend, Module, PrimeSet};
+fn max_base2k_for_failure() {
+    use poulpy_hal::layouts::{Backend, Module};
 
-    use crate::{NTT3x42Ifma, ntt3x42_ifma::primes::Primes42};
+    // A 128-bit target for one output polynomial and 32 independent products.
+    const fn limits<B: Backend>() -> [Option<usize>; 2] {
+        [
+            Module::<B>::max_base2k_for_failure(1 << 15, 32, 128),
+            Module::<B>::max_base2k_for_failure(1 << 16, 32, 128),
+        ]
+    }
 
-    let q: u128 = Primes42::Q.into_iter().map(u128::from).product();
-    for log_n in NTT3x42Ifma::MIN_DEGREE.ilog2()..=Primes42::MAX_LOG_N {
-        let n = 1usize << log_n;
-        let base2k = Module::<NTT3x42Ifma>::max_base2k(n);
-        // The fractional capacity is very close to 126, but rounding it up
-        // would let products cross the centered CRT reconstruction boundary.
-        let product_bound = (n as u128) << (2 * base2k - 2);
-        assert!(2 * product_bound < q, "degree {n}, radix {base2k}");
-        assert!(2 * (4 * product_bound) >= q, "degree {n}, radix {}", base2k + 1);
+    assert_eq!(const { limits::<crate::FFT64Avx512>() }, [None, None]);
+    assert_eq!(const { limits::<crate::NTT4x30Avx512>() }, [Some(54), Some(54)]);
+    #[cfg(feature = "enable-rayon")]
+    {
+        assert_eq!(const { limits::<crate::FFT64Avx512Rayon>() }, [None, None]);
+        assert_eq!(const { limits::<crate::NTT4x30Avx512Rayon>() }, [Some(54), Some(54)]);
+    }
+
+    #[cfg(feature = "enable-ifma")]
+    {
+        assert_eq!(const { limits::<crate::NTT3x42Ifma>() }, [Some(57), Some(57)]);
+        #[cfg(feature = "enable-rayon")]
+        assert_eq!(const { limits::<crate::NTT3x42IfmaRayon>() }, [Some(57), Some(57)]);
     }
 }
 

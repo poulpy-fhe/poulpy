@@ -3,9 +3,8 @@ use poulpy_hal::{
         SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
     layouts::{
-        Backend, HostBytesBackend, Module, PrepareHint, PrimeSet, ScalarZnxToBackendRef, SvpPPolToBackendMut,
-        SvpPPolToBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut, VecZnxToBackendRef, ZnxView,
-        ZnxViewMut,
+        HostBytesBackend, Module, PrepareHint, PrimeSet, ScalarZnxToBackendRef, SvpPPolToBackendMut, SvpPPolToBackendRef,
+        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
 };
 
@@ -19,11 +18,11 @@ fn max_base2k_is_const_and_depends_on_degree() {
 
     // Odd and even exponents exercise rounding with both DFT capacities.
     for (n, fft, ntt) in [
-        (8, 25, 58),
+        (8, 25, 59),
         (16, 25, 58),
-        (32, 24, 57),
+        (32, 24, 58),
         (1 << 10, 22, 55),
-        (1 << 15, 19, 52),
+        (1 << 15, 19, 53),
         (1 << 16, 19, 52),
         (1 << 18, 18, 51),
     ] {
@@ -33,17 +32,49 @@ fn max_base2k_is_const_and_depends_on_degree() {
 }
 
 #[test]
-fn max_base2k_ntt_is_largest_radix_with_centered_product_capacity() {
-    let q: u128 = Primes30::Q.into_iter().map(u128::from).product();
-    for log_n in NTT4x30Ref::MIN_DEGREE.ilog2()..=Primes30::MAX_LOG_N {
+fn max_base2k_for_failure_is_const_and_uses_the_requested_budget() {
+    const RADIX: Option<usize> = Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 15, 32, 128);
+    assert_eq!(RADIX, Some(54));
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 32, 128), Some(54));
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 32, 256), Some(53));
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 512, 128), Some(53));
+    assert_eq!(Module::<FFT64Ref>::max_base2k_for_failure(1 << 16, 32, 128), None);
+    assert_eq!(Module::<HostBytesBackend>::max_base2k_for_failure(8, 1, 128), None);
+}
+
+#[test]
+fn max_base2k_for_failure_is_largest_radix_meeting_the_gaussian_envelope() {
+    let q = Primes30::Q.into_iter().map(u128::from).product::<u128>() as f64;
+    for log_n in 3..=Primes30::MAX_LOG_N {
         let n = 1usize << log_n;
-        let base2k = Module::<NTT4x30Ref>::max_base2k(n);
-        // A normalized limb can contain -2^(base2k - 1). Squaring the
-        // constant-coefficient polynomial attains this bound at X^(n - 1).
-        let product_bound = (n as u128) << (2 * base2k - 2);
-        assert!(2 * product_bound < q, "degree {n}, radix {base2k}");
-        assert!(2 * (4 * product_bound) >= q, "degree {n}, radix {}", base2k + 1);
+        for products in [1, 32, 97, 65_536] {
+            for failure_bits in [40, 128, 256, 1024] {
+                let radix = Module::<NTT4x30Ref>::max_base2k_for_failure(n, products, failure_bits).unwrap();
+                let log2_envelope = |k: usize| {
+                    let p = (1u64 << (k - 1)) as f64;
+                    let sigma = p * p * ((n as f64) * (products as f64)).sqrt() / 3.0;
+                    let x = (q / 2.0) / (std::f64::consts::SQRT_2 * sigma);
+                    log_n as f64 - x * x * std::f64::consts::LOG2_E
+                };
+                assert!(log2_envelope(radix) <= -(failure_bits as f64));
+                if radix < 62 {
+                    assert!(log2_envelope(radix + 1) > -(failure_bits as f64));
+                }
+            }
+        }
     }
+}
+
+#[test]
+#[should_panic(expected = "products must be positive")]
+fn max_base2k_for_failure_rejects_zero_products() {
+    Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 0, 128);
+}
+
+#[test]
+#[should_panic(expected = "failure_bits must be positive")]
+fn max_base2k_for_failure_rejects_zero_failure_bits() {
+    Module::<NTT4x30Ref>::max_base2k_for_failure(1 << 16, 32, 0);
 }
 
 fn square_constant_ntt(module: &Module<NTT4x30Ref>, base2k: usize) -> VecZnxBigOwned<NTT4x30Ref> {
@@ -76,10 +107,10 @@ fn square_constant_ntt(module: &Module<NTT4x30Ref>, base2k: usize) -> VecZnxBigO
 }
 
 #[test]
-fn max_base2k_ntt_log_n_15_square_reconstructs_without_wraparound() {
+fn ntt_log_n_15_structured_square_can_exceed_the_uniform_input_recommendation() {
     let n = 1 << 15;
     let module = Module::<NTT4x30Ref>::new(n as u64);
-    let base2k = Module::<NTT4x30Ref>::max_base2k(n);
+    let base2k = 52;
     let square = square_constant_ntt(&module, base2k);
     let coefficient_square = 1i128 << (2 * base2k - 2);
     for (i, &actual) in square.at(0, 0).iter().enumerate() {
@@ -87,8 +118,9 @@ fn max_base2k_ntt_log_n_15_square_reconstructs_without_wraparound() {
         assert_eq!(actual, expected, "coefficient {i}, radix {base2k}");
     }
 
-    // The formerly advertised radix 53 puts the final coefficient at
-    // 2^119 > Q/2, so the centered CRT reconstruction makes it negative.
+    // The uniform-input recommendation does not cover this structured input.
+    // At radix 53 its final coefficient is 2^119 > Q/2 and wraps negative.
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k(n), 53);
     let overflowing_square = square_constant_ntt(&module, 53);
     let q: i128 = Primes30::Q.into_iter().map(i128::from).product();
     let expected = 1i128 << 119;

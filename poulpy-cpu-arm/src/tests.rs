@@ -11,11 +11,32 @@ fn max_base2k() {
     }
 
     assert_eq!(const { limits::<crate::FFT64Neon>() }, [25, 19]);
-    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [58, 52]);
+    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [59, 52]);
     #[cfg(feature = "enable-rayon")]
     {
         assert_eq!(const { limits::<crate::FFT64NeonRayon>() }, [25, 19]);
-        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [58, 52]);
+        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [59, 52]);
+    }
+}
+
+#[test]
+fn max_base2k_for_failure() {
+    use poulpy_hal::layouts::{Backend, Module};
+
+    // A 128-bit target for one output polynomial and 32 independent products.
+    const fn limits<B: Backend>() -> [Option<usize>; 2] {
+        [
+            Module::<B>::max_base2k_for_failure(1 << 15, 32, 128),
+            Module::<B>::max_base2k_for_failure(1 << 16, 32, 128),
+        ]
+    }
+
+    assert_eq!(const { limits::<crate::FFT64Neon>() }, [None, None]);
+    assert_eq!(const { limits::<crate::NTT4x30Neon>() }, [Some(54), Some(54)]);
+    #[cfg(feature = "enable-rayon")]
+    {
+        assert_eq!(const { limits::<crate::FFT64NeonRayon>() }, [None, None]);
+        assert_eq!(const { limits::<crate::NTT4x30NeonRayon>() }, [Some(54), Some(54)]);
     }
 }
 
