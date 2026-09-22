@@ -305,6 +305,11 @@ impl<B: Backend> Module<B> {
     /// backends without CRT modulus metadata: the FFT significand width does
     /// not determine its numerical-error distribution.
     ///
+    /// This maximum does not reserve coefficient-word headroom for additions
+    /// and subtractions outside the DFT domain. Choose a smaller working radix
+    /// when needed to keep every intermediate in range, including repeated
+    /// accumulations before normalization and any carry-propagation bounds.
+    ///
     /// For `m` output polynomials, add `ceil(log2(m))` to `failure_bits` to
     /// allocate the failure budget by a union bound. This function can be
     /// evaluated in a constant expression without constructing a module.

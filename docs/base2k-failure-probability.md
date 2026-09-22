@@ -250,3 +250,19 @@ For the actual NTT4x30 modulus, $\log_2Q\simeq119.8861552574811$, $d=32$, and $\
 This model assumes independent centered input coefficients and neglects discrete endpoint corrections. Computationally pseudorandom ciphertext components motivate that assumption for suitable FHE operations; IND-CPA alone does not imply joint independence of reused or squared operands. A polynomial whose coefficients are all $-2^{52}$, squared at $N=2^{15}$, produces a coefficient $2^{119}>Q/2$ and wraps. That structured example lies outside this uniform-input model.
 
 The selector requires the accumulation count and failure target explicitly. It returns `None` for FFT: selecting a radix from a numerical-error target requires the calibrated $\sigma_e$ of the actual accumulated kernel discussed above.
+
+## Reserve headroom for coefficient-domain additions
+
+The largest radix allowed by the DFT failure model is not necessarily the radix to use in practice. Coefficients must also fit their storage words throughout additions and subtractions outside the DFT domain, including repeated accumulations before normalization. The selector does not account for this headroom, and the limbwise addition routines do not normalize automatically.
+
+For an `i64` coefficient word, the representable range is $[-2^{63},2^{63}-1]$. If each normalized digit has magnitude at most $P=2^{K-1}$, a sum or difference of $a$ such digits has magnitude at most $aP$. A conservative condition that accommodates either sign is
+
+$$
+a\,2^{K-1}\le 2^{63}-1.
+$$
+
+Here $a$ counts all coefficient-domain summands, including the initial accumulator; it is separate from the DFT product count $d$. Budget for the longest accumulation between normalizations, and use the actual magnitude bounds if its inputs have already grown. Normalization, shifts, and carry propagation can impose tighter limits than the word size alone. In particular, the current normalization contract requires input digits in $[-2^{62},2^{62}]$.
+
+For example, `max_base2k = 62` would leave little room for an `i64` addition chain. One addition of two normalized digits can fit, but summing eight digits equal to $-2^{61}$ produces $-2^{64}$, which cannot. Even three such digits exceed the normalization input range. Choosing $K=60$ instead bounds the magnitude of any sum or difference of eight normalized digits by $2^{62}$, fitting both the word and that normalization range. This storage constraint applies even when the DFT failure estimate is negligible.
+
+Choose `base2k` to satisfy both the DFT failure target and every coefficient-domain intermediate bound. Reserve enough bits for the required additions, normalize earlier, or use wider coefficient words with compatible operations; a larger DFT limit alone does not make a larger working radix suitable.

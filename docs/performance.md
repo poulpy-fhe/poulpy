@@ -145,7 +145,7 @@ Within the numerical bounds of the operation and circuit, larger limbs improve p
 A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the limb count — linearly for the transforms and the key traffic, quadratically for the tensor product.
 Halving `base2k` therefore roughly doubles the work, and the whole span from a small limb to the backend's maximum is worth several times the runtime on every backend we measured.
 
-Use the largest `base2k` permitted by this query and the operation's input, accumulation, and floating-point error bounds, as well as the circuit's noise budget.
+Use the largest `base2k` permitted by this query and the operation's input, accumulation, and floating-point error bounds, as well as the circuit's noise budget. Also reserve coefficient-word headroom for all additions and subtractions performed before normalization: the query's DFT limit does not ensure that these intermediates fit in an `i64`. A smaller working radix can therefore be necessary even when the DFT failure target permits 62; see [coefficient-domain addition headroom](base2k-failure-probability.md#reserve-headroom-for-coefficient-domain-additions).
 The key-size table above records the radices used in the measurements; recalculate its bytes-per-bit figures for your selected radix.
 
 ## 5. `dsize`

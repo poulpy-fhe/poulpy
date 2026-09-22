@@ -126,6 +126,8 @@ See [Failure estimates](base2k-failure-probability.md) for the formula, assumpti
 This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
 A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.
 
+The returned maximum is not necessarily the practical radix: also reserve coefficient-word headroom for additions and subtractions outside the DFT domain, including repeated accumulations before normalization. For `i64` words, a radix of 62 leaves little headroom for these chains even if the DFT model permits it. Choose a smaller radix when needed to keep every intermediate in range; see [coefficient-domain addition headroom](base2k-failure-probability.md#reserve-headroom-for-coefficient-domain-additions).
+
 Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.
 
 For the leveled schemes, use `NTT3x42` where the CPU has AVX-512-IFMA — it is the fastest leveled backend by a clear margin.
