@@ -106,9 +106,11 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits)`, which delegates to `MaxBase2k` without constructing a module.
+Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, which delegates to `MaxBase2k` without constructing a module.
 `products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
-For example, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128)` returns `Some(53)`; the same query gives `Some(18)` for `FFT64Ref` and `Some(56)` for `NTT3x42Ifma`.
+Set `squaring = false` for independent products and `true` if any term is a square, counting each square once.
+For a sum of 32 products, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128, false)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(57)` for `NTT3x42Ifma`.
+For a single square, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 1, 128, true)` returns `Some(55)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(58)` for `NTT3x42Ifma`.
 The estimates cover independent accumulated products or squares of centered-uniform inputs, with Gaussian tails and a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 See [Failure estimates for base-2^K arithmetic](base2k-failure-probability.md) for the models and an example.
 `Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.

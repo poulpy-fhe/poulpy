@@ -314,7 +314,7 @@ impl Backend for HostBytesBackend {
 
 // Storage-only backend: no transform arithmetic to model.
 impl MaxBase2k for HostBytesBackend {
-    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize) -> Option<usize> {
+    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
         None
     }
 }

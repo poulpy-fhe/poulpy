@@ -288,14 +288,17 @@ impl<B: Backend> Module<B> {
     /// Selects a radix through [`MaxBase2k`](super::MaxBase2k),
     /// without constructing a module. `products` counts accumulated polynomial
     /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
+    /// Set `squaring` if any term is a square; `products` still counts actual
+    /// terms (one for a single square). Otherwise all operands are independent.
     ///
     /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
     /// The cap is the coefficient word width minus two bits. Reserve
     /// coefficient-domain addition headroom separately. For `m` outputs, add
     /// `ceil(log2(m))` to the target to allocate a total failure budget.
     ///
-    /// Current NTT and FFT64 models cover independent accumulated terms, each
-    /// an independent product or a square of centered uniform coefficients.
+    /// Current NTT and FFT64 models assume independent centered uniform
+    /// coefficients within each input and independent inputs across terms.
+    /// `squaring` allows equal operands within a term.
     /// Their Gaussian failure estimates are not guarantees; other correlations,
     /// including operand reuse across terms, require a separate model.
     ///
@@ -303,7 +306,7 @@ impl<B: Backend> Module<B> {
     /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
     /// and `products` and `failure_bits` are positive.
     #[inline]
-    pub fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
+    pub fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize>
     where
         B: super::MaxBase2k,
     {
@@ -311,7 +314,7 @@ impl<B: Backend> Module<B> {
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
         assert!(products > 0, "products must be positive");
         assert!(failure_bits > 0, "failure_bits must be positive");
-        B::max_base2k(n, products, failure_bits)
+        B::max_base2k(n, products, failure_bits, squaring)
     }
 
     /// Creates a backend module for ring degree `N`.

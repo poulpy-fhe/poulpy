@@ -256,10 +256,12 @@ fn sample_glwe() -> GLWE<AlignedBuf, i64> {
 
 #[test]
 fn delegating_backend_manual_family_matches_fft64_ref() {
-    assert_eq!(
-        Module::<DelegatingFFT64Ref>::max_base2k(1 << 16, 32, 128),
-        Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128)
-    );
+    for squaring in [false, true] {
+        assert_eq!(
+            Module::<DelegatingFFT64Ref>::max_base2k(1 << 16, 32, 128, squaring),
+            Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128, squaring)
+        );
+    }
     let module_delegating: Module<DelegatingFFT64Ref> = Module::new(256);
     let module_ref: Module<FFT64Ref> = Module::new(256);
 

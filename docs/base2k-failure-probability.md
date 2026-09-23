@@ -1,27 +1,27 @@
 # Failure estimates for base-2^K arithmetic
 
-`Module::<BE>::max_base2k(N, d, failure_bits)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$. Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
+`Module::<BE>::max_base2k(N, d, failure_bits, squaring)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$. Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
 
-Each term may be an independent product $A_rB_r$ or a square $A_r^2$; the helper conservatively covers both without a workload parameter. Distinct terms must use independent inputs, with independent centered uniform coefficients of magnitude at most $2^{K-1}$. The models neglect discrete endpoint corrections and approximate output tails as Gaussian. These estimates are not guarantees for arbitrary inputs or other correlations, including operand reuse across terms.
+Use `squaring = false` for independent products, and `true` if any term is a square $A_r^2$. Count each square once: a single square uses `d = 1`. The square model conservatively budgets every term as a square. Distinct terms must use independent inputs, with independent centered uniform coefficients of magnitude at most $2^{K-1}$. The models neglect discrete endpoint corrections and approximate output tails as Gaussian. These estimates are not guarantees for arbitrary inputs or other correlations, including operand reuse across terms.
 
 ## NTT: centered reconstruction
 
-Let $Q$ be the actual product of CRT primes. Squaring repeats off-diagonal coefficient pairs, giving at most twice the variance of an independent product. For even $N$, the two diagonal squares in an even-indexed coefficient have opposite signs, so their means cancel. A common standard-deviation budget for $d$ independent terms is
+Let $Q$ be the actual product of CRT primes. Squaring repeats off-diagonal coefficient pairs, giving at most twice the variance of an independent product. For even $N$, the two diagonal squares in an even-indexed coefficient have opposite signs, so their means cancel. Let $s=2$ when `squaring` is true and $s=1$ otherwise. The standard-deviation budget for $d$ independent terms is
 
 $$
-\sigma_c\simeq\frac{2^{2K}\sqrt{2dN}}{12},
+\sigma_c\simeq\frac{2^{2K}\sqrt{sdN}}{12},
 \qquad
 \widehat p_{\mathrm{NTT}}=\operatorname{erfc}\!\left(\frac{Q/2}{\sqrt2\,\sigma_c}\right).
 $$
 
-The threshold is **$Q/2$**, the centered reconstruction limit. The product of two uniform inputs is not itself uniform; $\sigma_c$ uses the product's variance.
+The threshold is **$Q/2$**, the centered reconstruction limit. The product of two uniform inputs is not itself uniform; $\sigma_c$ uses the product's variance. For NTT, setting `squaring = true` is equivalent to doubling $d$ in the independent-product model; the helper does this internally.
 
 ## FFT64: rounding error
 
-The model covers forward transforms (shared when squaring), $d$ sequentially accumulated complex products, and one inverse transform. With $u=2^{-53}$ and $L=\log_2N-1$,
+The model covers forward transforms (shared when squaring), $d$ sequentially accumulated complex products, and one inverse transform. With $u=2^{-53}$, $L=\log_2N-1$, and $\alpha=25/3$ for squares or $5$ for independent products,
 
 $$
-R(N,d)=\frac{25}{3}L+\max\!\left(\frac23+\frac{d+1}{6}-\frac{1}{3d},\;\frac{d+1/2}{3}\right),
+R(N,d)=\alpha L+\max\!\left(\frac23+\frac{d+1}{6}-\frac{1}{3d},\;\frac{d+1/2}{3}\right),
 $$
 
 $$
@@ -30,7 +30,7 @@ $$
 \widehat p_{\mathrm{FFT}}=\operatorname{erfc}\!\left(\frac{1/2}{\sqrt2\,\sigma_e}\right).
 $$
 
-Here $\sigma_e$ measures numerical error, and **$1/2$** is the rounding threshold. The model assumes centered relative roundoff of variance $u^2/3$, independent of inputs and other roundoff, approximately isotropic complex values, and twiddle errors of mean square at most $2u^2$ whose propagated contributions are treated as uncorrelated, including across terms. Squaring shares the forward error: $(X+e)^2-X^2\simeq2Xe$. Relative to the doubled coefficient-variance budget, the forward and inverse contributions are $4(5/3)L$ and $(5/3)L$, giving $25L/3$. The maximum in $R$ covers separate and fused multiply-add accumulation. These assumptions do not certify Gaussian far tails.
+Here $\sigma_e$ measures numerical error, and **$1/2$** is the rounding threshold. The model assumes centered relative roundoff of variance $u^2/3$, independent of inputs and other roundoff, approximately isotropic complex values, and twiddle errors of mean square at most $2u^2$ whose propagated contributions are treated as uncorrelated, including across terms. Squaring shares the forward error: $(X+e)^2-X^2\simeq2Xe$. Relative to the doubled coefficient-variance budget, the forward and inverse contributions are $4(5/3)L$ and $(5/3)L$, giving $25L/3$. Thus doubling $d$ alone does not model FFT squaring. The maximum in $R$ uses the actual accumulation count and covers separate and fused multiply-add accumulation. These assumptions do not certify Gaussian far tails.
 
 ## Selecting the radix
 
@@ -49,7 +49,7 @@ The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a f
 
 A hard bound assumes every product has maximum magnitude and all signs reinforce each other. Independent centered inputs usually cancel: their standard deviation grows like $\sqrt{dN}$ instead of $dN$.
 
-For **NTT4x30**, take $\log_2Q\simeq119.8861552574811$, $N=2^{16}$, $d=32$, and $K=53$. The hard bound is $dN\,2^{2K-2}=2^{125}>Q/2$, so it rejects this radix and requires $K\le49$. The Gaussian polynomial envelope is approximately **$2^{-1409.135}<2^{-128}$**, so the probabilistic selector admits **53 bits instead of 49**. For the same degree, count, and target, FFT64 selects **18 bits**, with a modeled envelope approximately $2^{-772.439}$. Both choices budget for squaring.
+For **NTT4x30**, take $\log_2Q\simeq119.8861552574811$, $N=2^{16}$, $d=32$, and $K=54$ with `squaring = false`. The hard bound is $dN\,2^{2K-2}=2^{127}>Q/2$, so it rejects this radix and requires $K\le49$. The Gaussian polynomial envelope is approximately **$2^{-165.718}<2^{-128}$**, so the probabilistic selector admits **54 bits instead of 49**. For the same degree, count, and target, FFT64 selects **19 bits**, with a modeled envelope approximately $2^{-143.107}$.
 
 ## Leave room for coefficient-domain additions
 

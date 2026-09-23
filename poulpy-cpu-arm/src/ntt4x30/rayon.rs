@@ -47,8 +47,8 @@ use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr};
 poulpy_hal::impl_backend_from!(NTT4x30NeonRayon, NTT4x30Neon, RayonTaskExecutor);
 
 impl poulpy_hal::layouts::MaxBase2k for NTT4x30NeonRayon {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
-        <NTT4x30Neon as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits)
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        <NTT4x30Neon as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
 }
 

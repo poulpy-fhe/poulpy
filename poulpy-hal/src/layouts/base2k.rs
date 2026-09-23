@@ -6,27 +6,30 @@ use super::{Backend, ZnxWord};
 pub trait MaxBase2k: Backend {
     /// Estimates the largest radix for `products` accumulated degree-`n` products
     /// with a whole-polynomial failure target of `2^(-failure_bits)`.
+    /// Set `squaring` if any term is a square; `products` still counts actual
+    /// terms (one for a single square). Otherwise all operands are independent.
     /// Caps the radix at `Self::ZnxWord::BITS - 2` for coefficient headroom.
     /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
     /// See [`Module::max_base2k`](super::Module::max_base2k) for input constraints.
     ///
-    /// Current NTT and FFT64 models cover independent accumulated terms, each
-    /// an independent product or a square of centered uniform coefficients.
+    /// Current NTT and FFT64 models assume independent centered uniform
+    /// coefficients within each input and independent inputs across terms.
+    /// `squaring` allows equal operands within a term.
     /// Their Gaussian failure estimates are not guarantees; other correlations,
     /// including operand reuse across terms, require a separate model.
-    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>;
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize>;
 }
 
 /// NTT radix for independent products or squares of centered uniform inputs.
-/// Uses the common Gaussian budget `sigma = 2^(2*k) * sqrt(2*n*products) / 12`,
-/// reconstruction threshold `Q/2`, and the Mills-ratio upper bound with a
-/// union bound over `n` coefficients.
+/// Uses `sigma = 2^(2*k) * sqrt(n*products) / 12`, multiplied by `sqrt(2)`
+/// when `squaring` is true, reconstruction threshold `Q/2`, and the Mills-ratio
+/// upper bound with a union bound over `n` coefficients. Count each square once.
 /// Caps at `B::ZnxWord::BITS - 2` (62 for `i64`, 30 for a 32-bit word); zero means none fits.
 ///
 /// # Panics
 /// Panics unless `log2_modulus` is finite and positive, `n` is a power of two
 /// at least 2, and `products` and `failure_bits` are positive.
-pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, failure_bits: usize) -> usize {
+pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
     assert!(
         log2_modulus.is_finite() && log2_modulus > 0.0,
         "the modulus logarithm must be finite and positive"
@@ -37,7 +40,7 @@ pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, 
 
     let log2_n = n.ilog2() as f64;
     // A square repeats off-diagonal pairs: variance is at most twice a product's.
-    let log2_variance = 1.0 + log2_n + (products as f64).log2();
+    let log2_variance = log2_n + (products as f64).log2() + if squaring { 1.0 } else { 0.0 };
     let log2_x = log2_modulus + 12.0_f64.log2() - 1.5 - 0.5 * log2_variance;
     max_base2k_from_log2_x::<B>(log2_x, failure_bits as f64 + log2_n)
 }
@@ -48,13 +51,14 @@ pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, 
 /// independent of inputs and other roundoff with variance `u^2/3`, `u=2^-53`,
 /// and complex twiddle errors of mean square at most `2*u^2`, with uncorrelated
 /// propagated contributions, including across accumulated terms.
+/// Set `squaring` if any term is a square, counting each square once in `products`.
 /// Uses threshold `1/2` and the same Mills-ratio bound and union bound as NTT.
 /// Caps at `B::ZnxWord::BITS - 2` (62 for `i64`, 30 for a 32-bit word); zero means none fits.
 ///
 /// # Panics
 /// Panics unless `n` is a power of two at least 2, and `products` and
 /// `failure_bits` are positive.
-pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usize) -> usize {
+pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
     assert!(n >= 2 && n.is_power_of_two(), "FFT degree must be a power of two >= 2");
     assert!(products > 0, "the number of accumulated products must be positive");
     assert!(failure_bits > 0, "the failure target must be positive");
@@ -65,10 +69,11 @@ pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usi
     let scalar_mac = 2.0 / 3.0 + (d + 1.0) / 6.0 - 1.0 / (3.0 * d);
     let fused_mac = (d + 0.5) / 3.0;
     let mac_variance = scalar_mac.max(fused_mac);
-    // Relative to the doubled square variance, shared forward error contributes
-    // 4*(5/3)*L and inverse error (5/3)*L; this also covers independent products.
-    let variance_factor = (25.0 / 3.0) * (log2_n - 1.0) + mac_variance;
-    let log2_variance = 1.0 + log2_n + d.log2() + variance_factor.log2();
+    // Ordinary products contribute 3*(5/3)*L. Relative to the doubled square
+    // variance, shared forward error contributes 4*(5/3)*L and inverse (5/3)*L.
+    let transform_variance = if squaring { 25.0 / 3.0 } else { 5.0 };
+    let variance_factor = transform_variance * (log2_n - 1.0) + mac_variance;
+    let log2_variance = log2_n + d.log2() + variance_factor.log2() + if squaring { 1.0 } else { 0.0 };
     let log2_x = 53.0 + 12.0_f64.log2() - 1.5 - 0.5 * log2_variance;
     max_base2k_from_log2_x::<B>(log2_x, failure_bits as f64 + log2_n)
 }
@@ -98,16 +103,22 @@ mod tests {
 
     #[test]
     fn mills_bound_admits_larger_radices_at_the_requested_target() {
-        // Including squares, the polynomial bounds are 2^-130.074... and 2^-96.743....
-        assert_eq!(
-            max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, 20, 130),
-            54
-        );
-        assert_eq!(
-            max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, 20, 131),
-            53
-        );
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 96), 24);
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 97), 23);
+        // The NTT variance of d squares matches that of 2*d independent products.
+        // Both have a whole-polynomial bound of 2^-130.074... at K = 54.
+        for (squaring, products) in [(false, 40), (true, 20)] {
+            assert_eq!(
+                max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, products, 130, squaring),
+                54
+            );
+            assert_eq!(
+                max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, products, 131, squaring),
+                53
+            );
+        }
+        // FFT bounds are 2^-128.125... for products and 2^-96.743... for squares.
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 128, false), 19);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 129, false), 18);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 96, true), 24);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 97, true), 23);
     }
 }

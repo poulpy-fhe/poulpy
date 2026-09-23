@@ -10,7 +10,7 @@ Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own
    Without IFMA, start with packed `NTT4x30` on x86 for a full CKKS pipeline; `FFT64` can be faster for a small, switch-heavy workload.
 2. Within a family, take the widest ISA your CPU supports — run the [capability report](#3-compilation-options) to see which ones this machine has.
    In our measurements the ordering between backends did not change with the thread count.
-3. Select `base2k` with `Module::<BE>::max_base2k(n, products, failure_bits)`, allowing headroom for coefficient-domain additions and the circuit's noise budget.
+3. Select `base2k` with `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, allowing headroom for coefficient-domain additions and the circuit's noise budget.
 4. Tune `dsize`: it sets key size and the key's auxiliary precision together, and has a smaller, machine-dependent effect on speed. `dsize = 4` is a reasonable starting point.
 5. Give the Rayon backends a handful of threads, not all of them, and measure where your own knee is.
 
@@ -132,7 +132,7 @@ NTT3x42Ifma          poulpy-cpu-avx512   yes  no     --features enable-ifma   RU
 
 ## 4. `base2k`
 
-The runtime query `Module::<BE>::max_base2k(n, products, failure_bits)` selects a radix from the degree, accumulation count and estimated whole-polynomial failure target `2^(-failure_bits)`.
+The runtime query `Module::<BE>::max_base2k(n, products, failure_bits, squaring)` selects a radix from the degree, accumulation count, squaring flag and estimated whole-polynomial failure target `2^(-failure_bits)`.
 See [Backends](backends.md#choosing-a-subfamily) for examples and model assumptions.
 Within the operation's numerical bounds and the circuit's noise budget, larger limbs improve performance by a wide margin.
 

@@ -30,12 +30,13 @@ pub struct NTT4x30NeonHandle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Neon {}
 
 impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
         Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
             failure_bits,
+            squaring,
         ))
     }
 }

@@ -38,8 +38,8 @@ macro_rules! impl_fft64_delegating_backend {
         poulpy_hal::impl_backend_from!($be, FFT64Ref);
 
         impl poulpy_hal::layouts::MaxBase2k for $be {
-            fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
-                <FFT64Ref as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits)
+            fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+                <FFT64Ref as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
             }
         }
 
