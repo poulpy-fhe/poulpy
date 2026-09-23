@@ -1,8 +1,26 @@
-use crate::bdd_arithmetic::bdd_2w_to_1w::FheUintHelper;
 use crate::bdd_arithmetic::*;
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 use std::marker::PhantomData;
+
+struct FheUintHelper<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> {
+    data: Vec<&'a dyn GetGGSWBit<BE>>,
+    _phantom: PhantomData<T>,
+}
+
+impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GetGGSWBit<BE> for FheUintHelper<'a, T, BE> {
+    fn get_bit(&self, bit: usize) -> &GGSWPrepared<BE::OwnedBuf, BE> {
+        let lo: usize = bit % T::BITS as usize;
+        let hi: usize = bit / T::BITS as usize;
+        self.data[hi].get_bit(lo)
+    }
+}
+
+impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> BitSize for FheUintHelper<'a, T, BE> {
+    fn bit_size(&self) -> usize {
+        T::BITS as usize * self.data.len()
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`ExecuteBDDCircuit2WTo1W::execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes`].

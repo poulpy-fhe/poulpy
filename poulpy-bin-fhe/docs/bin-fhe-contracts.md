@@ -37,6 +37,7 @@ Every operation that uses caller workspace has a selected scratch query.
 | `CircuitBootstrappingKeyEncryptSk`, `CircuitBootstrappingKeyPreparedFactory` | Same reference module | Shared raw key, independently prepared components and exact query-sized workspace. |
 | `Cmux`, `Cswap` | [`reference/bdd`](../src/reference/bdd/) | Assignment variants, differing precisions, output capacity and operand preservation. |
 | `GLWEBlindRotation`, `GGSWBlindRotation`, `GLWEBlindSelection`, `GLWEBlindRetrieval` | Same reference directory; same-layer wrappers in [`oep/derived/bdd`](../src/oep/derived/bdd/) | Rotation/selection variants, sparse branches and reusable retrieval state. |
+| `GLWEBlindRetriever` | Stateful streaming helper composed from selected `Cmux`, `GLWECopy` and `GLWEZero` operations | Batch/incremental parity, borrowed selectors, empty/singleton streams, capacity limits, reuse and exact layout-dependent workspace. |
 | `ExecuteBDDCircuit`, `ExecuteBDDCircuit1WTo1W`, `ExecuteBDDCircuit2WTo1W` | Same directories | Single/multiple outputs, serial/parallel calls and worker counts. |
 | `FheUintPrepare`, `FheUintPreparedEncryptSk`, `BDDKeyEncryptSk`, `BDDKeyPreparedFactory` | Same directories | Preparation and key lifecycle, including optional switching keys. |
 
@@ -44,6 +45,14 @@ Layout accessors, serialization, plain container constructors, and generated
 BDD descriptions remain data helpers. Prepared and compressed key factories
 and LUT construction dispatch through their OEP contracts. Convenience
 evaluators route through the selected public operation traits.
+
+`GLWEBlindRetriever` and `GLWEBlindRetrieval` serve different purposes. The
+retriever accumulates inputs without changing them and returns one selected
+ciphertext, using logarithmic persistent storage. Its `add`/`flush` methods
+compose the selected CMux/core operations; the container has no separate
+whole-stream backend hook. `GLWEBlindRetrieval` rearranges a vector in place
+through conditional swaps and provides an inverse permutation. Both paths
+have caller-selected parity tests.
 
 ## Replacing an operation
 
@@ -61,6 +70,24 @@ Derived defaults dispatch to the selected same-layer operations and queries.
 Circuit execution, key encryption and key preparation also have separate
 `impl_bin_fhe_circuit_bootstrapping_*_reference!` opt-ins, allowing a backend to
 replace execution while retaining the key lifecycle implementations.
+
+BDD opt-ins are also available per operation contract. For example, keep the
+reference CMux, blind selection, and derived retrieval while implementing a
+custom Cswap:
+
+```rust,ignore
+poulpy_bin_fhe::impl_bin_fhe_cmux_reference!(MyBackend);
+poulpy_bin_fhe::impl_bin_fhe_glwe_blind_selection_reference!(MyBackend);
+poulpy_bin_fhe::impl_bin_fhe_glwe_blind_retrieval_derived!(MyBackend);
+// Implement CswapImpl for MyBackend with the selected execution and scratch query.
+```
+
+Select the other required contracts through their individual macros in
+[`oep/bdd.rs`](../src/oep/bdd.rs). `impl_bin_fhe_bdd_reference!` composes all of
+these opt-ins; omit that aggregate when providing a custom BDD implementation.
+The integer-parameterized opt-ins still implement their contracts for every
+supported `UnsignedInteger` type, and key/preparation opt-ins take the algorithm
+marker explicitly.
 
 The ordinary blind-rotation reference has a fixed schedule. Explicit
 `scheduling = parallel` opt-in selects the reusable parallel implementation;
@@ -99,6 +126,12 @@ constructing or uploading a LUT.
 Circuit key encryption includes the retained prepared secret in the BRK phase
 and reuses caller scratch for all three component encryptions. No additional
 scratch arena is allocated inside the operation.
+
+For streaming retrieval, take the maximum of the retriever's `add_tmp_bytes`
+queries for each actual input layout and `flush_tmp_bytes` for the destination.
+These include the persistent accumulator's compact layout. The static
+`retrieve_tmp_bytes` convenience query applies when input/output layouts and
+capacities match and the accumulator was allocated from those same infos.
 
 The parity harness allocates exactly the advertised capacity, initializes it
 with nonzero bytes, and checks surrounding guards after execution. Heap-owned

@@ -2,7 +2,7 @@
 
 use super::{GlweSnapshot, ParityBackend, fixture_ggsw, fixture_glwe, snapshot_ggsw, snapshot_glwe, with_scratch};
 use crate::{api::*, bdd_arithmetic::*};
-use poulpy_core::layouts::*;
+use poulpy_core::{GLWECopy, layouts::*};
 use poulpy_hal::layouts::*;
 use std::collections::HashMap;
 
@@ -308,6 +308,112 @@ where
     Module<BT>: BddParityModule<BT>,
 {
     assert_eq!(retrieval(reference), retrieval(tested));
+}
+
+fn streaming_retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+where
+    Module<B>: Cmux<B> + poulpy_core::GLWECopy<B> + poulpy_core::GLWEZero<B> + GGSWPreparedFactory<B>,
+{
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let (layout, key) = layouts(module);
+    let selectors = selector(module);
+    let bits = BorrowedBits(&selectors.bits);
+    let mut outputs = Vec::new();
+    for capacity in [0usize, 1, 2, 3, 4, 5] {
+        for varied in [false, true] {
+            let mut retriever = GLWEBlindRetriever::alloc(module, &layout, capacity);
+            let input_layout = GLWELayout {
+                k: if varied { 60usize.into() } else { layout.k },
+                ..layout
+            };
+            let output_layout = GLWELayout {
+                k: if varied { 84usize.into() } else { layout.k },
+                ..layout
+            };
+            let values: Vec<_> = (0..capacity)
+                .map(|i| selection_fixture(module, &input_layout, layout.k, 20 + i as u8))
+                .collect();
+            let before: Vec<_> = values.iter().map(snapshot_glwe::<B, _>).collect();
+            let mut out = selection_fixture(module, &output_layout, layout.k, 99);
+            let bytes = values
+                .iter()
+                .fold(retriever.flush_tmp_bytes(module, &out, &key), |bytes, value| {
+                    bytes.max(retriever.add_tmp_bytes(module, value, &key))
+                });
+            // Exercise full/partial/empty streams and reuse after flush.
+            for count in [capacity, capacity.saturating_sub(1), 0, capacity] {
+                with_scratch::<B, _>(bytes, |s| {
+                    retriever.retrieve(module, &mut out, &values[..count], &bits, 1, s);
+                });
+                let expected = snapshot_glwe::<B, _>(&out);
+                if count == 0 {
+                    assert!(expected.bytes.iter().all(|&byte| byte == 0));
+                } else if count == 1 {
+                    let mut copied = selection_fixture(module, &output_layout, layout.k, 91);
+                    with_scratch::<B, _>(module.glwe_copy_tmp_bytes(&copied, &values[0]), |s| {
+                        module.glwe_copy(&mut copied, &values[0], s);
+                    });
+                    assert_eq!(expected, snapshot_glwe::<B, _>(&copied));
+                }
+                with_scratch::<B, _>(bytes, |s| {
+                    for value in &values[..count] {
+                        retriever.add(module, value, &bits, 1, s);
+                    }
+                    retriever.flush(module, &mut out, &bits, 1, s);
+                });
+                assert_eq!(expected, snapshot_glwe::<B, _>(&out));
+                outputs.push(expected);
+            }
+            let full_stream = snapshot_glwe::<B, _>(&out);
+            // The legacy convenience query remains valid for homogeneous user
+            // buffers, even when their allocation is wider than accumulator data.
+            let mut homogeneous_out = selection_fixture(module, &input_layout, layout.k, 99);
+            let bytes = GLWEBlindRetriever::<B::OwnedBuf, i64>::retrieve_tmp_bytes(module, &homogeneous_out, &key);
+            with_scratch::<B, _>(bytes, |s| {
+                retriever.retrieve(module, &mut homogeneous_out, &values, &selectors, 1, s);
+            });
+            outputs.push(snapshot_glwe::<B, _>(&homogeneous_out));
+
+            // Overfilling must fail at the requested capacity, including when
+            // that capacity is not a power of two, without corrupting the stream.
+            let extra = selection_fixture(module, &input_layout, layout.k, 71);
+            let oversized: Vec<_> = (0..=capacity)
+                .map(|i| selection_fixture(module, &input_layout, layout.k, 81 + i as u8))
+                .collect();
+            let bytes = retriever
+                .add_tmp_bytes(module, &extra, &key)
+                .max(retriever.flush_tmp_bytes(module, &out, &key));
+            with_scratch::<B, _>(bytes, |s| {
+                for value in &values {
+                    retriever.add(module, value, &bits, 1, s);
+                }
+                assert!(catch_unwind(AssertUnwindSafe(|| retriever.add(module, &extra, &bits, 1, s))).is_err());
+                let before_output = snapshot_glwe::<B, _>(&out);
+                assert!(
+                    catch_unwind(AssertUnwindSafe(|| {
+                        retriever.retrieve(module, &mut out, &oversized, &bits, 1, s);
+                    }))
+                    .is_err()
+                );
+                assert_eq!(before_output, snapshot_glwe::<B, _>(&out));
+                retriever.flush(module, &mut out, &bits, 1, s);
+            });
+            assert_eq!(full_stream, snapshot_glwe::<B, _>(&out));
+            assert_eq!(before, values.iter().map(snapshot_glwe::<B, _>).collect::<Vec<_>>());
+        }
+    }
+    outputs
+}
+
+/// Checks the streaming CMux retriever separately from reversible in-place
+/// retrieval, including exact workspace, borrowed selectors and state reuse.
+pub fn test_glwe_blind_retriever_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
+    Module<BR>: Cmux<BR> + poulpy_core::GLWECopy<BR> + poulpy_core::GLWEZero<BR> + GGSWPreparedFactory<BR>,
+    Module<BT>: Cmux<BT> + poulpy_core::GLWECopy<BT> + poulpy_core::GLWEZero<BT> + GGSWPreparedFactory<BT>,
+{
+    assert_eq!(streaming_retrieval(reference), streaming_retrieval(tested));
 }
 
 struct TinyCircuit;

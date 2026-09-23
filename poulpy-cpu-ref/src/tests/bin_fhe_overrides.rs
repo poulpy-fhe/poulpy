@@ -68,7 +68,62 @@ poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!(Ov
 poulpy_bin_fhe::impl_bin_fhe_lookup_table_reference!(OverrideBackend);
 poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference!(OverrideBackend, CGGI);
 poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_prepared_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_bdd_reference!(OverrideBackend, CGGI);
+// Select BDD peers independently, keeping Cswap available for an override.
+poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_cmux_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_ggsw_blind_rotation_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_glwe_blind_rotation_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_glwe_blind_selection_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_glwe_blind_retrieval_derived!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepare_reference!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bin_fhe_bdd_key_encrypt_sk_reference!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bin_fhe_bdd_key_prepared_reference!(OverrideBackend, CGGI);
+
+thread_local! {
+    static CSWAP_CALLS: Cell<usize> = const { Cell::new(0) };
+    static CSWAP_QUERY_CALLS: Cell<usize> = const { Cell::new(0) };
+}
+
+unsafe impl CswapImpl for OverrideBackend {
+    fn cswap_tmp_bytes<R: GLWEInfos, A: GLWEInfos, S: GGSWInfos>(
+        module: &Module<Self>,
+        res_a: &R,
+        res_b: &A,
+        selector: &S,
+    ) -> usize {
+        CSWAP_QUERY_CALLS.set(CSWAP_QUERY_CALLS.get() + 1);
+        poulpy_bin_fhe::reference::bdd::cswap_tmp_bytes_reference(module, res_a, res_b, selector)
+    }
+
+    fn cswap<A, B>(
+        module: &Module<Self>,
+        res_a: &mut A,
+        res_b: &mut B,
+        selector: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        CSWAP_CALLS.set(CSWAP_CALLS.get() + 1);
+        poulpy_bin_fhe::reference::bdd::cswap_reference(module, res_a, res_b, selector, scratch);
+    }
+}
+
+#[test]
+fn independent_cswap_override_coexists_with_bdd_reference_opt_ins() {
+    CSWAP_CALLS.set(0);
+    CSWAP_QUERY_CALLS.set(0);
+    poulpy_bin_fhe::test_suite::parity::bdd::test_cswap_parity(
+        &Module::<crate::FFT64Ref>::new(32),
+        &Module::<OverrideBackend>::new(32),
+    );
+    assert!(CSWAP_CALLS.get() > 0);
+    assert_eq!(CSWAP_CALLS.get(), CSWAP_QUERY_CALLS.get());
+}
 
 thread_local! {
     static EXECUTION_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -390,6 +445,7 @@ fn constituent_copy_override_is_covered_by_scheme_budgets() {
     poulpy_bin_fhe::test_suite::parity::bdd::test_glwe_blind_rotation_parity(&reference, &tested);
     poulpy_bin_fhe::test_suite::parity::bdd::test_glwe_blind_selection_parity(&reference, &tested);
     poulpy_bin_fhe::test_suite::parity::bdd::test_glwe_blind_retrieval_parity(&reference, &tested);
+    poulpy_bin_fhe::test_suite::parity::bdd::test_glwe_blind_retriever_parity(&reference, &tested);
     poulpy_bin_fhe::test_suite::parity::bdd::test_execute_bdd_circuit_parity(&reference, &tested);
     poulpy_bin_fhe::test_suite::parity::bdd::test_ggsw_blind_rotation_parity(&reference, &tested);
 }

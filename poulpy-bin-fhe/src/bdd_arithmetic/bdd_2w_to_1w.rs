@@ -1,30 +1,10 @@
 pub use crate::api::ExecuteBDDCircuit2WTo1W;
-use std::marker::PhantomData;
 
-use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, prepared::GGSWPrepared};
+use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::bdd_arithmetic::{BitSize, FheUint, FheUintPrepared, GetGGSWBit, UnsignedInteger, circuits};
+use crate::bdd_arithmetic::{FheUint, FheUintPrepared, UnsignedInteger, circuits};
 use poulpy_core::GLWEBytesOf;
-
-pub(crate) struct FheUintHelper<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> {
-    pub(crate) data: Vec<&'a dyn GetGGSWBit<BE>>,
-    pub(crate) _phantom: PhantomData<T>,
-}
-
-impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GetGGSWBit<BE> for FheUintHelper<'a, T, BE> {
-    fn get_bit(&self, bit: usize) -> &GGSWPrepared<BE::OwnedBuf, BE> {
-        let lo: usize = bit % T::BITS as usize;
-        let hi: usize = bit / T::BITS as usize;
-        self.data[hi].get_bit(lo)
-    }
-}
-
-impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> BitSize for FheUintHelper<'a, T, BE> {
-    fn bit_size(&self) -> usize {
-        T::BITS as usize * self.data.len()
-    }
-}
 
 #[macro_export]
 macro_rules! define_bdd_2w_to_1w_trait {

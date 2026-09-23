@@ -208,10 +208,8 @@ pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Ba
 /// Explicitly selects the canonical circuit-bootstrap execute implementation.
 #[macro_export]
 macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
- ($be:ty, $algo:ty) => {
-unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
-
-
+    ($be:ty, $algo:ty) => {
+        unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
             fn circuit_bootstrapping_prepare_to_constant<R: ::poulpy_core::layouts::GGSWInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res_infos: &R,
@@ -245,10 +243,10 @@ unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
                 )
             }
             fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos>(
- module: &::poulpy_hal::layouts::Module<Self>,
- plan: &$crate::circuit_bootstrapping::CircuitBootstrappingPlanLayout,
- key: &A,
- ) -> usize {
+                module: &::poulpy_hal::layouts::Module<Self>,
+                plan: &$crate::circuit_bootstrapping::CircuitBootstrappingPlanLayout,
+                key: &A,
+            ) -> usize {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_tmp_bytes_reference::<_, _, $algo, Self>(
                     module, plan, key,
                 )
@@ -272,13 +270,13 @@ unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
                 )
             }
         }
- };
+    };
 }
 /// Explicitly selects the canonical circuit-bootstrap key encrypt sk implementation.
 #[macro_export]
 macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
- ($be:ty, $algo:ty) => {
-unsafe impl $crate::oep::CircuitBootstrappingKeyEncryptSkImpl<$algo> for $be {
+    ($be:ty, $algo:ty) => {
+        unsafe impl $crate::oep::CircuitBootstrappingKeyEncryptSkImpl<$algo> for $be {
             fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
             where
                 A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
@@ -307,13 +305,13 @@ unsafe impl $crate::oep::CircuitBootstrappingKeyEncryptSkImpl<$algo> for $be {
                 )
             }
         }
- };
+    };
 }
 /// Explicitly selects the canonical circuit-bootstrap key prepared implementation.
 #[macro_export]
 macro_rules! impl_bin_fhe_circuit_bootstrapping_key_prepared_reference {
- ($be:ty, $algo:ty) => {
-unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
+    ($be:ty, $algo:ty) => {
+        unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
             fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 infos: &A,
@@ -340,7 +338,7 @@ unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepare_reference::<_, $algo, Self>(module, res, other, scratch)
             }
         }
- };
+    };
 }
 /// Explicitly registers all canonical circuit-bootstrap operations.
 #[macro_export]

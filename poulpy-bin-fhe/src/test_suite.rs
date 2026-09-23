@@ -257,6 +257,13 @@ macro_rules! bin_fhe_parity_test_suite {
                 );
             }
             #[test]
+            fn glwe_blind_retriever() {
+                parity::bdd::test_glwe_blind_retriever_parity(
+                    &Module::<$backend_ref>::new(64),
+                    &Module::<$backend_test>::new(64),
+                );
+            }
+            #[test]
             fn ggsw_blind_rotation() {
                 parity::bdd::test_ggsw_blind_rotation_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }

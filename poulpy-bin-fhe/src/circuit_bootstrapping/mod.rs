@@ -42,7 +42,6 @@
 //! | [`CircuitBootstrappingKeyInfos`] | Accessor trait for key dimensions |
 pub(crate) mod circuit;
 mod key;
-mod key_compressed;
 mod key_prepared;
 
 /// Backend-generic test bodies, instantiated by the backend crates through
@@ -63,5 +62,4 @@ pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<
 
 pub use circuit::*;
 pub use key::*;
-// pub use key_compressed::*;
 pub use key_prepared::*;
