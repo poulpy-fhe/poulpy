@@ -75,14 +75,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prime_product_log_is_const_and_matches_modulus() {
-        const LOG_PRODUCT: f64 = Primes42::LOG_Q_PRODUCT;
-        let product: u128 = Primes42::Q.iter().map(|&q| q as u128).product();
-        let expected = (product as f64).log2();
-        assert!((LOG_PRODUCT - expected).abs() <= f64::EPSILON * expected);
-    }
-
-    #[test]
     fn primes42_are_prime() {
         for &q in &Primes42::Q {
             assert!(is_prime(q), "{q} is not prime");

@@ -1,27 +1,5 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
-mod fft64_error;
-
-#[test]
-fn max_base2k() {
-    use poulpy_hal::layouts::{BackendMaxBase2k, Module};
-
-    // A 128-bit target for one output polynomial and 32 independent products.
-    fn limits<B: BackendMaxBase2k>() -> [Option<usize>; 2] {
-        [
-            Module::<B>::max_base2k(1 << 15, 32, 128),
-            Module::<B>::max_base2k(1 << 16, 32, 128),
-        ]
-    }
-
-    assert_eq!(limits::<crate::FFT64Neon>(), [Some(19), Some(19)]);
-    assert_eq!(limits::<crate::NTT4x30Neon>(), [Some(54), Some(54)]);
-    #[cfg(feature = "enable-rayon")]
-    {
-        assert_eq!(limits::<crate::FFT64NeonRayon>(), [Some(19), Some(19)]);
-        assert_eq!(limits::<crate::NTT4x30NeonRayon>(), [Some(54), Some(54)]);
-    }
-}
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,

@@ -106,30 +106,12 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Choose the limb size `base2k` from the number of accumulated products and an explicit failure target. The runtime query `Module::<BE>::max_base2k(n, products, failure_bits)` delegates to the backend's `BackendMaxBase2k` implementation:
-
-```rust
-use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
-use poulpy_hal::layouts::Module;
-
-// 32 accumulated products, with a 2^-128 target for the entire polynomial.
-let base2k: Option<usize> = Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128);
-assert_eq!(base2k, Some(54));
-let fft_base2k: Option<usize> = Module::<FFT64Ref>::max_base2k(1 << 16, 32, 128);
-assert_eq!(fft_base2k, Some(19));
-```
-
-The query uses independent centered-uniform input coefficients, a conservative Gaussian tail envelope, and a union bound over all coefficients of one output polynomial. For `n = 2^16`, 32 products, and 128 failure bits, it selects 19 for `FFT64`, 54 for `NTT4x30`, and 57 for `NTT3x42`. Increasing the accumulation count or tightening the failure target can lower the selected radix.
-For NTT backends, `PrimeSet::LOG_Q_PRODUCT` supplies `log2(Q)` from the actual CRT modulus, approximately 119.8861552574811 for `NTT4x30` and 125.99998314565484 for `NTT3x42`.
-
-The result is the largest radix up to 62 satisfying the Gaussian envelope; `Some(0)` means no positive radix fits. For `m` output polynomials, add `ceil(log2(m))` to the requested failure bits.
-FFT64 backends implement the trait using the shared stochastic roundoff model covering transforms, complex products, and sequential accumulation before one inverse FFT. It assumes approximately uncorrelated roundoff and twiddle-error contributions; these are model estimates, not certified far-tail bounds. An implementation returns `None` when it has no applicable model for the workload, as with the storage-only `HostBytesBackend`.
-Backends implement `BackendMaxBase2k` with an ordinary trait method; the query needs no module instance. They can reuse `poulpy_hal::layouts::{max_base2k_ntt, max_base2k_fft64}` or supply a model for their own arithmetic. The module validates the common input constraints before forwarding the query. Storage delegation through `impl_backend_from!` does not choose a model; wrappers that preserve the arithmetic explicitly forward `BackendMaxBase2k` as well.
-See [Failure estimates](base2k-failure-probability.md) for the formula, assumptions, and comparison with worst-case bounds.
-This query does not restrict coefficient-only operations whose contracts permit wider radices, such as uniform sampling up to 62 bits.
-A larger `base2k` represents the same precision in fewer limbs. Validate the input distribution, accumulation count, numerical-error model, and circuit noise budget for the operations being used.
-
-The returned maximum is not necessarily the practical radix: also reserve coefficient-word headroom for additions and subtractions outside the DFT domain, including repeated accumulations before normalization. For `i64` words, a radix of 62 leaves little headroom for these chains even if the DFT model permits it. Choose a smaller radix when needed to keep every intermediate in range; see [coefficient-domain addition headroom](base2k-failure-probability.md#reserve-headroom-for-coefficient-domain-additions).
+Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits)`, which delegates to `BackendMaxBase2k` without constructing a module.
+`products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
+For example, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(57)` for `NTT3x42Ifma`.
+The estimates assume independent centered-uniform inputs and Gaussian tails, with a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
+`Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.
+A larger `base2k` represents the same precision in fewer limbs, but also reserve coefficient-word headroom for additions before normalization and respect the circuit's noise budget.
 
 Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.
 

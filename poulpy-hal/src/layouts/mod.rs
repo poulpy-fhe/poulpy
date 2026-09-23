@@ -518,8 +518,6 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// This is useful for proof or delegating backends that want to remain a
 /// distinct backend type while reusing the same owned buffer, borrowed views,
 /// scalar types, and handle representation as a source backend.
-/// Arithmetic capabilities, including [`BackendMaxBase2k`], are implemented
-/// separately so a wrapper can choose a different model when needed.
 #[macro_export]
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
@@ -642,9 +640,7 @@ macro_rules! impl_backend_from {
             }
 
             unsafe fn destroy(handle: std::ptr::NonNull<Self::Handle>) {
-                // SAFETY: the wrapper shares the source backend's handle and
-                // forwards the caller's destruction contract unchanged.
-                unsafe { <$from as poulpy_hal::layouts::Backend>::destroy(handle) }
+                <$from as poulpy_hal::layouts::Backend>::destroy(handle)
             }
 
             // Sizing must be forwarded explicitly: these are defaulted trait

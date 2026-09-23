@@ -285,48 +285,18 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Selects a limb radix using the backend's failure model.
+    /// Selects a radix through [`BackendMaxBase2k`](super::BackendMaxBase2k),
+    /// without constructing a module. `products` counts accumulated polynomial
+    /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
     ///
-    /// `products` is the number of polynomial products accumulated into one
-    /// output polynomial of degree `n`. `failure_bits` requests an estimated
-    /// probability at most `2^(-failure_bits)` that any coefficient fails CRT
-    /// reconstruction or FFT integer rounding. Both arguments must be positive.
-    ///
-    /// Delegates to [`BackendMaxBase2k`](super::BackendMaxBase2k), which lets
-    /// each backend choose its model independently of its DFT storage word.
-    /// The shared NTT and FFT64 models assume independent, centered uniform
-    /// inputs in `[-2^(b-1), 2^(b-1)]`, neglecting integer endpoint corrections. For NTT,
-    /// `sigma = 2^(2*b) * sqrt(n * products) / 12` and the threshold is `Q/2`.
-    /// For the shared FFT64 model, the rounding error is modeled as
-    /// `sigma_e = 2^(2*b-53) * sqrt(n*d*R) / 12`, where
-    /// `d = products` and
-    /// `R = 5*(log2(n)-1) + max(2/3 + (d+1)/6 - 1/(3*d), (d+1/2)/3)`.
-    /// Its threshold is `1/2`; it includes transforms, products, and rounding
-    /// of sequential partial sums before one inverse transform.
-    ///
-    /// Both use the Gaussian envelope `erfc(x) <= exp(-x*x)` and a union bound
-    /// over `n` output coefficients. This is a parameter estimate under the
-    /// stated model, not an arbitrary-input guarantee or a certified far-tail
-    /// bound. Correlated operands and accumulated inputs require a suitable
-    /// model of their own.
-    ///
-    /// The shared models return the largest radix up to 62 satisfying that
-    /// envelope, or `Some(0)` if no positive radix does. A backend returns
-    /// `None` when it has no applicable estimate for the requested workload.
-    ///
-    /// This maximum does not reserve coefficient-word headroom for additions
-    /// and subtractions outside the DFT domain. Choose a smaller working radix
-    /// when needed to keep every intermediate in range, including repeated
-    /// accumulations before normalization and any carry-propagation bounds.
-    ///
-    /// For `m` output polynomials, add `ceil(log2(m))` to `failure_bits` to
-    /// allocate the failure budget by a union bound. This runtime query does
-    /// not require constructing a module.
+    /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
+    /// Estimates depend on the backend's distributional assumptions. Reserve
+    /// coefficient-domain addition headroom separately. For `m` outputs, add
+    /// `ceil(log2(m))` to the target to allocate a total failure budget.
     ///
     /// # Panics
-    ///
-    /// Panics if `n` is not a power of two, is below [`Backend::MIN_DEGREE`],
-    /// or if `products` or `failure_bits` is zero.
+    /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
+    /// and `products` and `failure_bits` are positive.
     #[inline]
     pub fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
     where

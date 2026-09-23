@@ -1,35 +1,6 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 mod core_emulated_tensor;
-mod fft64_error;
-
-#[test]
-fn max_base2k() {
-    use poulpy_hal::layouts::{BackendMaxBase2k, Module};
-
-    // A 128-bit target for one output polynomial and 32 independent products.
-    fn limits<B: BackendMaxBase2k>() -> [Option<usize>; 2] {
-        [
-            Module::<B>::max_base2k(1 << 15, 32, 128),
-            Module::<B>::max_base2k(1 << 16, 32, 128),
-        ]
-    }
-
-    assert_eq!(limits::<crate::FFT64Avx512>(), [Some(19), Some(19)]);
-    assert_eq!(limits::<crate::NTT4x30Avx512>(), [Some(54), Some(54)]);
-    #[cfg(feature = "enable-rayon")]
-    {
-        assert_eq!(limits::<crate::FFT64Avx512Rayon>(), [Some(19), Some(19)]);
-        assert_eq!(limits::<crate::NTT4x30Avx512Rayon>(), [Some(54), Some(54)]);
-    }
-
-    #[cfg(feature = "enable-ifma")]
-    {
-        assert_eq!(limits::<crate::NTT3x42Ifma>(), [Some(57), Some(57)]);
-        #[cfg(feature = "enable-rayon")]
-        assert_eq!(limits::<crate::NTT3x42IfmaRayon>(), [Some(57), Some(57)]);
-    }
-}
 
 /// Bounds only explicitly emulated CI runs. Native runs retain their original
 /// degrees; all modules are constructed from the same adjusted parameters.

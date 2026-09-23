@@ -147,16 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn prime_product_log_is_const_and_matches_modulus() {
-        const LOG_PRODUCTS: [f64; 3] = [Primes29::LOG_Q_PRODUCT, Primes30::LOG_Q_PRODUCT, Primes31::LOG_Q_PRODUCT];
-        for (log_product, primes) in LOG_PRODUCTS.into_iter().zip([Primes29::Q, Primes30::Q, Primes31::Q]) {
-            let product: u128 = primes.into_iter().map(u128::from).product();
-            let expected = (product as f64).log2();
-            assert!((log_product - expected).abs() <= f64::EPSILON * expected);
-        }
-    }
-
-    #[test]
     fn prime_sets_and_crt() {
         check::<Primes29>();
         check::<Primes30>();

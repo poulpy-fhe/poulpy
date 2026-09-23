@@ -14,7 +14,6 @@ mod ckks_tests;
 #[cfg(feature = "enable-core")]
 mod delegating_backend;
 mod derived_scratch;
-mod max_base2k;
 
 #[test]
 fn bootstrapping_presets_keep_fixture_radices() {

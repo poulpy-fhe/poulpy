@@ -103,13 +103,8 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
-    /// `log2(Q[0] * ... * Q[N-1])`, rounded to `f64` precision.
-    ///
-    /// Unlike the per-prime [`Self::LOG_Q`], this retains the fractional part
-    /// of the logarithm. It is the capacity used by
-    /// [`crate::layouts::Module::max_base2k`] for uniform signed-limb
-    /// products with centered CRT reconstruction. Summing the per-prime bit widths can
-    /// overestimate this capacity.
+    /// Base-2 logarithm of the actual prime product, rounded to `f64` precision.
+    /// Retains the fractional part, unlike summing the per-prime [`Self::LOG_Q`].
     const LOG_Q_PRODUCT: f64;
 
     /// Maximum log2 of the negacyclic NTT size supported by `OMEGA`.
