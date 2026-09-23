@@ -15,7 +15,7 @@ use crate::blind_rotation::{BlindRotationKeyCompressed, CGGI};
 pub fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes_ref<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     A: GGSWInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWCompressedEncryptSk<BE>,
 {
     module.ggsw_compressed_encrypt_sk_tmp_bytes(infos)
@@ -35,7 +35,7 @@ pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1, E>(
     S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     E: EncryptionInfos,
     S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWCompressedEncryptSk<BE>,
 {
     assert_eq!(res.keys.len() as u32, sk_lwe.n());

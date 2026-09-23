@@ -3,7 +3,7 @@ use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyPreparedFactory::alloc_bdd_key_from_infos`].
-pub fn alloc_bdd_key_from_infos_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64> + 'static, A>(
+pub fn alloc_bdd_key_from_infos_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>, A>(
     module: &Module<BE>,
     infos: &A,
 ) -> BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
@@ -25,7 +25,7 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyPreparedFactory::prepare_bdd_key_tmp_bytes`].
-pub fn prepare_bdd_key_tmp_bytes_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64> + 'static, A>(
+pub fn prepare_bdd_key_tmp_bytes_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>, A>(
     module: &Module<BE>,
     infos: &A,
 ) -> usize
@@ -44,7 +44,7 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyPreparedFactory::prepare_bdd_key`].
-pub fn prepare_bdd_key_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64> + 'static>(
+pub fn prepare_bdd_key_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>>(
     module: &Module<BE>,
     res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
     other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,

@@ -38,6 +38,7 @@ where
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+    // GGSW noise diagnostics require host views for every lifetime.
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,

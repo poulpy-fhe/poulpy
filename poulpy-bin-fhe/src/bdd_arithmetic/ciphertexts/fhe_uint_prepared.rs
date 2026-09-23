@@ -11,7 +11,7 @@ use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEPacking};
 
 use poulpy_core::layouts::GLWESecretPreparedToBackendRef;
 use poulpy_hal::api::ModuleLogN;
-use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module};
+use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module};
 
 use poulpy_hal::{layouts::ScratchArena, source::Source};
 
@@ -205,10 +205,6 @@ where
             + GLWEBytesOf<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
-        BE: 'static,
-        BE::OwnedBuf: HostDataRef + 'static,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
         let mut tmp: FheUint<BE::OwnedBuf, T, BE::ZnxWord> = FheUint::alloc_from_infos(module, self);
         let mut scratch_1 = scratch.borrow();

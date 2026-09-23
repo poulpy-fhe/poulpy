@@ -3,7 +3,7 @@ use crate::hal_impl::delegating_backend::BinFheOverrideFFT64 as OverrideBackend;
 use poulpy_bin_fhe::{api::*, blind_rotation::*, oep::*};
 use poulpy_core::layouts::*;
 use poulpy_hal::{api::*, layouts::*, oep::HalModuleImpl};
-use std::{cell::Cell, ptr::NonNull};
+use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 
 crate::impl_sampling_host!(OverrideBackend, fft64);
 poulpy_core::impl_conversion_reference_full!(OverrideBackend);
@@ -158,16 +158,28 @@ impl CopyFromHost for OpaqueOwned {
 struct OpaqueRef<'a>(&'a [u8]);
 #[derive(Default, PartialEq, Eq)]
 struct OpaqueMut<'a>(&'a mut [u8]);
+// Model a device backend whose context borrows an external environment.
 #[derive(Default, PartialEq, Eq)]
-struct OpaqueBackend;
-impl Backend for OpaqueBackend {
+struct OpaqueBackend<'env>(PhantomData<&'env ()>);
+impl<'env> OpaqueBackend<'env> {
+    fn module(_environment: &'env ()) -> Module<Self> {
+        Module::new(32)
+    }
+}
+impl Backend for OpaqueBackend<'_> {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
     type OwnedBuf = OpaqueOwned;
-    type BufRef<'a> = OpaqueRef<'a>;
-    type BufMut<'a> = OpaqueMut<'a>;
+    type BufRef<'a>
+        = OpaqueRef<'a>
+    where
+        Self: 'a;
+    type BufMut<'a>
+        = OpaqueMut<'a>
+    where
+        Self: 'a;
     type Handle = ();
     type Location = Device;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
@@ -186,26 +198,26 @@ impl Backend for OpaqueBackend {
         buf.0[..src.len()].copy_from_slice(src);
         buf.0[src.len()..].fill(0);
     }
-    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+    fn copy_view_to_host(buf: &OpaqueRef<'_>, dst: &mut [u8]) {
         dst.copy_from_slice(&buf.0[..dst.len()]);
     }
-    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+    fn copy_host_to_view(buf: &mut OpaqueMut<'_>, src: &[u8]) {
         buf.0[..src.len()].copy_from_slice(src);
         buf.0[src.len()..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.0.len()
     }
-    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+    fn len_bytes_ref(buf: &OpaqueRef<'_>) -> usize {
         buf.0.len()
     }
-    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+    fn len_bytes_mut(buf: &OpaqueMut<'_>) -> usize {
         buf.0.len()
     }
-    fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
+    fn view(buf: &Self::OwnedBuf) -> OpaqueRef<'_> {
         OpaqueRef(&buf.0)
     }
-    fn view_mut(buf: &mut Self::OwnedBuf) -> Self::BufMut<'_> {
+    fn view_mut(buf: &mut Self::OwnedBuf) -> OpaqueMut<'_> {
         OpaqueMut(&mut buf.0)
     }
     fn view_ref<'a, 'b>(buf: &'a Self::BufRef<'b>) -> Self::BufRef<'a>
@@ -226,10 +238,10 @@ impl Backend for OpaqueBackend {
     {
         OpaqueMut(buf.0)
     }
-    fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> Self::BufRef<'_> {
+    fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> OpaqueRef<'_> {
         OpaqueRef(&buf.0[offset..offset + len])
     }
-    fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
+    fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> OpaqueMut<'_> {
         OpaqueMut(&mut buf.0[offset..offset + len])
     }
     fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
@@ -252,12 +264,12 @@ impl Backend for OpaqueBackend {
     }
     unsafe fn destroy(_: NonNull<()>) {}
 }
-unsafe impl HalModuleImpl for OpaqueBackend {
+unsafe impl HalModuleImpl for OpaqueBackend<'_> {
     fn new(n: u64) -> Module<Self> {
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }
     }
 }
-unsafe impl BlindRotationModSwitchImpl for OpaqueBackend {
+unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
         _module: &Module<Self>,
         modulus: usize,
@@ -270,11 +282,80 @@ unsafe impl BlindRotationModSwitchImpl for OpaqueBackend {
     }
 }
 
+// This compile-time contract is deliberately generic over a borrowed backend's
+// lifetime. It checks dispatch and reference bodies without requiring a second
+// arithmetic implementation: restoring a `'static` bound makes it fail to compile.
+const _: () = {
+    use poulpy_bin_fhe::{bdd_arithmetic::GetGGSWBit, reference::bdd::*};
+    use poulpy_core::*;
+    use std::collections::HashMap;
+
+    #[allow(dead_code)]
+    fn bdd_accepts_borrowed_backend<'env, K: GetGGSWBit<OpaqueBackend<'env>>>(
+        module: &Module<OpaqueBackend<'env>>,
+        res: &mut GLWE<OpaqueOwned, i64>,
+        input: &GLWE<OpaqueOwned, i64>,
+        selector: &GGSWPrepared<OpaqueOwned, OpaqueBackend<'env>>,
+        value: &K,
+        scratch: &mut ScratchArena<'_, OpaqueBackend<'env>>,
+    ) where
+        OpaqueBackend<'env>:
+            Backend<ZnxWord = i64, OwnedBuf = OpaqueOwned> + CmuxImpl + GLWEBlindRotationImpl + GLWEBlindSelectionImpl<u8>,
+        Module<OpaqueBackend<'env>>: GLWEExternalProductInternal<OpaqueBackend<'env>>
+            + GLWECopy<OpaqueBackend<'env>>
+            + GLWESub<OpaqueBackend<'env>>
+            + GLWEZero<OpaqueBackend<'env>>
+            + GLWERotate<OpaqueBackend<'env>>
+            + GLWENormalize<OpaqueBackend<'env>>
+            + VecZnxBigAddSmallAssign<OpaqueBackend<'env>>
+            + VecZnxBigBytesOf
+            + VecZnxDftBytesOf
+            + VecZnxIdftApply<OpaqueBackend<'env>>
+            + VecZnxIdftApplyTmpBytes
+            + VecZnxBigNormalize<OpaqueBackend<'env>>
+            + VecZnxBigNormalizeTmpBytes,
+    {
+        let selector = selector.to_backend_ref();
+        module.cmux_tmp_bytes(res, input, &selector);
+        module.cmux(res, input, input, &selector, scratch);
+        module.cmux_assign(res, input, &selector, scratch);
+        module.cmux_assign_neg(res, input, &selector, scratch);
+        cmux_tmp_bytes_reference(module, res, input, &selector);
+        cmux_reference(module, res, input, input, &selector, scratch);
+        cmux_assign_reference(module, res, input, &selector, scratch);
+        cmux_assign_neg_reference(module, res, input, &selector, scratch);
+
+        module.glwe_blind_rotation_tmp_bytes(res, input, &selector);
+        module.glwe_blind_rotation_assign_tmp_bytes(res, &selector);
+        module.glwe_blind_rotation(res, input, value, true, 0, 1, 0, scratch);
+        module.glwe_blind_rotation_assign(res, value, true, 0, 1, 0, scratch);
+        glwe_blind_rotation_tmp_bytes_reference(module, res, input, &selector);
+        glwe_blind_rotation_assign_tmp_bytes_reference(module, res, &selector);
+        glwe_blind_rotation_reference(module, res, input, value, true, 0, 1, 0, scratch);
+        glwe_blind_rotation_assign_reference(module, res, value, true, 0, 1, 0, scratch);
+
+        let input_infos = [input.glwe_layout()];
+        GLWEBlindSelection::<u8, _>::glwe_blind_selection_tmp_bytes(module, res, &input_infos, &selector);
+        GLWEBlindSelection::<u8, _>::glwe_blind_selection::<_, GLWE<OpaqueOwned, i64>, _>(
+            module,
+            res,
+            HashMap::new(),
+            value,
+            0,
+            1,
+            scratch,
+        );
+        glwe_blind_selection_tmp_bytes_reference::<u8, _, _, _, _>(module, res, &input_infos, &selector);
+        glwe_blind_selection_reference::<u8, _, _, GLWE<OpaqueOwned, i64>, _>(module, res, HashMap::new(), value, 0, 1, scratch);
+    }
+};
+
 #[test]
 fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
-    fn requires_parity_backend<B: poulpy_bin_fhe::test_suite::parity::ParityBackend>() {}
-    requires_parity_backend::<OpaqueBackend>();
-    let module = Module::<OpaqueBackend>::new(32);
+    fn requires_parity_backend<B: poulpy_bin_fhe::test_suite::parity::ParityBackend>(_: &Module<B>) {}
+    let environment = ();
+    let module = OpaqueBackend::module(&environment);
+    requires_parity_backend(&module);
     let layout = LWELayout {
         n: 4usize.into(),
         base2k: 4usize.into(),
@@ -460,7 +541,7 @@ thread_local! {
 
 // These overrides use only storage allocation and transfers. OpaqueBackend has
 // no polynomial arithmetic implementations or host-accessible buffer views.
-unsafe impl BlindRotationKeyCompressedFactoryImpl<CGGI> for OpaqueBackend {
+unsafe impl BlindRotationKeyCompressedFactoryImpl<CGGI> for OpaqueBackend<'_> {
     fn blind_rotation_key_compressed_alloc<A: BlindRotationKeyInfos>(
         module: &Module<Self>,
         infos: &A,
@@ -501,7 +582,7 @@ fn rotate_opaque_lut(lut: &mut LookupTable<OpaqueOwned, i64>, k: i64) {
     write_opaque_lut(lut, &output);
 }
 
-unsafe impl LookupTableFactoryImpl for OpaqueBackend {
+unsafe impl LookupTableFactoryImpl for OpaqueBackend<'_> {
     fn lookup_table_set(module: &Module<Self>, res: &mut LookupTable<Self::OwnedBuf, i64>, f: &[i64], k: usize) {
         // This independent test implementation supports one normalized limb.
         assert_eq!(res.extension_factor(), 1);
@@ -537,7 +618,8 @@ unsafe impl LookupTableFactoryImpl for OpaqueBackend {
 #[test]
 fn compressed_key_factory_dispatches_with_opaque_storage() {
     COMPRESSED_FACTORY_CALLS.set(0);
-    let module = Module::<OpaqueBackend>::new(32);
+    let environment = ();
+    let module = OpaqueBackend::module(&environment);
     let layout = BlindRotationKeyLayout {
         n_glwe: 32usize.into(),
         n_lwe: 3usize.into(),
@@ -568,7 +650,8 @@ fn compressed_key_factory_dispatches_with_opaque_storage() {
 fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     LUT_SET_CALLS.set(0);
     LUT_ROTATE_CALLS.set(0);
-    let module = Module::<OpaqueBackend>::new(32);
+    let environment = ();
+    let module = OpaqueBackend::module(&environment);
     let layout = LookUpTableLayout {
         n: 32usize.into(),
         extension_factor: 1,

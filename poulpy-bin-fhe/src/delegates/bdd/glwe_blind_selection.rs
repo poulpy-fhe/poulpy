@@ -2,7 +2,7 @@ use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
 use std::collections::HashMap;
-impl<T: UnsignedInteger, BE: Backend + 'static> GLWEBlindSelection<T, BE> for Module<BE>
+impl<T: UnsignedInteger, BE: Backend> GLWEBlindSelection<T, BE> for Module<BE>
 where
     BE: crate::oep::GLWEBlindSelectionImpl<T>,
 {
@@ -27,7 +27,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
+        K: GetGGSWBit<BE>,
     {
         BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch)
     }

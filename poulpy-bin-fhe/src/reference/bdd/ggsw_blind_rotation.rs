@@ -3,7 +3,7 @@ use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`GGSWBlindRotation::scalar_to_ggsw_blind_rotation_tmp_bytes`].
-pub fn scalar_to_ggsw_blind_rotation_tmp_bytes_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64> + 'static, R, K>(
+pub fn scalar_to_ggsw_blind_rotation_tmp_bytes_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64>, R, K>(
     module: &Module<BE>,
     res_infos: &R,
     k_infos: &K,
@@ -32,7 +32,7 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: ScalarZnxToBackendRef<BE>,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE>,
 {
     let base2k: usize = res.base2k().into();

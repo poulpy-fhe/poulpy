@@ -20,7 +20,7 @@ pub(crate) fn glwe_blind_retrieval_statefull_derived<BE: Backend, R, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGGSWBit<BE> + 'static,
+    K: GetGGSWBit<BE>,
     Module<BE>: Cswap<BE>,
 {
     for i in 0..bit_mask {
@@ -44,7 +44,7 @@ pub(crate) fn glwe_blind_retrieval_statefull_rev_derived<BE: Backend, R, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGGSWBit<BE> + 'static,
+    K: GetGGSWBit<BE>,
     Module<BE>: Cswap<BE>,
 {
     for i in (0..bit_mask).rev() {

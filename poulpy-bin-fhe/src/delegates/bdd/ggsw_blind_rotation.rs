@@ -34,7 +34,7 @@ where
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static,
+        BE: Backend<ZnxWord = i64>,
     {
         BE::ggsw_blind_rotation_assign::<R, K>(self, res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
@@ -53,7 +53,7 @@ where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static,
+        BE: Backend<ZnxWord = i64>,
     {
         BE::ggsw_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
@@ -80,7 +80,7 @@ where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: ScalarZnxToBackendRef<BE>,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static,
+        BE: Backend<ZnxWord = i64>,
     {
         BE::scalar_to_ggsw_blind_rotation::<R, A, K>(self, res, test_vector, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }

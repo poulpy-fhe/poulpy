@@ -225,7 +225,7 @@ macro_rules! impl_bin_fhe_bdd_reference {
                     R: GGSWToBackendMut<$be> + GGSWAtViewMut<$be> + GGSWInfos,
                     A: ScalarZnxToBackendRef<$be>,
                     K: GetGGSWBit<$be>,
-                    $be: Backend<ZnxWord = i64> + 'static,
+                    $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::scalar_to_ggsw_blind_rotation_reference::<T, $be, _, _, _>(
                         module,
@@ -288,7 +288,7 @@ macro_rules! impl_bin_fhe_bdd_reference {
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     K: GetGGSWBit<$be>,
-                    $be: Backend<ZnxWord = i64> + 'static,
+                    $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_assign_reference::<$be, _, _>(
                         module, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch,
@@ -309,7 +309,7 @@ macro_rules! impl_bin_fhe_bdd_reference {
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendRef<$be>,
                     K: GetGGSWBit<$be>,
-                    $be: Backend<ZnxWord = i64> + 'static,
+                    $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_reference::<$be, _, _, _>(
                         module, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
@@ -362,7 +362,7 @@ macro_rules! impl_bin_fhe_bdd_reference {
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
-                    K: GetGGSWBit<$be> + 'static,
+                    K: GetGGSWBit<$be>,
                 {
                     $crate::reference::bdd::glwe_blind_selection_reference::<T, $be, _, _, _>(
                         module, res, a, fhe_uint, bit_rsh, bit_mask, scratch,

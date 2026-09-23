@@ -31,10 +31,7 @@ where
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-    BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: poulpy_core::layouts::GGSWLayout = TEST_GGSW_INFOS;
@@ -117,10 +114,7 @@ where
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-    BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: poulpy_core::layouts::GGSWLayout = TEST_GGSW_INFOS;
@@ -205,10 +199,10 @@ where
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+    // FheUint::encrypt_sk requires mutable host views for every lifetime.
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: poulpy_core::layouts::GGSWLayout = TEST_GGSW_INFOS;
@@ -291,10 +285,10 @@ where
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+    // FheUint::encrypt_sk requires mutable host views for every lifetime.
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: poulpy_core::layouts::GGSWLayout = TEST_GGSW_INFOS;
@@ -366,10 +360,10 @@ where
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
+    // FheUint::encrypt_sk requires mutable host views for every lifetime.
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: poulpy_core::layouts::GGSWLayout = TEST_GGSW_INFOS;

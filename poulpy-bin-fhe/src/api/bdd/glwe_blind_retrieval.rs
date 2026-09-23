@@ -13,7 +13,7 @@ use poulpy_hal::layouts::*;
 /// The rearrangement uses conditional-swap ([`Cswap`]) operations, one per bit
 /// of the selector sub-field.  The `_rev` variant applies the operations in
 /// reverse, useful for undoing the permutation.
-pub trait GLWEBlindRetrieval<BE: Backend + 'static> {
+pub trait GLWEBlindRetrieval<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Returns the minimum scratch-space size in bytes required by
     /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
@@ -36,7 +36,7 @@ pub trait GLWEBlindRetrieval<BE: Backend + 'static> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static;
+        K: GetGGSWBit<BE>;
     #[allow(clippy::too_many_arguments)]
     /// Reverses the permutation applied by
     /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
@@ -52,5 +52,5 @@ pub trait GLWEBlindRetrieval<BE: Backend + 'static> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static;
+        K: GetGGSWBit<BE>;
 }

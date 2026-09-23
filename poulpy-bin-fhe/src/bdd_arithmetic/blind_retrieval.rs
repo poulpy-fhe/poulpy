@@ -69,7 +69,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
@@ -86,7 +86,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
         assert!(
             (self.counter as u32) < 1 << self.accumulators.len(),
@@ -103,7 +103,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         R: GLWEToBackendMut<BE>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
         if self.counter == 0 {
             module.glwe_zero(res);
@@ -159,7 +159,7 @@ fn add_core<A, S, M, BE>(
     A: GLWEToBackendRef<BE>,
     S: GetGGSWBit<BE>,
     M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
 {
     // Isolate the first accumulator
     let (acc_prev, acc_next) = accumulators.split_at_mut(1);

@@ -20,7 +20,7 @@ where
     A: GLWEInfos,
     B: BDDKeyInfos,
     Module<BE>: LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
 {
     let mut lwe_infos = bits_infos.lwe_layout();
     lwe_infos.n = bdd_infos.cbt_infos().brk_infos().n_lwe();
@@ -58,7 +58,7 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
 ) where
     K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
     Module<BE>: LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
 {
     let bit_end = bit_start.checked_add(bit_count).expect("FheUint bit range overflow");
     let (cbt, ks_glwe, ks_lwe) = key.get_cbt_key();

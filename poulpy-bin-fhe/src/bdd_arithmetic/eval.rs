@@ -131,7 +131,7 @@ pub(crate) fn execute_bdd_circuit_reference<BE, M, C, G, O>(
     circuit: &C,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     M: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE> + Sync,
     G: GetGGSWBit<BE> + BitSize,
     C: GetBitCircuitInfo,
@@ -183,7 +183,7 @@ fn eval_level<M, G, R, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     G: GetGGSWBit<BE> + BitSize,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {

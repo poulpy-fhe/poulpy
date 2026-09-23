@@ -4,7 +4,7 @@ use poulpy_hal::layouts::*;
 use std::collections::{HashMap, HashSet};
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`GLWEBlindSelection::glwe_blind_selection_tmp_bytes`].
-pub fn glwe_blind_selection_tmp_bytes_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64> + 'static, R, A, K>(
+pub fn glwe_blind_selection_tmp_bytes_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64>, R, A, K>(
     module: &Module<BE>,
     res_infos: &R,
     input_infos: &[A],
@@ -54,7 +54,7 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`GLWEBlindSelection::glwe_blind_selection`].
-pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64> + 'static, R, A, K>(
+pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64>, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     mut a: HashMap<usize, &mut A>,
@@ -65,7 +65,7 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGGSWBit<BE> + 'static,
+    K: GetGGSWBit<BE>,
     Module<BE>: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>,
 {
     assert!(bit_rsh + bit_mask <= T::BITS as usize);

@@ -38,7 +38,7 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
         K: GetGGSWBit<Self>,
-        Self: Backend<ZnxWord = i64> + 'static,
+        Self: Backend<ZnxWord = i64>,
     {
         crate::oep::derived::bdd::ggsw_blind_rotation_assign_derived::<Self, _, _>(
             module, res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
@@ -59,7 +59,7 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
         A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos,
         K: GetGGSWBit<Self>,
-        Self: Backend<ZnxWord = i64> + 'static,
+        Self: Backend<ZnxWord = i64>,
     {
         crate::oep::derived::bdd::ggsw_blind_rotation_derived::<Self, _, _, _>(
             module, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
@@ -85,5 +85,5 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
         A: ScalarZnxToBackendRef<Self>,
         K: GetGGSWBit<Self>,
-        Self: Backend<ZnxWord = i64> + 'static;
+        Self: Backend<ZnxWord = i64>;
 }

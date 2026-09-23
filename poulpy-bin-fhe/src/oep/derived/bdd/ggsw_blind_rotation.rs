@@ -39,7 +39,7 @@ pub(crate) fn ggsw_blind_rotation_assign_derived<BE, R, K>(
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBlindRotation<BE>,
 {
     for col in 0..(res.rank() + 1).into() {
@@ -71,7 +71,7 @@ pub(crate) fn ggsw_blind_rotation_derived<BE, R, A, K>(
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBlindRotation<BE>,
 {
     assert!(res.dnum() <= a.dnum());

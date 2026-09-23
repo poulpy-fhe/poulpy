@@ -34,7 +34,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static,
+        BE: Backend<ZnxWord = i64>,
     {
         BE::glwe_blind_rotation_assign::<R, K>(self, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
@@ -53,7 +53,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static,
+        BE: Backend<ZnxWord = i64>,
     {
         BE::glwe_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }

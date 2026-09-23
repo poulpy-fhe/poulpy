@@ -25,7 +25,7 @@ pub unsafe trait GLWEBlindRetrievalImpl: Backend + crate::oep::CswapImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
-        K: GetGGSWBit<Self> + 'static,
+        K: GetGGSWBit<Self>,
     {
         crate::oep::derived::bdd::glwe_blind_retrieval_statefull_derived::<Self, _, _>(
             module, res, bits, bit_rsh, bit_mask, scratch,
@@ -41,7 +41,7 @@ pub unsafe trait GLWEBlindRetrievalImpl: Backend + crate::oep::CswapImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
-        K: GetGGSWBit<Self> + 'static,
+        K: GetGGSWBit<Self>,
     {
         crate::oep::derived::bdd::glwe_blind_retrieval_statefull_rev_derived::<Self, _, _>(
             module, res, bits, bit_rsh, bit_mask, scratch,

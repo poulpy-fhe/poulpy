@@ -16,7 +16,7 @@ use crate::blind_rotation::{BlindRotationKey, CGGI};
 /// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk_tmp_bytes`.
 pub fn blind_rotation_key_encrypt_sk_tmp_bytes_ref<BE, A: GGSWInfos>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
 {
     module.ggsw_encrypt_sk_tmp_bytes(infos)
@@ -36,7 +36,7 @@ pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1, E>(
     S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     E: EncryptionInfos,
     S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
 {
     assert_eq!(res.keys.len() as u32, sk_lwe.n());

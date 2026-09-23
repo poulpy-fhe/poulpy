@@ -37,7 +37,7 @@ fn lut<B: ParityBackend>(
     }
 }
 
-fn reject_mismatched_preparation<B: ParityBackend + 'static>(
+fn reject_mismatched_preparation<B: ParityBackend>(
     module: &Module<B>,
     prepared: &mut BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>,
     layout: &BlindRotationKeyLayout,
@@ -78,8 +78,8 @@ fn reject_mismatched_preparation<B: ParityBackend + 'static>(
 /// extended CGGI, including both rotation directions and key preparation reuse.
 pub fn test_blind_rotation_parity<BR, BT>(reference: &Module<BR>, tested: &Module<BT>)
 where
-    BR: ParityBackend + 'static,
-    BT: ParityBackend + 'static,
+    BR: ParityBackend,
+    BT: ParityBackend,
     Module<BT>: BlindRotationExecute<CGGI, BT> + BlindRotationKeyPreparedFactory<CGGI, BT> + BlindRotationModSwitch<BT>,
     Module<BR>: BlindRotationExecute<CGGI, BR> + BlindRotationKeyPreparedFactory<CGGI, BR> + BlindRotationModSwitch<BR>,
 {
@@ -168,7 +168,7 @@ where
 /// outputs without requiring a seed-to-stream convention across backends.
 pub fn test_blind_rotation_key_lifecycle<B>(module: &Module<B>)
 where
-    B: ParityBackend + 'static,
+    B: ParityBackend,
     Module<B>: BlindRotationKeyEncryptSk<CGGI, B>
         + BlindRotationKeyCompressedEncryptSk<B, CGGI>
         + BlindRotationKeyCompressedFactory<CGGI, B>

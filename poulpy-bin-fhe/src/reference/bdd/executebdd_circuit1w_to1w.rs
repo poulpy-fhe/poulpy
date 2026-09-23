@@ -48,7 +48,7 @@ pub fn execute_bdd_circuit_1w_to_1w_multi_thread_reference<BE, C, H, T>(
     T: UnsignedInteger,
     C: GetBitCircuitInfo,
     H: GetAutomorphismKey<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>,
     Module<BE>: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {

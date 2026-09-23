@@ -1,7 +1,7 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-impl<BE: Backend + 'static> GLWEBlindRetrieval<BE> for Module<BE>
+impl<BE: Backend> GLWEBlindRetrieval<BE> for Module<BE>
 where
     BE: crate::oep::GLWEBlindRetrievalImpl,
 {
@@ -23,7 +23,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
+        K: GetGGSWBit<BE>,
     {
         BE::glwe_blind_retrieval_statefull::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
     }
@@ -37,7 +37,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
+        K: GetGGSWBit<BE>,
     {
         BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
     }

@@ -3,7 +3,7 @@ use poulpy_core::{layouts::*, *};
 use poulpy_hal::{layouts::*, source::Source};
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyEncryptSk::bdd_key_encrypt_sk_tmp_bytes`].
-pub fn bdd_key_encrypt_sk_tmp_bytes_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64> + 'static, A>(
+pub fn bdd_key_encrypt_sk_tmp_bytes_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>, A>(
     module: &Module<BE>,
     infos: &A,
 ) -> usize
@@ -25,7 +25,7 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyEncryptSk::bdd_key_encrypt_sk`].
-pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64> + 'static, S0, S1>(
+pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>, S0, S1>(
     module: &Module<BE>,
     res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
     sk_lwe: &S0,

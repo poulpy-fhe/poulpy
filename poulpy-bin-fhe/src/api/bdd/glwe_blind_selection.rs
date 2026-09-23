@@ -15,7 +15,7 @@ use std::collections::HashMap;
 /// `bit_mask` most-significant bits of the selected index sub-field, traversing
 /// from MSB to LSB.  Indices absent from the map are treated as encryptions of
 /// zero.
-pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend + 'static> {
+pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Returns scratch-space bytes for [`glwe_blind_selection`][Self::glwe_blind_selection].
     ///
@@ -40,5 +40,5 @@ pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend + 'static> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static;
+        K: GetGGSWBit<BE>;
 }

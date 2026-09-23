@@ -3,7 +3,7 @@ use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`Cswap::cswap_tmp_bytes`].
-pub fn cswap_tmp_bytes_reference<BE: Backend<ZnxWord = i64> + 'static, R, A, S>(
+pub fn cswap_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, S>(
     module: &Module<BE>,
     res_a_infos: &R,
     res_b_infos: &A,
@@ -86,7 +86,7 @@ pub fn cswap_reference<'k, BE, A, B>(
 ) where
     A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    BE: Backend<ZnxWord = i64> + 'static + 'k,
+    BE: Backend<ZnxWord = i64> + 'k,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + ModuleN

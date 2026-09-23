@@ -31,7 +31,7 @@ pub unsafe trait GLWEBlindRotationImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         K: GetGGSWBit<Self>,
-        Self: Backend<ZnxWord = i64> + 'static;
+        Self: Backend<ZnxWord = i64>;
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
         module: &Module<Self>,
@@ -47,5 +47,5 @@ pub unsafe trait GLWEBlindRotationImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self>,
         K: GetGGSWBit<Self>,
-        Self: Backend<ZnxWord = i64> + 'static;
+        Self: Backend<ZnxWord = i64>;
 }

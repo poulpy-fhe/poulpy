@@ -21,7 +21,7 @@ pub fn blind_rotation_key_prepared_alloc_ref<BE, A>(
 ) -> BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>
 where
     A: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
 {
     BlindRotationKeyPrepared {
@@ -38,7 +38,7 @@ where
 pub fn blind_rotation_key_prepare_tmp_bytes_ref<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     A: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
 {
     module.ggsw_prepare_tmp_bytes(infos)
@@ -51,7 +51,7 @@ pub fn prepare_blind_rotation_key_ref<BE>(
     other: &BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
 {
     assert_eq!(res.data.len(), other.keys.len(), "blind-rotation key dimensions differ");

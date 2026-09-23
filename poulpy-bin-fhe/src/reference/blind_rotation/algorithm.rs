@@ -37,7 +37,7 @@ pub fn blind_rotation_execute_tmp_bytes_ref<BE, G, B>(
 where
     G: GLWEInfos,
     B: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -81,7 +81,7 @@ pub fn blind_rotation_execute_tmp_bytes_parallel<BE, G, B>(
 where
     G: GLWEInfos,
     B: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -124,7 +124,7 @@ fn blind_rotation_execute_tmp_bytes_selected<BE, G, B, const PARALLEL: bool>(
 where
     G: GLWEInfos,
     B: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -202,7 +202,7 @@ pub fn blind_rotation_execute_ref<BE, R, L>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -246,7 +246,7 @@ pub fn blind_rotation_execute_parallel<BE, R, L>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -289,7 +289,7 @@ fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: BlindRotationModSwitch<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -350,7 +350,7 @@ fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
     }
 }
 
-fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
+fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -566,7 +566,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     }
 }
 
-fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static, const PARALLEL: bool>(
+fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>, const PARALLEL: bool>(
     module: &M,
     res: &mut R,
     lwe: &L,

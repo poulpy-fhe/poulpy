@@ -50,7 +50,7 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE> + GLWECopy<BE> + GLWERotate<BE> + Cmux<BE>,
 {
     let (mut tmp_res, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
@@ -98,7 +98,7 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
 {
     module.glwe_copy(res, a, scratch);

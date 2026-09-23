@@ -2,7 +2,7 @@ use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux_tmp_bytes`].
-pub fn cmux_tmp_bytes_reference<BE: Backend<ZnxWord = i64> + 'static, R, A, B>(
+pub fn cmux_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, B>(
     module: &Module<BE>,
     res_infos: &R,
     a_infos: &A,
@@ -68,7 +68,7 @@ pub fn cmux_reference<'k, BE, R, T, F>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     T: GLWEToBackendRef<BE>,
     F: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'static + 'k,
+    BE: Backend<ZnxWord = i64> + 'k,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>
@@ -139,7 +139,7 @@ pub fn cmux_assign_neg_reference<'k, BE, R, A>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'static + 'k,
+    BE: Backend<ZnxWord = i64> + 'k,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>
@@ -217,7 +217,7 @@ pub fn cmux_assign_reference<'k, BE, R, A>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'static + 'k,
+    BE: Backend<ZnxWord = i64> + 'k,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>

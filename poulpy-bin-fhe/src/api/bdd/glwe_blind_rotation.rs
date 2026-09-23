@@ -41,7 +41,7 @@ pub trait GLWEBlindRotation<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static;
+        BE: Backend<ZnxWord = i64>;
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
         &self,
@@ -57,5 +57,5 @@ pub trait GLWEBlindRotation<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static;
+        BE: Backend<ZnxWord = i64>;
 }

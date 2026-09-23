@@ -12,7 +12,7 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`FheUintPreparedEncryptSk::fhe_uint_prepared_encrypt_sk`].
-pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64> + 'static, S, E>(
+pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64>, S, E>(
     module: &Module<BE>,
     res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
     value: T,

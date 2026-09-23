@@ -7,7 +7,7 @@ use poulpy_hal::layouts::*;
 use std::collections::HashMap;
 
 /// Public operations and fixture preparation required for caller-selected parity.
-pub trait BddParityModule<B: Backend + 'static>:
+pub trait BddParityModule<B: Backend>:
     Cmux<B>
     + Cswap<B>
     + GLWEBlindRotation<B>
@@ -18,7 +18,7 @@ pub trait BddParityModule<B: Backend + 'static>:
     + GGSWPreparedFactory<B>
 {
 }
-impl<B: Backend + 'static, M> BddParityModule<B> for M where
+impl<B: Backend, M> BddParityModule<B> for M where
     M: Cmux<B>
         + Cswap<B>
         + GLWEBlindRotation<B>
@@ -30,7 +30,7 @@ impl<B: Backend + 'static, M> BddParityModule<B> for M where
 {
 }
 
-fn layouts<B: Backend + 'static>(module: &Module<B>) -> (GLWELayout, GGSWLayout) {
+fn layouts<B: Backend>(module: &Module<B>) -> (GLWELayout, GGSWLayout) {
     (
         GLWELayout {
             n: (module.n() as u32).into(),
@@ -49,7 +49,7 @@ fn layouts<B: Backend + 'static>(module: &Module<B>) -> (GLWELayout, GGSWLayout)
     )
 }
 
-fn selector<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> FheUintPrepared<B::OwnedBuf, u8, B>
+fn selector<B: ParityBackend>(module: &Module<B>) -> FheUintPrepared<B::OwnedBuf, u8, B>
 where
     Module<B>: GGSWPreparedFactory<B>,
 {
@@ -62,7 +62,17 @@ where
     result
 }
 
-fn gates<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>, swap: bool) -> Vec<GlweSnapshot>
+// The provider itself borrows prepared key storage, so requiring a static key
+// type on any public selection/retrieval route fails to compile these fixtures.
+struct BorrowedBits<'a, B: Backend>(&'a [GGSWPrepared<B::OwnedBuf, B>]);
+
+impl<B: Backend> GetGGSWBit<B> for BorrowedBits<'_, B> {
+    fn get_bit(&self, bit: usize) -> &GGSWPrepared<B::OwnedBuf, B> {
+        &self.0[bit]
+    }
+}
+
+fn gates<B: ParityBackend>(module: &Module<B>, swap: bool) -> Vec<GlweSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -103,27 +113,23 @@ where
 }
 
 /// Checks all CMux method variants with exact advertised scratch.
-pub fn test_cmux_parity<BR: ParityBackend<OwnedBuf: 'static> + 'static, BT: ParityBackend<OwnedBuf: 'static> + 'static>(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+pub fn test_cmux_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     assert_eq!(gates(reference, false), gates(tested, false));
 }
 /// Checks conditional swap, including a selector radix different from the operands.
-pub fn test_cswap_parity<BR: ParityBackend<OwnedBuf: 'static> + 'static, BT: ParityBackend<OwnedBuf: 'static> + 'static>(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+pub fn test_cswap_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     assert_eq!(gates(reference, true), gates(tested, true));
 }
 
-fn rotations<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn rotations<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -181,13 +187,8 @@ where
     outputs
 }
 /// Checks both rotation directions, offsets, empty bit ranges, and assignment variants.
-pub fn test_glwe_blind_rotation_parity<
-    BR: ParityBackend<OwnedBuf: 'static> + 'static,
-    BT: ParityBackend<OwnedBuf: 'static> + 'static,
->(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+pub fn test_glwe_blind_rotation_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
@@ -208,12 +209,21 @@ fn selection_fixture<B: ParityBackend>(
     value
 }
 
-fn selection<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn selection<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+where
+    Module<B>: BddParityModule<B>,
+{
+    let selectors = selector(module);
+    let expected = selection_with_key(module, &selectors);
+    assert_eq!(expected, selection_with_key(module, &BorrowedBits(&selectors.bits)));
+    expected
+}
+
+fn selection_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<GlweSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
     let (layout, key) = layouts(module);
-    let selectors = selector(module);
     let mut outputs = Vec::new();
     for varied in [false, true] {
         for present in [0b1111, 0b0101, 0b1010, 0] {
@@ -246,7 +256,7 @@ where
                 .enumerate()
                 .filter(|(i, _)| present & (1 << i) != 0)
                 .collect();
-            with_scratch::<B, _>(bytes, |s| module.glwe_blind_selection(&mut out, map, &selectors, 1, 2, s));
+            with_scratch::<B, _>(bytes, |s| module.glwe_blind_selection(&mut out, map, selectors, 1, 2, s));
             outputs.push(snapshot_glwe::<B, _>(&out));
         }
     }
@@ -254,45 +264,46 @@ where
 }
 /// Checks complete, sparse, and empty selections, including differing input
 /// precisions and capacities and both orientations of implicit zero branches.
-pub fn test_glwe_blind_selection_parity<
-    BR: ParityBackend<OwnedBuf: 'static> + 'static,
-    BT: ParityBackend<OwnedBuf: 'static> + 'static,
->(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+/// Borrowed key providers must match the owned provider on each backend.
+pub fn test_glwe_blind_selection_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     assert_eq!(selection(reference), selection(tested));
 }
 
-fn retrieval<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+where
+    Module<B>: BddParityModule<B>,
+{
+    let selectors = selector(module);
+    let expected = retrieval_with_key(module, &selectors);
+    assert_eq!(expected, retrieval_with_key(module, &BorrowedBits(&selectors.bits)));
+    expected
+}
+
+fn retrieval_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<GlweSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
     let (layout, key) = layouts(module);
-    let selectors = selector(module);
     let mut outputs = Vec::new();
     let mut values: Vec<_> = (0..4).map(|i| fixture_glwe(module, &layout, 10 + i)).collect();
     let bytes = module.glwe_blind_retrieval_tmp_bytes(&layout, &key);
     for reverse in [false, true, false] {
         with_scratch::<B, _>(bytes, |s| match reverse {
-            false => module.glwe_blind_retrieval_statefull(&mut values, &selectors, 1, 2, s),
-            true => module.glwe_blind_retrieval_statefull_rev(&mut values, &selectors, 1, 2, s),
+            false => module.glwe_blind_retrieval_statefull(&mut values, selectors, 1, 2, s),
+            true => module.glwe_blind_retrieval_statefull_rev(&mut values, selectors, 1, 2, s),
         });
         outputs.extend(values.iter().map(snapshot_glwe::<B, _>));
     }
     outputs
 }
 /// Checks forward/reverse retrieval and repeated use of the same state.
-pub fn test_glwe_blind_retrieval_parity<
-    BR: ParityBackend<OwnedBuf: 'static> + 'static,
-    BT: ParityBackend<OwnedBuf: 'static> + 'static,
->(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+/// Borrowed key providers must match the owned provider on each backend.
+pub fn test_glwe_blind_retrieval_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
@@ -311,7 +322,7 @@ impl GetBitCircuitInfo for TinyCircuit {
         (&[Node::Cmux(0, 1, 0), Node::Copy, Node::Cmux(1, 0, 1), Node::None], 2)
     }
 }
-fn evaluation<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn evaluation<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -331,20 +342,15 @@ where
     outputs
 }
 /// Checks BDD copy/CMux levels, zero output tails and several worker requests.
-pub fn test_execute_bdd_circuit_parity<
-    BR: ParityBackend<OwnedBuf: 'static> + 'static,
-    BT: ParityBackend<OwnedBuf: 'static> + 'static,
->(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+pub fn test_execute_bdd_circuit_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     assert_eq!(evaluation(reference), evaluation(tested));
 }
 
-fn matrix_rotations<B: ParityBackend<OwnedBuf: 'static> + 'static>(module: &Module<B>) -> Vec<super::GgswSnapshot>
+fn matrix_rotations<B: ParityBackend>(module: &Module<B>) -> Vec<super::GgswSnapshot>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -393,13 +399,8 @@ where
     outputs
 }
 /// Checks both GGSW rotation variants and construction from a scalar test vector.
-pub fn test_ggsw_blind_rotation_parity<
-    BR: ParityBackend<OwnedBuf: 'static> + 'static,
-    BT: ParityBackend<OwnedBuf: 'static> + 'static,
->(
-    reference: &Module<BR>,
-    tested: &Module<BT>,
-) where
+pub fn test_ggsw_blind_rotation_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {

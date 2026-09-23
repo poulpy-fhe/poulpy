@@ -325,7 +325,7 @@ where
 /// Checks randomized lifecycle overrides against the callable algorithm using
 /// the *same* backend's selected samplers, so this probe makes no assumption that
 /// unrelated backends draw identical ciphertexts from equal seeds.
-pub fn test_lifecycle_reference<B: ParityBackend + 'static>(module: &Module<B>)
+pub fn test_lifecycle_reference<B: ParityBackend>(module: &Module<B>)
 where
     Module<B>: BDDKeyEncryptSk<CGGI, B>
         + CircuitBootstrappingKeyEncryptSk<CGGI, B>

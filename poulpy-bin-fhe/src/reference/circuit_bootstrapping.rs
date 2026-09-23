@@ -502,7 +502,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BRA: BlindRotationAlgo,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: ModuleLogN
@@ -590,7 +590,7 @@ fn post_process<R, A, M, H, BE>(
     auto_keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
@@ -719,7 +719,7 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     BRA: BlindRotationAlgo,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     M: ModuleLogN
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>

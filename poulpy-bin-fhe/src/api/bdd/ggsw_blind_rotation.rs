@@ -40,7 +40,7 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static;
+        BE: Backend<ZnxWord = i64>;
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation<R, A, K>(
         &self,
@@ -56,7 +56,7 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static;
+        BE: Backend<ZnxWord = i64>;
     #[allow(clippy::too_many_arguments)]
     fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
     where
@@ -77,5 +77,5 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: ScalarZnxToBackendRef<BE>,
         K: GetGGSWBit<BE>,
-        BE: Backend<ZnxWord = i64> + 'static;
+        BE: Backend<ZnxWord = i64>;
 }

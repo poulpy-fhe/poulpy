@@ -26,5 +26,5 @@ pub unsafe trait GLWEBlindSelectionImpl<T: UnsignedInteger>: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
-        K: GetGGSWBit<Self> + 'static;
+        K: GetGGSWBit<Self>;
 }

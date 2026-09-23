@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`ExecuteBDDCircuit2WTo1W::execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes`].
-pub fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference<BE: Backend<ZnxWord = i64> + 'static, C, T, R, G, H>(
+pub fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, C, T, R, G, H>(
     module: &Module<BE>,
     threads: usize,
     circuit: &C,
@@ -52,7 +52,7 @@ pub fn execute_bdd_circuit_2w_to_1w_multi_thread_reference<BE, C, H, T>(
     T: UnsignedInteger,
     C: GetBitCircuitInfo,
     H: GetAutomorphismKey<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {
     // Collects inputs into a single array
