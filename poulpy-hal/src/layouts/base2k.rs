@@ -9,6 +9,10 @@ pub trait MaxBase2k: Backend {
     /// Caps the radix at `Self::ZnxWord::BITS - 2` for coefficient headroom.
     /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
     /// See [`Module::max_base2k`](super::Module::max_base2k) for input constraints.
+    ///
+    /// Current NTT and FFT64 models assume independent, centered uniform input
+    /// coefficients. Their Gaussian failure estimates are not guarantees and
+    /// do not cover squaring, correlated operands, or reused operands.
     fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>;
 }
 

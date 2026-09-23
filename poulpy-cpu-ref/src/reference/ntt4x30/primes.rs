@@ -120,6 +120,7 @@ mod tests {
     use crate::reference::ntt4x30::{arithmetic::b_to_znx128_ref, ntt::modq_pow};
 
     fn check<P: PrimeSetCrt4>() {
+        P::validate();
         let total: i128 = P::Q.iter().map(|&q| q as i128).product();
         for (k, &q) in P::Q.iter().enumerate() {
             assert_eq!(u32::BITS - q.leading_zeros(), P::LOG_Q as u32);

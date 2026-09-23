@@ -76,6 +76,7 @@ mod tests {
 
     #[test]
     fn primes42_are_prime() {
+        Primes42::validate();
         for &q in &Primes42::Q {
             assert!(is_prime(q), "{q} is not prime");
             assert_eq!(u64::BITS - q.leading_zeros(), Primes42::LOG_Q as u32);

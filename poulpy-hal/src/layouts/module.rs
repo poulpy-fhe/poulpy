@@ -290,10 +290,13 @@ impl<B: Backend> Module<B> {
     /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
     ///
     /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
-    /// The cap is the coefficient word width minus two bits. Estimates depend
-    /// on the backend's distributional assumptions. Reserve
+    /// The cap is the coefficient word width minus two bits. Reserve
     /// coefficient-domain addition headroom separately. For `m` outputs, add
     /// `ceil(log2(m))` to the target to allocate a total failure budget.
+    ///
+    /// Current NTT and FFT64 models assume independent, centered uniform input
+    /// coefficients. Their Gaussian failure estimates are not guarantees and
+    /// do not cover squaring, correlated operands, or reused operands.
     ///
     /// # Panics
     /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
