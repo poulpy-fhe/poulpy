@@ -9,14 +9,14 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>();
+        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>();
+        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
     }
 }
 

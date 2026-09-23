@@ -523,8 +523,6 @@ mod limb_range_tests {
     struct NonContiguousDft<const PACKED: bool>;
 
     impl<const PACKED: bool> Backend for NonContiguousDft<PACKED> {
-        const MAX_BASE2K: usize = 62;
-
         type TaskExecutor = crate::execution::SerialTaskExecutor;
         type ZnxWord = i64;
         type BigWord = i128;

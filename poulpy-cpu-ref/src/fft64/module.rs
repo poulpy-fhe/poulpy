@@ -39,8 +39,18 @@ pub struct FFT64RefHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
 
+impl poulpy_hal::layouts::MaxBase2k for FFT64Ref {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
+            n,
+            products,
+            failure_bits,
+            squaring,
+        ))
+    }
+}
+
 impl Backend for FFT64Ref {
-    const MAX_BASE2K: usize = 19;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

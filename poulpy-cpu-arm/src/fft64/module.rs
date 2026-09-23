@@ -22,8 +22,18 @@ pub struct FFT64NeonHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
+impl poulpy_hal::layouts::MaxBase2k for FFT64Neon {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
+            n,
+            products,
+            failure_bits,
+            squaring,
+        ))
+    }
+}
+
 impl Backend for FFT64Neon {
-    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

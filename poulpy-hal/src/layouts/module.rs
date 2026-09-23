@@ -26,12 +26,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
-    /// Maximum supported limb radix for FHE parameter selection.
-    /// Operation-specific input and accumulation bounds still apply. This does
-    /// not limit coefficient-only operations whose contracts permit wider
-    /// radices, such as uniform sampling at any radix in `1..=62`.
-    const MAX_BASE2K: usize;
-
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
     /// Within a limb, columns are contiguous blocks in column order, each of
@@ -291,8 +285,37 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// The backend's supported FHE limb radix; see [`Backend::MAX_BASE2K`].
-    pub const MAX_BASE2K: usize = B::MAX_BASE2K;
+    /// Selects a radix through [`MaxBase2k`](super::MaxBase2k),
+    /// without constructing a module. `products` counts accumulated polynomial
+    /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
+    /// Set `squaring` if any term is a square; `products` still counts actual
+    /// terms (one for a single square). Otherwise all operands are independent.
+    ///
+    /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
+    /// The cap is the coefficient word width minus two bits. Reserve
+    /// coefficient-domain addition headroom separately. For `m` outputs, add
+    /// `ceil(log2(m))` to the target to allocate a total failure budget.
+    ///
+    /// Current NTT and FFT64 models assume independent centered uniform
+    /// coefficients within each input and independent inputs across terms.
+    /// `squaring` allows equal operands within a term.
+    /// Their Gaussian failure estimates are not guarantees; other correlations,
+    /// including operand reuse across terms, require a separate model.
+    ///
+    /// # Panics
+    /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
+    /// and `products` and `failure_bits` are positive.
+    #[inline]
+    pub fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize>
+    where
+        B: super::MaxBase2k,
+    {
+        assert!(n.is_power_of_two(), "n must be a power of two");
+        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
+        assert!(products > 0, "products must be positive");
+        assert!(failure_bits > 0, "failure_bits must be positive");
+        B::max_base2k(n, products, failure_bits, squaring)
+    }
 
     /// Creates a backend module for ring degree `N`.
     #[inline]

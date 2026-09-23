@@ -42,6 +42,12 @@ use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr, parallel_limb_tasks};
 
 poulpy_hal::impl_backend_from!(NTT4x30AvxRayon, NTT4x30Avx, RayonTaskExecutor);
 
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30AvxRayon {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        <NTT4x30Avx as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
+    }
+}
+
 fn base_module(module: &Module<NTT4x30AvxRayon>) -> &Module<NTT4x30Avx> {
     module.reinterpret()
 }
