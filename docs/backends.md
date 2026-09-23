@@ -106,11 +106,12 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits)`, which delegates to `BackendMaxBase2k` without constructing a module.
+Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits)`, which delegates to `MaxBase2k` without constructing a module.
 `products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
 For example, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(57)` for `NTT3x42Ifma`.
 The estimates assume independent centered-uniform inputs and Gaussian tails, with a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 `Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.
+The radix is capped at the coefficient word width minus two bits: 62 for `i64`, or 30 for a future `i32` backend.
 A larger `base2k` represents the same precision in fewer limbs, but also reserve coefficient-word headroom for additions before normalization and respect the circuit's noise budget.
 
 Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.

@@ -83,8 +83,8 @@ pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
 poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);
 
 #[cfg(feature = "enable-rayon")]
-impl poulpy_hal::layouts::BackendMaxBase2k for NTT3x42IfmaRayon {
+impl poulpy_hal::layouts::MaxBase2k for NTT3x42IfmaRayon {
     fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
-        <NTT3x42Ifma as poulpy_hal::layouts::BackendMaxBase2k>::max_base2k(n, products, failure_bits)
+        <NTT3x42Ifma as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits)
     }
 }

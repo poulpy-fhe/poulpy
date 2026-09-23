@@ -285,12 +285,13 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// Selects a radix through [`BackendMaxBase2k`](super::BackendMaxBase2k),
+    /// Selects a radix through [`MaxBase2k`](super::MaxBase2k),
     /// without constructing a module. `products` counts accumulated polynomial
     /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
     ///
     /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
-    /// Estimates depend on the backend's distributional assumptions. Reserve
+    /// The cap is the coefficient word width minus two bits. Estimates depend
+    /// on the backend's distributional assumptions. Reserve
     /// coefficient-domain addition headroom separately. For `m` outputs, add
     /// `ceil(log2(m))` to the target to allocate a total failure budget.
     ///
@@ -300,7 +301,7 @@ impl<B: Backend> Module<B> {
     #[inline]
     pub fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize>
     where
-        B: super::BackendMaxBase2k,
+        B: super::MaxBase2k,
     {
         assert!(n.is_power_of_two(), "n must be a power of two");
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");

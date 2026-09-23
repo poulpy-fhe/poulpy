@@ -22,9 +22,9 @@ pub struct FFT64NeonHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
-impl poulpy_hal::layouts::BackendMaxBase2k for FFT64Neon {
+impl poulpy_hal::layouts::MaxBase2k for FFT64Neon {
     fn max_base2k(n: usize, products: usize, failure_bits: usize) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_fft64(n, products, failure_bits))
+        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits))
     }
 }
 

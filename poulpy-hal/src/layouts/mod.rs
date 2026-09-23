@@ -57,7 +57,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
-pub use base2k::{BackendMaxBase2k, max_base2k_fft64, max_base2k_ntt};
+pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt};
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;
@@ -313,7 +313,7 @@ impl Backend for HostBytesBackend {
 }
 
 // Storage-only backend: no transform arithmetic to model.
-impl BackendMaxBase2k for HostBytesBackend {
+impl MaxBase2k for HostBytesBackend {
     fn max_base2k(_n: usize, _products: usize, _failure_bits: usize) -> Option<usize> {
         None
     }
