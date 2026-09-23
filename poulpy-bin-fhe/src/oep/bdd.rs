@@ -102,16 +102,15 @@ macro_rules! impl_bin_fhe_bdd_reference {
                     $crate::reference::bdd::cswap_tmp_bytes_reference::<$be, _, _, _>(module, res_a_infos, res_b_infos, s_infos)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cswap<'k, A, B>(
+                fn cswap<A, B>(
                     module: &Module<$be>,
                     res_a: &mut A,
                     res_b: &mut B,
-                    s: &GGSWPreparedBackendRef<'k, $be>,
+                    s: &GGSWPreparedBackendRef<'_, $be>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     A: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
                     B: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
-                    $be: 'k,
                 {
                     $crate::reference::bdd::cswap_reference::<$be, _, _>(module, res_a, res_b, s, scratch)
                 }

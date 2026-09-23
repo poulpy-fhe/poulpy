@@ -21,14 +21,8 @@ pub trait Cswap<BE: Backend> {
         A: GLWEInfos,
         S: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn cswap<'k, A, B>(
-        &self,
-        res_a: &mut A,
-        res_b: &mut B,
-        s: &GGSWPreparedBackendRef<'k, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn cswap<A, B>(&self, res_a: &mut A, res_b: &mut B, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        BE: 'k;
+        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos;
 }

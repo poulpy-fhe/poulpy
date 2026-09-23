@@ -77,16 +77,16 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`Cswap::cswap`].
-pub fn cswap_reference<'k, BE, A, B>(
+pub fn cswap_reference<BE, A, B>(
     module: &Module<BE>,
     res_a: &mut A,
     res_b: &mut B,
-    s: &GGSWPreparedBackendRef<'k, BE>,
+    s: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    BE: Backend<ZnxWord = i64> + 'k,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + ModuleN

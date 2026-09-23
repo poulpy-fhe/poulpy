@@ -13,14 +13,13 @@ pub unsafe trait CswapImpl: Backend {
         A: GLWEInfos,
         S: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn cswap<'k, A, B>(
+    fn cswap<A, B>(
         module: &Module<Self>,
         res_a: &mut A,
         res_b: &mut B,
-        s: &GGSWPreparedBackendRef<'k, Self>,
+        s: &GGSWPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
-        Self: 'k;
+        B: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos;
 }
