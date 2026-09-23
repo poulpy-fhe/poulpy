@@ -294,9 +294,10 @@ impl<B: Backend> Module<B> {
     /// coefficient-domain addition headroom separately. For `m` outputs, add
     /// `ceil(log2(m))` to the target to allocate a total failure budget.
     ///
-    /// Current NTT and FFT64 models assume independent, centered uniform input
-    /// coefficients. Their Gaussian failure estimates are not guarantees and
-    /// do not cover squaring, correlated operands, or reused operands.
+    /// Current NTT and FFT64 models cover independent accumulated terms, each
+    /// an independent product or a square of centered uniform coefficients.
+    /// Their Gaussian failure estimates are not guarantees; other correlations,
+    /// including operand reuse across terms, require a separate model.
     ///
     /// # Panics
     /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
