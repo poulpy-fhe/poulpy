@@ -147,7 +147,6 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
         E: EncryptionInfos,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         #[cfg(debug_assertions)]
         {

@@ -106,9 +106,10 @@ keys, plans and temporary ciphertexts are separate from caller scratch.
 
 ## Host boundaries
 
-Operation contracts and reference functions do not require `'static` backend
-or key-provider types. A key provider may borrow prepared ciphertexts; those
-borrows only need to remain valid for the operation.
+Operation contracts and reference functions do not require `'static` backend,
+key-provider or plaintext integer types. A key provider may borrow prepared
+ciphertexts, and an `UnsignedInteger` implementation may borrow plaintext data.
+Borrows must remain valid for their uses.
 
 Execution contracts use backend-owned buffers and views without
 `HostDataRef`/`HostDataMut` bounds. Fixture transfers are explicit; the tested

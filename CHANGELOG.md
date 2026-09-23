@@ -106,7 +106,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Added caller-selected coefficient parity for scheme evaluation and key/preparation lifecycles, exact scratch guards, and shared registrations alongside backend implementations. Native CI enables binary-FHE; Intel SDE remains limited to HAL/core.
 - **Breaking:** GLWE/GGSW blind-rotation queries take source and destination infos, with separate assignment queries; selection queries take all input infos. Prepared circuit-bootstrap queries accept a metadata descriptor so one-shot wrappers honor selected workspace requirements. Added dedicated one-word BDD and prepared-integer encryption queries.
 - Corrected omitted constituent scratch budgets, multi-limb modulus-switch rounding, and stale prepared-key state. Added an overridable modulus-switch staging boundary and backend-independent contract/migration documentation.
-- Removed unnecessary `'static` backend, key-provider and buffer bounds from binary-FHE operations and parity suites; borrowed providers are covered by selection/retrieval regressions.
+- Removed unnecessary `'static` backend, key-provider, buffer and plaintext integer bounds from binary-FHE operations and test suites, along with unused borrowed-view requirements in packed integer encryption; borrowed providers are covered by selection/retrieval regressions.
 
 
 - `NoiseInfos` is imported from `poulpy_core`.
