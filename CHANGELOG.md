@@ -6,6 +6,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- **Breaking:** replace `Backend::MAX_BASE2K` and `Module::MAX_BASE2K` with runtime `Module::<BE>::max_base2k(n, products, failure_bits)`, dispatched through `MaxBase2k` ([#312](https://github.com/poulpy-fhe/poulpy/issues/312)). NTT and FFT64 helpers select a radix from a whole-polynomial Gaussian failure estimate, capped at `BE::ZnxWord::BITS - 2`. CPU backends and Rayon wrappers implement or forward the query. See [failure estimates](docs/base2k-failure-probability.md) for model assumptions and addition headroom.
+- **Breaking:** `PrimeSet` implementations must provide `LOG_Q_PRODUCT`, the floating-point base-2 logarithm of their actual CRT modulus.
 - AVX-512/IFMA HAL CI runs natively when supported, with pinned, checksum-verified Intel SDE as the fallback, including Rayon variants. Native ARM CI runs the full NEON backend suite on every push and pull request; additional QEMU HAL and core tests on x86 are available through the manual `run_neon_qemu` workflow input. The AVX-512 execution filters cover HAL and core; CKKS ModUp runtime coverage remains in the separate CKKS follow-up to #234. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
 - HAL conformance now pins uniform sampling's seeded output and caller-stream advancement, registers DFT-copy parity on every accelerated CPU backend and its Rayon variant, and checks inverse-transform limbs and poisoned destinations at independently varied widths.
 - **Breaking, behaviour:** `Backend::DFT_LIMBS_CONTIGUOUS` explicitly opts a backend into partial DFT limb-range views and indexed host zeroing; limbs contain equal-sized column blocks in column order. It defaults to false and is forwarded by `impl_backend_from!`. Existing CPU layouts opt in. Whole-buffer reborrows work for every layout, while incompatible partial ranges and indexed zeroing panic before touching storage. Core reference gadget-product and external-product bodies that require partial views reject incompatible backend instantiations at compile time; custom overrides remain available.
@@ -77,6 +79,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.
 - EvalMod scratch sizing includes the final copy into the caller's destination, including copy overrides whose workspace grows with destination capacity.
 - **Breaking:** add/subtract-one operations have dedicated `ckks_add_one_tmp_bytes` / `ckks_sub_one_tmp_bytes` queries, following the selected plaintext-constant implementation by default. Shared polynomial and EvalMod budgets include these queries. Add/subtract reference wrappers and backend macros share one definition.
 - CKKS parity runs natively, with optional NEON QEMU coverage. Encryption parity no longer takes an unused scalar type parameter.
@@ -126,6 +129,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-bench`
 
+- **Breaking:** `bench_ckks_bootstrapping` takes a `FIXTURE_BASE2K` const generic; registered FFT and NTT benchmarks retain their 19- and 52-bit fixture radices.
 - HAL runners for every derived operation that lacked one: the shift `_add` / `_sub` forms, `vec_znx_add_scalar_assign`, `vec_znx_idft_normalize_consume`, `vmp_apply_dft_to_dft_add`, `cnv_prepare_self` and `cnv_by_const_apply_add`. `NTT3x42Ifma` gains a HAL sweep, having had none. HAL bench ids follow the api rename.
 - `cnv_apply_dft_sum` runner over four terms, dense and with a sparse right operand at half the module degree (`cnv_apply_dft_sum_sparse`), in the full HAL tier beside the other convolution ops.
 
