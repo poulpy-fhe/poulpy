@@ -141,46 +141,43 @@ macro_rules! impl_bin_fhe_bdd_reference {
                     $crate::reference::bdd::cmux_tmp_bytes_reference::<$be, _, _, _>(module, res_infos, a_infos, selector_infos)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux<'k, R, T, F>(
+                fn cmux<R, T, F>(
                     module: &Module<$be>,
                     res: &mut R,
                     t: &T,
                     f: &F,
-                    s: &GGSWPreparedBackendRef<'k, $be>,
+                    s: &GGSWPreparedBackendRef<'_, $be>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     T: GLWEToBackendRef<$be>,
                     F: GLWEToBackendRef<$be>,
-                    $be: 'k,
                 {
                     $crate::reference::bdd::cmux_reference::<$be, _, T, _>(module, res, t, f, s, scratch)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux_assign_neg<'k, R, A>(
+                fn cmux_assign_neg<R, A>(
                     module: &Module<$be>,
                     res: &mut R,
                     a: &A,
-                    s: &GGSWPreparedBackendRef<'k, $be>,
+                    s: &GGSWPreparedBackendRef<'_, $be>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendRef<$be>,
-                    $be: 'k,
                 {
                     $crate::reference::bdd::cmux_assign_neg_reference::<$be, _, _>(module, res, a, s, scratch)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux_assign<'k, R, A>(
+                fn cmux_assign<R, A>(
                     module: &Module<$be>,
                     res: &mut R,
                     a: &A,
-                    s: &GGSWPreparedBackendRef<'k, $be>,
+                    s: &GGSWPreparedBackendRef<'_, $be>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendRef<$be>,
-                    $be: 'k,
                 {
                     $crate::reference::bdd::cmux_assign_reference::<$be, _, _>(module, res, a, s, scratch)
                 }

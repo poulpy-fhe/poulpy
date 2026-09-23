@@ -57,18 +57,18 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux`].
-pub fn cmux_reference<'k, BE, R, T, F>(
+pub fn cmux_reference<BE, R, T, F>(
     module: &Module<BE>,
     res: &mut R,
     t: &T,
     f: &F,
-    s: &GGSWPreparedBackendRef<'k, BE>,
+    s: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     T: GLWEToBackendRef<BE>,
     F: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'k,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>
@@ -130,16 +130,16 @@ pub fn cmux_reference<'k, BE, R, T, F>(
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign_neg`].
-pub fn cmux_assign_neg_reference<'k, BE, R, A>(
+pub fn cmux_assign_neg_reference<BE, R, A>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    s: &GGSWPreparedBackendRef<'k, BE>,
+    s: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'k,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>
@@ -208,16 +208,16 @@ pub fn cmux_assign_neg_reference<'k, BE, R, A>(
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign`].
-pub fn cmux_assign_reference<'k, BE, R, A>(
+pub fn cmux_assign_reference<BE, R, A>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    s: &GGSWPreparedBackendRef<'k, BE>,
+    s: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
-    BE: Backend<ZnxWord = i64> + 'k,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>

@@ -20,33 +20,19 @@ pub trait Cmux<BE: Backend> {
         A: GLWEInfos,
         B: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn cmux<'k, R, T, F>(
-        &self,
-        res: &mut R,
-        t: &T,
-        f: &F,
-        s: &GGSWPreparedBackendRef<'k, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        T: GLWEToBackendRef<BE>,
-        F: GLWEToBackendRef<BE>,
-        BE: 'k;
-    #[allow(clippy::too_many_arguments)]
-    fn cmux_assign_neg<'k, R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        s: &GGSWPreparedBackendRef<'k, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
-        BE: 'k;
-    #[allow(clippy::too_many_arguments)]
-    fn cmux_assign<'k, R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
+    fn cmux<R, T, F>(&self, res: &mut R, t: &T, f: &F, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
-        BE: 'k;
+        T: GLWEToBackendRef<BE>,
+        F: GLWEToBackendRef<BE>;
+    #[allow(clippy::too_many_arguments)]
+    fn cmux_assign_neg<R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>;
+    #[allow(clippy::too_many_arguments)]
+    fn cmux_assign<R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>;
 }

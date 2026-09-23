@@ -13,38 +13,35 @@ pub unsafe trait CmuxImpl: Backend {
         A: GLWEInfos,
         B: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn cmux<'k, R, T, F>(
+    fn cmux<R, T, F>(
         module: &Module<Self>,
         res: &mut R,
         t: &T,
         f: &F,
-        s: &GGSWPreparedBackendRef<'k, Self>,
+        s: &GGSWPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         T: GLWEToBackendRef<Self>,
-        F: GLWEToBackendRef<Self>,
-        Self: 'k;
+        F: GLWEToBackendRef<Self>;
     #[allow(clippy::too_many_arguments)]
-    fn cmux_assign_neg<'k, R, A>(
+    fn cmux_assign_neg<R, A>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        s: &GGSWPreparedBackendRef<'k, Self>,
+        s: &GGSWPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self>,
-        Self: 'k;
+        A: GLWEToBackendRef<Self>;
     #[allow(clippy::too_many_arguments)]
-    fn cmux_assign<'k, R, A>(
+    fn cmux_assign<R, A>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        s: &GGSWPreparedBackendRef<'k, Self>,
+        s: &GGSWPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self>,
-        Self: 'k;
+        A: GLWEToBackendRef<Self>;
 }
