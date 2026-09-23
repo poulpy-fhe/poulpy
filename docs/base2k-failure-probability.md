@@ -34,21 +34,22 @@ Here $\sigma_e$ measures numerical error, and **$1/2$** is the rounding threshol
 
 ## Selecting the radix
 
-For either model, the union bound gives $\widehat P_{\mathrm{any}}\le\min(1,N\widehat p)$. The helper uses $\operatorname{erfc}(x)\le e^{-x^2}$ and selects the largest integer $K$ satisfying
+For either model, the union bound gives $\widehat P_{\mathrm{any}}\le\min(1,N\widehat p)$. The helper uses the [Mills-ratio upper bound](https://dlmf.nist.gov/7.8.E2), which is tighter than $e^{-x^2}$:
 
 $$
-N\exp\!\left(-\frac{T^2}{2\sigma^2}\right)\le2^{-\lambda},
-\qquad
-(T,\sigma)=(Q/2,\sigma_c)\ \text{or}\ (1/2,\sigma_e).
+\operatorname{erfc}(x)\le\frac{2e^{-x^2}}{\sqrt\pi\left(x+\sqrt{x^2+4/\pi}\right)}
+=\exp\!\left[-x^2-\operatorname{asinh}(\sqrt\pi\,x/2)\right],\qquad x\ge0.
 $$
 
-It rounds down with a small numerical margin and caps the result at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**. The runtime query needs no module allocation; it returns `Some(K)`, `Some(0)` if no positive radix fits, or `None` without an applicable model. `N` must be a power of two at least the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
+With $x=T/(\sqrt2\,\sigma)$ and $(T,\sigma)=(Q/2,\sigma_c)$ or $(1/2,\sigma_e)$, it searches for the largest integer $K$ satisfying $x^2+\operatorname{asinh}(\sqrt\pi\,x/2)\ge(\lambda+\log_2N)\ln2$. This evaluates the logarithm of the bound rather than the tiny probability itself.
+
+The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**, and slightly reduces $x$ for a numerical margin at the threshold. The runtime query needs no module allocation; it returns `Some(K)`, `Some(0)` if no positive radix fits, or `None` without an applicable model. `N` must be a power of two at least the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
 
 ## Why a probabilistic bound helps
 
 A hard bound assumes every product has maximum magnitude and all signs reinforce each other. Independent centered inputs usually cancel: their standard deviation grows like $\sqrt{dN}$ instead of $dN$.
 
-For **NTT4x30**, take $\log_2Q\simeq119.8861552574811$, $N=2^{16}$, $d=32$, and $K=54$. The hard bound is $dN\,2^{2K-2}=2^{127}>Q/2$, so it rejects this radix and requires $K\le49$. The Gaussian polynomial envelope is approximately **$2^{-161.417}<2^{-128}$**, so the probabilistic selector admits **54 bits instead of 49**. For the same degree, count, and target, FFT64 selects **19 bits**, with a modeled envelope approximately $2^{-138.903}$.
+For **NTT4x30**, take $\log_2Q\simeq119.8861552574811$, $N=2^{16}$, $d=32$, and $K=54$. The hard bound is $dN\,2^{2K-2}=2^{127}>Q/2$, so it rejects this radix and requires $K\le49$. The Gaussian polynomial envelope is approximately **$2^{-165.718}<2^{-128}$**, so the probabilistic selector admits **54 bits instead of 49**. For the same degree, count, and target, FFT64 selects **19 bits**, with a modeled envelope approximately $2^{-143.107}$.
 
 ## Leave room for coefficient-domain additions
 

@@ -1,4 +1,4 @@
-use std::f64::consts::LN_2;
+use std::f64::consts::{LN_2, PI};
 
 use super::{Backend, ZnxWord};
 
@@ -14,7 +14,7 @@ pub trait MaxBase2k: Backend {
 
 /// NTT radix under independent, centered uniform inputs and a Gaussian tail model.
 /// Uses `sigma = 2^(2*k) * sqrt(n*products) / 12`, reconstruction threshold `Q/2`,
-/// and the envelope `erfc(x) <= exp(-x*x)` with a union bound over `n` coefficients.
+/// and the Mills-ratio upper bound with a union bound over `n` coefficients.
 /// Caps at `B::ZnxWord::BITS - 2` (62 for `i64`, 30 for a 32-bit word); zero means none fits.
 ///
 /// # Panics
@@ -31,18 +31,15 @@ pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, 
 
     let log2_n = n.ilog2() as f64;
     let log2_variance = log2_n + (products as f64).log2();
-    let log2_tail = (2.0 * LN_2 * (failure_bits as f64 + log2_n)).log2();
-    // Leave a small margin against upward rounding at an integer threshold.
-    // Float-to-integer casts saturate negative values to zero.
-    let radix = ((log2_modulus + 6.0_f64.log2() - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
-    radix.min(B::ZnxWord::BITS.saturating_sub(2))
+    let log2_x = log2_modulus + 12.0_f64.log2() - 1.5 - 0.5 * log2_variance;
+    max_base2k_from_log2_x::<B>(log2_x, failure_bits as f64 + log2_n)
 }
 
 /// FFT64 radix under independent centered uniform inputs and Gaussian roundoff.
 /// Models two forward FFTs per product, sequential complex accumulation, and one
 /// inverse FFT, with independent relative roundoff variance `u^2/3`, `u=2^-53`,
 /// and uncorrelated complex twiddle errors of mean square at most `2*u^2`.
-/// Uses threshold `1/2` and the same Gaussian envelope and union bound as NTT.
+/// Uses threshold `1/2` and the same Mills-ratio bound and union bound as NTT.
 /// Caps at `B::ZnxWord::BITS - 2` (62 for `i64`, 30 for a 32-bit word); zero means none fits.
 ///
 /// # Panics
@@ -61,7 +58,45 @@ pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usi
     let mac_variance = scalar_mac.max(fused_mac);
     let variance_factor = 5.0 * (log2_n - 1.0) + mac_variance;
     let log2_variance = log2_n + d.log2() + variance_factor.log2();
-    let log2_tail = (8.0 * LN_2 * (failure_bits as f64 + log2_n)).log2();
-    let radix = ((53.0 + 12.0_f64.log2() - 0.5 * log2_variance - 0.5 * log2_tail) / 2.0 - 1e-12).floor() as usize;
-    radix.min(B::ZnxWord::BITS.saturating_sub(2))
+    let log2_x = 53.0 + 12.0_f64.log2() - 1.5 - 0.5 * log2_variance;
+    max_base2k_from_log2_x::<B>(log2_x, failure_bits as f64 + log2_n)
+}
+
+// `log2_x` is log2(T / (sqrt(2) * sigma)) at K = 0; sigma grows as 2^(2*K).
+// The Mills bound is exp(-x*x - asinh(sqrt(pi)*x/2)); see https://dlmf.nist.gov/7.8.E2.
+fn max_base2k_from_log2_x<B: Backend>(log2_x: f64, failure_bits: f64) -> usize {
+    let target = LN_2 * failure_bits;
+    let (mut lo, mut hi) = (0, B::ZnxWord::BITS.saturating_sub(2));
+    while lo < hi {
+        let k = lo + (hi - lo).div_ceil(2);
+        // Slightly reduce x to leave a numerical margin at the threshold.
+        let x = (log2_x - 2.0 * k as f64 - 1e-12).exp2();
+        if x * x + (0.5 * PI.sqrt() * x).asinh() >= target {
+            lo = k;
+        } else {
+            hi = k - 1;
+        }
+    }
+    lo
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layouts::HostBytesBackend;
+
+    #[test]
+    fn mills_bound_admits_larger_radices_at_the_requested_target() {
+        // Whole-polynomial bounds are 2^-130.074... and 2^-128.125... respectively.
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, 40, 128),
+            54
+        );
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, 40, 131),
+            53
+        );
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 128), 19);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 129), 18);
+    }
 }
