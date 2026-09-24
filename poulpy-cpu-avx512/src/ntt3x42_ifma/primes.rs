@@ -40,6 +40,8 @@ impl PrimeSet for Primes42 {
     ];
     const OMEGA: [u64; 3] = [2_628_857_985_221, 3_217_638_597_750, 1_217_792_891_299];
     const LOG_Q: u64 = 42;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 125.999_983_145_654_84;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -74,6 +76,7 @@ mod tests {
 
     #[test]
     fn primes42_are_prime() {
+        Primes42::validate();
         for &q in &Primes42::Q {
             assert!(is_prime(q), "{q} is not prime");
             assert_eq!(u64::BITS - q.leading_zeros(), Primes42::LOG_Q as u32);

@@ -118,3 +118,15 @@ No modifications to those crates are required — the HAL provides the extension
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+Enable `enable-neon` as well to select this accelerated backend; `enable-rayon` adds its parallel variants.
+
+```sh
+cargo test -p poulpy-cpu-arm --features enable-neon,enable-rayon,enable-bin-fhe bin_fhe_parity
+```

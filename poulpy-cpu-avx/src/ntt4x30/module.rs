@@ -45,8 +45,19 @@ pub struct NTT4x30AvxHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx {}
 
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30Avx {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
+            <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            failure_bits,
+            squaring,
+        ))
+    }
+}
+
 impl Backend for NTT4x30Avx {
-    const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

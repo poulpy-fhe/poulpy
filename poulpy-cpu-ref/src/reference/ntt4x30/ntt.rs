@@ -1006,6 +1006,7 @@ mod tests {
             const Q: [u32; 4] = Primes30::Q;
             const OMEGA: [u32; 4] = [1_016_586_755, 452_565_796, 616_497_877, 411_779_064];
             const LOG_Q: u64 = 30;
+            const LOG_Q_PRODUCT: f64 = Primes30::LOG_Q_PRODUCT;
         }
 
         impl PrimeSetCrt4 for Roots17 {

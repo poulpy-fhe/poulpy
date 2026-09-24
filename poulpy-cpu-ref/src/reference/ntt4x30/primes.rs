@@ -51,6 +51,8 @@ impl PrimeSet for Primes29 {
     ];
     const OMEGA: [u32; 4] = [119_931_893, 194_516_551, 403_971_879, 77_050_655];
     const LOG_Q: u64 = 29;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 115.849_801_192_087_84;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -77,6 +79,8 @@ impl PrimeSet for Primes30 {
     ];
     const OMEGA: [u32; 4] = [195_937_198, 50_863_243, 633_648_745, 87_406_124];
     const LOG_Q: u64 = 30;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 119.886_155_257_481_1;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -101,6 +105,8 @@ impl PrimeSet for Primes31 {
     ];
     const OMEGA: [u32; 4] = [1_961_488_829, 1_830_410_192, 339_671_193, 245_713_661];
     const LOG_Q: u64 = 31;
+    // log2 of the exact prime product, precomputed at high precision.
+    const LOG_Q_PRODUCT: f64 = 123.960_718_835_137_7;
     const MAX_LOG_N: u32 = 18;
 }
 
@@ -114,6 +120,7 @@ mod tests {
     use crate::reference::ntt4x30::{arithmetic::b_to_znx128_ref, ntt::modq_pow};
 
     fn check<P: PrimeSetCrt4>() {
+        P::validate();
         let total: i128 = P::Q.iter().map(|&q| q as i128).product();
         for (k, &q) in P::Q.iter().enumerate() {
             assert_eq!(u32::BITS - q.leading_zeros(), P::LOG_Q as u32);

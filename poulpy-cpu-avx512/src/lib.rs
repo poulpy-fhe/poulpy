@@ -330,3 +330,9 @@ pub use ci::NTT4x30Avx512 as NTT4x30CIAvx512;
 #[cfg(feature = "enable-rayon")]
 #[cfg(feature = "enable-avx512f")]
 pub use ci::NTT4x30Avx512Rayon as NTT4x30CIAvx512Rayon;
+
+#[cfg(all(feature = "enable-avx512f", feature = "enable-bin-fhe"))]
+mod bin_fhe_impl;
+
+#[cfg(all(feature = "enable-bin-fhe", not(feature = "enable-avx512f")))]
+compile_error!("feature `enable-bin-fhe` requires `enable-avx512f` so binary-FHE tests cannot silently run without a backend");

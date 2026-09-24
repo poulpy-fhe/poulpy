@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 
 use crate::bdd_arithmetic::{BDDKeyPrepared, FheUint, FheUintPrepareDebug, ToBits};
 use crate::{
-    bdd_arithmetic::UnsignedInteger, blind_rotation::BlindRotationAlgo, circuit_bootstrapping::CircuitBootstrappingExecute,
+    bdd_arithmetic::UnsignedInteger,
+    blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
+    circuit_bootstrapping::CircuitBootstrappingExecute,
 };
 use poulpy_core::GGSWNoise;
 
@@ -155,7 +157,9 @@ where
         key: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        let mut tmp_lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = self.lwe_alloc_from_infos(bits);
+        let mut lwe_infos = bits.lwe_layout();
+        lwe_infos.n = key.cbt.blind_rotation_key().n_lwe();
+        let mut tmp_lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = self.lwe_alloc_from_infos(&lwe_infos);
         let mut scratch_1 = scratch.borrow();
         for (bit, dst) in res.bits.iter_mut().enumerate() {
             let mut scratch_bit = scratch_1.borrow();

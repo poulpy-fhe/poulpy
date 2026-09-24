@@ -39,7 +39,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     module: &M,
 ) where
     M: ModuleN
-        + ModuleCoreAlloc
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
         + GLWEDecrypt<BE>
@@ -249,6 +249,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     module: &M,
 ) where
     M: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
         + GLWEDecrypt<BE>

@@ -37,6 +37,12 @@ macro_rules! impl_fft64_delegating_backend {
 
         poulpy_hal::impl_backend_from!($be, FFT64Ref);
 
+        impl poulpy_hal::layouts::MaxBase2k for $be {
+            fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+                <FFT64Ref as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
+            }
+        }
+
         impl ZnxAdd for $be {
             #[inline(always)]
             fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
@@ -284,3 +290,6 @@ poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Ref);
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Ref);
 #[cfg(test)]
 poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Ref);
+
+#[cfg(all(test, feature = "enable-bin-fhe"))]
+impl_fft64_delegating_backend!(BinFheOverrideFFT64);

@@ -13,6 +13,7 @@ documentation = "https://docs.rs/poulpy-cpu-avx512"
 doctest = false
 
 [features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-ref/enable-bin-fhe"]
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
@@ -21,6 +22,7 @@ enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 enable-rayon = ["enable-avx512f", "dep:rayon", "dep:poulpy-cpu-rayon"]
 
 [dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-hal = {workspace = true}
@@ -53,17 +55,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bench]]
 name = "full"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "light"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "normalize"

@@ -111,3 +111,6 @@ use crate::ring::Standard as Ring;
 mod ci;
 pub use ci::FFT64Ref as FFT64CIRef;
 pub use ci::NTT4x30Ref as NTT4x30CIRef;
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_impl;

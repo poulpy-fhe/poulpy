@@ -22,7 +22,7 @@
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
 - **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
-- **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
+- **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**, intended for correctness and validation rather than performance-sensitive workloads.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
@@ -47,7 +47,7 @@ poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
+Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
 
 ### Layer Anatomy
 
@@ -255,8 +255,21 @@ cargo test -p poulpy-core
 cargo test -p poulpy-ckks
 cargo test -p poulpy-cpu-ref --features enable-core
 cargo test -p poulpy-cpu-ref --features enable-ckks
-cargo test -p poulpy-bin-fhe --features enable-bin-fhe
+cargo test -p poulpy-cpu-ref --features enable-bin-fhe bin_fhe
 ```
+
+Binary-FHE backend implementations and their complete parity registrations are
+selected by each backend crate's `enable-bin-fhe` feature. For example:
+
+```sh
+cargo run -p poulpy-cpu-ref --features enable-bin-fhe --example bdd_arithmetic
+RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --features enable-avx,enable-rayon,enable-bin-fhe bin_fhe_parity
+```
+
+Native CI runs binary-FHE parity for the supported FFT/NTT and Rayon backends.
+Intel SDE remains limited to HAL/core, keeping instruction emulation within the
+five-minute test execution budget. Scheme parity runs with its own compact
+fixtures; full correctness workflows remain in the backend test suites.
 
 Benchmark targets are split by family:
 

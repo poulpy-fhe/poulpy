@@ -28,7 +28,9 @@ mod sealed {
 
 /// Machine element of a CRT lane: the unsigned integer type holding one
 /// residue (`u32` for ~30-bit primes, `u64` for wider primes).
-pub trait LaneElem: sealed::Sealed + Copy + Debug + Display + LowerHex + PartialEq + Eq + Send + Sync + Pod + 'static {
+pub trait LaneElem:
+    sealed::Sealed + Into<u64> + Copy + Debug + Display + LowerHex + PartialEq + Eq + Send + Sync + Pod + 'static
+{
     const ZERO: Self;
     fn wrapping_add(self, rhs: Self) -> Self;
 }
@@ -103,6 +105,10 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
+    /// Base-2 logarithm of the actual prime product, rounded to `f64` precision.
+    /// Retains the fractional part, unlike summing the per-prime [`Self::LOG_Q`].
+    const LOG_Q_PRODUCT: f64;
+
     /// Maximum log2 of the negacyclic NTT size supported by `OMEGA`.
     /// Defaults to 16 for prime sets using the original `2^17`-th roots.
     const MAX_LOG_N: u32 = 16;
@@ -119,6 +125,32 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// to all of them.  Used during NTT precomputation to track the
     /// growth of intermediate bit-widths through the butterfly levels.
     const LOG_Q: u64;
+
+    /// Checks [`Self::LOG_Q_PRODUCT`] against the primes in [`Self::Q`].
+    /// Sums logarithms to avoid overflowing an integer product, allowing for
+    /// floating-point rounding. This does not check primality, roots, or CRT constants.
+    ///
+    /// # Panics
+    /// Panics if `Q` is empty, any entry is below two, or the logarithm is inconsistent.
+    fn validate() {
+        let primes = Self::Q;
+        let primes = primes.as_slice();
+        assert!(!primes.is_empty(), "Q must contain at least one prime");
+        let expected: f64 = primes
+            .iter()
+            .map(|&q| {
+                let q: u64 = q.into();
+                assert!(q >= 2, "Q entries must be at least two");
+                (q as f64).log2()
+            })
+            .sum();
+        let tolerance = 4.0 * f64::EPSILON * expected * primes.len() as f64;
+        assert!(
+            (Self::LOG_Q_PRODUCT - expected).abs() <= tolerance,
+            "LOG_Q_PRODUCT does not match Q: stored {}, expected {expected}",
+            Self::LOG_Q_PRODUCT
+        );
+    }
 }
 
 /// One NTT-domain coefficient of a CRT (residue number system) backend:

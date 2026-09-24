@@ -147,7 +147,6 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
         E: EncryptionInfos,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         #[cfg(debug_assertions)]
         {
@@ -233,7 +232,6 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         Self: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEDecrypt<BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         #[cfg(debug_assertions)]
         {
@@ -516,7 +514,7 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         M: GLWEBytesOf<BE>
             + Cmux<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -525,10 +523,7 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
             + GLWECopy<BE>,
         GLWE<AlignedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
         Self: GLWEToBackendMut<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         H: GetAutomorphismKey<BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
         let zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
         let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);

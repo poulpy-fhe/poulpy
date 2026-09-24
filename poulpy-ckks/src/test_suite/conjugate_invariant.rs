@@ -573,6 +573,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                     ci,
                     Module::<$standard>::new((2 * preset.n()) as u64),
                     preset,
+                    $params.base2k,
                 );
             }
             #[test]
@@ -584,6 +585,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                     ci,
                     Module::<$standard>::new((2 * preset.n()) as u64),
                     preset,
+                    $params.base2k,
                 );
             }
             #[test]

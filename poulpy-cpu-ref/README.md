@@ -161,3 +161,14 @@ operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so rotation and `X^p - 1` operations reject it.
 CKKS provides `CIRingBridge` for conversion through a standard module of
 degree `2n`, with explicit switching keys.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+
+```sh
+cargo test -p poulpy-cpu-ref --features enable-bin-fhe bin_fhe_parity
+```

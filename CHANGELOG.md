@@ -7,6 +7,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-hal`
 
 - `Backend::CYCLOTOMIC_ORDER_FACTOR` defines the ambient cyclotomic order per coefficient, defaulting to 2 for the standard negacyclic ring.
+- **Breaking:** replace `Backend::MAX_BASE2K` and `Module::MAX_BASE2K` with runtime `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, dispatched through `MaxBase2k` ([#312](https://github.com/poulpy-fhe/poulpy/issues/312)). NTT and FFT64 helpers use the `squaring` flag to distinguish independent products from squares, selecting a radix from a whole-polynomial Gaussian failure estimate using the tighter Mills-ratio upper bound, capped at `BE::ZnxWord::BITS - 2`. CPU backends and Rayon wrappers implement or forward the query. See [failure estimates](docs/base2k-failure-probability.md) for model assumptions and addition headroom.
+- **Breaking:** `PrimeSet` implementations must provide `LOG_Q_PRODUCT`, the floating-point base-2 logarithm of their actual CRT modulus. `PrimeSet::validate()` checks it against the declared primes; existing prime-set tests run this check.
 - AVX-512/IFMA HAL CI runs natively when supported, with pinned, checksum-verified Intel SDE as the fallback, including Rayon variants. Native ARM CI runs the full NEON backend suite on every push and pull request; additional QEMU HAL and core tests on x86 are available through the manual `run_neon_qemu` workflow input. The AVX-512 execution filters cover HAL and core; CKKS ModUp runtime coverage remains in the separate CKKS follow-up to #234. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
 - HAL conformance now pins uniform sampling's seeded output and caller-stream advancement, registers DFT-copy parity on every accelerated CPU backend and its Rayon variant, and checks inverse-transform limbs and poisoned destinations at independently varied widths.
 - **Breaking, behaviour:** `Backend::DFT_LIMBS_CONTIGUOUS` explicitly opts a backend into partial DFT limb-range views and indexed host zeroing; limbs contain equal-sized column blocks in column order. It defaults to false and is forwarded by `impl_backend_from!`. Existing CPU layouts opt in. Whole-buffer reborrows work for every layout, while incompatible partial ranges and indexed zeroing panic before touching storage. Core reference gadget-product and external-product bodies that require partial views reject incompatible backend instantiations at compile time; custom overrides remain available.
@@ -86,6 +88,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - **Breaking:** CKKS ciphertexts and plaintexts carry their ring kind and degree; evaluation rejects incompatible rings before mutation. `CKKSInfos` and `CKKSLayout` expose `ring_kind`. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. DFT preparation and ciphertext normalization return `Result`; host polynomial encoding takes an explicit ring kind.
 
 - Add conjugate invariant encoding and leveled operations with `N` real slots, compact and sparse plaintexts, cyclic rotations, real polynomial evaluation, and real linear transformations. `CKKSModuleInfos` exposes the module's slot capacity and rotation-key identifiers.
+- **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.
 - EvalMod scratch sizing includes the final copy into the caller's destination, including copy overrides whose workspace grows with destination capacity.
 - **Breaking:** add/subtract-one operations have dedicated `ckks_add_one_tmp_bytes` / `ckks_sub_one_tmp_bytes` queries, following the selected plaintext-constant implementation by default. Shared polynomial and EvalMod budgets include these queries. Add/subtract reference wrappers and backend macros share one definition.
 - CKKS parity runs natively, with optional NEON QEMU coverage. Encryption parity no longer takes an unused scalar type parameter.
@@ -107,6 +110,17 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - `ckks_prepare_right` and the SHIP masking accumulation prepare the right operand at its own degree instead of the module's; `ckks_extract_pt` reports a plaintext of another degree as `PlaintextDegreeMismatch` instead of a kernel panic.
 
 ### `poulpy-bin-fhe`
+
+- **Breaking:** binary-FHE backend operation families now require explicit `*Impl` opt-in. Public lower-layer reference circuits remain independently callable; same-layer wrappers are crate-private derived defaults. Blind-rotation scheduling is selected explicitly by backend wiring.
+- Added caller-selected coefficient parity for scheme evaluation and key/preparation lifecycles, exact scratch guards, and shared registrations alongside backend implementations. Native CI enables binary-FHE; Intel SDE remains limited to HAL/core.
+- **Breaking:** GLWE/GGSW blind-rotation queries take source and destination infos, with separate assignment queries; selection queries take all input infos. Prepared circuit-bootstrap queries accept a metadata descriptor so one-shot wrappers honor selected workspace requirements. Added dedicated one-word BDD and prepared-integer encryption queries.
+- Corrected omitted constituent scratch budgets, multi-limb modulus-switch rounding, and stale prepared-key state. Added an overridable modulus-switch staging boundary and backend-independent contract/migration documentation.
+- Removed unnecessary `'static` backend, key-provider, buffer and plaintext integer bounds from binary-FHE operations and test suites, along with unused borrowed-view requirements in packed integer encryption; borrowed providers are covered by selection/retrieval regressions.
+- Completed BDD traversal/helper extraction and added per-operation BDD opt-ins for independent overrides. Removed the unused compressed circuit-key scaffold.
+- Streaming `GLWEBlindRetriever` now handles empty/singleton capacities, enforces its exact capacity, and exposes layout-aware add/flush scratch queries; paired tests cover streaming reuse and selected copy workspace. Reversible vector retrieval remains a separate operation.
+- Prepared circuit-bootstrapping conversion scratch follows the selected copy query instead of assuming normalization workspace.
+- Blind-rotation scratch queries account for copies between compact temporaries and outputs with spare capacity, including non-monotonic backend workspace requirements.
+
 
 - `NoiseInfos` is imported from `poulpy_core`.
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
@@ -141,6 +155,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-bench`
 
+- **Breaking:** `bench_ckks_bootstrapping` takes a `FIXTURE_BASE2K` const generic; registered FFT and NTT benchmarks retain their 19- and 52-bit fixture radices.
 - HAL runners for every derived operation that lacked one: the shift `_add` / `_sub` forms, `vec_znx_add_scalar_assign`, `vec_znx_idft_normalize_consume`, `vmp_apply_dft_to_dft_add`, `cnv_prepare_self` and `cnv_by_const_apply_add`. `NTT3x42Ifma` gains a HAL sweep, having had none. HAL bench ids follow the api rename.
 - `cnv_apply_dft_sum` runner over four terms, dense and with a sparse right operand at half the module degree (`cnv_apply_dft_sum_sparse`), in the full HAL tier beside the other convolution ops.
 

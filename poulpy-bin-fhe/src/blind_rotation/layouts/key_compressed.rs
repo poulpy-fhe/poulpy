@@ -1,7 +1,6 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
-    api::ModuleN,
-    layouts::{Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
+    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
     source::Source,
 };
 
@@ -10,7 +9,7 @@ use std::{fmt, marker::PhantomData};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_core::{
     Distribution,
-    layouts::{Base2K, Degree, Dsize, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreCompressedAlloc, compressed::GGSWCompressed},
+    layouts::{Base2K, Degree, Dsize, GGSWInfos, GLWEInfos, LWEInfos, compressed::GGSWCompressed},
 };
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos};
@@ -45,27 +44,17 @@ pub struct BlindRotationKeyCompressed<D: Data, BRT: BlindRotationAlgo, W: ZnxWor
     pub(crate) _phantom: PhantomData<BRT>,
 }
 
-/// Algorithm-specific factory for allocating a [`BlindRotationKeyCompressed`].
-pub trait BlindRotationKeyCompressedFactory<BRA: BlindRotationAlgo> {
-    fn blind_rotation_key_compressed_alloc<M, A>(
-        module: &M,
-        infos: &A,
-    ) -> BlindRotationKeyCompressed<M::OwnedBuf, BRA, M::ZnxWord>
-    where
-        M: ModuleCoreCompressedAlloc + ModuleN,
-        A: BlindRotationKeyInfos;
-}
+pub use crate::api::blind_rotation::BlindRotationKeyCompressedFactory;
 
-impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<AlignedBuf, BRA, i64>
-where
-    Self: BlindRotationKeyCompressedFactory<BRA>,
-{
-    pub fn alloc<M, A>(module: &M, infos: &A) -> BlindRotationKeyCompressed<M::OwnedBuf, BRA, M::ZnxWord>
+impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<AlignedBuf, BRA, i64> {
+    /// Allocates a compressed key through the module's selected factory.
+    pub fn alloc<M, A, BE>(module: &M, infos: &A) -> BlindRotationKeyCompressed<BE::OwnedBuf, BRA, BE::ZnxWord>
     where
-        M: ModuleCoreCompressedAlloc + ModuleN,
+        BE: Backend,
+        M: BlindRotationKeyCompressedFactory<BRA, BE>,
         A: BlindRotationKeyInfos,
     {
-        Self::blind_rotation_key_compressed_alloc(module, infos)
+        module.blind_rotation_key_compressed_alloc(infos)
     }
 }
 
@@ -137,7 +126,7 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> WriterTo for BlindRotat
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for BlindRotationKeyCompressed<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn n_glwe(&self) -> Degree {
         self.n()
     }
@@ -147,7 +136,7 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos f
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -165,13 +154,13 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotat
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> GLWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> GLWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn rank(&self) -> poulpy_core::layouts::Rank {
         self.keys[0].rank()
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKeyCompressed<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn k_aux(&self) -> poulpy_core::layouts::TorusPrecision {
         self.keys[0].k_aux()
     }
@@ -185,12 +174,55 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRota
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyCompressed<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyCompressed<D, BRA, W> {
     #[allow(dead_code)]
     pub(crate) fn block_size(&self) -> usize {
         match self.dist {
             Distribution::BinaryBlock(value) => value,
             _ => 1,
         }
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyCompressed<D, BRA, W> {
+    /// Constructs a key from coefficient-domain elements and its secret distribution.
+    pub fn from_parts(keys: Vec<GGSWCompressed<D, W>>, distribution: Distribution) -> Self {
+        assert!(!keys.is_empty());
+        Self {
+            keys,
+            dist: distribution,
+            _phantom: PhantomData,
+        }
+    }
+    /// Coefficient-domain key elements.
+    pub fn keys(&self) -> &[GGSWCompressed<D, W>] {
+        &self.keys
+    }
+    /// Mutable coefficient-domain key elements for backend implementations.
+    pub fn keys_mut(&mut self) -> &mut [GGSWCompressed<D, W>] {
+        &mut self.keys
+    }
+    /// Secret distribution carried by the key.
+    pub fn distribution(&self) -> Distribution {
+        self.dist
+    }
+    /// Updates distribution metadata after encryption or decompression.
+    pub fn set_distribution(&mut self, distribution: Distribution) {
+        self.dist = distribution;
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyCompressed<D, BRA, W> {
+    /// Decompresses this key through the selected backend operation.
+    pub fn decompress_into<BE, M>(
+        &self,
+        module: &M,
+        output: &mut crate::blind_rotation::BlindRotationKey<D, BRA, W>,
+        scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+    ) where
+        BE: poulpy_hal::layouts::Backend<OwnedBuf = D, ZnxWord = W>,
+        M: crate::api::BlindRotationKeyDecompress<BRA, BE>,
+    {
+        module.blind_rotation_key_decompress(output, self, scratch);
     }
 }

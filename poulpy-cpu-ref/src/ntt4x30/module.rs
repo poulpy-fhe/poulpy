@@ -47,8 +47,19 @@ pub struct NTT4x30RefHandle {
 
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
 
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30Ref {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
+            <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            failure_bits,
+            squaring,
+        ))
+    }
+}
+
 impl Backend for NTT4x30Ref {
-    const MAX_BASE2K: usize = 52;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

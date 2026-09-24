@@ -1300,6 +1300,40 @@ pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_au
     (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
 }
 
+/// Practical limb window used for an immediately normalized GGSW external
+/// product.
+///
+/// This is public so fused higher-level operations which use
+/// [`crate::api::GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
+/// exactly the same rule as the reference implementation. Although any lower
+/// limb can affect rounding through a sufficiently long carry chain, the
+/// window includes the worst-case norm growth of the signed DFT products and
+/// their VMP accumulation.
+pub fn glwe_external_product_output_size<BE, R, A, G>(res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let product_terms = ggsw_infos
+        .n()
+        .as_usize()
+        .saturating_mul(ggsw_infos.dnum().as_usize())
+        .saturating_mul(ggsw_infos.dsize().as_usize())
+        .saturating_mul((ggsw_infos.rank() + 1).as_usize());
+    gadget_product_output_size(GadgetProductOutputSizeParams {
+        key_size: ggsw_infos.size(),
+        key_base2k: ggsw_infos.base2k(),
+        input_k: a_infos.k(),
+        output_k: res_infos.k(),
+        dsize: ggsw_infos.dsize(),
+        k_aux: ggsw_infos.k_aux(),
+        product_terms,
+        extra_live_limbs: 0,
+    })
+}
+
 /// Inputs used to size the key region materialized for a gadget product.
 pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) key_size: usize,

@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut, ZnxWord},
 };
 
 pub(crate) fn ckks_ci_bootstrap_tmp_bytes_reference<BE, CI, F>(
@@ -115,7 +115,7 @@ where
 
     let standard_base2k = keys.ci_to_standard.base2k();
     crate::ckks_ensure!(
-        (1..=BE::MAX_BASE2K).contains(&standard_base2k.as_usize()),
+        (1..=<BE::ZnxWord as ZnxWord>::BITS - 2).contains(&standard_base2k.as_usize()),
         "invalid CI switching-key radix"
     );
     crate::ckks_ensure!(
@@ -252,7 +252,7 @@ fn validate_ci_bootstrap<CI: Backend>(
         ci_ring.check_ciphertext("CI bootstrap", ct)?;
         crate::layouts::validation::validate_storage_capacity("CI bootstrap ciphertext", ct)?;
         crate::ckks_ensure!(
-            ct.base2k().as_usize() <= CI::MAX_BASE2K,
+            ct.base2k().as_usize() <= <CI::ZnxWord as ZnxWord>::BITS - 2,
             "CI ciphertext radix exceeds the backend limit"
         );
     }

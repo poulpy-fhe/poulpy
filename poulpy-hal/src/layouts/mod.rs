@@ -35,6 +35,7 @@
 //! DFT-domain operations require `n == n_full == N`. Flat accessors
 //! (`raw`, `as_ptr`) panic on a window.
 
+mod base2k;
 mod convolution;
 mod crt;
 mod encoding;
@@ -56,6 +57,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
+pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt};
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;
@@ -301,7 +303,6 @@ pub(crate) use impl_host_byte_storage;
 
 impl Backend for HostBytesBackend {
     // Storage/normalization only; this backend does not perform products.
-    const MAX_BASE2K: usize = 62;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = crate::execution::SerialTaskExecutor;
@@ -309,6 +310,13 @@ impl Backend for HostBytesBackend {
     type BigWord = i128;
     type DftWord = i64;
     impl_host_byte_storage!();
+}
+
+// Storage-only backend: no transform arithmetic to model.
+impl MaxBase2k for HostBytesBackend {
+    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
+        None
+    }
 }
 
 unsafe impl HalModuleImpl for HostBytesBackend {
@@ -517,7 +525,6 @@ macro_rules! impl_backend_from {
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
-            const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
             const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
