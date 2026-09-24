@@ -290,3 +290,6 @@ poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Ref);
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Ref);
 #[cfg(test)]
 poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Ref);
+
+#[cfg(all(test, feature = "enable-bin-fhe"))]
+impl_fft64_delegating_backend!(BinFheOverrideFFT64);

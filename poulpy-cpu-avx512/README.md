@@ -153,3 +153,17 @@ No modifications to those crates are required — the HAL provides the extension
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+Enable `enable-ifma` as well to select this accelerated backend; `enable-rayon` adds its parallel variants.
+
+```sh
+RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512dq,+avx512bw,+avx512vl,+avx512ifma" cargo test -p poulpy-cpu-avx512 --features enable-ifma,enable-rayon,enable-bin-fhe bin_fhe_parity
+```
+
+CI executes binary-FHE when native hardware is available. The Intel SDE fallback runs HAL/core only.

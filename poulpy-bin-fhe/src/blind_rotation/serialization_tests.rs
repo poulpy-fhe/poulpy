@@ -4,6 +4,8 @@ use poulpy_hal::test_suite::serialization::test_reader_writer_interface;
 
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyLayout, CGGI};
 
+crate::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!(HB);
+
 type HostModule = Module<HB>;
 
 #[test]

@@ -102,6 +102,17 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-bin-fhe`
 
+- **Breaking:** binary-FHE backend operation families now require explicit `*Impl` opt-in. Public lower-layer reference circuits remain independently callable; same-layer wrappers are crate-private derived defaults. Blind-rotation scheduling is selected explicitly by backend wiring.
+- Added caller-selected coefficient parity for scheme evaluation and key/preparation lifecycles, exact scratch guards, and shared registrations alongside backend implementations. Native CI enables binary-FHE; Intel SDE remains limited to HAL/core.
+- **Breaking:** GLWE/GGSW blind-rotation queries take source and destination infos, with separate assignment queries; selection queries take all input infos. Prepared circuit-bootstrap queries accept a metadata descriptor so one-shot wrappers honor selected workspace requirements. Added dedicated one-word BDD and prepared-integer encryption queries.
+- Corrected omitted constituent scratch budgets, multi-limb modulus-switch rounding, and stale prepared-key state. Added an overridable modulus-switch staging boundary and backend-independent contract/migration documentation.
+- Removed unnecessary `'static` backend, key-provider, buffer and plaintext integer bounds from binary-FHE operations and test suites, along with unused borrowed-view requirements in packed integer encryption; borrowed providers are covered by selection/retrieval regressions.
+- Completed BDD traversal/helper extraction and added per-operation BDD opt-ins for independent overrides. Removed the unused compressed circuit-key scaffold.
+- Streaming `GLWEBlindRetriever` now handles empty/singleton capacities, enforces its exact capacity, and exposes layout-aware add/flush scratch queries; paired tests cover streaming reuse and selected copy workspace. Reversible vector retrieval remains a separate operation.
+- Prepared circuit-bootstrapping conversion scratch follows the selected copy query instead of assuming normalization workspace.
+- Blind-rotation scratch queries account for copies between compact temporaries and outputs with spare capacity, including non-monotonic backend workspace requirements.
+
+
 - `NoiseInfos` is imported from `poulpy_core`.
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
 

@@ -1,10 +1,16 @@
-//! Circuit bootstrapping: lifting a GLWE ciphertext to a GGSW.
+//! Circuit bootstrapping: lifting an LWE ciphertext to a GGSW.
 //!
-//! Circuit bootstrapping transforms a GLWE ciphertext that encrypts a small
+//! Circuit bootstrapping transforms an LWE ciphertext that encrypts a small
 //! plaintext value (typically a single bit) into a GGSW ciphertext.  The
 //! output GGSW can be used as a CMux selector, enabling the evaluation of
 //! arbitrary Boolean circuits on ciphertexts without additional noise growth
 //! per gate.
+//!
+//! ## User-facing API
+//!
+//! Import operation traits from [`crate::api::circuit_bootstrapping`] for module calls
+//! and their scratch queries. The API documentation includes a generic usage
+//! example. Key and plan convenience methods dispatch through the same traits.
 //!
 //! ## Algorithm
 //!
@@ -34,9 +40,8 @@
 //! | [`CircuitBootstrappingKeyPrepared`] | DFT-prepared form for on-line evaluation |
 //! | [`CircuitBootstrappingKeyLayout`] | Dimension descriptor |
 //! | [`CircuitBootstrappingKeyInfos`] | Accessor trait for key dimensions |
-mod circuit;
+pub(crate) mod circuit;
 mod key;
-mod key_compressed;
 mod key_prepared;
 
 /// Backend-generic test bodies, instantiated by the backend crates through
@@ -57,5 +62,4 @@ pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<
 
 pub use circuit::*;
 pub use key::*;
-// pub use key_compressed::*;
 pub use key_prepared::*;

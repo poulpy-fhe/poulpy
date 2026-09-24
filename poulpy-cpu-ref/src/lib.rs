@@ -72,3 +72,6 @@ pub use scalar_znx_fill::ScalarZnxFill;
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_impl;

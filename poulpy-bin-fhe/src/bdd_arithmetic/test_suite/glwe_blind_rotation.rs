@@ -24,7 +24,8 @@ use crate::{
 pub fn test_glwe_to_glwe_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: ModuleNew<BE>
+    Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
+        + ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -32,10 +33,7 @@ where
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-    BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     let module: &Module<BE> = &test_context.module;
     let sk_glwe_prep: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;

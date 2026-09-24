@@ -1,12 +1,13 @@
+pub use crate::api::GLWEBlindRetrieval;
 use itertools::Itertools;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::{
     GLWECopy, GLWEZero,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::bdd_arithmetic::{Cmux, Cswap, GetGGSWBit};
+use crate::bdd_arithmetic::{Cmux, GetGGSWBit};
 use poulpy_core::GLWEBytesOf;
 
 /// Stateful accumulator for oblivious retrieval of one GLWE ciphertext from a
@@ -18,21 +19,36 @@ use poulpy_core::GLWEBytesOf;
 /// [`flush`][GLWEBlindRetriever::flush] finalises the result.
 ///
 /// The convenience method [`retrieve`][GLWEBlindRetriever::retrieve] combines
-/// `reset`, all `add` calls, and `flush` in a single step.
+/// `reset`, all `add` calls, and `flush` in a single step. Inputs are borrowed
+/// without mutation. Unlike [`GLWEBlindRetrieval`], this helper does not permute
+/// a ciphertext array for later reversal: it owns persistent accumulation state
+/// and composes the selected [`Cmux`] and core operations.
+///
+/// For a nonempty stream, the encrypted index starting at `offset` must refer
+/// to an input actually added; missing positions are not padded with zero.
+/// Flushing an empty stream writes zero. Every flush resets the accumulation.
 ///
 /// ## Capacity
 ///
 /// `alloc(infos, size)` allocates enough internal state to accumulate up to
-/// `size` inputs.  Adding more than `size` inputs panics.
+/// `size` inputs, including capacities zero and one. Adding more than `size`
+/// inputs panics. [`retrieve`][Self::retrieve] checks its input length before
+/// resetting the state or writing the result.
 ///
 /// ## Scratch-Space
 ///
-/// All methods that require scratch space accept a mutable `ScratchArena<BE>` arena.
-/// The required size is returned by
-/// [`retrieve_tmp_bytes`][GLWEBlindRetriever::retrieve_tmp_bytes].
+/// Inputs must match the accumulator ring degree, rank and radix. Precision
+/// and allocated capacity may differ. For compatible layouts, take the maximum of
+/// [`add_tmp_bytes`][Self::add_tmp_bytes] for each input and
+/// [`flush_tmp_bytes`][Self::flush_tmp_bytes] for the output. These queries use
+/// the actual persistent accumulator layout and remain valid before adding any
+/// inputs. The selector metadata must describe every selector bit used.
+/// [`retrieve_tmp_bytes`][Self::retrieve_tmp_bytes] is a convenience query for
+/// uniform external buffers and compact accumulators.
 pub struct GLWEBlindRetriever<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord> {
     accumulators: Vec<Accumulator<D, W>>,
     counter: usize,
+    capacity: usize,
 }
 
 impl<D: Data> GLWEBlindRetriever<D, i64> {
@@ -41,21 +57,76 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = i64>,
         A: GLWEInfos,
     {
-        let bit_size: usize = (u32::BITS - (size as u32 - 1).leading_zeros()) as usize;
+        let bit_size = if size == 0 {
+            0
+        } else {
+            ((usize::BITS - (size - 1).leading_zeros()) as usize).max(1)
+        };
         Self {
             accumulators: (0..bit_size).map(|_| Accumulator::alloc(module, infos)).collect_vec(),
             counter: 0,
+            capacity: size,
         }
     }
 
+    /// Scratch required when every input has the same layout and allocated
+    /// capacity as `res`, and accumulators have `res.glwe_layout()` (the compact
+    /// layout produced by the standard allocator). For other layouts, use
+    /// [`add_tmp_bytes`][Self::add_tmp_bytes] and
+    /// [`flush_tmp_bytes`][Self::flush_tmp_bytes].
     pub fn retrieve_tmp_bytes<M, R, S, BE>(module: &M, res: &R, selector: &S) -> usize
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        M: GLWEBytesOf<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
         R: GLWEInfos,
         S: GGSWInfos,
     {
-        module.cmux_tmp_bytes(res, res, selector)
+        let acc = res.glwe_layout();
+        module
+            .cmux_tmp_bytes(&acc, res, selector)
+            .max(module.cmux_tmp_bytes(&acc, &acc, selector))
+            .max(module.glwe_copy_tmp_bytes(&acc, res))
+            .max(module.glwe_copy_tmp_bytes(&acc, &acc))
+            .max(module.glwe_copy_tmp_bytes(res, &acc))
+    }
+
+    /// Scratch required to add an input with the supplied layout and allocated
+    /// capacity, including any carries through the persistent accumulators.
+    /// The bound does not depend on how many inputs have already been added.
+    pub fn add_tmp_bytes<M, A, S, BE>(&self, module: &M, a: &A, selector: &S) -> usize
+    where
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        A: GLWEInfos,
+        S: GGSWInfos,
+    {
+        let Some(acc) = self.accumulators.first().map(|acc| &acc.data) else {
+            return 0;
+        };
+        module
+            .cmux_tmp_bytes(acc, a, selector)
+            .max(module.cmux_tmp_bytes(acc, acc, selector))
+            .max(module.glwe_copy_tmp_bytes(acc, a))
+            .max(module.glwe_copy_tmp_bytes(acc, acc))
+    }
+
+    /// Scratch required to finish accumulation and copy into the supplied
+    /// output layout, including its allocated capacity. The bound is valid even
+    /// when queried before any inputs have been added.
+    pub fn flush_tmp_bytes<M, R, S, BE>(&self, module: &M, res: &R, selector: &S) -> usize
+    where
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        R: GLWEInfos,
+        S: GGSWInfos,
+    {
+        let Some(acc) = self.accumulators.first().map(|acc| &acc.data) else {
+            return 0;
+        };
+        module
+            .cmux_tmp_bytes(acc, acc, selector)
+            .max(module.glwe_copy_tmp_bytes(acc, acc))
+            .max(module.glwe_copy_tmp_bytes(res, acc))
     }
 
     pub fn retrieve<M, R, A, S, BE>(
@@ -68,11 +139,12 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
     {
+        assert!(data.len() <= self.capacity, "retrieval capacity exceeded");
         self.reset();
         for ct in data {
             self.add(module, ct, selector, offset, scratch);
@@ -85,13 +157,9 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
-        assert!(
-            (self.counter as u32) < 1 << self.accumulators.len(),
-            "Accumulating limit of {} reached",
-            1 << self.accumulators.len()
-        );
+        assert!(self.counter < self.capacity, "retrieval capacity exceeded");
 
         add_core(module, a, &mut self.accumulators, 0, selector, offset, scratch);
         self.counter += 1;
@@ -102,7 +170,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         R: GLWEToBackendMut<BE>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
         if self.counter == 0 {
             module.glwe_zero(res);
@@ -158,7 +226,7 @@ fn add_core<A, S, M, BE>(
     A: GLWEToBackendRef<BE>,
     S: GetGGSWBit<BE>,
     M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
-    BE: Backend<ZnxWord = i64> + 'static,
+    BE: Backend<ZnxWord = i64>,
 {
     // Isolate the first accumulator
     let (acc_prev, acc_next) = accumulators.split_at_mut(1);
@@ -180,94 +248,6 @@ fn add_core<A, S, M, BE>(
         }
         _ => {
             panic!("something went wrong")
-        }
-    }
-}
-
-impl<BE: Backend<ZnxWord = i64> + 'static> GLWEBlindRetrieval<BE> for Module<BE> where
-    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>
-{
-}
-
-/// Oblivious in-place sorting / retrieval of a GLWE vector by an encrypted index.
-///
-/// Where `GLWEBlindSelection` extracts one element from a map given an encrypted
-/// key, `GLWEBlindRetrieval` operates on an ordered `Vec<R>` and performs a
-/// sorting-network-style rearrangement: after
-/// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull],
-/// element `0` of the vector encrypts the input element whose index equals the
-/// encrypted selector.
-///
-/// The rearrangement uses conditional-swap ([`Cswap`]) operations, one per bit
-/// of the selector sub-field.  The `_rev` variant applies the operations in
-/// reverse, useful for undoing the permutation.
-pub trait GLWEBlindRetrieval<BE: Backend + 'static>
-where
-    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>,
-{
-    /// Returns the minimum scratch-space size in bytes required by
-    /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
-    fn glwe_blind_retrieval_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGSWInfos,
-    {
-        self.cswap_tmp_bytes(res_infos, res_infos, k_infos)
-    }
-
-    /// Rearranges `res` in-place so that `res[0]` encrypts the element at the
-    /// encrypted index `(bits >> bit_rsh) % 2^bit_mask`.
-    ///
-    /// Uses a butterfly network of [`Cswap`] gates, iterating from the
-    /// most-significant to the least-significant bit of the selector sub-field.
-    fn glwe_blind_retrieval_statefull<R, K>(
-        &self,
-        res: &mut Vec<R>,
-        bits: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
-    {
-        for i in 0..bit_mask {
-            let t: usize = 1 << (bit_mask - i - 1);
-            let bit = bits.get_bit(bit_rsh + bit_mask - i - 1); // MSB -> LSB traversal
-            for j in 0..t {
-                if j + t < res.len() {
-                    let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
-                }
-            }
-        }
-    }
-
-    /// Reverses the permutation applied by
-    /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].
-    ///
-    /// Applies the same butterfly network in reverse order, restoring the original
-    /// element ordering after an oblivious retrieval.
-    fn glwe_blind_retrieval_statefull_rev<R, K>(
-        &self,
-        res: &mut Vec<R>,
-        bits: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE> + 'static,
-    {
-        for i in (0..bit_mask).rev() {
-            let t: usize = 1 << (bit_mask - i - 1);
-            let bit = bits.get_bit(bit_rsh + bit_mask - i - 1); // MSB -> LSB traversal
-            for j in 0..t {
-                if j < res.len() && j + t < res.len() {
-                    let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
-                }
-            }
         }
     }
 }

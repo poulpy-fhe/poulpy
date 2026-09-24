@@ -5,12 +5,11 @@ use poulpy_core::{
         GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{
-        Backend, HostBackend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxToBackendMut,
-        ZnxView, ZnxViewMut,
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxView,
+        ZnxViewMut,
     },
     source::Source,
 };
@@ -27,7 +26,8 @@ use crate::{
 pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: ModuleNew<BE>
+    Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
+        + ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -37,10 +37,9 @@ where
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-    BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
 {
     let module: &Module<BE> = &test_context.module;
     let sk_glwe_prep: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
@@ -151,16 +150,9 @@ where
             for row in 0..res.dnum().as_usize() {
                 for col in 0..res.rank().as_usize() + 1 {
                     assert!(
-                        res.noise(
-                            module,
-                            row,
-                            col,
-                            &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar_want),
-                            sk_glwe_prep,
-                            &mut scratch.borrow(),
-                        )
-                        .std()
-                        .log2()
+                        res.noise(module, row, col, &scalar_want.to_ref(), sk_glwe_prep, &mut scratch.borrow())
+                            .std()
+                            .log2()
                             <= max_noise(col)
                     )
                 }

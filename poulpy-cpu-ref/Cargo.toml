@@ -10,6 +10,7 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-cpu-ref"
 
 [features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "enable-core"]
 enable-core = []
 enable-ckks = ["dep:poulpy-ckks", "enable-core"]
 # Ships the portable comparison adapters other backend crates test against.
@@ -18,6 +19,7 @@ enable-ckks = ["dep:poulpy-ckks", "enable-core"]
 enable-test-suite = ["enable-core"]
 
 [dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
 anyhow = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
@@ -55,15 +57,15 @@ required-features = ["enable-core"]
 
 [[example]]
 name = "bdd_arithmetic"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [[example]]
 name = "circuit_bootstrapping"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [[example]]
 name = "max_array"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [dev-dependencies]
 paste = {workspace = true}
@@ -77,17 +79,17 @@ poulpy-bench = {workspace = true} #  features = ["hal-bench", "bin-fhe-bench", "
 [[bench]]
 name = "full"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "light"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "normalize"
