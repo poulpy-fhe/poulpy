@@ -155,7 +155,14 @@ where
     BE: HalVecZnxImpl,
 {
     assert!(block_size > 0 && extension_factor.is_power_of_two());
-    let copy = module.glwe_copy_tmp_bytes(glwe_infos, glwe_infos);
+    // The owned output temporary is compact even when the destination retains
+    // spare capacity. Copy workspace can depend on either operand's allocation.
+    let compact = glwe_infos.glwe_layout();
+    let copy_out = if extension_factor == 1 {
+        module.glwe_copy_tmp_bytes(glwe_infos, &compact)
+    } else {
+        0 // Extended execution copies coefficients directly with VecZnxCopy.
+    };
     if block_size > 1 || extension_factor > 1 {
         let cols = brk_infos.rank().as_usize() + 1;
         let size = brk_infos.size();
@@ -172,22 +179,27 @@ where
                 + 2 * block_size * vmp_res
                 + (block_size * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
                     .max(normalize)
-                    .max(copy)
+                    .max(copy_out)
         } else {
             let acc = if extension_factor > 1 {
                 BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size()) * extension_factor
             } else {
                 0
             };
-            acc + acc_dft + 2 * vmp_res + module.bytes_of_vec_znx_dft(module.n(), 1, size) + vmp.max(normalize).max(copy)
+            acc + acc_dft + 2 * vmp_res + module.bytes_of_vec_znx_dft(module.n(), 1, size) + vmp.max(normalize).max(copy_out)
         }
     } else {
-        module.glwe_bytes_of_from_infos(glwe_infos)
-            + module
-                .glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, brk_infos)
-                .max(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(glwe_infos.size()))
+        let copy_in = module.glwe_copy_tmp_bytes(&compact, glwe_infos);
+        let acc = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&compact));
+        // The initial copy precedes acc_tmp; subsequent operations, including
+        // the final copy, execute while that compact scratch allocation is live.
+        copy_in.max(
+            acc + module
+                .glwe_external_product_tmp_bytes(&compact, &compact, brk_infos)
+                .max(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(compact.size()))
                 .max(module.glwe_normalize_tmp_bytes())
-                .max(copy)
+                .max(copy_out),
+        )
     }
 }
 

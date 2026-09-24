@@ -74,8 +74,22 @@ fn reject_mismatched_preparation<B: ParityBackend>(
     assert_eq!(before, snapshot(prepared), "failed preparation changed the destination");
 }
 
+fn output_fixture<B: ParityBackend>(
+    module: &Module<B>,
+    allocation: &GLWELayout,
+    precision: TorusPrecision,
+) -> GLWE<B::OwnedBuf, i64> {
+    let mut output = fixture_glwe(module, allocation, 88);
+    output.set_k(precision);
+    let mut host = output.to_host_owned::<B>();
+    super::canonicalize(&mut host);
+    host.transfer_into(&mut output);
+    output
+}
+
 /// Exact coefficient, metadata, and scratch parity for standard, block, and
-/// extended CGGI, including both rotation directions and key preparation reuse.
+/// extended CGGI, including both rotation directions, spare output capacity,
+/// and key preparation reuse.
 pub fn test_blind_rotation_parity<BR, BT>(reference: &Module<BR>, tested: &Module<BT>)
 where
     BR: ParityBackend,
@@ -134,28 +148,40 @@ where
             assert_eq!(prepared_r.dist, prepared_t.dist);
             assert_eq!(prepared_r.x_pow_a.is_some(), prepared_t.x_pow_a.is_some());
             for direction in [LookUpTableRotationDirection::Left, LookUpTableRotationDirection::Right] {
-                let lut_r = lut(reference, &output_layout, extension, direction);
-                let lut_t = lut(tested, &output_layout, extension, direction);
-                let mut switched_r = vec![0; 5];
-                let mut switched_t = vec![0; 5];
-                reference.blind_rotation_mod_switch(2 * reference.n() * extension, &mut switched_r, &lwe_r, direction);
-                tested.blind_rotation_mod_switch(2 * tested.n() * extension, &mut switched_t, &lwe_t, direction);
-                assert_eq!(switched_r, switched_t, "modulus-switch parity");
-                let mut output_r = fixture_glwe(reference, &output_layout, 88);
-                let mut output_t = fixture_glwe(tested, &output_layout, 88);
-                with_scratch::<BR, _>(
-                    reference.blind_rotation_execute_tmp_bytes(key_r.block_size(), extension, &output_layout, &key_layout),
-                    |s| reference.blind_rotation_execute(&mut output_r, &lwe_r, &lut_r, &prepared_r, s),
-                );
-                with_scratch::<BT, _>(
-                    tested.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_layout, &key_layout),
-                    |s| tested.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
-                );
-                assert_eq!(
-                    snapshot_glwe::<BR, _>(&output_r),
-                    snapshot_glwe::<BT, _>(&output_t),
-                    "blind-rotation parity"
-                );
+                // Distinct source/destination capacities exercise both copy directions.
+                // A copy override may need more scratch for either compact or spare storage.
+                for (precision, capacity) in [(24usize, 24usize), (24, 60), (60, 84)] {
+                    let logical_layout = GLWELayout {
+                        k: precision.into(),
+                        ..output_layout
+                    };
+                    let allocation = GLWELayout {
+                        k: capacity.into(),
+                        ..logical_layout
+                    };
+                    let lut_r = lut(reference, &logical_layout, extension, direction);
+                    let lut_t = lut(tested, &logical_layout, extension, direction);
+                    let mut switched_r = vec![0; 5];
+                    let mut switched_t = vec![0; 5];
+                    reference.blind_rotation_mod_switch(2 * reference.n() * extension, &mut switched_r, &lwe_r, direction);
+                    tested.blind_rotation_mod_switch(2 * tested.n() * extension, &mut switched_t, &lwe_t, direction);
+                    assert_eq!(switched_r, switched_t, "modulus-switch parity");
+                    let mut output_r = output_fixture(reference, &allocation, logical_layout.k);
+                    let mut output_t = output_fixture(tested, &allocation, logical_layout.k);
+                    with_scratch::<BR, _>(
+                        reference.blind_rotation_execute_tmp_bytes(key_r.block_size(), extension, &output_r, &key_layout),
+                        |s| reference.blind_rotation_execute(&mut output_r, &lwe_r, &lut_r, &prepared_r, s),
+                    );
+                    with_scratch::<BT, _>(
+                        tested.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_t, &key_layout),
+                        |s| tested.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
+                    );
+                    assert_eq!(
+                        snapshot_glwe::<BR, _>(&output_r),
+                        snapshot_glwe::<BT, _>(&output_t),
+                        "blind-rotation parity"
+                    );
+                }
             }
         }
         reject_mismatched_preparation(reference, &mut prepared_r, &key_layout);

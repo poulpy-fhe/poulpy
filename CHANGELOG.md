@@ -110,6 +110,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Completed BDD traversal/helper extraction and added per-operation BDD opt-ins for independent overrides. Removed the unused compressed circuit-key scaffold.
 - Streaming `GLWEBlindRetriever` now handles empty/singleton capacities, enforces its exact capacity, and exposes layout-aware add/flush scratch queries; paired tests cover streaming reuse and selected copy workspace. Reversible vector retrieval remains a separate operation.
 - Prepared circuit-bootstrapping conversion scratch follows the selected copy query instead of assuming normalization workspace.
+- Blind-rotation scratch queries account for copies between compact temporaries and outputs with spare capacity, including non-monotonic backend workspace requirements.
 
 
 - `NoiseInfos` is imported from `poulpy_core`.
