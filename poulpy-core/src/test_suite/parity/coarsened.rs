@@ -91,6 +91,7 @@ fn twin_layout(parent: &GGLWELayout, dsize: Dsize) -> (GGLWELayout, usize) {
 fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>, what: &str) {
     assert_eq!(have.glwe_layout(), want.glwe_layout(), "{what}: metadata");
     assert_eq!(have.data.raw(), want.data.raw(), "{what}");
+    assert_eq!(have.is_canonical(), want.is_canonical(), "{what}: canonical flag");
 }
 
 /// `glwe_automorphism` over a coarsened key equals it over the key it stands

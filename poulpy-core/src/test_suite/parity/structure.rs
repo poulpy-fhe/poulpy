@@ -98,7 +98,7 @@ where
             );
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "trace rank={rank} skip={skip}");
+            assert_glwe_eq!(out_r, have, "trace rank={rank} skip={skip}");
             if skip == r.log_n() {
                 assert_eq!(out_r, a_r, "empty out-of-place trace must copy the input");
             }
@@ -117,7 +117,7 @@ where
                 &mut poisoned_scratch::<BT>(t.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
+            assert_glwe_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
             if skip == r.log_n() {
                 assert_eq!(out_r, a_r, "empty trace must preserve all input coefficients and metadata");
             }
@@ -200,7 +200,7 @@ where
             );
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "pack rank={rank} positions={positions:?} gap={log_gap_out}");
+            assert_glwe_eq!(out_r, have, "pack rank={rank} positions={positions:?} gap={log_gap_out}");
             if log_gap_out == 0 && gi.k == g.k {
                 // The last packing phase is an empty trace: it must publish
                 // the accumulator retained at index zero into the destination.
@@ -461,7 +461,7 @@ where
                 );
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out_t.transfer_into(&mut have);
-                assert_eq!(out_r, have, "relinearize rank={rank} k={precision} dsize={dsize}");
+                assert_glwe_eq!(out_r, have, "relinearize rank={rank} k={precision} dsize={dsize}");
             }
         }
     }

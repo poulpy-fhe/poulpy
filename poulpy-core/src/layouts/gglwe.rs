@@ -437,6 +437,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -451,6 +452,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     GLWE {
         base2k: gglwe.base2k,
         k: gglwe.k(),
+        canonical: true,
         data,
     }
 }
@@ -476,6 +478,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     GLWE {
         base2k: gglwe.base2k,
         k: gglwe.k(),
+        canonical: true,
         data,
     }
 }
@@ -497,7 +500,12 @@ impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -509,7 +517,12 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = gglwe.base2k;
     let k = gglwe.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
-    GLWE { base2k, k, data }
+    GLWE {
+        base2k,
+        k,
+        canonical: true,
+        data,
+    }
 }
 
 pub trait GGLWEAtViewMut<BE: Backend> {
@@ -555,6 +568,7 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -565,7 +579,12 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 

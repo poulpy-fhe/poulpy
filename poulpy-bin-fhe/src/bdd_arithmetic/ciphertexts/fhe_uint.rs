@@ -410,6 +410,10 @@ where
     fn to_backend_mut(&mut self) -> GLWE<<BE as Backend>::BufMut<'_>, <BE as Backend>::ZnxWord> {
         self.bits.to_backend_mut()
     }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.bits.set_canonical(canonical)
+    }
 }
 
 #[doc(hidden)]

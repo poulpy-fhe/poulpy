@@ -135,6 +135,7 @@ pub unsafe trait EncryptionImpl: Backend {
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos,
+        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_tmp_bytes_derived(module, infos)
     }
@@ -151,6 +152,7 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWEToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
+        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, enc_infos, source_xe, source_xa, scratch)
     }

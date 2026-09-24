@@ -15,6 +15,15 @@
 //! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
 //! crates register these contract suites for their supported implementations.
 
+/// `assert_eq!` on two GLWEs that also requires equal canonical flags, which
+/// GLWE equality ignores.
+macro_rules! assert_glwe_eq {
+    ($want:expr, $have:expr, $($msg:tt)+) => {{
+        assert_eq!($want, $have, $($msg)+);
+        assert_eq!($want.is_canonical(), $have.is_canonical(), "canonical flag, {}", format_args!($($msg)+));
+    }};
+}
+
 mod automorphism;
 mod coarsened;
 pub mod controlled_sampling;
@@ -47,6 +56,7 @@ pub use preparation::*;
 pub use structure::*;
 
 use crate::oep::EncryptionImpl;
+use poulpy_hal::layouts::ZnxViewMut;
 use poulpy_hal::oep::HalVecZnxImpl;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Module},
@@ -54,8 +64,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::GLWEMaskFill,
-    layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, ModuleCoreAlloc},
+    api::{GLWEMaskFill, TransferInto},
+    layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc},
     test_suite::keys::fill_by_digit,
 };
 
@@ -116,6 +126,38 @@ where
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
     module_ref.fill_glwe_from_source(&mut glwe, source);
     glwe
+}
+
+/// Writes into `dst` the value of the canonical `a` with carries left in its
+/// digits and bits below its `k`, flagged non-canonical.
+pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS>, dst: &mut BackendGLWE<BD>) {
+    let mut twin = a.to_host_owned::<BS>();
+    let base2k: usize = twin.base2k().into();
+    let k: usize = twin.k().as_usize();
+    let live: usize = k.div_ceil(base2k);
+    let pad: usize = live * base2k - k;
+    let size: usize = twin.data.size();
+    for col in 0..twin.data.cols() {
+        // One unit of every limb moves into the limb below it: the value is
+        // unchanged and the digits leave the canonical range.
+        for limb in 1..live {
+            twin.data.at_mut(col, limb - 1).iter_mut().for_each(|digit| *digit -= 1);
+            twin.data.at_mut(col, limb).iter_mut().for_each(|digit| *digit += 1 << base2k);
+        }
+        // Bits below `k`, less than half its unit, round away.
+        let (limb, bound) = if pad >= 2 {
+            (live - 1, 1i64 << (pad - 1))
+        } else if size > live && base2k >= 2 {
+            (live, 1i64 << (base2k - 2))
+        } else {
+            continue;
+        };
+        for (i, digit) in twin.data.at_mut(col, limb).iter_mut().enumerate() {
+            *digit += i as i64 % bound;
+        }
+    }
+    twin.set_canonical(false);
+    twin.transfer_into(dst);
 }
 
 /// Allocates a GGLWE on the reference module and fills it with uniform noise.

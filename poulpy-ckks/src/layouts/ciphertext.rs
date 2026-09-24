@@ -237,6 +237,10 @@ where
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner)
     }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.inner.set_canonical(canonical)
+    }
 }
 
 /// Backend-owned CKKS ciphertext: the backend's buffer type and its coefficient word.
@@ -339,6 +343,10 @@ impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'a, BE
 impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.inner.to_backend_mut()
+    }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        GLWEToBackendMut::<BE>::set_canonical(&mut self.inner, canonical)
     }
 }
 
@@ -581,6 +589,10 @@ where
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner.inner)
+    }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.inner.inner.set_canonical(canonical)
     }
 }
 

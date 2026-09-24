@@ -1,9 +1,9 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
@@ -54,6 +54,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        res.set_canonical(true);
         let mut res = res.to_backend_mut();
         let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
         for col in 0..res.data.cols() {
@@ -143,6 +144,7 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
         let sk_ref = sk.to_backend_ref();
@@ -186,6 +188,7 @@ where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let sk_ref = sk.to_backend_ref();
 
@@ -257,10 +260,7 @@ where
         assert_eq!(self.n() as u32, infos.n());
         let lvl_0: usize = self.bytes_of_svp_ppol(self.n(), 1, PrepareHint::Reuse);
         let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), 1);
-        let lvl_2: usize = cols
-            * (self.bytes_of_vec_znx_dft(self.n(), 1, size)
-                + self.bytes_of_vec_znx_big(self.n(), 1, size)
-                + BE::bytes_of_vec_znx(self.n(), 1, size));
+        let lvl_2: usize = cols * (self.bytes_of_vec_znx_dft(self.n(), 1, size) + self.bytes_of_vec_znx_big(self.n(), 1, size));
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
@@ -346,8 +346,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxAddAssign<BE>
-        + VecZnxCopy<BE>
+        + VecZnxBigAddSmallAssign<BE>
         + SvpPPolBytesOf
         + ModuleN
         + VecZnxDftBytesOf
@@ -368,6 +367,7 @@ where
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
+        res.set_canonical(true);
         let res = &mut res.to_backend_mut();
 
         assert_eq!(res.base2k(), pk.base2k());
@@ -381,6 +381,7 @@ where
         let base2k: usize = pk.base2k().into();
         let noise_infos = enc_infos.noise_infos();
         let size_pk: usize = pk.size();
+        let res_k: usize = res.k().as_usize();
         let cols: usize = (res.rank() + 1).into();
 
         // Generates u according to the underlying secret distribution.
@@ -425,24 +426,18 @@ where
                 // ci_big = u * pk[i] + e
                 self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
 
-                let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
-                let scratch_next = {
-                    let ci_big_ref = ci_big.to_backend_ref();
-                    scratch_4.apply_mut(|scratch| {
-                        self.vec_znx_big_normalize(&mut ci, base2k, size_pk * base2k, 0, 0, &ci_big_ref, base2k, 0, scratch)
-                    })
-                };
-                scratch_1 = scratch_next;
-
+                // ci_big = u * pk[i] + e + m (if col = i)
                 if let Some((pt, col)) = &pt
                     && *col == i
                 {
-                    let mut ci_mut = ci.to_backend_mut();
-                    self.vec_znx_add_assign(&mut ci_mut, 0, &pt.data, 0);
+                    self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
                 }
 
-                let ci_ref = ci.to_backend_ref();
-                self.vec_znx_copy(&mut res.data, i, &ci_ref, 0);
+                // ct[i] = ci_big, normalized at `res.k`
+                let ci_big_ref = ci_big.to_backend_ref();
+                scratch_1 = scratch_3.apply_mut(|scratch| {
+                    self.vec_znx_big_normalize(&mut res.data, base2k, res_k, 0, i, &ci_big_ref, base2k, 0, scratch)
+                });
             }
         }
     }

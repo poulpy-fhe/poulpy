@@ -76,9 +76,9 @@ pub trait GLWEPacking<BE: Backend> {
 
 /// Multiplication of a GLWE ciphertext by one coefficient of a plaintext.
 ///
-/// The ciphertext operand is expected normalized, hence canonical at its `k`
-/// (see the normalized form on [`crate::layouts::GLWE`]); the product reads
-/// every bit of its live limbs and does not check.
+/// The ciphertext operand is read canonical at its `k` (see the normalized
+/// form on [`crate::layouts::GLWE`]): the product reads every bit of its live
+/// limbs, so an operand whose canonical flag is clear is normalized first.
 pub trait GLWEMulConst<BE: Backend> {
     fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -122,9 +122,9 @@ pub trait GLWEMulConst<BE: Backend> {
 /// its encoded width cannot be passed here. Its `k` labels claimed precision
 /// for budget arithmetic only, and `max_k()` is the allocation, never consumed
 /// by compute. The ciphertext operand, a Torus element, is consumed at the
-/// `k` it declares and is expected normalized, hence canonical at it (see the
-/// normalized form on [`crate::layouts::GLWE`]); the convolution reads every
-/// bit of its live limbs and does not check.
+/// `k` it declares, canonical at it (see the normalized form on
+/// [`crate::layouts::GLWE`]): the convolution reads every bit of its live
+/// limbs, so an operand whose canonical flag is clear is normalized first.
 pub trait GLWEMulPlain<BE: Backend> {
     /// The right operand may be compact: a degree that is a power-of-two divisor
     /// of the module's, not below the backend floor, stands for its ring
@@ -151,9 +151,10 @@ pub trait GLWEMulPlain<BE: Backend> {
 
 /// Tensor products of GLWE ciphertexts.
 ///
-/// Both ciphertext operands are expected normalized, hence canonical at their
-/// `k` (see the normalized form on [`crate::layouts::GLWE`]); the convolution
-/// reads every bit of their live limbs and does not check.
+/// Both ciphertext operands are read canonical at their `k` (see the
+/// normalized form on [`crate::layouts::GLWE`]): the convolution reads every
+/// bit of their live limbs, so an operand whose canonical flag is clear is
+/// normalized first.
 pub trait GLWETensoring<BE: Backend> {
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where

@@ -363,6 +363,7 @@ impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -379,6 +380,7 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -393,6 +395,7 @@ pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     GLWE {
         base2k: ggsw.base2k,
         k: ggsw.k(),
+        canonical: true,
         data,
     }
 }
@@ -418,6 +421,7 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     GLWE {
         base2k: ggsw.base2k,
         k: ggsw.k(),
+        canonical: true,
         data,
     }
 }
@@ -427,7 +431,12 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -441,7 +450,12 @@ impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -453,7 +467,12 @@ pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = ggsw.base2k;
     let k = ggsw.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col);
-    GLWE { base2k, k, data }
+    GLWE {
+        base2k,
+        k,
+        canonical: true,
+        data,
+    }
 }
 
 pub trait GGSWAtViewMut<BE: Backend> {

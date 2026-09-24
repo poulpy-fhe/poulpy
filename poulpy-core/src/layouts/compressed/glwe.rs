@@ -302,6 +302,7 @@ where
         }
         res.set_base2k(other.base2k());
         self.fill_glwe_mask_from_seed(res, other.seed);
+        res.set_canonical(true);
     }
 }
 

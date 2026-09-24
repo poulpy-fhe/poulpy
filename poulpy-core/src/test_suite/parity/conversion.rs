@@ -255,7 +255,7 @@ where
             );
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "glwe_from_lwe rank={rank} k={k}");
+            assert_glwe_eq!(out_r, have, "glwe_from_lwe rank={rank} k={k}");
             let kt = LWESwitchingKeyLayout {
                 n: g.n,
                 base2k: g.base2k,

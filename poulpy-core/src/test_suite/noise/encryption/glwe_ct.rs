@@ -7,12 +7,13 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate, GLWESub,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPreparedFactory, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecret,
+        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::{GLWECompressed, GLWEDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -97,8 +98,7 @@ where
         );
         assert_canonical(&ct);
 
-        let noise_have: f64 = module
-            .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
+        let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
             .std()
             .log2();
         let noise_want: f64 = DEFAULT_SIGMA_XE.log2() - (k_ct as f64) + 0.5;
@@ -188,8 +188,7 @@ where
         module.decompress_glwe(&mut ct, &ct_compressed);
         assert_canonical(&ct);
 
-        let noise_have: f64 = module
-            .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
+        let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
             .std()
             .log2();
         let noise_want: f64 = DEFAULT_SIGMA_XE.log2() - (k_ct as f64) + 0.5;
@@ -252,7 +251,9 @@ where
         );
         assert_canonical(&ct);
 
-        let noise_have: f64 = module.glwe_noise(&ct, &pt, &sk_prepared, &mut scratch.borrow()).std().log2();
+        let noise_have: f64 = glwe_noise_checked(module, &ct, &pt, &sk_prepared, &mut scratch.borrow())
+            .std()
+            .log2();
         let noise_want: f64 = DEFAULT_SIGMA_XE.log2() - (k_ct as f64) + 0.5;
         assert!(
             noise_have <= noise_want,
@@ -301,7 +302,8 @@ where
             module
                 .glwe_noise_tmp_bytes(&glwe_infos)
                 .max(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos))
-                .max(module.glwe_public_key_generate_tmp_bytes(&glwe_infos)),
+                .max(module.glwe_public_key_generate_tmp_bytes(&glwe_infos))
+                .max(module.glwe_public_key_prepare_tmp_bytes(&glwe_infos)),
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
@@ -330,8 +332,7 @@ where
 
         let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&glwe_infos);
-        module.glwe_prepare(&mut pk_prepared.key, &pk.key);
-        pk_prepared.dist = pk.dist;
+        module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
 
         module.glwe_encrypt_pk(
             &mut ct,
@@ -344,8 +345,7 @@ where
         );
         assert_canonical(&ct);
 
-        let noise_have: f64 = module
-            .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
+        let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
             .std()
             .log2();
         let noise_want: f64 =

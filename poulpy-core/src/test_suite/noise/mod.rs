@@ -35,15 +35,19 @@ use crate::oep::{
     LWEKeyswitchImpl, SamplingImpl,
 };
 use crate::{
+    GLWEDecrypt, GLWENoise,
     api::TransferInto,
-    layouts::{GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, ModuleCoreAlloc},
+    layouts::{
+        GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext, GLWESecret,
+        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetBase2k,
+    },
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{
         Backend, DataView, HostBackend, HostDataMut, HostDataRef, HostStaged, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut,
-        ScalarZnxAsVecZnxBackendRef, ScratchArena, ScratchOwned, VecZnxBackendMut, VecZnxBackendRef,
+        ScalarZnxAsVecZnxBackendRef, ScratchArena, ScratchOwned, Stats, VecZnxBackendMut, VecZnxBackendRef,
     },
     oep::HalVecZnxImpl,
     test_suite::TestBackend as HalTestBackend,
@@ -129,6 +133,69 @@ where
     scratch.borrow()
 }
 
+/// Asserts that a GLWE flagged canonical is canonical at its `k`.
+pub fn assert_glwe_flag_honest<BE, R>(res: &R)
+where
+    BE: Backend<ZnxWord = i64>,
+    R: GLWEToBackendRef<BE>,
+{
+    let res = res.to_backend_ref();
+    if !res.is_canonical() {
+        return;
+    }
+    let (n, cols, size) = (res.data.n(), res.data.cols(), res.data.size());
+    let mut host = vec![0i64; n * cols * size];
+    BE::copy_view_to_host(res.data.data(), bytemuck::cast_slice_mut(&mut host));
+    let base2k: usize = res.base2k().into();
+    let k: usize = res.k().as_usize();
+    let live: usize = k.div_ceil(base2k);
+    let pad_mask: i64 = (1i64 << (live * base2k - k)) - 1;
+    let half: i64 = 1i64 << (base2k - 1);
+    let (mut in_range, mut no_bits_below_k, mut no_limbs_past_k) = (true, true, true);
+    for col in 0..cols {
+        for limb in 0..size {
+            let digits = &host[(limb * cols + col) * n..][..n];
+            if limb < live {
+                in_range &= digits.iter().all(|digit| (-half..=half).contains(digit));
+            } else {
+                no_limbs_past_k &= digits.iter().all(|&digit| digit == 0);
+            }
+            if limb + 1 == live {
+                no_bits_below_k &= digits.iter().all(|&digit| digit & pad_mask == 0);
+            }
+        }
+    }
+    assert!(in_range, "GLWE flagged canonical holds a digit outside the canonical range");
+    assert!(no_bits_below_k, "GLWE flagged canonical holds bits below its k");
+    assert!(no_limbs_past_k, "GLWE flagged canonical holds a non-zero limb past its k");
+}
+
+pub fn glwe_decrypt_checked<BE, M, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend<ZnxWord = i64>,
+    M: GLWEDecrypt<BE>,
+    R: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+{
+    assert_glwe_flag_honest::<BE, _>(res);
+    module.glwe_decrypt(res, pt, sk, scratch);
+}
+
+pub fn glwe_noise_checked<BE, M, R, P, S>(module: &M, res: &R, pt_want: &P, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
+where
+    BE: HostBackend<ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    M: GLWENoise<BE>,
+    R: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE>,
+    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+{
+    assert_glwe_flag_honest::<BE, _>(res);
+    module.glwe_noise(res, pt_want, sk, scratch)
+}
+
 pub fn upload_scalar_znx<BE: Backend>(
     src: &poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord>,
 ) -> poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -169,6 +236,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
         data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
         k: src.k,
         base2k: src.base2k,
+        canonical: src.canonical,
     }
 }
 

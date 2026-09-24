@@ -86,6 +86,7 @@ where
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
         move_vec_znx(&self.data, &mut dst.data);
+        dst.canonical = self.canonical;
     }
 }
 

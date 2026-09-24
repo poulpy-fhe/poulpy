@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
     glwe_prepare_right, glwe_tensor_apply_prepared_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -124,7 +124,7 @@ pub trait CKKSMulReference<BE: Backend> {
 
     fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + Sized,
+        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`

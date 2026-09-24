@@ -92,18 +92,36 @@ impl GLWEInfos for GLWELayout {
 /// hold digits in `[-2^(base2k - 1), 2^(base2k - 1)]`, the low
 /// `(base2k - k % base2k) % base2k` bits of the bottom live limb are zero and
 /// every limb past the live ones is zero. That is what normalizing at `k`
-/// produces, so every operation in this crate returns a normalized result and
-/// expects normalized operands; `GLWENormalize` normalizes a ciphertext whose
-/// data was written by hand. The convolving operations (`GLWEMulConst`,
-/// `GLWEMulPlain`, `GLWETensoring`, the linear transformations) read every bit
-/// of the live limbs, so there an unnormalized operand changes the result by
-/// its bits below `2^-k`. Nothing checks this at run time.
-#[derive(PartialEq, Eq, Clone)]
+/// produces.
+///
+/// # Canonical flag
+///
+/// [`GLWE::is_canonical`] states that the data is in normalized form.
+/// Normalizing operations set it, additions and subtractions clear it, digit
+/// permutations keep the source's, lowering `k` clears it. Operations that read
+/// the digits through a DFT normalize a flag-clear operand first. The flag is
+/// not serialized (a loaded GLWE is flagged canonical) and equality ignores it.
+/// Only a `GLWE` stores it: the GLWE views of GGLWE and GGSW rows, tensors and
+/// plaintexts report it set and drop a clear, so their data must stay canonical;
+/// normalize after writing a flag-clearing result into one.
+#[derive(Clone)]
 pub struct GLWE<D: Data, W: ZnxWord> {
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
+    pub(crate) canonical: bool,
 }
+
+impl<D: Data, W: ZnxWord> PartialEq for GLWE<D, W>
+where
+    VecZnx<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data && self.k == other.k && self.base2k == other.base2k
+    }
+}
+
+impl<D: Data, W: ZnxWord> Eq for GLWE<D, W> where VecZnx<D, W>: Eq {}
 
 pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
@@ -122,13 +140,14 @@ impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
 
 impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
+        self.canonical &= k >= self.k;
         self.k = k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for &mut GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
-        self.k = k
+        (**self).set_k(k)
     }
 }
 
@@ -136,6 +155,16 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
     /// Returns a shared reference to the underlying [`VecZnx`].
     pub fn data(&self) -> &VecZnx<D, W> {
         &self.data
+    }
+
+    pub fn is_canonical(&self) -> bool {
+        self.canonical
+    }
+
+    /// For data written directly into the limbs, or to feed tolerated
+    /// non-canonical digits to a DFT operation without its normalization.
+    pub fn set_canonical(&mut self, canonical: bool) {
+        self.canonical = canonical
     }
 }
 
@@ -177,6 +206,7 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
             data: self.data.to_owned_deep(),
             base2k: self.base2k,
             k: self.k,
+            canonical: self.canonical,
         }
     }
 }
@@ -191,6 +221,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
             data: self.data.to_host_owned::<BE>(),
             base2k: self.base2k,
             k: self.k,
+            canonical: self.canonical,
         }
     }
 
@@ -215,6 +246,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
             data: VecZnx::from_shape(data, shape),
             base2k: self.base2k,
             k: self.k,
+            canonical: self.canonical,
         }
     }
 }
@@ -265,6 +297,7 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
             ),
             base2k,
             k,
+            canonical: true,
         }
     }
 
@@ -292,6 +325,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
         self.data.read_from(reader)?;
+        self.canonical = true;
         Ok(())
     }
 }
@@ -306,6 +340,10 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
 
 pub trait GLWEToBackendRef<BE: Backend>: Sized {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE>;
+
+    fn is_canonical(&self) -> bool {
+        self.to_backend_ref().is_canonical()
+    }
 }
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWE<D, BE::ZnxWord>
@@ -316,6 +354,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: self.canonical,
             data: self.data.to_backend_ref(),
         }
     }
@@ -325,6 +364,7 @@ pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
+        canonical: glwe.canonical,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&glwe.data),
     }
 }
@@ -339,12 +379,17 @@ pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
+        canonical: glwe.canonical,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&glwe.data),
     }
 }
 
 pub trait GLWEToBackendMut<BE: Backend>: GLWEToBackendRef<BE> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE>;
+
+    /// Sets the owner's canonical flag; a flag set on the view returned by
+    /// [`Self::to_backend_mut`] is lost. Types without a flag ignore it.
+    fn set_canonical(&mut self, canonical: bool);
 }
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWE<D, BE::ZnxWord>
@@ -355,8 +400,13 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: self.canonical,
             data: self.data.to_backend_mut(),
         }
+    }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.canonical = canonical
     }
 }
 
@@ -370,12 +420,17 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'b>, BE
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         glwe_backend_mut_from_mut::<BE>(self)
     }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.canonical = canonical
+    }
 }
 
 pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendMut<'a, BE> {
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
+        canonical: glwe.canonical,
         data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data),
     }
 }

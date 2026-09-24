@@ -81,6 +81,8 @@ where
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner)
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 /// Backend-owned CKKS plaintext: the backend's buffer type and its coefficient word.
@@ -125,6 +127,8 @@ impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE>
             &mut self.inner.inner,
         )
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 impl<D: Data, W: ZnxWord> Deref for CKKSPlaintext<D, W> {

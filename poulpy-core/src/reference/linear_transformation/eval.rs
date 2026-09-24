@@ -133,7 +133,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + crate::api::GLWENormalize<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -172,6 +173,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
         + GaloisElement
+        + crate::api::GLWENormalize<BE>
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
@@ -243,6 +245,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     );
 
     glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
+    res.set_canonical(true);
 }
 
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.

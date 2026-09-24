@@ -315,12 +315,14 @@ impl<'a, BE: Backend + 'a> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<
 }
 
 macro_rules! impl_glwe_to_backend {
-    ($name:ident) => {
+    ($name:ident, |$this:ident| $canonical:expr, |$this_mut:ident, $flag:ident| $set_canonical:expr) => {
         impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for $name<'a, BE> {
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+                let $this = self;
                 GLWE {
                     base2k: self.inner.base2k,
                     k: self.inner.k,
+                    canonical: $canonical,
                     data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
                 }
             }
@@ -328,25 +330,37 @@ macro_rules! impl_glwe_to_backend {
 
         impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for $name<'a, BE> {
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+                let $this = &*self;
+                let canonical = $canonical;
                 GLWE {
                     base2k: self.inner.base2k,
                     k: self.inner.k,
+                    canonical,
                     data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
                 }
+            }
+
+            fn set_canonical(&mut self, $flag: bool) {
+                let $this_mut = self;
+                $set_canonical
             }
         }
     };
 }
 
-impl_glwe_to_backend!(GLWEViewMut);
-impl_glwe_to_backend!(GLWEPlaintextViewMut);
-impl_glwe_to_backend!(GLWETensorViewMut);
+impl_glwe_to_backend!(GLWEViewMut, |this| this.inner.canonical, |this, canonical| this
+    .inner
+    .canonical =
+    canonical);
+impl_glwe_to_backend!(GLWEPlaintextViewMut, |_this| true, |_this, _canonical| ());
+impl_glwe_to_backend!(GLWETensorViewMut, |_this| true, |_this, _canonical| ());
 
 impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for GLWEViewRef<'a, BE> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.inner.base2k,
             k: self.inner.k,
+            canonical: self.inner.canonical,
             data: vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
         }
     }

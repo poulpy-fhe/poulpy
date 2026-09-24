@@ -6,7 +6,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::{
-    Distribution, EncryptionInfos, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretPreparedFactory,
@@ -42,9 +42,12 @@ pub(crate) fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBacken
 pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
     module: &Module<BE>,
     infos: &A,
-) -> usize {
+) -> usize
+where
+    Module<BE>: GLWENormalize<BE>,
+{
     assert_eq!(infos.n(), module.n() as u32);
-    BE::glwe_encrypt_sk_tmp_bytes(module, infos)
+    BE::glwe_encrypt_sk_tmp_bytes(module, infos).max(module.glwe_normalize_tmp_bytes())
 }
 
 pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
@@ -60,6 +63,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
     E: EncryptionInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
+    Module<BE>: GLWENormalize<BE>,
 {
     {
         let sk_ref = sk.to_backend_ref();
@@ -80,6 +84,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             "insufficient scratch for GLWE public key generation"
         );
         BE::glwe_encrypt_zero_sk(module, res, sk, enc_infos, source_xe, source_xa, scratch);
+        module.glwe_normalize_assign(res, scratch);
     }
     *res.dist_mut() = *sk.dist();
 }

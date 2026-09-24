@@ -7,7 +7,7 @@
 //! copy) is supplied by the scheme through [`BSGSOps`], which owns all precision
 //! bookkeeping and normalization.
 
-use crate::layouts::GetTensorKey;
+use crate::{GLWEBytesOf, GLWENormalize, layouts::GetTensorKey};
 use anyhow::Result;
 use poulpy_hal::{
     api::{
@@ -41,6 +41,8 @@ pub trait GiantStepTensorBounds<BE: Backend>:
     + VecZnxNegate<BE>
     + VecZnxNormalizeAssign<BE>
     + VecZnxNormalizeTmpBytes
+    + GLWENormalize<BE>
+    + GLWEBytesOf<BE>
 {
 }
 
@@ -60,6 +62,8 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
         + VecZnxNegate<BE>
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
 {
 }
 

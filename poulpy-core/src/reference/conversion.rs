@@ -352,6 +352,9 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
         );
     }
 
+    // LWE limbs carry no flag and are canonical.
+    glwe.set_canonical(true);
+    res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;

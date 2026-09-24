@@ -48,7 +48,11 @@ where
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxIdftApply<BE>,
+        + poulpy_hal::api::VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftApply<BE>
+        + poulpy_hal::api::VmpApplyDftToDft<BE>
+        + poulpy_hal::api::VmpApplyDftToDftAdd<BE>,
 {
     fn glwe_external_product_dft_fill_tmp_bytes_reference<A, G>(&self, a_infos: &A, ggsw_infos: &G) -> usize
     where

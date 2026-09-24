@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::{
     GLWENormalize, ScratchArenaTakeCore,
     api::GLWENoise,
-    decryption::{GLWEDecrypt, glwe_decrypt_backend_inner},
+    decryption::{GLWEDecrypt, glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
@@ -45,10 +45,10 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     assert!(
-        scratch.available() >= module.glwe_noise_tmp_bytes(res_backend),
+        scratch.available() >= glwe_noise_body_tmp_bytes(module, res_backend),
         "scratch.available(): {} < GLWENoise::glwe_noise_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_noise_tmp_bytes(res_backend)
+        glwe_noise_body_tmp_bytes(module, res_backend)
     );
 
     let (mut pt_have, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res_backend);
@@ -86,10 +86,7 @@ where
     where
         A: GLWEInfos,
     {
-        let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
-        let lvl_1: usize = self.glwe_normalize_tmp_bytes().max(self.glwe_decrypt_tmp_bytes(infos));
-
-        lvl_0 + lvl_1
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(infos)) + glwe_noise_body_tmp_bytes(self, infos)
     }
 
     fn glwe_noise<R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
@@ -100,9 +97,35 @@ where
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        let res_backend = res.to_backend_ref();
+        assert!(
+            scratch.available() >= self.glwe_noise_tmp_bytes(res),
+            "scratch.available(): {} < GLWENoise::glwe_noise_tmp_bytes: {}",
+            scratch.available(),
+            self.glwe_noise_tmp_bytes(res)
+        );
+        let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
+        let res = if res.is_canonical() {
+            res.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut res_tmp, res, &mut scratch.borrow());
+            res_tmp.to_backend_ref()
+        };
         let pt_want_backend = pt_want.to_backend_ref();
         let sk_backend = sk_prepared.to_backend_ref();
-        glwe_noise_backend_inner(self, &res_backend, &pt_want_backend, &sk_backend, scratch)
+        glwe_noise_backend_inner(self, &res, &pt_want_backend, &sk_backend, &mut scratch)
     }
+}
+
+pub(crate) fn glwe_noise_body_tmp_bytes<M, BE, A>(module: &M, infos: &A) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE> + GLWENormalize<BE> + ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    A: GLWEInfos,
+{
+    let lvl_0: usize = module.glwe_plaintext_bytes_of_from_infos(infos);
+    let lvl_1: usize = module
+        .glwe_normalize_tmp_bytes()
+        .max(glwe_decrypt_body_tmp_bytes::<M, _>(module, infos));
+
+    lvl_0 + lvl_1
 }
