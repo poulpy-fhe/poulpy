@@ -120,7 +120,7 @@ where
             k: 16usize.into(),
         };
         let mut lwe_host = host.lwe_alloc_from_infos(&lwe_layout);
-        lwe_host.fill_uniform(4, &mut Source::new([77; 32]));
+        super::fill_digits(lwe_host.mask_mut().raw_mut(), 4, &mut Source::new([77; 32]));
         let mut lwe_r = reference.lwe_alloc_from_infos(&lwe_layout);
         lwe_host.transfer_into(&mut lwe_r);
         let mut lwe_t = tested.lwe_alloc_from_infos(&lwe_layout);

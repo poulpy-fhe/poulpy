@@ -4,16 +4,13 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN, ScratchOwnedBorrow},
-    layouts::{
-        Backend, Data, DataViewMut, FillUniform, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut,
-        ZnxViewMut,
-    },
+    layouts::{Backend, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
-    GLWELinearTransformations,
+    GLWELinearTransformations, GLWEMaskFill,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendRef,
@@ -22,7 +19,10 @@ use crate::{
         prepared::{GLWEAutomorphismKeyPreparedFactory, LinearTransformationBabySteps, PreparedDiagonal},
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
-    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+    test_suite::{
+        keys::fill_by_digit,
+        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+    },
 };
 
 /// Scheme-independent test diagonal: its storage represents an integer polynomial.
@@ -90,7 +90,7 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR>,
+    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
 {
     assert_eq!(r.n(), t.n());
@@ -135,7 +135,7 @@ where
                 for rotation in [1, 3, 4] {
                     let p = r.galois_element(rotation);
                     let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
-                    key_r.key.fill_uniform(base, &mut source);
+                    fill_by_digit(r, &mut key_r, 1, &mut source);
                     key_r.p = p;
                     let mut key_t = t.glwe_automorphism_key_alloc_from_infos(&key);
                     key_r.transfer_into(&mut key_t);

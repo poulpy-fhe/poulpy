@@ -2,12 +2,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
 };
 
 use crate::layouts::{Base2K, Degree, TorusPrecision};
@@ -275,15 +271,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWE<D, W> {
             self.body,
             self.mask
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for LWE<D, W>
-where
-    VecZnx<D, W>: FillUniform,
-{
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.mask.fill_uniform(log_bound, source);
     }
 }
 

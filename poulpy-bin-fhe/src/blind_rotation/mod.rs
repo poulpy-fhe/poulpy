@@ -67,6 +67,3 @@ pub use lut::*;
 /// Backend-generic test bodies, instantiated by the backend crates through
 /// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
 pub mod test_suite;
-
-#[cfg(test)]
-mod serialization_tests;

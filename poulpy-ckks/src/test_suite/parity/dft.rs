@@ -10,7 +10,10 @@ use crate::{
     oep::{CKKSEncodingImpl, DFTImpl, DFTMatrixImpl},
     test_suite::CKKSTestParams,
 };
-use poulpy_core::layouts::{GLWEAutomorphismKeyPreparedFactory, GLWELayout};
+use poulpy_core::{
+    GLWEMaskFill,
+    layouts::{GLWEAutomorphismKeyPreparedFactory, GLWELayout},
+};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 
@@ -39,7 +42,7 @@ fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
 where
     B: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B>,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     let b = params.base2k;
     let k = 8 * b + 7;
@@ -275,8 +278,8 @@ where
     BR: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
-    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(

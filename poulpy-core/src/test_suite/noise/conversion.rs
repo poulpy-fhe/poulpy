@@ -2,7 +2,7 @@ use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
-    layouts::{FillUniform, Module, ReaderFrom, ScratchOwned, ZnxView},
+    layouts::{Module, ReaderFrom, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -12,9 +12,9 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
-    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
-    LWEToGLWESwitchingKeyEncryptSk,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE,
+    GLWEMaskFill, GLWENoise, GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE,
+    LWEMatrixDecrypt, LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
         GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
@@ -91,7 +91,12 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWENormalize<BE> + GLWESecretPreparedFactory<BE> + GLWENoise<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWENormalize<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWENoise<BE>
+        + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
@@ -153,7 +158,7 @@ where
             let mut data: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();
             ct_in.data().decode_vec_float(ct_in.base2k().into(), 0, &mut data);
 
-            ct_out.fill_uniform(ct_out.base2k().into(), &mut source_xa);
+            module.fill_glwe_mask_from_source(bases[1], &mut ct_out, 0, rank + 1, &mut source_xa);
             module.glwe_normalize(&mut ct_out, &ct_in, &mut scratch.borrow());
 
             let mut data_conv: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();

@@ -4,7 +4,10 @@
 //! plaintexts are compared after downloading and decoding their canonical
 //! coefficients, independently of either backend's floating-point decoder.
 
-use poulpy_core::layouts::{GLWELayout, IntPolyInfos, LWEInfos};
+use poulpy_core::{
+    GLWEMaskFill,
+    layouts::{GLWELayout, IntPolyInfos, LWEInfos},
+};
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
@@ -133,6 +136,7 @@ fn coefficient_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<Sn
 where
     B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
+    Module<B>: GLWEMaskFill<B>,
 {
     let mut observations = Vec::new();
     for (k, log_delta) in [(31usize, 20usize), (65, 40), (91, 70)] {
@@ -226,6 +230,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
 {
     assert!(params.n >= 8 && params.n.is_power_of_two());
     let reference = encoding_transforms::<BR, F>(r, params.n);
@@ -248,6 +254,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     F: PaCoScalar,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
 {
     for order in [PaCoSlotOrder::Natural, PaCoSlotOrder::BitRevLow] {
         let plan = PaCoPlan::new(params.log_n(), 2, 2, 17)
@@ -340,6 +348,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     F: ShipScalar,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
 {
     let plan = ShipPlan::new(params.log_n(), 4, 40, 3, 2, 2, 2, 2).unwrap();
     let base2k = params.base2k;

@@ -3,11 +3,13 @@ use crate::{
     CKKSInfos, CKKSLayout,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
 };
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
+use poulpy_core::{
+    GLWEMaskFill,
+    layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos},
+};
 use poulpy_hal::{
-    layouts::{Backend, FillUniform, Module, ScratchArena, ScratchOwned, ZnxViewMut},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
     source::Source,
-    test_suite::{alloc_host_vec_znx, upload_vec_znx},
 };
 
 /// Observable CKKS representation. Prepared backend storage is never compared.
@@ -49,34 +51,17 @@ where
     }
 }
 
-fn fixture_data<B: Backend<ZnxWord = i64>>(
-    layout: &CKKSLayout,
-    cols: usize,
-    seed: u8,
-) -> poulpy_hal::layouts::VecZnx<B::OwnedBuf, i64> {
-    let b = layout.base2k().as_usize();
-    let k = layout.k().as_usize();
-    let size = k.div_ceil(b);
-    let mut host = alloc_host_vec_znx::<B>(layout.n().as_usize(), cols, size);
-    host.fill_uniform(b, &mut Source::new([seed; 32]));
-    let pad = (b - k % b) % b;
-    if pad != 0 {
-        for col in 0..cols {
-            for value in host.at_mut(col, size - 1) {
-                *value &= !0i64 << pad;
-            }
-        }
-    }
-    upload_vec_znx::<B>(&host)
-}
-
 pub(crate) fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(
     module: &Module<B>,
     layout: &CKKSLayout,
     seed: u8,
-) -> CKKSCiphertextOwned<B> {
+) -> CKKSCiphertextOwned<B>
+where
+    Module<B>: GLWEMaskFill<B>,
+{
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
-    *out.data_mut() = fixture_data::<B>(layout, layout.rank().as_usize() + 1, seed);
+    let cols = layout.rank().as_usize() + 1;
+    module.fill_glwe_mask_from_source(layout.base2k().as_usize(), &mut out, 0, cols, &mut Source::new([seed; 32]));
     out
 }
 
@@ -84,9 +69,12 @@ pub(crate) fn fixture_plaintext<B: Backend<ZnxWord = i64>>(
     module: &Module<B>,
     layout: &CKKSLayout,
     seed: u8,
-) -> CKKSPlaintextOwned<B> {
+) -> CKKSPlaintextOwned<B>
+where
+    Module<B>: GLWEMaskFill<B>,
+{
     let mut out = module.ckks_plaintext_alloc_from_infos(layout);
-    *out.data_mut() = fixture_data::<B>(layout, 1, seed);
+    module.fill_glwe_mask_from_source(layout.base2k().as_usize(), &mut out, 0, 1, &mut Source::new([seed; 32]));
     out
 }
 

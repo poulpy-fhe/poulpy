@@ -65,8 +65,8 @@ pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
 /// `MatZnx`) and keep all intermediate layouts backend-local.
 ///
 /// Pinned to `ZnxWord = i64`: the suites drive `encode_*`/`decode_*` and
-/// `FillUniform`, which are i64-only. A backend with a narrower coefficient
-/// word needs its own suites.
+/// `vec_znx_fill_uniform_source`, which are i64-only. A backend with a narrower
+/// coefficient word needs its own suites.
 pub trait TestBackend: Backend<ZnxWord = i64> {}
 
 impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}

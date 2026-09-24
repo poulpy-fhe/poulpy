@@ -1,9 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::{
-    layouts::{Data, HostDataMut, HostDataRef},
-    source::Source,
-};
+use crate::layouts::{Data, HostDataMut, HostDataRef};
 use bytemuck::Pod;
 use rand_distr::num_traits::Zero;
 
@@ -298,17 +295,4 @@ where
     fn zero(&mut self);
     /// Sets all coefficients of limb `j` of column `i` to zero.
     fn zero_at(&mut self, i: usize, j: usize);
-}
-
-/// Fill a polynomial container with uniformly distributed random coefficients.
-pub trait FillUniform {
-    /// Fills all coefficients with values drawn uniformly from
-    /// `[-2^(log_bound-1), 2^(log_bound-1))`.
-    ///
-    /// When `log_bound == 64`, all 64 bits are used (full `i64` range).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `log_bound == 0`.
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source);
 }

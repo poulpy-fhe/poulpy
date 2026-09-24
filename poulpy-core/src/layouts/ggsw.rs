@@ -1,10 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, ReaderFrom, WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
+    MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 use std::{
     fmt,
@@ -357,12 +354,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSW<D, W> {
             self.dsize().0,
             self.data
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGSW<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

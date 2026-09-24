@@ -3,7 +3,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
+    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
         Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Backend, FillUniform, HostBackend, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -44,6 +44,8 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
+        + GLWEMaskFill<BE>
+        + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -103,9 +105,15 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
     brk_prepared.prepare(&module, &brk, &mut scratch.borrow());
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_infos);
-    res.data_mut().fill_uniform(glwe_infos.base2k().as_usize(), &mut source_xa);
+    module.fill_glwe_mask_from_source(
+        glwe_infos.base2k().as_usize(),
+        &mut res,
+        0,
+        glwe_infos.rank.as_usize() + 1,
+        &mut source_xa,
+    );
     let mut lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
-    lwe.fill_uniform(lwe_infos.base2k().as_usize(), &mut source_xa);
+    module.fill_lwe_mask_from_source(lwe_infos.base2k().as_usize(), &mut lwe, &mut source_xa);
 
     let mut f_vec: Vec<i64> = vec![0i64; message_modulus];
     f_vec.iter_mut().enumerate().for_each(|(i, x)| *x = 2 * i as i64 + 1);

@@ -3,21 +3,22 @@
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_gglwe};
 use crate::{
     GGLWEExternalProduct, GGSWAutomorphism, GGSWExpandRows, GGSWExternalProduct, GGSWFromGGLWE, GGSWKeyswitch,
-    GLWEAutomorphismKeyAutomorphism,
+    GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, ModuleCoreAlloc,
-        Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWLayout,
+        GLWEAutomorphismKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GGLWEPreparedFactory, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedFactory, GGLWEToGGSWKeyPreparedToBackendRef,
             GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyPreparedFactory,
             GLWEAutomorphismKeyPreparedToBackendRef,
         },
     },
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, FillUniform, HostDataMut, Module, ScratchOwned},
+    layouts::{DataView, HostDataMut, Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -28,7 +29,7 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEExternalProduct<BR> + GGSWExternalProduct<BR> + GGSWPreparedFactory<BR>,
+    Module<BR>: GGLWEExternalProduct<BR> + GGSWExternalProduct<BR> + GGSWPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GGLWEExternalProduct<BT> + GGSWExternalProduct<BT> + GGSWPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -62,7 +63,11 @@ where
                 stride: 1,
             };
             let mut key_r = r.ggsw_alloc_from_infos(&k);
-            key_r.fill_uniform(b, &mut source);
+            for row in 0..k.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    r.fill_glwe_mask_from_source(b, &mut key_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                }
+            }
             let mut key_t = t.ggsw_alloc_from_infos(&k);
             key_r.transfer_into(&mut key_t);
             let mut prep_r = r.ggsw_prepared_alloc_from_infos(&k);
@@ -80,11 +85,16 @@ where
             macro_rules! check {
                 ($alloc:ident, $infos:ident, $apply:ident, $assign:ident, $query:ident) => {{
                     let mut a_r = r.$alloc(&$infos);
-                    a_r.fill_uniform(b, &mut source);
+                    let mut out_r = r.$alloc(&$infos);
+                    let (rows, cols_in, cols_out) = (a_r.data.rows(), a_r.data.cols_in(), a_r.data.cols_out());
+                    for row in 0..rows {
+                        for col in 0..cols_in {
+                            r.fill_glwe_mask_from_source(b, &mut a_r.at_view_mut(row, col), 0, cols_out, &mut source);
+                            r.fill_glwe_mask_from_source(b, &mut out_r.at_view_mut(row, col), 0, cols_out, &mut source);
+                        }
+                    }
                     let mut a_t = t.$alloc(&$infos);
                     a_r.transfer_into(&mut a_t);
-                    let mut out_r = r.$alloc(&$infos);
-                    out_r.fill_uniform(b, &mut source);
                     let mut out_t = t.$alloc(&$infos);
                     out_r.transfer_into(&mut out_t);
                     r.$apply(
@@ -136,7 +146,11 @@ where
             r.ggsw_zero(&mut prep_r);
             t.ggsw_zero(&mut prep_t);
             let mut a_r = r.ggsw_alloc_from_infos(&g);
-            a_r.fill_uniform(b, &mut source);
+            for row in 0..g.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    r.fill_glwe_mask_from_source(b, &mut a_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                }
+            }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             r.ggsw_external_product_assign(
@@ -176,7 +190,8 @@ where
         + GGSWExpandRows<BR>
         + GGLWEPreparedFactory<BR>
         + GLWEAutomorphismKeyPreparedFactory<BR>
-        + GGLWEToGGSWKeyPreparedFactory<BR>,
+        + GGLWEToGGSWKeyPreparedFactory<BR>
+        + GLWEMaskFill<BR>,
     Module<BT>: GGSWAutomorphism<BT>
         + GGSWKeyswitch<BT>
         + GLWEAutomorphismKeyAutomorphism<BT>
@@ -242,7 +257,7 @@ where
                 &mut poisoned_scratch::<BT>(t.gglwe_prepare_tmp_bytes(&k)).borrow(),
             );
             let mut auto_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
-            auto_r.key.fill_uniform(b, &mut source);
+            fill_by_digit(r, &mut auto_r, 1, &mut source);
             auto_r.p = -5;
             let mut auto_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
             auto_r.transfer_into(&mut auto_t);
@@ -259,7 +274,9 @@ where
                 &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_prepare_tmp_bytes(&ak)).borrow(),
             );
             let mut tensor_r = r.gglwe_to_ggsw_key_alloc_from_infos(&tk);
-            tensor_r.fill_uniform(b, &mut source);
+            for key in tensor_r.keys.iter_mut() {
+                fill_by_digit(r, key, 1, &mut source);
+            }
             let mut tensor_t = t.gglwe_to_ggsw_key_alloc_from_infos(&tk);
             tensor_r.transfer_into(&mut tensor_t);
             let mut tensorp_r = r.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tk);
@@ -279,13 +296,21 @@ where
             let key_view_r = GGLWEPreparedToBackendRef::to_backend_ref(&keyp_r);
             let key_view_t = GGLWEPreparedToBackendRef::to_backend_ref(&keyp_t);
             let mut a_r = r.ggsw_alloc_from_infos(&g);
-            a_r.fill_uniform(b, &mut source);
+            for row in 0..g.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    r.fill_glwe_mask_from_source(b, &mut a_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                }
+            }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             macro_rules! check {
                 ($apply:ident, $assign:ident, $query:ident, $kr:ident, $kt:ident) => {{
                     let mut out_r = r.ggsw_alloc_from_infos(&g);
-                    out_r.fill_uniform(b, &mut source);
+                    for row in 0..g.dnum.as_usize() {
+                        for col in 0..rank + 1 {
+                            r.fill_glwe_mask_from_source(b, &mut out_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                        }
+                    }
                     let mut out_t = t.ggsw_alloc_from_infos(&g);
                     out_r.transfer_into(&mut out_t);
                     r.$apply(
@@ -340,7 +365,11 @@ where
             // A destination with fewer gadget rows must only write its own rows.
             let short = GGSWLayout { dnum: Dnum(2), ..g };
             let mut short_r = r.ggsw_alloc_from_infos(&short);
-            short_r.fill_uniform(b, &mut source);
+            for row in 0..short.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    r.fill_glwe_mask_from_source(b, &mut short_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                }
+            }
             let mut short_t = t.ggsw_alloc_from_infos(&short);
             short_r.transfer_into(&mut short_t);
             r.ggsw_keyswitch(
@@ -365,7 +394,7 @@ where
             );
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
             let mut out_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
-            out_r.key.fill_uniform(b, &mut source);
+            fill_by_digit(r, &mut out_r, 1, &mut source);
             out_r.transfer_into(&mut out_t);
             r.glwe_automorphism_key_automorphism(
                 &mut out_r,
@@ -406,7 +435,11 @@ where
             let mut a_t = t.gglwe_alloc_from_infos(&h);
             a.transfer_into(&mut a_t);
             let mut out_r = r.ggsw_alloc_from_infos(&g);
-            out_r.fill_uniform(b, &mut source);
+            for row in 0..g.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    r.fill_glwe_mask_from_source(b, &mut out_r.at_view_mut(row, col), 0, rank + 1, &mut source);
+                }
+            }
             let mut out_t = t.ggsw_alloc_from_infos(&g);
             out_r.transfer_into(&mut out_t);
             r.ggsw_from_gglwe(

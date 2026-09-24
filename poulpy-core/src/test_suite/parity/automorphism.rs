@@ -2,20 +2,23 @@
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{FillUniform, HostDataMut, Module, ScratchOwned},
+    layouts::{HostDataMut, Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
-    GLWEAutomorphism,
+    GLWEAutomorphism, GLWEMaskFill,
     api::TransferInto,
     layouts::{
         BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
         TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+    test_suite::{
+        keys::fill_by_digit,
+        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+    },
 };
 
 /// Allocates an automorphism key on the reference module, filled with noise.
@@ -27,10 +30,10 @@ fn ref_key<BR>(
 ) -> BackendGLWEAutomorphismKey<BR>
 where
     BR: ParityBackend,
-    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMaskFill<BR>,
 {
     let mut key = module_ref.glwe_automorphism_key_alloc_from_infos(infos);
-    key.key.fill_uniform(infos.base2k.into(), source);
+    fill_by_digit(module_ref, &mut key, 1, source);
     key.p = p;
     key
 }
@@ -45,7 +48,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEAutomorphism<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
+    Module<BR>: GLWEAutomorphism<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWEAutomorphism<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,

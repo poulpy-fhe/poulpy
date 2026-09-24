@@ -3,15 +3,12 @@ use std::{
     marker::PhantomData,
 };
 
-use rand_core::Rng;
-
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
-    source::Source,
 };
 
 /// A single-limb polynomial vector in `Z[X]/(X^N + 1)`.
@@ -168,27 +165,6 @@ impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
     }
     fn zero_at(&mut self, i: usize, j: usize) {
         self.at_mut(i, j).fill(W::zero());
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for ScalarZnx<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
-        assert!(
-            log_bound <= W::BITS,
-            "log_bound {log_bound} exceeds the {}-bit coefficient word",
-            W::BITS
-        );
-        if log_bound == W::BITS {
-            source.fill_bytes(self.data.as_mut());
-            return;
-        }
-        let mask: u64 = (1u64 << log_bound) - 1;
-        let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
-            let r = source.next_u64() & mask;
-            *x = W::from_i64(((r << shift) as i64) >> shift);
-        }
     }
 }
 

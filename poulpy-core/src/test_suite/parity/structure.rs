@@ -1,7 +1,7 @@
 //! Trace, packing, relinearization and tensor-secret parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
 use crate::{
-    Distribution, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
+    Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretTensorFactory,
@@ -11,10 +11,11 @@ use crate::{
             GLWETensorKeyPreparedFactory,
         },
     },
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{FillUniform, HostDataMut, Module, ScratchOwned, ZnxViewMut},
+    layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -27,7 +28,7 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
+    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWETrace<BT> + GLWEPacking<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -55,7 +56,7 @@ where
         let mut keys_t = HashMap::new();
         for p in r.glwe_pack_galois_elements() {
             let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&k);
-            key_r.key.fill_uniform(b - 1, &mut source);
+            fill_by_digit(r, &mut key_r, 1, &mut source);
             key_r.p = p;
             let mut key_t = t.glwe_automorphism_key_alloc_from_infos(&k);
             key_r.transfer_into(&mut key_t);
@@ -332,7 +333,8 @@ where
         + GLWETensorKeyPreparedFactory<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWESecretTensorFactory<BR>
-        + GLWESecretTensorPreparedFactory<BR>,
+        + GLWESecretTensorPreparedFactory<BR>
+        + GLWEMaskFill<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
@@ -389,19 +391,12 @@ where
                 rank: Rank(rank as u32),
             };
             let mut a_r = r.glwe_tensor_alloc_from_infos(&g);
-            a_r.fill_uniform(b, &mut source);
-            let pad = (b - precision % b) % b;
-            if pad != 0 {
-                for col in 0..a_r.data.cols() {
-                    for x in a_r.data.at_mut(col, precision.div_ceil(b) - 1) {
-                        *x &= !0i64 << pad;
-                    }
-                }
-            }
+            let cols = a_r.data.cols();
+            r.fill_glwe_mask_from_source(b, &mut a_r, 0, cols, &mut source);
             let mut a_t = t.glwe_tensor_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             let mut pt_r = r.glwe_plaintext_alloc_from_infos(&g);
-            pt_r.fill_uniform(b, &mut source);
+            r.fill_glwe_mask_from_source(b, &mut pt_r, 0, 1, &mut source);
             let mut pt_t = t.glwe_plaintext_alloc_from_infos(&g);
             pt_r.transfer_into(&mut pt_t);
             r.glwe_tensor_decrypt(
@@ -436,7 +431,7 @@ where
                     rank: g.rank,
                 };
                 let mut key_r = r.glwe_tensor_key_alloc_from_infos(&key);
-                key_r.fill_uniform(b, &mut source);
+                fill_by_digit(r, &mut key_r, 1, &mut source);
                 let mut key_t = t.glwe_tensor_key_alloc_from_infos(&key);
                 key_r.transfer_into(&mut key_t);
                 let mut kp_r = r.alloc_tensor_key_prepared_from_infos(&key);

@@ -401,14 +401,15 @@ poulpy_core::core_backend_test_suite!(
 
 #[test]
 fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
-    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes};
-    use poulpy_hal::layouts::{FillUniform, HostBytesBackend, ScratchOwned, VecZnx};
+    use poulpy_hal::api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes,
+    };
+    use poulpy_hal::layouts::ScratchOwned;
     use poulpy_hal::source::Source;
-    use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+    use poulpy_hal::test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 
     let n = 8usize;
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(n as u64);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
     let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(4));
     let base2k = 52usize;
     let mut source = Source::new([3u8; 32]);
@@ -419,10 +420,15 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             if k / base2k + 1 > size {
                 continue;
             }
-            let mut a: VecZnx<AlignedBuf, i64> = module_host.vec_znx_alloc(module_host.n(), 1, size);
-            a.fill_uniform(base2k, &mut source);
-            let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(module_host.n(), 1, size));
+            let mut a_be = module.vec_znx_alloc(n, 1, size);
+            module.vec_znx_fill_uniform_source(
+                base2k,
+                size * base2k,
+                &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut a_be),
+                0,
+                &mut source,
+            );
+            let mut want_be = module.vec_znx_alloc(n, 1, size);
             module.vec_znx_rsh(
                 base2k,
                 k,
@@ -432,7 +438,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 0,
                 &mut scratch.borrow(),
             );
-            let mut got_be = upload_vec_znx::<NTT4x30Ref>(&a);
+            let mut got_be = a_be.clone();
             module.vec_znx_rsh_assign(
                 base2k,
                 k,
@@ -464,6 +470,25 @@ fn assert_f64_word_containers_are_eq() {
 #[cfg(feature = "enable-core")]
 #[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
+
+#[test]
+fn test_hal_serialization_fft64_ref() {
+    poulpy_hal::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(1024));
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_core_serialization_fft64_ref() {
+    poulpy_core::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(64));
+}
+
+#[cfg(feature = "enable-bin-fhe")]
+#[test]
+fn test_blind_rotation_key_serialization_fft64_ref() {
+    poulpy_bin_fhe::blind_rotation::test_suite::serialization::test_blind_rotation_key_serialization(&Module::<FFT64Ref>::new(
+        256,
+    ));
+}
 
 #[cfg(feature = "enable-core")]
 #[test]
@@ -524,19 +549,21 @@ where
     Module<BE>: poulpy_hal::api::VecZnxBigAlloc<BE>
         + poulpy_hal::api::VecZnxBigFromSmall<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxFillUniformSource<BE>
+        + poulpy_hal::api::VecZnxAddAssign<BE>
+        + poulpy_hal::api::VecZnxSubNegateAssign<BE>,
     poulpy_hal::layouts::ScratchOwned<BE>: poulpy_hal::api::ScratchOwnedAlloc<BE>,
 {
     use poulpy_hal::{
-        api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
-        layouts::{
-            FillUniform, HostBytesBackend, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-            VecZnxToBackendMut, VecZnxToBackendRef, ZnxView,
+        api::{
+            ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+            VecZnxBigNormalizeTmpBytes, VecZnxFillUniformSource, VecZnxSubNegateAssign,
         },
+        layouts::{ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView},
         source::Source,
-        test_suite::upload_vec_znx,
+        test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
     };
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut source = Source::new([2u8; 32]);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
     for a_base2k in 1..=51usize {
@@ -544,16 +571,26 @@ where
             for offset in [-(a_base2k as i64), -3, -1, 0, 1, 3, a_base2k as i64] {
                 for a_size in 1..=3usize {
                     for res_size in 1..=3usize {
-                        let mut a = module_host.vec_znx_alloc(module_host.n(), 1, a_size);
-                        a.fill_uniform(63, &mut source);
-                        let uploaded = upload_vec_znx::<BE>(&a);
-                        let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
-                        module.vec_znx_big_from_small(
-                            &mut big.to_backend_mut(),
+                        // 2x - y (x at radix 62, y at radix 1) is uniform on [-2^62, 2^62), the radix-63 digits the fill cannot draw.
+                        let mut a = module.vec_znx_alloc(module.n(), 1, a_size);
+                        let mut x = module.vec_znx_alloc(module.n(), 1, a_size);
+                        module.vec_znx_fill_uniform_source(1, a_size, &mut vec_znx_backend_mut::<BE>(&mut a), 0, &mut source);
+                        module.vec_znx_fill_uniform_source(
+                            62,
+                            a_size * 62,
+                            &mut vec_znx_backend_mut::<BE>(&mut x),
                             0,
-                            &<VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(&uploaded),
+                            &mut source,
+                        );
+                        module.vec_znx_sub_negate_assign(
+                            &mut vec_znx_backend_mut::<BE>(&mut a),
+                            0,
+                            &vec_znx_backend_ref::<BE>(&x),
                             0,
                         );
+                        module.vec_znx_add_assign(&mut vec_znx_backend_mut::<BE>(&mut a), 0, &vec_znx_backend_ref::<BE>(&x), 0);
+                        let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
+                        module.vec_znx_big_from_small(&mut big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a), 0);
                         let mut res = module.vec_znx_alloc(module.n(), 1, res_size);
                         module.vec_znx_big_normalize(
                             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res),

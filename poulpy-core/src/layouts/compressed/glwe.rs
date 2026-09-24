@@ -2,10 +2,9 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::VecZnxCopy,
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo, vec_znx_alloc_zeroed,
+        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+        vec_znx_alloc_zeroed,
     },
-    source::Source,
 };
 
 use crate::{
@@ -209,12 +208,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWECompressed<D, W> {
             self.seed,
             self.data
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWECompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

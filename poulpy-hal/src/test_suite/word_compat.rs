@@ -18,7 +18,8 @@
 //! make declared compatibility executable.
 
 use super::{
-    TestParams, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx,
+    TestParams, download_mat_znx, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx,
+    upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut,
     vec_znx_dft::{dft_of_uploaded_vec_znx, idft_apply_to_host},
 };
 use crate::layouts::SvpPPolToBackendMut;
@@ -27,11 +28,12 @@ use crate::layouts::VmpPMatToBackendMut;
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
-        SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
+        Backend, DataView, HostBytesBackend, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint,
+        ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible,
+        VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
     },
     source::Source,
 };
@@ -40,13 +42,13 @@ use crate::{
 /// byte-identical. Exact-arithmetic (NTT/CRT) words only.
 pub fn test_word_compat_dft_bytes<BA, BB>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
     BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA>,
+    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA> + VecZnxFillUniformSource<BA>,
     Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB>,
 {
     let base2k = params.base2k;
@@ -55,10 +57,18 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
     let mut source = Source::new([0u8; 32]);
 
     for size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a = module_a.vec_znx_alloc(params.n, cols, size);
+        for col in 0..cols {
+            module_a.vec_znx_fill_uniform_source(
+                base2k,
+                size * base2k,
+                &mut vec_znx_backend_mut::<BA>(&mut a),
+                col,
+                &mut source,
+            );
+        }
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
-        let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
+        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);
         assert!(
             BA::to_host_bytes(&dft_a.data) == BB::to_host_bytes(&dft_b.data),
             "shared DftWord but different DFT buffer bytes (size={size}): one backend violates the word contract"
@@ -70,13 +80,13 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
 pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
     BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
+    Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA> + VecZnxFillUniformSource<BA>,
     Module<BB>: SvpPPolAlloc<BB> + SvpPrepare<BB>,
 {
     let base2k = params.base2k;
@@ -84,9 +94,17 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
 
-    let mut scalar = module_host.scalar_znx_alloc(params.n, cols);
-    scalar.fill_uniform(base2k, &mut source);
-    let scalar_a = upload_scalar_znx::<BA>(&scalar);
+    let mut scalar_a = module_a.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_a.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BA>::as_vec_znx_backend_mut(&mut scalar_a),
+            col,
+            &mut source,
+        );
+    }
+    let scalar = download_scalar_znx::<BA>(&scalar_a);
     let scalar_b = upload_scalar_znx::<BB>(&scalar);
 
     let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
@@ -112,13 +130,13 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
 /// container types with no `VmpPMat` marker.
 pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
     BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
+    Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes + VecZnxFillUniformSource<BA>,
     Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
     ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
     ScratchOwned<BB>: ScratchOwnedAlloc<BB>,
@@ -131,9 +149,21 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
     let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
-    let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
-    mat.fill_uniform(base2k, &mut source);
-    let mat_a = upload_mat_znx::<BA>(&mat);
+    let mut mat_a = module_a.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
+    for row in 0..rows {
+        for col_in in 0..cols_in {
+            for col in 0..cols_out {
+                module_a.vec_znx_fill_uniform_source(
+                    base2k,
+                    size * base2k,
+                    &mut MatZnxAtBackendMut::<BA>::at_backend_mut(&mut mat_a, row, col_in),
+                    col,
+                    &mut source,
+                );
+            }
+        }
+    }
+    let mat = download_mat_znx::<BA>(&mat_a);
     let mat_b = upload_mat_znx::<BB>(&mat);
 
     let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
@@ -160,7 +190,7 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
 /// shared-word pair, including `f64` FFT backends.
 pub fn test_word_compat_dft_cross_idft<BA, BB>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
@@ -172,7 +202,8 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
         + VecZnxBigAlloc<BA>
         + VecZnxIdftApply<BA>
         + VecZnxBigNormalize<BA>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxFillUniformSource<BA>,
     Module<BB>: VecZnxDftAlloc<BB>
         + VecZnxDftApply<BB>
         + VecZnxBigAlloc<BB>
@@ -190,11 +221,19 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
     let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vec_znx_big_normalize_tmp_bytes());
 
     for size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a = module_a.vec_znx_alloc(params.n, cols, size);
+        for col in 0..cols {
+            module_a.vec_znx_fill_uniform_source(
+                base2k,
+                size * base2k,
+                &mut vec_znx_backend_mut::<BA>(&mut a),
+                col,
+                &mut source,
+            );
+        }
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
-        let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
+        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);
 
         // Native consumption on each backend first (the re-tag consumes the
         // buffer), then each backend consuming the other's buffer via the

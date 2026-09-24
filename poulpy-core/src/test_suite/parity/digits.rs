@@ -7,16 +7,16 @@ use crate::{
 use poulpy_hal::{
     AlignedBuf,
     api::{
-        VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxFillUniformSource,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
+        MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxViewMut,
     },
     source::Source,
-    test_suite::{TestParams, download_vec_znx, upload_mat_znx, upload_vec_znx},
+    test_suite::{TestParams, download_mat_znx, download_vec_znx, upload_mat_znx, upload_vec_znx, vec_znx_backend_mut},
 };
 
 /// HAL operations needed to construct and canonically observe a digit product.
@@ -28,6 +28,7 @@ pub trait DigitParityModule<BE: ParityBackend>:
     + VecZnxDftBytesOf
     + VecZnxDftCopy<BE>
     + VecZnxDftZero<BE>
+    + VecZnxFillUniformSource<BE>
     + VecZnxIdftNormalizeConsume<BE>
     + VecZnxIdftNormalizeConsumeTmpBytes
     + VmpPMatAlloc<BE>
@@ -46,6 +47,7 @@ impl<BE: ParityBackend, M> DigitParityModule<BE> for M where
         + VecZnxDftBytesOf
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
+        + VecZnxFillUniformSource<BE>
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
         + VmpPMatAlloc<BE>
@@ -134,12 +136,21 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
     Module<BR>: DigitParityModule<BR>,
     Module<BT>: DigitParityModule<BT>,
 {
-    let host = Module::<HostBytesBackend>::new(r.n() as u64);
+    let base2k = params.base2k;
     let mut source = Source::new([127; 32]);
     for (dsize, cols_in, cols_out, size) in [(1usize, 1, 1, 1), (2, 1, 2, 5), (3, 2, 1, 8), (7, 1, 2, 15)] {
         for sparse in [false, true] {
-            let mut a = host.vec_znx_alloc(r.n(), cols_in, size);
-            a.fill_uniform(params.base2k, &mut source);
+            let mut a = r.vec_znx_alloc(r.n(), cols_in, size);
+            for col in 0..cols_in {
+                r.vec_znx_fill_uniform_source(
+                    base2k,
+                    size * base2k,
+                    &mut vec_znx_backend_mut::<BR>(&mut a),
+                    col,
+                    &mut source,
+                );
+            }
+            let mut a = download_vec_znx::<BR>(&a);
             if sparse {
                 for col in 0..cols_in {
                     for limb in 0..size - 1 {
@@ -147,8 +158,16 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
                     }
                 }
             }
-            let mut matrix = host.mat_znx_alloc(r.n(), size.div_ceil(dsize), cols_in, cols_out, size);
-            matrix.fill_uniform(params.base2k, &mut source);
+            let mut matrix = r.mat_znx_alloc(r.n(), size.div_ceil(dsize), cols_in, cols_out, size);
+            for row in 0..size.div_ceil(dsize) {
+                for col in 0..cols_in {
+                    let mut view = MatZnxAtBackendMut::<BR>::at_backend_mut(&mut matrix, row, col);
+                    for out in 0..cols_out {
+                        r.vec_znx_fill_uniform_source(base2k, size * base2k, &mut view, out, &mut source);
+                    }
+                }
+            }
+            let matrix = download_mat_znx::<BR>(&matrix);
             let want = product(r, &a, &matrix, params.base2k, dsize);
             let have = product(t, &a, &matrix, params.base2k, dsize);
             assert_eq!(

@@ -18,6 +18,7 @@ pub mod keys;
 pub mod noise;
 pub mod parity;
 pub mod sampling;
+pub mod serialization;
 
 #[macro_export]
 macro_rules! core_backend_test_suite {

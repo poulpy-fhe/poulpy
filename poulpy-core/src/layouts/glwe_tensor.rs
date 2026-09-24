@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
@@ -74,12 +71,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWETensor<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensor<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GLWETensor: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWETensor<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

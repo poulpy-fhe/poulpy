@@ -5,10 +5,9 @@ use std::fmt;
 use poulpy_hal::{
     api::VecZnxCopy,
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo, vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+        vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
     },
-    source::Source,
 };
 
 use crate::{
@@ -65,12 +64,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWECompressed<D, W> {
             self.seed,
             self.data
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for LWECompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

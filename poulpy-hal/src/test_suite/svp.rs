@@ -1,6 +1,6 @@
 use super::{
-    TestParams, download_vec_znx, scalar_znx_backend_ref, upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut,
-    vec_znx_backend_ref,
+    TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_scalar_znx, upload_vec_znx,
+    vec_znx_backend_mut, vec_znx_backend_ref,
 };
 use crate::layouts::SvpPPolToBackendMut;
 use crate::layouts::SvpPPolToBackendRef;
@@ -13,9 +13,9 @@ use crate::{
     api::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy,
         SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxIdftApplyTmpA,
+        VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
     },
-    layouts::{Backend, FillUniform, HostBytesBackend, Module, PrepareHint, ScratchOwned, SvpPPolOwned},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned},
     source::Source,
 };
 
@@ -52,7 +52,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxIdftApplyTmpA<BR>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDft<BT>
         + SvpApplyDftTmpBytes
@@ -75,12 +76,20 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut scalar = module_host.scalar_znx_alloc(params.n, cols);
-    scalar.fill_uniform(base2k, &mut source);
+    let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut scalar_ref_backend),
+            col,
+            &mut source,
+        );
+    }
+    let scalar = download_scalar_znx::<BR>(&scalar_ref_backend);
 
     let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
-    let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
@@ -99,9 +108,17 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     }
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let a_ref_backend = upload_vec_znx::<BR>(&a);
+        let mut a_ref_backend = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        for col in 0..cols {
+            module_ref.vec_znx_fill_uniform_source(
+                base2k,
+                a_size * base2k,
+                &mut vec_znx_backend_mut::<BR>(&mut a_ref_backend),
+                col,
+                &mut source,
+            );
+        }
+        let a = download_vec_znx::<BR>(&a_ref_backend);
         let a_test_backend = upload_vec_znx::<BT>(&a);
 
         let mut scratch_svp_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.svp_apply_dft_tmp_bytes(a_size));
@@ -186,7 +203,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
         + VecZnxIdftApplyTmpA<BR>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDft<BT>
         + SvpPPolAlloc<BT>
@@ -210,12 +228,20 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut scalar = module_host.scalar_znx_alloc(params.n, cols);
-    scalar.fill_uniform(base2k, &mut source);
+    let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut scalar_ref_backend),
+            col,
+            &mut source,
+        );
+    }
+    let scalar = download_scalar_znx::<BR>(&scalar_ref_backend);
 
     let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
-    let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
@@ -261,9 +287,17 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     }
 
     for a_size in [3] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let a_ref_backend = upload_vec_znx::<BR>(&a);
+        let mut a_ref_backend = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        for col in 0..cols {
+            module_ref.vec_znx_fill_uniform_source(
+                base2k,
+                a_size * base2k,
+                &mut vec_znx_backend_mut::<BR>(&mut a_ref_backend),
+                col,
+                &mut source,
+            );
+        }
+        let a = download_vec_znx::<BR>(&a_ref_backend);
         let a_test_backend = upload_vec_znx::<BT>(&a);
 
         let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols, a_size);
@@ -364,7 +398,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
         + VecZnxIdftApplyTmpA<BR>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDftAssign<BT>
         + SvpPPolAlloc<BT>
@@ -387,12 +422,20 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut scalar = module_host.scalar_znx_alloc(params.n, cols);
-    scalar.fill_uniform(base2k, &mut source);
+    let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut scalar_ref_backend),
+            col,
+            &mut source,
+        );
+    }
+    let scalar = download_scalar_znx::<BR>(&scalar_ref_backend);
 
     let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
-    let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
@@ -411,9 +454,17 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     }
 
     for res_size in [1, 2, 3, 4] {
-        let mut res = module_host.vec_znx_alloc(params.n, cols, res_size);
-        res.fill_uniform(base2k, &mut source);
-        let res_ref_backend_input = upload_vec_znx::<BR>(&res);
+        let mut res_ref_backend_input = module_ref.vec_znx_alloc(params.n, cols, res_size);
+        for col in 0..cols {
+            module_ref.vec_znx_fill_uniform_source(
+                base2k,
+                res_size * base2k,
+                &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend_input),
+                col,
+                &mut source,
+            );
+        }
+        let res = download_vec_znx::<BR>(&res_ref_backend_input);
         let res_test_backend_input = upload_vec_znx::<BT>(&res);
 
         let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols, res_size);
