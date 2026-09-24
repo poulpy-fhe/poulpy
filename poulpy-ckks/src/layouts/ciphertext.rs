@@ -259,7 +259,7 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> LWEInfos for CKKSCiphertextViewRef<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -277,19 +277,19 @@ impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> GLWEInfos for CKKSCiphertextViewRef<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()
     }
@@ -326,7 +326,7 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> DerefMut for CKKSCiphertextViewMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -334,13 +334,13 @@ impl<'a, BE: Backend + 'a> DerefMut for CKKSCiphertextViewMut<'a, BE> {
 
 crate::impl_ckks_infos!(self_meta CKKSCiphertextViewMut);
 
-impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.inner.to_backend_mut()
     }

@@ -203,7 +203,7 @@ where
     }
 }
 
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'b>, B> {
+impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
             base2k: self.key.base2k,

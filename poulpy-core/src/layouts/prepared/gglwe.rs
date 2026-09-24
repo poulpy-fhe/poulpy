@@ -268,7 +268,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'b>, B> {
+impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,

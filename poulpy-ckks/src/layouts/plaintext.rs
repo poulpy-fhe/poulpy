@@ -107,7 +107,7 @@ impl<'a, BE: poulpy_hal::layouts::Backend + 'a> poulpy_core::layouts::IntPolyInf
     }
 }
 
-impl<'a, BE: Backend + 'a> SetBase2k for CKKSPlaintextViewMut<'a, BE> {
+impl<BE: Backend> SetBase2k for CKKSPlaintextViewMut<'_, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {
         SetBase2k::set_base2k(&mut self.inner, base2k);
     }

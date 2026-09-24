@@ -334,7 +334,7 @@ pub trait CnvPVecRReborrowBackendRef<BE: Backend> {
     fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord, BE> {
+impl<BE: Backend> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE> {
     fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
         CnvPVecR {
             data: BE::view_ref_mut(&self.data),
@@ -364,7 +364,7 @@ pub trait CnvPVecRReborrowBackendMut<BE: Backend> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord, BE> {
+impl<BE: Backend> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE> {
         CnvPVecR {
             data: BE::view_mut_ref(&mut self.data),
@@ -394,7 +394,7 @@ pub trait CnvPVecLReborrowBackendRef<BE: Backend> {
     fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord, BE> {
+impl<BE: Backend> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE> {
     fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
         CnvPVecL {
             data: BE::view_ref_mut(&self.data),
@@ -424,7 +424,7 @@ pub trait CnvPVecLReborrowBackendMut<BE: Backend> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord, BE> {
+impl<BE: Backend> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE> {
         CnvPVecL {
             data: BE::view_mut_ref(&mut self.data),

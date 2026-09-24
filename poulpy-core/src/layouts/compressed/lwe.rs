@@ -170,7 +170,7 @@ impl<BE: Backend> LWECompressedToBackendRef<BE> for LWECompressed<BE::OwnedBuf, 
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
             k: self.k,
@@ -181,7 +181,7 @@ impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &LWECompressed<BE::
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
             k: self.k,
@@ -207,7 +207,7 @@ impl<BE: Backend> LWECompressedToBackendMut<BE> for LWECompressed<BE::OwnedBuf, 
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
         LWECompressed {
             k: self.k,

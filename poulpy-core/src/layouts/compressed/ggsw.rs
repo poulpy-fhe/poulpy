@@ -85,13 +85,13 @@ impl<'a, BE: Backend + 'a> Deref for GGSWCompressedBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGSWCompressedBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGSWCompressedBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendRef<'a, BE> {
+impl<BE: Backend> LWEInfos for GGSWCompressedBackendRef<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -109,13 +109,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GGSWCompressedBackendRef<'a, BE> {
+impl<BE: Backend> GLWEInfos for GGSWCompressedBackendRef<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendRef<'a, BE> {
+impl<BE: Backend> GGSWInfos for GGSWCompressedBackendRef<'_, BE> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -129,7 +129,7 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendMut<'a, BE> {
+impl<BE: Backend> LWEInfos for GGSWCompressedBackendMut<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -147,13 +147,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GGSWCompressedBackendMut<'a, BE> {
+impl<BE: Backend> GLWEInfos for GGSWCompressedBackendMut<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendMut<'a, BE> {
+impl<BE: Backend> GGSWInfos for GGSWCompressedBackendMut<'_, BE> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -167,7 +167,7 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWCompressedSeedMut for GGSWCompressedBackendMut<'a, BE> {
+impl<BE: Backend> GGSWCompressedSeedMut for GGSWCompressedBackendMut<'_, BE> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.inner.seed
     }
@@ -431,7 +431,7 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -444,7 +444,7 @@ impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -474,7 +474,7 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),

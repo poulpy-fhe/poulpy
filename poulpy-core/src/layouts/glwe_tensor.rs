@@ -161,7 +161,7 @@ where
     fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
@@ -172,7 +172,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,

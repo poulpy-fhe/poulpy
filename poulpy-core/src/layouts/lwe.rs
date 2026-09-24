@@ -363,7 +363,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
@@ -374,7 +374,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,

@@ -574,7 +574,7 @@ impl<B: Backend> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
         vec_znx_backend_ref_from_ref::<B>(self)
     }
@@ -625,7 +625,7 @@ pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn reborrow_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
         vec_znx_backend_ref_from_mut::<B>(self)
     }
@@ -646,7 +646,7 @@ impl<B: Backend> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
         vec_znx_backend_mut_from_mut::<B>(self)
     }
@@ -695,7 +695,7 @@ pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn reborrow_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
         vec_znx_backend_mut_from_mut::<B>(self)
     }

@@ -105,7 +105,7 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGLWEToGGSWKeyBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

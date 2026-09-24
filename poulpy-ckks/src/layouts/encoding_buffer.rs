@@ -110,7 +110,7 @@ impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferViewMut<'a, BE, F> {
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferInfos for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferInfos for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn len(&self) -> usize {
         self.inner.len
     }
@@ -138,13 +138,13 @@ impl<BE: Backend, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBuffe
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferToBackendRef<BE, F> for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferToBackendRef<BE, F> for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn to_backend_ref(&self) -> CKKSEncodingBufferBackendRef<'_, BE, F> {
         CKKSEncodingBuffer::from_data(BE::view_ref_mut(&self.inner.data), self.inner.len)
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn to_backend_mut(&mut self) -> CKKSEncodingBufferBackendMut<'_, BE, F> {
         CKKSEncodingBuffer::from_data(BE::view_mut_ref(&mut self.inner.data), self.inner.len)
     }

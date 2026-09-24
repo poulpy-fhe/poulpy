@@ -369,7 +369,7 @@ pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         glwe_backend_ref_from_ref::<BE>(self)
     }
@@ -410,13 +410,13 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         glwe_backend_ref_from_mut::<BE>(self)
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         glwe_backend_mut_from_mut::<BE>(self)
     }
