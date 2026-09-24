@@ -95,6 +95,8 @@ pub fn cmux_reference<BE, R, T, F>(
     let cols: usize = (res.rank() + 1).into();
     let (mut tmp_in, mut scratch_2) = scratch.take_glwe_scratch(res);
     module.glwe_copy(&mut tmp_in, res, &mut scratch_2);
+    // The difference feeds the external product unnormalized, as the FFT margin allows.
+    tmp_in.set_canonical(true);
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
     let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
@@ -173,6 +175,8 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
     let (mut res_prev, mut scratch_2) = scratch_1.take_glwe_scratch(res);
     module.glwe_copy(&mut res_prev, res, &mut scratch_2);
     module.glwe_sub(&mut tmp, a, res);
+    // The difference feeds the external product unnormalized, as the FFT margin allows.
+    tmp.set_canonical(true);
     let cols: usize = (res.rank() + 1).into();
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(&tmp_infos, &tmp_infos, s);
     let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module.n(), cols, output_size);
@@ -244,6 +248,8 @@ pub fn cmux_assign_reference<BE, R, A>(
     let (mut tmp_a, mut scratch_2) = scratch_1.take_glwe_scratch(&a_backend);
     module.glwe_copy(&mut tmp, res, &mut scratch_2);
     module.glwe_copy(&mut tmp_a, a, &mut scratch_2);
+    // The difference feeds the external product unnormalized, as the FFT margin allows.
+    tmp.set_canonical(true);
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
     let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);

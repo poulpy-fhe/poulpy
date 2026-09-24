@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
@@ -233,7 +234,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     }
 
     let mut pt_res: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
+    glwe_decrypt_checked(module, &ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
@@ -434,7 +435,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     }
 
     let mut pt_res: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
+    glwe_decrypt_checked(module, &ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];

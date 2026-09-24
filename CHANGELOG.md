@@ -125,6 +125,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - `NoiseInfos` is imported from `poulpy_core`.
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
+- CMux, Cswap and the standard CGGI blind rotation flag the differences and the lazy accumulator they feed to the external product as canonical, and `FheUint::get_bit_lwe` flags the view of the integer it keyswitches (a lazy sum after `splice_u8`, `zero_byte` or a sign extension), which the FFT margin tolerates, so their outputs stay bit-identical under the `poulpy-core` canonical flag; outputs they big-normalize by hand are flagged canonical.
 
 ### CPU backends
 

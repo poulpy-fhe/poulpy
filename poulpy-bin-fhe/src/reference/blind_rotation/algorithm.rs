@@ -571,6 +571,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
         });
     }
 
+    res.set_canonical(true);
     let mut res_mut = res.to_backend_mut();
     let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[0]);
     for i in 0..cols {
@@ -883,6 +884,8 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
 
         // acc = acc + (sk[i] * acc) * (X^{ai} - 1)
         module.glwe_add_assign(&mut out_tmp, &acc_tmp);
+        // The lazy accumulator feeds the next external product unnormalized, as the FFT margin allows.
+        out_tmp.set_canonical(true);
     }
 
     // We can normalize only at the end because we add normalized values in [-2^{base2k-1}, 2^{base2k-1}]

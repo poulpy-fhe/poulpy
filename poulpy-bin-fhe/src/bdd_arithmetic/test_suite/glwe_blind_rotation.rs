@@ -1,3 +1,4 @@
+use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
@@ -118,7 +119,7 @@ where
                 &mut scratch.borrow(),
             );
 
-            module.glwe_decrypt(&res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 
             assert_eq!(
                 (((k >> bit_start) & mask) << bit_step) as i64,

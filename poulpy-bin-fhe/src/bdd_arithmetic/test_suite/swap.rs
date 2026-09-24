@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
@@ -97,7 +98,7 @@ where
         module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), &mut scratch.borrow());
 
         let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        module.glwe_decrypt(&ct_res, &mut pt_have, sk, &mut scratch.borrow());
+        glwe_decrypt_checked(module, &ct_res, &mut pt_have, sk, &mut scratch.borrow());
 
         let want = if bit == 0 { f } else { t };
         assert_eq!(want, pt_have.decode_coeff_i64(k_pt.into(), 0));
@@ -180,8 +181,8 @@ where
 
         let mut pt_a_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         let mut pt_b_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        module.glwe_decrypt(&ct_a, &mut pt_a_have, sk, &mut scratch.borrow());
-        module.glwe_decrypt(&ct_b, &mut pt_b_have, sk, &mut scratch.borrow());
+        glwe_decrypt_checked(module, &ct_a, &mut pt_a_have, sk, &mut scratch.borrow());
+        glwe_decrypt_checked(module, &ct_b, &mut pt_b_have, sk, &mut scratch.borrow());
 
         let (a_want, b_want) = if bit == 0 { (a, b) } else { (b, a) };
         assert_eq!(a_want, pt_a_have.decode_coeff_i64(k_pt.into(), 0));

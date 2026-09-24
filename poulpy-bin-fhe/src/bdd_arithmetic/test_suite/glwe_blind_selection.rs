@@ -1,6 +1,7 @@
 use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use std::collections::HashMap;
 
+use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
@@ -136,7 +137,7 @@ where
             &mut selection_scratch.borrow(),
         );
 
-        module.glwe_decrypt(&res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
+        glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 
         let idx = ((k >> bit_start) & mask) as usize;
         if !idx.is_multiple_of(3) {
