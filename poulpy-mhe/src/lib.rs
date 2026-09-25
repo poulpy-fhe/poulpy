@@ -3,3 +3,7 @@
 //!
 //! Backend-agnostic multiparty homomorphic encryption, built from
 //! `poulpy-core` and `poulpy-hal`.
+pub mod layouts;
+pub mod test_suite;
+
+pub use layouts::*;
