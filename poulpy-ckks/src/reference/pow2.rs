@@ -85,10 +85,12 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
-        // charged to the budget move under `log_delta`, leaving `k` unchanged
-        // (`set_log_delta` preserves the budget by shifting `k` back up).
-        dst.set_log_budget(checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?);
-        dst.set_log_delta(dst.log_delta() + bits);
+        // charged to the budget move under `log_delta`, leaving `k`, and so the
+        // canonical flag, unchanged.
+        checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
+        let mut meta = dst.meta();
+        meta.log_delta += bits;
+        dst.set_meta(meta);
         Ok(())
     }
 }

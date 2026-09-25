@@ -245,16 +245,22 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSAffineOps<BE>,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSSubOps<BE>
+        + CKKSAffineOps<BE>
+        + CKKSModuleAlloc<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;
 
+    let mut squared = module.ckks_ciphertext_alloc_from_infos(&*res);
     for _ in 0..log_interval_reduction {
-        module.ckks_square_assign(res, tsk, scratch)?;
-        module.ckks_mul_pow2_assign(res, 1, scratch)?;
+        module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
+        module.ckks_double_into(res, &squared, scratch)?;
         module.ckks_sub_one_assign(res, scratch)?;
     }
 

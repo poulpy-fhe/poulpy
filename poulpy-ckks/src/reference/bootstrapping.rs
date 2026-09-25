@@ -588,12 +588,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
 
         scratch.scope(|scratch_inner| {
             let (mut ct_coeffs, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta());
-            self.ckks_copy(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             // A `Split` decode matrix is numerically identical to the standard
             // matrix after the two halves are recombined. Preserve the split
-            // path's normalization, which reconstructed `2 * ct_in`, then
-            // intentionally use the format-agnostic evaluator directly.
-            self.ckks_mul_pow2_assign(&mut ct_coeffs, 1, &mut scratch_inner)?;
+            // path's `2 * ct_in`, then intentionally use the format-agnostic
+            // evaluator directly.
+            self.ckks_double_into(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             self.ckks_dft_evaluate_assign(
                 &mut ct_coeffs,
                 ctx.slots_to_coeffs(),

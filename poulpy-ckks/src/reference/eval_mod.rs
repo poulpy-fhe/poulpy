@@ -196,8 +196,11 @@ where
 
             if let Some(consts) = params.range_extension_consts.as_ref() {
                 for i in 0..params.plan.f_mod_log_interval_reduction {
-                    module.ckks_square_assign(res, tsk, scratch)?;
-                    module.ckks_mul_pow2_assign(res, 1, scratch)?;
+                    scratch.scope(|scratch_local| -> Result<()> {
+                        let (mut squared, mut nested) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
+                        module.ckks_square_into(&mut squared, &*res, tsk, &mut nested)?;
+                        module.ckks_double_into(res, &squared, &mut nested)
+                    })?;
                     module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
                 }
             }

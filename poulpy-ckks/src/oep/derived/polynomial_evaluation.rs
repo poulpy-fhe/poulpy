@@ -45,9 +45,10 @@ where
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
+            let mut squared = module.ckks_ciphertext_alloc(src.base2k(), k.into());
+            module.ckks_square_into(&mut squared, src, tsk, scratch)?;
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_square_into(&mut doubled, src, tsk, scratch)?;
-            module.ckks_mul_pow2_assign(&mut doubled, 1, scratch)?;
+            module.ckks_double_into(&mut doubled, &squared, scratch)?;
             module.ckks_sub_one_assign(&mut doubled, scratch)?;
             Ok(doubled)
         }

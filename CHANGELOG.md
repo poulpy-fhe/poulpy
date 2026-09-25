@@ -114,6 +114,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - `ckks_copy` and the plaintext `_into` additions copy verbatim into a destination wide enough for the source instead of normalizing it, and keep the source's flag.
 - Power-basis entries are normalized once where they are made: `populate` normalizes a flag-clear `T_1` and each Chebyshev power it generates. The `PowerBasisGen` methods require `GLWENormalize`, and `CKKSPolynomialEvaluationImpl` gains the `GLWENormalizeImpl` supertrait.
 - The test decryption helpers assert canonical-at-`k` only on a ciphertext flagged canonical, and the parity snapshots compare the flag. The multiplication, automorphism and encapsulated ModUp parity suites also run on a flag-clear operand, with digits past the canonical range and bits below its `k`. The unnormalized add and sub suites are removed; the arithmetic parity checks `ckks_double_into` lazy at the source's width and equal to `ckks_mul_pow2_into` by one bit once normalized.
+- The squaring chains double with `ckks_double_into` instead of `ckks_mul_pow2_assign(.., 1)`: the Chebyshev `T_2` input transform, the Chebyshev power recurrence, the binary-LUT double-angle loop and the EvalMod range extension square (or multiply) into a temporary, double and subtract lazily, and are normalized once where the value is next read. The binary-LUT loop allocates its temporary once per call, and the range extension carves it from the square scope EvalMod scratch already reserves.
+- `ckks_eval_approximation` applies a positive power-of-two input scale with one `ckks_mul_pow2_into` instead of a copy and an in-place shift, and the real S2C-first bootstrap doubles its input with `ckks_double_into`.
+- `ckks_div_pow2_assign` relabels without lowering `k` on the way, so it keeps the canonical flag.
 
 ### `poulpy-bin-fhe`
 

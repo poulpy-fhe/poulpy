@@ -164,15 +164,15 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             let b_val = self.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
             let k = mul_ct_k(a_val, b_val)?;
 
-            // `2·T_a·T_b − T_c`: compute the product directly into the owned result and
-            // double it in place, rather than into a separate scratch buffer then copying.
-            let mut doubled = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
+            // `2·T_a·T_b − T_c`, normalized once at the end.
+            let mut product = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
             if a == b {
-                module.ckks_square_into(&mut doubled, a_val, tsk, &mut scratch)?;
+                module.ckks_square_into(&mut product, a_val, tsk, &mut scratch)?;
             } else {
-                module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+                module.ckks_mul_into(&mut product, a_val, b_val, tsk, &mut scratch)?;
             }
-            module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
+            let mut doubled = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
+            module.ckks_double_into(&mut doubled, &product, &mut scratch)?;
 
             if c == 0 {
                 module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
