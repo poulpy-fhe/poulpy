@@ -7,6 +7,10 @@ use crate::layouts::{GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEPatCompressedOw
 ///
 /// `res` and `a` must share their layout and, for seeded PATs, their seeds.
 /// The sum is not normalized: `res` is flagged non-canonical.
+///
+/// The accumulator starts from the first share, a clone of it or a `read_from`
+/// into it: a freshly allocated PAT has a zero seed and aggregating into it
+/// panics on the seed check.
 pub trait PatAggregate<BE: Backend> {
     fn glwe_pat_compressed_aggregate_assign(&self, res: &mut GLWEPatCompressedOwned<BE>, a: &GLWEPatCompressedOwned<BE>);
 

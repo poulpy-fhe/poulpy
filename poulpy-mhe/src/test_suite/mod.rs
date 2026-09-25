@@ -50,8 +50,38 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            #[should_panic(expected = "seeds differ")]
+            fn gglwe_pat_compressed_aggregate_seed_mismatch() {
+                $crate::test_suite::pat::test_gglwe_pat_compressed_aggregate_seed_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: layouts differ")]
+            fn pat_aggregate_layout_mismatch() {
+                $crate::test_suite::pat::test_pat_aggregate_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: layouts differ")]
+            fn pat_finalize_layout_mismatch() {
+                $crate::test_suite::pat::test_pat_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_public_key() {
                 $crate::test_suite::public_key::test_glwe_public_key(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "samplable distribution")]
+            fn glwe_public_key_finalize_dist_none() {
+                $crate::test_suite::public_key::test_glwe_public_key_finalize_dist_none(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid secret")]
+            fn glwe_public_key_share_secret_none() {
+                $crate::test_suite::public_key::test_glwe_public_key_share_secret_none(&Module::<$backend>::new(64));
             }
         }
     };

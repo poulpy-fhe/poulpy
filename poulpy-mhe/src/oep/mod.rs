@@ -2,7 +2,8 @@
 //!
 //! A backend selects the reference implementation with the `impl_mhe_*_reference!`
 //! opt-ins or implements an `*Impl` contract itself. An override must compute the
-//! same result as the reference and pass parity against a validated backend.
+//! same result as the reference and pass parity against a validated backend; the
+//! parity suite arrives with the first override.
 pub(crate) mod derived;
 pub mod pat;
 pub mod public_key;

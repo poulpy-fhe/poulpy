@@ -32,7 +32,8 @@ the [radix failure estimates](../../docs/base2k-failure-probability.md).
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
-seed and layout checks, and pass parity against a validated backend.
+seed and layout checks, and pass parity against a validated backend; the
+parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!` or `impl_mhe_public_key_reference!` alone when
 replacing the other one. The reference traits stay callable from an override.

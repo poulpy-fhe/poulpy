@@ -6,7 +6,8 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWENoise,
     layouts::{
         GGLWE, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret,
-        GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, compressed::GLWECompressedSeedMut,
+        GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut},
     },
 };
 use poulpy_hal::{
@@ -229,6 +230,50 @@ where
     *a.seed_mut() = SEEDS[0];
     *b.seed_mut() = SEEDS[1];
     module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+}
+
+/// Aggregating GGLWE shares drawn under different seeds panics.
+pub fn test_gglwe_pat_compressed_aggregate_seed_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + PatAggregate<BE>,
+{
+    let layout = gglwe_layout(module);
+    let mut a = module.gglwe_pat_compressed_alloc_from_infos(&layout);
+    let mut b = module.gglwe_pat_compressed_alloc_from_infos(&layout);
+    b.seed_mut()[0] = SEEDS[1];
+    module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+}
+
+/// Aggregating PATs of different layouts panics.
+pub fn test_pat_aggregate_layout_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + PatAggregate<BE>,
+{
+    let mut a = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let b = module.glwe_pat_compressed_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0), RANK);
+    module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+}
+
+/// Finalizing a PAT into a target of a different layout panics.
+pub fn test_pat_finalize_layout_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: MHEModuleAlloc<BE> + PatFinalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let pat = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&GLWELayout {
+        n: module.n().into(),
+        base2k: BASE2K,
+        k: TorusPrecision(K.0 + BASE2K.0),
+        rank: RANK,
+    });
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.pat_finalize_tmp_bytes());
+    module.glwe_pat_compressed_finalize(&mut res, &pat, &mut scratch.borrow());
 }
 
 fn scaled<BE>(module: &Module<BE>, sk: &GLWESecret<AlignedBuf, i64>, factor: i64) -> GLWESecret<AlignedBuf, i64>

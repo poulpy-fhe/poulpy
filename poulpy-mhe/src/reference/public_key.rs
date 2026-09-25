@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEBytesOf, GLWECompressedEncryptSk, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GLWEBytesOf, GLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -37,7 +37,7 @@ where
     where
         A: GLWEInfos,
     {
-        self.glwe_plaintext_bytes_of_from_infos(infos) + self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
+        BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(infos)) + self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
     fn glwe_public_key_share_reference<S, E>(
@@ -52,6 +52,10 @@ where
         S: GLWESecretPreparedToBackendRef<BE>,
         E: EncryptionInfos,
     {
+        assert!(
+            !matches!(sk.to_backend_ref().dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
+            "invalid secret: a public key share needs a samplable distribution"
+        );
         let infos = res.glwe_layout();
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
         self.vec_znx_zero(pt.data_mut(), 0);
