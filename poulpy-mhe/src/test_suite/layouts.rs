@@ -2,7 +2,7 @@
 //! compressed encryption and decompression.
 
 use poulpy_core::{
-    EncryptionLayout, GGLWECompressedEncryptSk, GLWECompressedEncryptSk,
+    EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWECompressedEncryptSk,
     layouts::{
         Base2K, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWELayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
         GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc,
@@ -18,7 +18,7 @@ use poulpy_hal::{
     test_suite::serialization::test_reader_writer_interface,
 };
 
-use crate::layouts::{GGLWEPatCompressed, GLWEPatCompressed, MHEModuleAlloc};
+use crate::layouts::{GGLWEPat, GGLWEPatCompressed, GLWEPatCompressed, MHEModuleAlloc};
 
 const BASE2K: Base2K = Base2K(12);
 const K: TorusPrecision = TorusPrecision(33);
@@ -155,6 +155,59 @@ where
     module.decompress_gglwe(&mut have, &pats[0]);
     module.decompress_gglwe(&mut want, &core);
     assert_eq!(have, want);
+
+    let mut flagged = pats[0].clone();
+    flagged.set_canonical(false);
+    assert_write_rejects(&flagged);
+    let mut bytes: Vec<u8> = Vec::new();
+    pats[0].write_to(&mut bytes).unwrap();
+    flagged.read_from(&mut bytes.as_slice()).unwrap();
+    assert!(flagged.is_canonical());
+
+    test_reader_writer_interface(pats);
+}
+
+/// Allocation, serialization and core interop of [`GGLWEPat`].
+pub fn test_gglwe_pat<BE>(module: &Module<BE>)
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + GGLWEEncryptSk<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = gglwe_layout(module);
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
+    let alloc: GGLWEPat<AlignedBuf, i64> = module.gglwe_pat_alloc(BASE2K, DNUM, DSIZE, layout.k_aux, RANK, RANK);
+    assert_eq!(alloc.gglwe_layout(), layout);
+    assert!(alloc.is_canonical());
+
+    let (sk, sk_prepared) = secret(module);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_encrypt_sk_tmp_bytes(&layout));
+
+    let mut pats: [GGLWEPat<AlignedBuf, i64>; 2] = [(); 2].map(|_| module.gglwe_pat_alloc_from_infos(&layout));
+    for (pat, seed) in pats.iter_mut().zip(SEEDS) {
+        module.gglwe_encrypt_sk(
+            pat,
+            sk.data(),
+            &sk_prepared,
+            &enc_infos,
+            &mut Source::new(SEED_XE),
+            &mut Source::new(seed),
+            &mut scratch.borrow(),
+        );
+    }
+
+    let mut core: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
+    module.gglwe_encrypt_sk(
+        &mut core,
+        sk.data(),
+        &sk_prepared,
+        &enc_infos,
+        &mut Source::new(SEED_XE),
+        &mut Source::new(SEEDS[0]),
+        &mut scratch.borrow(),
+    );
+    assert_eq!(pats[0].inner, core);
 
     let mut flagged = pats[0].clone();
     flagged.set_canonical(false);

@@ -3,8 +3,14 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::layouts::{GGLWEPatCompressed, GGLWEPatCompressedOwned, GLWEPatCompressed, GLWEPatCompressedOwned};
+use crate::layouts::{
+    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEPatCompressed, GLWEPatCompressedOwned,
+};
 
+/// PAT allocation on a backend module.
+///
+/// Every method is default-bodied over the core allocation supertraits, so the
+/// blanket impl for `Module<BE>` is empty. A fresh PAT is zero, hence canonical.
 pub trait MHEModuleAlloc<BE: Backend>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -41,6 +47,28 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ) -> GGLWEPatCompressedOwned<BE> {
         GGLWEPatCompressed {
             inner: self.gglwe_compressed_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            canonical: true,
+        }
+    }
+
+    fn gglwe_pat_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatOwned<BE> {
+        GGLWEPat {
+            inner: self.gglwe_alloc_from_infos(infos),
+            canonical: true,
+        }
+    }
+
+    fn gglwe_pat_alloc(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
+    ) -> GGLWEPatOwned<BE> {
+        GGLWEPat {
+            inner: self.gglwe_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
             canonical: true,
         }
     }
