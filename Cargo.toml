@@ -1,6 +1,6 @@
 [workspace]
-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
-default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
+members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks", "poulpy-mhe"]
+default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks", "poulpy-mhe"]
 resolver = "3"
 
 [profile.ci]
@@ -25,6 +25,7 @@ poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.3"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.8.3"}
+poulpy-mhe = {path = "poulpy-mhe", version = "0.8.3"}
 dashu-float = "0.6.0"
 dashu-int = "0.6.0"
 astro-float-num = { version = "0.3.7", default-features = false, features = ["std"] }

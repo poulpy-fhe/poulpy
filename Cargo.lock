@@ -751,6 +751,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-mhe"
+version = "0.8.3"
+dependencies = [
+ "poulpy-core",
+ "poulpy-hal",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
