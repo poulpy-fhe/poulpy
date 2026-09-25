@@ -78,10 +78,6 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_many", dst)?;
-        for value in inputs {
-            crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_many", *value)?;
-        }
         match inputs.len() {
             0 => ckks_bail!("ckks_add_many: inputs must contain at least one ciphertext"),
             1 => {
@@ -156,9 +152,6 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_ct_into", b)?;
         mul_then_combine(
             dst,
             scratch,
@@ -173,9 +166,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_vec_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_vec_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_add_pt_vec_into", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -197,9 +187,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_const_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_const_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_add_pt_const_into", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -210,7 +197,7 @@ where
 
     fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         pt_coeff: usize,
@@ -221,9 +208,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_const_into_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_const_into_unnormalized", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_add_pt_const_into_unnormalized", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -234,7 +218,7 @@ where
 
     fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
@@ -244,9 +228,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_vec_into_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_add_pt_vec_into_unnormalized", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_add_pt_vec_into_unnormalized", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -286,9 +267,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_const_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_const_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_affine_pt_const_into", affine_const)?;
         self.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
     }
@@ -305,8 +283,6 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_const_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_affine_pt_const_assign", affine_const)?;
         self.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
     }
@@ -335,10 +311,6 @@ where
         S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_vec_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_vec_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_affine_pt_vec_into", scale)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_affine_pt_vec_into", offset)?;
         self.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
     }
@@ -355,9 +327,6 @@ where
         S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_affine_pt_vec_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_affine_pt_vec_assign", scale)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_affine_pt_vec_assign", offset)?;
         self.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
     }
@@ -420,9 +389,6 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_ct_into", b)?;
         mul_then_combine(
             dst,
             scratch,
@@ -437,9 +403,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_pt_vec_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_pt_vec_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_sub_pt_vec_into", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -461,9 +424,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_pt_const_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_sub_pt_const_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_sub_pt_const_into", pt)?;
         mul_then_combine(
             dst,
             scratch,
@@ -487,7 +447,7 @@ fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
 
 fn accumulate_unnormalized<BE, D, F>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertext<D, BE::ZnxWord>,
+    dst: &mut CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
     n: usize,
     scratch: &mut ScratchArena<'_, BE>,
     mut mul_term_into_tmp: F,
@@ -497,7 +457,7 @@ where
     D: Data,
     BE: CKKSAddImpl,
     Module<BE>: GLWENormalize<BE>,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
@@ -576,27 +536,18 @@ where
 
     fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        ring.check_ciphertext("ckks_dot_product_ct", dst)?;
-        for value in a {
-            ring.check_ciphertext("ckks_dot_product_ct", *value)?;
-        }
-        for value in b {
-            ring.check_ciphertext("ckks_dot_product_ct", *value)?;
-        }
-
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;
@@ -606,24 +557,16 @@ where
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        ring.check_ciphertext("ckks_dot_product_pt_vec", dst)?;
-        for value in a {
-            ring.check_ciphertext("ckks_dot_product_pt_vec", *value)?;
-        }
-        for value in b {
-            crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_dot_product_pt_vec", *value)?;
-        }
         check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_pt_vec", dst, n)?;
@@ -635,25 +578,17 @@ where
 
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         pt_coeffs: &[usize],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        ring.check_ciphertext("ckks_dot_product_pt_const", dst)?;
-        for value in a {
-            ring.check_ciphertext("ckks_dot_product_pt_const", *value)?;
-        }
-        for value in b {
-            crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_dot_product_pt_const", *value)?;
-        }
         check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
         check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;
         let n: usize = a.len();

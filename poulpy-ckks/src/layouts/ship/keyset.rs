@@ -110,8 +110,8 @@ pub struct HMuxRotKeyPrepared<D: Data, BE: Backend> {
 /// complex bootstrap; the mux keys are shared between both halves).
 pub struct ShipIndexKeys<D: Data, W: ZnxWord> {
     pub(crate) mux_keys: Vec<Vec<HMuxRotKey<D, W>>>,
-    pub(crate) masks: Vec<CKKSCiphertext<D, W>>,
-    pub(crate) masks2: Vec<CKKSCiphertext<D, W>>,
+    pub(crate) masks: Vec<CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>>,
+    pub(crate) masks2: Vec<CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>>,
 }
 
 /// Prepared form of [`ShipIndexKeys`]: the masks become left convolution
@@ -231,7 +231,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     ) -> Result<ShipKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D, W>: GLWEToBackendRef<BE>,
+        CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>: GLWEToBackendRef<BE>,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -243,14 +243,11 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             + CnvPVecAlloc<BE>
             + CnvPVecBytesOf,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-        ring.check(
-            "SHIP key preparation",
-            crate::layouts::CKKSRing {
-                kind: crate::layouts::CKKSRingKind::Standard,
-                n: self.parameters.plan.n().into(),
-            },
-        )?;
+        ensure!(
+            !<BE::Ring as poulpy_hal::layouts::Ring>::IS_CI && module.n() == self.parameters.plan.n(),
+            "SHIP key preparation requires a standard-ring module of degree {}",
+            self.parameters.plan.n()
+        );
         validate_material(
             &self.parameters,
             &self.index_keys,
@@ -280,21 +277,22 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             scratch.available()
         );
 
-        let prepare_masks =
-            |masks: &[CKKSCiphertext<D, W>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
-                masks
-                    .iter()
-                    .map(|ct| {
-                        let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
-                        module.cnv_prepare_left(
-                            &mut prep.to_backend_mut(),
-                            GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
-                            scratch,
-                        );
-                        prep
-                    })
-                    .collect()
-            };
+        let prepare_masks = |masks: &[CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>],
+                             scratch: &mut ScratchArena<'_, BE>|
+         -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
+            masks
+                .iter()
+                .map(|ct| {
+                    let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
+                    module.cnv_prepare_left(
+                        &mut prep.to_backend_mut(),
+                        GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
+                        scratch,
+                    );
+                    prep
+                })
+                .collect()
+        };
 
         let mut index_keys = Vec::with_capacity(self.index_keys.len());
         for ik in &self.index_keys {
@@ -459,7 +457,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: HostStaged + Backend<OwnedBuf = D>,
+        BE: HostStaged + Backend<OwnedBuf = D, Ring = poulpy_hal::layouts::Standard>,
         D: HostDataRef + HostDataMut,
         F: ShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
@@ -619,16 +617,6 @@ fn validate_material<D: Data, W: ZnxWord>(
     tensor_key: &GLWETensorKey<D, W>,
     conjugation_key: &GLWEAutomorphismKey<D, W>,
 ) -> Result<()> {
-    let ring = crate::layouts::CKKSRing {
-        kind: crate::layouts::CKKSRingKind::Standard,
-        n: parameters.plan.n().into(),
-    };
-
-    for ik in index_keys {
-        for ct in ik.masks.iter().chain(&ik.masks2) {
-            ring.check_ciphertext("SHIP key material", ct)?;
-        }
-    }
     let plan = &parameters.plan;
     let n = plan.n();
     let base2k = parameters.base2k;

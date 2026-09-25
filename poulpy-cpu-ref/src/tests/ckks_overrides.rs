@@ -192,7 +192,6 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         dsize: 1usize.into(),
     };
     let coeff_meta = poulpy_ckks::CKKSLayout {
-        ring_kind: poulpy_ckks::CKKSRingKind::Standard,
         glwe_layout: poulpy_core::layouts::GLWELayout {
             n: 2usize.into(),
             base2k: 16usize.into(),
@@ -297,13 +296,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
     let poly = || Polynomial::new(Basis::Monomial, vec![0.125f64, 0.5]);
     let encoded = || {
         poly()
-            .encode_bsgs_with(
-                &host,
-                poulpy_ckks::CKKSRingKind::Standard,
-                16usize.into(),
-                coeff_meta,
-                SplitStrategy::MinDepth,
-            )
+            .encode_bsgs_with::<poulpy_hal::layouts::Standard>(&host, 16usize.into(), coeff_meta, SplitStrategy::MinDepth)
             .unwrap()
     };
     let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {

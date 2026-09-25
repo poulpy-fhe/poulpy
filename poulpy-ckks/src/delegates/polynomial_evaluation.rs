@@ -32,16 +32,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), poly)?;
-        for power in 1..=BSGSPolynomialInfos::<BE>::degree(poly).max(1) {
-            if power_basis.has_power(power) {
-                crate::api::CKKSModuleInfos::ckks_ring(self)
-                    .check_ciphertext("ckks_eval_poly_real_const_coeffs_from_power_basis", power_basis.get(power)?)?;
-            }
-        }
-
-        crate::api::CKKSModuleInfos::ckks_ring(self)
-            .check_ciphertext("ckks_eval_poly_real_const_coeffs_from_power_basis", res)?;
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis_impl::<R, B, A, G, H>(self, res, poly, power_basis, tsk, scratch)
     }
 
@@ -64,19 +54,7 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "complex polynomial evaluation requires the standard CKKS ring"
         );
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.re)?;
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.im)?;
-        for power in 1..=BSGSPolynomialInfos::<BE>::degree(&poly.re).max(1) {
-            if power_basis.has_power(power) {
-                crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext(
-                    "ckks_eval_poly_complex_const_coeffs_from_power_basis",
-                    power_basis.get(power)?,
-                )?;
-            }
-        }
 
-        crate::api::CKKSModuleInfos::ckks_ring(self)
-            .check_ciphertext("ckks_eval_poly_complex_const_coeffs_from_power_basis", res)?;
         BE::ckks_eval_poly_complex_const_coeffs_from_power_basis_impl::<R, C, A, G, H>(self, res, poly, power_basis, tsk, scratch)
     }
 
@@ -96,10 +74,6 @@ where
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), bsgs)?;
-
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_real_const_coeffs", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_real_const_coeffs", src)?;
         BE::ckks_eval_poly_real_const_coeffs_impl::<R, S, B, H>(self, dst, src, bsgs, tsk, scratch)
     }
 
@@ -122,24 +96,7 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "complex polynomial evaluation requires the standard CKKS ring"
         );
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.re)?;
-        check_polynomial_ring::<BE, _>(crate::api::CKKSModuleInfos::ckks_ring(self), &poly.im)?;
 
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_complex_const_coeffs", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_poly_complex_const_coeffs", src)?;
         BE::ckks_eval_poly_complex_const_coeffs_impl::<R, S, C, H>(self, dst, src, poly, tsk, scratch)
     }
-}
-
-pub(crate) fn check_polynomial_ring<BE: Backend, B: BSGSPolynomialInfos<BE>>(
-    ring: crate::layouts::CKKSRing,
-    poly: &B,
-) -> Result<()>
-where
-    B::Coeffs: crate::CKKSInfos,
-{
-    for i in 0..poly.baby_steps() {
-        ring.check_coefficients("polynomial coefficients", poly.baby_step(i))?;
-    }
-    Ok(())
 }

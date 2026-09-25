@@ -223,6 +223,7 @@ impl<'env> OpaqueBackend<'env> {
 }
 impl Backend for OpaqueBackend<'_> {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;

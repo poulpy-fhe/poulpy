@@ -73,7 +73,6 @@ fn noise_bound(log_delta: usize) -> f64 {
 fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
     let log_delta = base.prec().log_delta();
     CKKSTestParams {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n: base.n,
         base2k: base.base2k,
         k: (log_delta * (num_factors + 3)).next_multiple_of(base.base2k),
@@ -94,7 +93,7 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
 /// budget consumption.
 fn run_chain<BE, F, E>(base: &CKKSTestParams, factors: &[ComplexDiagonals<F>], label: &str)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -206,7 +205,7 @@ where
 /// `n = 2hC` slots), grouped at radices 1 and 2.
 pub fn test_paco_partial_c2s<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -238,7 +237,7 @@ where
 /// `C/2` slots), grouped at radices 1 and 2.
 pub fn test_paco_stc<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -285,7 +284,7 @@ where
 /// inverse).
 pub fn test_paco_packing<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

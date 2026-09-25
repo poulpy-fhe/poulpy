@@ -45,7 +45,6 @@ where
     let k = 8 * b + 7;
     let key = key_layout(module.n(), b, k, 1, 1, 1);
     let pt = CKKSLayout {
-        ring_kind: crate::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: module.n().into(),
             base2k: b.into(),
@@ -62,7 +61,6 @@ where
     let log_max_slots = module.n().ilog2() as usize - 1;
     for log_slots in [log_max_slots, log_max_slots - 2] {
         let layout = CKKSLayout {
-            ring_kind: crate::CKKSRingKind::Standard,
             glwe_layout: GLWELayout {
                 n: module.n().into(),
                 base2k: b.into(),

@@ -15,8 +15,6 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_into", src)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "imaginary multiplication requires the standard CKKS ring"
@@ -28,7 +26,6 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_i_assign", dst)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "imaginary multiplication requires the standard CKKS ring"
@@ -45,8 +42,6 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_into", src)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "imaginary multiplication requires the standard CKKS ring"
@@ -58,7 +53,6 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_div_i_assign", dst)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "imaginary multiplication requires the standard CKKS ring"

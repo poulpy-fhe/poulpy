@@ -2,7 +2,6 @@
 
 use super::super::Ring;
 use super::NTT4x30Neon;
-use poulpy_cpu_ref::ring::CpuRing;
 
 use std::ptr::NonNull;
 
@@ -55,7 +54,7 @@ impl Backend for NTT4x30Neon {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30NeonHandle;
     type Location = Host;
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if Ring::IS_CI { 4 } else { 2 };
+    type Ring = Ring;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)

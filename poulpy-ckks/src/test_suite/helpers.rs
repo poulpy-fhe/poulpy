@@ -90,7 +90,6 @@ pub fn next_test_seed(tag: u8) -> [u8; 32] {
 /// the layout's `n`/`base2k` are placeholders (callers pass an explicit `base2k`,
 /// and only `k()`/`meta()` are consumed off this spec).
 pub const PT_PREC: CKKSLayout = CKKSLayout {
-    ring_kind: crate::layouts::CKKSRingKind::Standard,
     glwe_layout: GLWELayout {
         n: Degree(256),
         base2k: Base2K(52),
@@ -126,7 +125,6 @@ pub fn ckks_snapshot<A: CKKSInfos>(a: &A) -> CKKSLayout {
 /// Like [`ckks_spec`] but with an explicit `log_sparsity`.
 pub fn ckks_spec_sparse(n: usize, base2k: usize, log_delta: usize, log_budget: usize, log_sparsity: usize) -> CKKSLayout {
     CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: n.into(),
             base2k: base2k.into(),
@@ -493,7 +491,6 @@ pub fn quantize<F: TestScalar>(values: &[F], log_delta: usize) -> Vec<F> {
 pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
     let log_budget = params.prec().log_budget();
     CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: params.n.into(),
             base2k: params.base2k.into(),
@@ -539,18 +536,21 @@ where
 
 // ─── plaintext upload / download ─────────────────────────────────────────────
 
-/// Uploads a host-side plaintext to the backend.
-pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<BE>
+/// Uploads a host-side plaintext to the backend, retagging it with the backend ring.
+pub fn upload_pt<BE, R: poulpy_hal::layouts::Ring>(
+    module: &Module<BE>,
+    pt: &crate::polynomial::HostCoeffs<R>,
+) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
 {
     let mut inner = module.glwe_plaintext_alloc_from_infos(&pt.inner);
     pt.inner.transfer_into(&mut inner);
-    CKKSPlaintext::from_inner(inner, pt.meta(), pt.ring_kind())
+    CKKSPlaintext::from_inner(inner, pt.meta())
 }
 
 /// Downloads a backend plaintext to the host.
-pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord> {
+pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring> {
     pt.to_host_owned::<BE>()
 }
 
@@ -931,7 +931,7 @@ pub fn ckks_encrypt_pt<BE>(
     module: &Module<BE>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
-    host_pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    host_pt: &crate::polynomial::HostCoeffs<impl poulpy_hal::layouts::Ring>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSCiphertextOwned<BE>
 where
@@ -1016,7 +1016,7 @@ pub fn ckks_decrypt_with_prec<BE>(
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     prec: CKKSLayout,
     scratch: &mut ScratchArena<'_, BE>,
-) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord>>
+) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -1055,7 +1055,6 @@ where
         .min(params.prec().log_budget())
         .min(127usize.saturating_sub(log_delta));
     let prec = CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: ct.n(),
             base2k: ct.base2k(),
@@ -1073,10 +1072,10 @@ where
 }
 
 /// Decodes a host-side plaintext to slot vectors.
-pub fn ckks_decode_pt<F, E>(
+pub fn ckks_decode_pt<F, E, R: poulpy_hal::layouts::Ring>(
     encoder: &ReferenceEncoder<E>,
     m: usize,
-    pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    pt: &crate::polynomial::HostCoeffs<R>,
 ) -> (Vec<F>, Vec<F>)
 where
     F: TestScalar,
@@ -1289,7 +1288,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // the extracts re-precision it exactly as `ckks_decrypt` would.
     let mut full_pt = module.glwe_plaintext_alloc_from_infos(ct);
     module.glwe_decrypt(ct, &mut full_pt, sk, scratch);
-    let full_pt = CKKSPlaintext::from_inner(full_pt, ct.meta(), ct.ring_kind());
+    let full_pt = CKKSPlaintext::from_inner(full_pt, ct.meta());
 
     // ── Ring-domain check: the decryption is a valid plaintext. ──────────────
     // Re-precision the decryption at full width, subtract the reference and bound
@@ -1339,9 +1338,9 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
 
-pub fn assert_ct_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_ct_meta<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R, S>,
     log_delta: usize,
     log_budget: usize,
 ) {
@@ -1355,10 +1354,10 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
-pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
-    input: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R, S>,
+    input: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1368,11 +1367,11 @@ pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
     );
 }
 
-pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_binary_output_meta<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
-    a: &CKKSCiphertext<impl Data, W>,
-    b: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R, S>,
+    a: &CKKSCiphertext<impl Data, W, R>,
+    b: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1382,9 +1381,9 @@ pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     );
 }
 
-pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R, S>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
@@ -1396,9 +1395,9 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
-pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R, S>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {

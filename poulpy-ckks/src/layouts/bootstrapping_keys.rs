@@ -256,7 +256,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             + GLWESecretSampling<BE>,
     {
         anyhow::ensure!(
-            crate::api::CKKSModuleInfos::ckks_ring(module).kind == crate::CKKSRingKind::Standard,
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
             "bootstrap key generation requires a standard module"
         );
         anyhow::ensure!(sk_dense.n().as_usize() == module.n(), "invalid bootstrap secret degree");
@@ -385,14 +385,13 @@ impl<D: Data, W: ZnxWord> CIBootstrappingKeySet<D, W> {
             + GLWESwitchingKeyPreparedFactory<BE>,
     {
         use crate::CKKSModuleInfos;
-        let ring = module.ckks_ring();
         anyhow::ensure!(
-            ring.kind == crate::CKKSRingKind::Standard,
+            !module.ckks_is_conjugate_invariant(),
             "CI bootstrap keys require a standard preparation module"
         );
 
         anyhow::ensure!(
-            self.ci_to_standard.n() == ring.n && self.standard_to_ci.n() == ring.n,
+            self.ci_to_standard.n().as_usize() == module.n() && self.standard_to_ci.n().as_usize() == module.n(),
             "invalid CI switching-key degree"
         );
         let mut ci_to_standard = module.glwe_switching_key_prepared_alloc_from_infos(&self.ci_to_standard);
@@ -433,27 +432,29 @@ impl<BE: Backend<ZnxWord = i64>, F> crate::layouts::CIBootstrappingContext<BE, F
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>,
     {
-        use crate::{CKKSModuleInfos, CKKSRing, CKKSRingKind};
+        use crate::CKKSModuleInfos;
         use poulpy_core::{
             GetDistribution,
             layouts::{GLWESecretToBackendMut, GLWESecretToBackendRef},
         };
         use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
-        let ring = CKKSRing {
-            kind: CKKSRingKind::Standard,
-            n: standard_module.n().into(),
-        };
-        ring.check("CI bootstrap standard module", standard_module.ckks_ring())?;
+        anyhow::ensure!(
+            !standard_module.ckks_is_conjugate_invariant(),
+            "CI bootstrap standard module must use the standard ring"
+        );
 
-        anyhow::ensure!(standard_sk.n() == ring.n, "invalid standard secret degree");
-        anyhow::ensure!(ci_sk.n().as_usize() * 2 == ring.n.as_usize(), "invalid CI secret degree");
+        anyhow::ensure!(
+            standard_sk.n().as_usize() == standard_module.n(),
+            "invalid standard secret degree"
+        );
+        anyhow::ensure!(ci_sk.n().as_usize() * 2 == standard_module.n(), "invalid CI secret degree");
         anyhow::ensure!(
             ci_sk.rank().as_usize() == 1 && standard_sk.rank().as_usize() == 1,
             "CI bootstrapping requires rank-1 secrets"
         );
         for key in [&layout.ci_to_standard, &layout.standard_to_ci] {
             anyhow::ensure!(
-                key.n == ring.n && key.rank_in.as_usize() == 1 && key.rank_out.as_usize() == 1,
+                key.n.as_usize() == standard_module.n() && key.rank_in.as_usize() == 1 && key.rank_out.as_usize() == 1,
                 "invalid CI switching-key layout"
             );
         }

@@ -2,7 +2,7 @@ use crate::layouts::CKKSCiphertextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, split_degree};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, ZnxWord};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -15,9 +15,9 @@ pub use crate::api::{Basis, Parity};
 pub use poulpy_core::layouts::{PowerBasis, PowerBasisHelper};
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
-pub trait PowerBasisInsert<D: Data, W: ZnxWord> {
+pub trait PowerBasisInsert<D: Data, W: ZnxWord, R: Ring> {
     /// Inserts a caller-provided pre-computed ciphertext power.
-    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W>) -> Result<()>;
+    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()>;
 }
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
@@ -59,8 +59,8 @@ pub trait PowerBasisGen<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D, W>> {
-    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W>) -> Result<()> {
+impl<D: Data, W: ZnxWord, R: Ring> PowerBasisInsert<D, W, R> for PowerBasis<CKKSCiphertext<D, W, R>> {
+    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()> {
         ensure!(
             n >= 2,
             "PowerBasis::insert: power must be at least 2; power 1 is set at construction"
@@ -71,11 +71,6 @@ impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D
             let x = self
                 .get_stored(1)
                 .expect("PowerBasis::new always stores the degree-one power");
-            crate::layouts::CKKSRing {
-                kind: x.ring_kind(),
-                n: x.n(),
-            }
-            .check_ciphertext("power-basis insertion", &value)?;
             (x.n(), x.base2k(), x.rank())
         };
         ensure!(
@@ -109,13 +104,6 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-
-        for power in 1..=n.max(1) {
-            if let Some(value) = self.get_stored(power) {
-                ring.check_ciphertext("power-basis generation", value)?;
-            }
-        }
         ensure!(
             self.basis() == Basis::Monomial,
             "PowerBasis::gen_power only supports the monomial basis; use gen_power_chebyshev for Chebyshev"
@@ -150,13 +138,6 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-
-        for power in 1..=n.max(1) {
-            if let Some(value) = self.get_stored(power) {
-                ring.check_ciphertext("power-basis generation", value)?;
-            }
-        }
         ensure!(
             self.basis() == Basis::Chebyshev,
             "gen_power_chebyshev requires a Chebyshev PowerBasis"
@@ -220,13 +201,6 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-
-        for power in 1..=degree.max(1) {
-            if let Some(value) = self.get_stored(power) {
-                ring.check_ciphertext("power-basis generation", value)?;
-            }
-        }
         ensure!(degree >= 1, "populate: degree must be ≥ 1");
 
         let log_degree = (usize::BITS - degree.leading_zeros()) as usize;

@@ -21,7 +21,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: GLWEInfos + CKKSInfos,
     {
-        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), infos.meta(), infos.ring_kind())
+        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), infos.meta())
     }
 
     /// Allocates a default-meta ciphertext from a bare GLWE layout; the name
@@ -30,12 +30,12 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: GLWEInfos,
     {
-        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), default_meta(self), self.ckks_ring().kind)
+        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), default_meta(self))
     }
 
     /// Allocates a default-meta ciphertext of the given `rank`.
     fn ckks_ciphertext_alloc_with_rank(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> CKKSCiphertextOwned<BE> {
-        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), default_meta(self), self.ckks_ring().kind)
+        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), default_meta(self))
     }
 
     /// Rank-1 convenience over [`Self::ckks_ciphertext_alloc_with_rank`].
@@ -54,7 +54,6 @@ pub trait CKKSModuleAlloc<BE: Backend>:
                 k: infos.k(),
             }),
             infos.meta(),
-            infos.ring_kind(),
         )
     }
 
@@ -69,7 +68,6 @@ pub trait CKKSModuleAlloc<BE: Backend>:
         CKKSPlaintext::from_inner(
             self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout { n, base2k, k }),
             default_meta(self),
-            self.ckks_ring().kind,
         )
     }
 

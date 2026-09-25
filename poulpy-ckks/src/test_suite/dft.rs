@@ -65,7 +65,6 @@ fn dense_params(params: &CKKSTestParams) -> CKKSTestParams {
     let log_delta = params.prec().log_delta();
     let k = (log_delta * (DENSE_LOG_SLOTS + 3)).next_multiple_of(base2k);
     CKKSTestParams {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n: 1 << (DENSE_LOG_SLOTS + 1),
         base2k,
         k,
@@ -89,7 +88,6 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
     let log_delta = params.prec().log_delta();
     let k = (log_delta * 7).next_multiple_of(base2k);
     CKKSTestParams {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         n: 64,
         base2k,
         k,
@@ -151,7 +149,7 @@ fn noise_bound(log_delta: usize) -> f64 {
 /// log_sparsity)` as `ct` — the scale [`GLWENoise`] needs the expected value at.
 fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSPlaintextOwned<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSModuleAlloc<BE>,
 {
     let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
@@ -171,7 +169,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -248,7 +246,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -325,7 +323,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -411,7 +409,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -506,7 +504,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -596,7 +594,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -706,7 +704,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

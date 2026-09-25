@@ -500,9 +500,9 @@ impl<BE: Backend, F: CKKSEncodingScalar> CIBootstrappingContext<BE, F> {
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        use crate::{CKKSModuleInfos, CKKSRingKind};
+        use crate::CKKSModuleInfos;
         ensure!(
-            module.ckks_ring().kind == CKKSRingKind::Standard,
+            !module.ckks_is_conjugate_invariant(),
             "CI bootstrap compilation requires a standard module"
         );
         let log_slots = module.n().ilog2() as usize - 1;

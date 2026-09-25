@@ -39,9 +39,9 @@ use poulpy_core::GLWEBytesOf;
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the
 /// single `LinearTransformation<P>` container without overlapping impls.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
-    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -58,13 +58,9 @@ where
 }
 
 /// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
-impl<D: Data, W: ZnxWord> LtDiagonalScale for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring> LtDiagonalScale for CKKSPlaintext<D, W, R> {
     fn lt_log_scale(&self) -> usize {
         self.log_delta()
-    }
-
-    fn lt_check_ring(&self, op: &'static str, ring: crate::CKKSRing) -> Result<()> {
-        ring.check_plaintext(op, self)
     }
 }
 
@@ -74,54 +70,6 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
     fn lt_log_scale(&self) -> usize {
         self.log_scale()
     }
-
-    fn lt_check_ring(&self, op: &'static str, ring: crate::CKKSRing) -> Result<()> {
-        let kind = if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
-            crate::CKKSRingKind::ConjugateInvariant
-        } else {
-            crate::CKKSRingKind::Standard
-        };
-        let n = self.n().as_usize();
-        if kind != ring.kind || n == 0 || !ring.n.as_usize().is_multiple_of(n) {
-            return Err(CKKSCompositionError::RingMismatch {
-                op,
-                expected: ring,
-                actual: crate::CKKSRing { kind, n: self.n() },
-            }
-            .into());
-        }
-        Ok(())
-    }
-}
-
-pub(crate) fn check_linear_transformation<P: LtDiagonalScale>(
-    op: &'static str,
-    ring: crate::CKKSRing,
-    lt: &LinearTransformation<P>,
-) -> Result<()> {
-    for step in &lt.giant_steps {
-        for diagonal in &step.diagonals {
-            diagonal.plaintext.lt_check_ring(op, ring)?;
-        }
-    }
-    Ok(())
-}
-
-fn check_baby_steps<BE: Backend>(
-    op: &'static str,
-    ring: crate::CKKSRing,
-    babies: &LinearTransformationBabySteps<BE>,
-) -> Result<()> {
-    for rotation in babies.baby_steps() {
-        ring.check(
-            op,
-            crate::CKKSRing {
-                kind: ring.kind,
-                n: babies.baby_step(rotation).n().into(),
-            },
-        )?;
-    }
-    Ok(())
 }
 
 impl<BE: Backend> CKKSLinearTransformationOps<BE> for Module<BE>
@@ -181,13 +129,6 @@ where
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        for step in &lt.giant_steps {
-            for diagonal in &step.diagonals {
-                self.ckks_ring()
-                    .check_plaintext("ckks_prepare_linear_transformation_rhs", &diagonal.plaintext)?;
-            }
-        }
-        check_linear_transformation("ckks_prepare_linear_transformation_rhs", self.ckks_ring(), prepared)?;
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
             for step in &lt.giant_steps {
                 for diagonal in &step.diagonals {
@@ -215,9 +156,6 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_ring()
-            .check_ciphertext("ckks_prepare_linear_transformation_baby_steps", src)?;
-        check_baby_steps("ckks_prepare_linear_transformation_baby_steps", self.ckks_ring(), babies)?;
         let cyclotomic_order = self.cyclotomic_order();
         let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
@@ -254,12 +192,6 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_into", src)?;
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_into", dst)?;
-        check_linear_transformation("ckks_eval_linear_transformation_into", self.ckks_ring(), lt)?;
-        check_baby_steps("ckks_eval_linear_transformation_into", self.ckks_ring(), babies)?;
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
@@ -307,10 +239,6 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_assign", dst)?;
-        check_linear_transformation("ckks_eval_linear_transformation_assign", self.ckks_ring(), lt)?;
-        check_baby_steps("ckks_eval_linear_transformation_assign", self.ckks_ring(), babies)?;
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {
@@ -338,11 +266,6 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_self_into", src)?;
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_self_into", dst)?;
-        check_linear_transformation("ckks_eval_linear_transformation_self_into", self.ckks_ring(), lt)?;
         // Only the (small) input baby cache is materialized here; with a plaintext
         // `lt` the matrix RHS itself is streamed inside the eval.
         let mut babies = LinearTransformationBabySteps::alloc(self, lt.baby_steps(), src);
@@ -362,9 +285,6 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_ring()
-            .check_ciphertext("ckks_eval_linear_transformation_self_assign", dst)?;
-        check_linear_transformation("ckks_eval_linear_transformation_self_assign", self.ckks_ring(), lt)?;
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {

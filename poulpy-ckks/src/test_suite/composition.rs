@@ -27,7 +27,7 @@ fn constant<BE, F, E>(
     m: usize,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -93,7 +93,7 @@ fn mul_by_y_expected<F: TestScalar>(
 /// Adding two plaintext-scaled copies of the same ciphertext stays accurate.
 pub fn test_linear_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -157,7 +157,7 @@ where
 /// A mixed `c1*x + c2*x^2` composition remains decryptable and accurate.
 pub fn test_poly2_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -225,7 +225,7 @@ where
 /// Adding a constant plaintext to `c1*x + c2*x^2` keeps the expected value.
 pub fn test_poly2_sum_with_const<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -294,7 +294,7 @@ where
 /// Evaluates `y * (c0 + c1*x + c2*x^2)` with encrypted `x` and `y`.
 pub fn test_poly2_mul<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -383,7 +383,7 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,

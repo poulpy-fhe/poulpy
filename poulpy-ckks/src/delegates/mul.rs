@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSMulOps;
@@ -74,17 +74,12 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_into", b)?;
         let k = mul_k(a, b);
-        let key = tsk
-            .get_tensor_key(k)
+        tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_into",
                 k: k.into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_mul_into", key.n())?;
         BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
     }
 
@@ -94,16 +89,12 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_assign", a)?;
         let k = mul_k(dst, a);
-        let key = tsk
-            .get_tensor_key(k)
+        tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_assign",
                 k: k.into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_mul_assign", key.n())?;
         BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
     }
 
@@ -111,7 +102,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_prepare_right", a)?;
         BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
@@ -126,16 +116,12 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check("ckks_mul_prepared_assign", prepared.ring())?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_prepared_assign", dst)?;
         let k = prepared_mul_k_checked(dst, prepared.k)?;
-        let key = tsk
-            .get_tensor_key(k)
+        tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_prepared_assign",
                 k: k.into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_mul_prepared_assign", key.n())?;
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
     }
 
@@ -145,16 +131,12 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_into", a)?;
         let k = square_k(a);
-        let key = tsk
-            .get_tensor_key(k)
+        tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_square_into",
                 k: k.into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_square_into", key.n())?;
         BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
     }
 
@@ -163,15 +145,12 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_square_assign", dst)?;
         let k = square_k(dst);
-        let key = tsk
-            .get_tensor_key(k)
+        tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_square_assign",
                 k: k.into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_square_assign", key.n())?;
         BE::ckks_square_assign_impl(self, dst, tsk, scratch)
     }
 
@@ -181,9 +160,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_pt_vec_into", pt)?;
         BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
 
@@ -192,8 +168,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_vec_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_mul_pt_vec_assign", pt)?;
         BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)
     }
 
@@ -210,9 +184,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_pt_const_into", pt)?;
         BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)
     }
 
@@ -227,8 +198,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_mul_pt_const_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_mul_pt_const_assign", pt)?;
         BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
     }
 }

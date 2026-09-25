@@ -16,8 +16,6 @@ impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_neg_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_neg_into", src)?;
         BE::ckks_neg_into_impl(self, dst, src, scratch)
     }
 
@@ -25,7 +23,6 @@ impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_neg_assign", dst)?;
         BE::ckks_neg_assign_impl(self, dst)
     }
 }

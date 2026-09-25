@@ -37,9 +37,6 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_encrypt_sk", ct)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_encrypt_sk", pt)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_encrypt_sk", sk.to_backend_ref().n())?;
         BE::ckks_encrypt_sk_impl(self, ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 }
@@ -59,9 +56,6 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_decrypt", pt)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_decrypt", ct)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_decrypt", sk.to_backend_ref().n())?;
         BE::ckks_decrypt_impl(self, pt, ct, sk, scratch)
     }
 }

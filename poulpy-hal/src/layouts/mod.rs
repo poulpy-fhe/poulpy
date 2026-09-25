@@ -309,6 +309,7 @@ impl Backend for HostBytesBackend {
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
+    type Ring = crate::layouts::Standard;
     impl_host_byte_storage!();
 }
 
@@ -536,8 +537,7 @@ macro_rules! impl_backend_from {
             type BufMut<'a> = <$from as poulpy_hal::layouts::Backend>::BufMut<'a>;
             type Handle = <$from as poulpy_hal::layouts::Backend>::Handle;
             type Location = <$from as poulpy_hal::layouts::Backend>::Location;
-
-            const CYCLOTOMIC_ORDER_FACTOR: i64 = <$from as poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR;
+            type Ring = <$from as poulpy_hal::layouts::Backend>::Ring;
 
             fn alloc_bytes(len: usize) -> Self::OwnedBuf {
                 <$from as poulpy_hal::layouts::Backend>::alloc_bytes(len)

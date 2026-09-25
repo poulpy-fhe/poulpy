@@ -6,6 +6,35 @@ use crate::{
     api::{ModuleLogN, ModuleN},
 };
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Sealed compile-time ring of a backend.
+pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
+    /// Whether coefficients use the conjugate-invariant basis.
+    const IS_CI: bool;
+}
+
+/// The standard negacyclic ring `Z[X]/(X^N + 1)`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Standard;
+
+/// The conjugate-invariant subring of a degree-doubled negacyclic ring.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConjugateInvariant;
+
+impl sealed::Sealed for Standard {}
+impl sealed::Sealed for ConjugateInvariant {}
+
+impl Ring for Standard {
+    const IS_CI: bool = false;
+}
+
+impl Ring for ConjugateInvariant {
+    const IS_CI: bool = true;
+}
+
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
 ///
 /// Defines the word types used for the coefficient domain (`ZnxWord`),
@@ -73,8 +102,11 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// or [`Device`](crate::layouts::Device).
     type Location: Location;
 
+    /// Ring served by this backend.
+    type Ring: Ring;
+
     /// Ambient cyclotomic order divided by the coefficient dimension.
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = if <Self::Ring as Ring>::IS_CI { 4 } else { 2 };
 
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;

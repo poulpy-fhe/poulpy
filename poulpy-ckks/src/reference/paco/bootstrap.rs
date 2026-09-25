@@ -179,20 +179,10 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let plan = context.plan();
-    use crate::layouts::{CKKSRing, CKKSRingKind};
-    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-    ring.check(
-        "PaCo module",
-        CKKSRing {
-            kind: CKKSRingKind::Standard,
-            n: plan.n().into(),
-        },
-    )?;
-    ring.check_ciphertext("PaCo input", input)?;
-    ring.check_ciphertext("PaCo output", output)?;
-    for ct in keys.bootstrapping_keys() {
-        ring.check_ciphertext("PaCo key material", ct)?;
-    }
+    ckks_ensure!(
+        !<BE::Ring as poulpy_hal::layouts::Ring>::IS_CI,
+        "PaCo requires a standard-ring module"
+    );
 
     ckks_ensure!(
         keys.parameters() == PaCoKeyParameters::from_plan(plan),

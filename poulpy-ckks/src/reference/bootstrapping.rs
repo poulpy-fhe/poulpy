@@ -36,7 +36,6 @@ where
 {
     let base2k = ct_in.base2k();
     let boot_layout = CKKSLayout {
-        ring_kind: ct_out.ring_kind(),
         glwe_layout: GLWELayout {
             n: ct_out.n(),
             base2k,
@@ -48,7 +47,6 @@ where
         meta: CKKSMeta::default(),
     };
     let in_layout = CKKSLayout {
-        ring_kind: ct_in.ring_kind(),
         glwe_layout: GLWELayout {
             n: ct_in.n(),
             base2k,
@@ -110,7 +108,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         // multiplies by.
         let coeffs_meta = ctx.eval_mod().plan.coeffs_meta;
         let coeffs_layout = CKKSLayout {
-            ring_kind: ct_out.ring_kind(),
             glwe_layout: GLWELayout {
                 n: ct_out.n(),
                 base2k,
@@ -301,7 +298,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         // The input-width copy is scoped so its scratch is released right after
         // ModUp widens it into `dst`.
         scratch.scope(|scratch_inner| {
-            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta(), src.ring_kind());
+            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
             self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
             self.ckks_bootstrap_mod_up_from_mut(dst, &mut ct0, Some(eval_mod), 0, keys, &mut scratch_inner)
         })?;
@@ -524,14 +521,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         };
 
         scratch.scope(|scratch_local| {
-            let (mut ct_raised, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta(), ct_in.ring_kind());
+            let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
 
-            let (mut r0, scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
-            let (mut i0, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
+            let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
+            let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
             match ctx.coeffs_to_slots_bypass() {
                 None => {
@@ -551,10 +545,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
                     self.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)?;
                 }
                 Some(bypass) => {
-                    let (mut r0_hp, scratch_local) =
-                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
+                    let (mut r0_hp, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
                     let (mut i0_hp, mut scratch_local) =
-                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
+                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
                     self.ckks_coeffs_to_slots_split(
                         &mut r0_hp,
                         &mut i0_hp,
@@ -622,8 +615,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         };
 
         scratch.scope(|scratch_inner| {
-            let (mut ct_coeffs, mut scratch_inner) =
-                scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta(), ct_in.ring_kind());
+            let (mut ct_coeffs, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta());
             self.ckks_copy(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             self.ckks_dft_evaluate_assign(
                 &mut ct_coeffs,
@@ -726,15 +718,14 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             // (encapsulate) denseToSparse → ModUp → sparseToDense. With encapsulation the
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
-            let (mut ct, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta(), ct_in.ring_kind());
+            let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             self.ckks_bootstrap_mod_up_reference(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
             // pipeline this feeds EvalMod directly; in EvalRound+ it is the low-precision
             // transform feeding the round.
-            let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta(), ct.ring_kind());
-            let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta(), ct.ring_kind());
+            let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
+            let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
             match ctx.coeffs_to_slots_bypass() {
                 // Standard: EvalMod's clean residue goes straight to SlotsToCoeffs.
@@ -755,10 +746,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
                 // integer part and the low-precision error `e` both cancel, leaving the
                 // message at the high-precision (bypass) transform's precision.
                 Some(bypass) => {
-                    let (mut r0_hp, scratch_local) =
-                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta(), ct.ring_kind());
-                    let (mut i0_hp, mut scratch_local) =
-                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta(), ct.ring_kind());
+                    let (mut r0_hp, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
+                    let (mut i0_hp, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
                     self.ckks_coeffs_to_slots_split(
                         &mut r0_hp,
                         &mut i0_hp,
@@ -838,10 +827,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             rank: Rank(1),
         };
         scratch.scope(|scratch_local| {
-            let (mut ct_raised, scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta(), ct_in.ring_kind());
-            let (mut r0, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta(), ct_in.ring_kind());
+            let (mut ct_raised, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
+            let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
             self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
             self.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
@@ -940,22 +927,18 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             rank: Rank(1),
         };
         scratch.scope(|scratch_local| {
-            let (mut ct_raised, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta(), ct_in.ring_kind());
+            let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
 
             if ct_in.slots().is_real() {
-                let (mut r0, mut scratch_local) =
-                    scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
+                let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
                 self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
                 self.remove_c2s_guard_bits(&mut ct_raised, ctx.c2s_guard_bits(), &mut scratch_local);
                 return eval_lut_batch(self, ct_outs, &ct_raised, ctx, luts, keys, shared, &mut scratch_local);
             }
 
-            let (mut r0, scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
-            let (mut i0, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta(), ct_raised.ring_kind());
+            let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
+            let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
             self.remove_c2s_guard_bits(&mut r0, ctx.c2s_guard_bits(), &mut scratch_local);
             self.remove_c2s_guard_bits(&mut i0, ctx.c2s_guard_bits(), &mut scratch_local);
@@ -1035,9 +1018,6 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let ring = crate::api::CKKSModuleInfos::ckks_ring(module);
-    ring.check_ciphertext("encapsulated mod-up", src)?;
-    ring.check_ciphertext("encapsulated mod-up", dst)?;
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.

@@ -76,7 +76,6 @@ where
         rank: Rank(1),
     };
     let raised = CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout { k: kk.into(), ..bottom },
         meta: CKKSMeta {
             log_delta: plan.log_delta_work(),

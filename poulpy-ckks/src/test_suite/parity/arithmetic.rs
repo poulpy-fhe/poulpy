@@ -22,7 +22,6 @@ impl<B> ArithmeticParityBackend for B where
 
 pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, sparse: usize, slots: SlotsKind) -> CKKSLayout {
     CKKSLayout {
-        ring_kind: crate::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: params.n.into(),
             base2k: params.base2k.into(),

@@ -32,8 +32,6 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_rotate_into", src)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "conjugation requires the standard CKKS ring"
@@ -46,7 +44,6 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 rotation: k,
                 k: src.k().into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_conjugate_rotate_into", key.n())?;
         BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)
     }
 
@@ -55,7 +52,6 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_conjugate_assign", dst)?;
         ckks_ensure!(
             !self.ckks_is_conjugate_invariant(),
             "conjugation requires the standard CKKS ring"
@@ -67,7 +63,6 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 rotation: 0,
                 k: dst.k().into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_conjugate_assign", key.n())?;
         BE::ckks_conjugate_assign_impl(self, dst, &key, scratch)
     }
 }

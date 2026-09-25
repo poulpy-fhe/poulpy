@@ -13,7 +13,6 @@
 
 use super::super::Ring;
 use super::NTT4x30Avx512;
-use poulpy_cpu_ref::ring::CpuRing;
 
 use std::ptr::NonNull;
 
@@ -69,7 +68,7 @@ impl Backend for NTT4x30Avx512 {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30Avx512Handle;
     type Location = poulpy_hal::layouts::Host;
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if Ring::IS_CI { 4 } else { 2 };
+    type Ring = Ring;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)

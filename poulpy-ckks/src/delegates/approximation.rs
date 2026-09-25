@@ -75,16 +75,6 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        super::polynomial_evaluation::check_polynomial_ring::<BE, _>(
-            crate::api::CKKSModuleInfos::ckks_ring(self),
-            &approximation.poly,
-        )?;
-        if let Some(affine) = &approximation.affine {
-            crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("approximation", affine)?;
-        }
-
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_approximation", res)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_approximation", input)?;
         let required = approximation.consumed_bits(input.log_delta());
         ckks_ensure!(
             input.log_budget() >= required,

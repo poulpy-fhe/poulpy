@@ -49,7 +49,7 @@ fn assert_ciphertext_unchanged<BE>(
     before: &crate::layouts::CKKSCiphertextOwned<HostBytesBackend>,
     after: &crate::layouts::CKKSCiphertextOwned<BE>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
 {
     let after = after.to_host_owned::<BE>();
     assert_eq!(before.meta(), after.meta(), "a rejected call changed CKKS metadata");
@@ -77,13 +77,12 @@ fn decrypt_coeffs_host<BE>(
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) -> Vec<f64>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
 {
     use crate::test_suite::helpers::ckks_decrypt_with_prec;
     let (log_delta, base2k) = (ct.log_delta(), ct.base2k());
     let prec = crate::CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: ct.n(),
             base2k,
@@ -118,7 +117,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -432,7 +431,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>

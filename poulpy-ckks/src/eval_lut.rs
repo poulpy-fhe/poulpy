@@ -95,12 +95,12 @@ where
         rank: res.rank(),
     };
     scratch.scope(|scratch| {
-        let (mut e_x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
+        let (mut e_x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
         module.ckks_eval_mod(&mut e_x, ct, eval_exp, tsk, &mut scratch)?;
         module.ckks_eval_poly_complex_const_coeffs(res, &e_x, lut, tsk, &mut scratch)
     })?;
     scratch.scope(|scratch| {
-        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
+        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
@@ -197,7 +197,7 @@ where
         rank: res.rank(),
     };
     scratch.scope(|scratch| {
-        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta(), res.ring_kind());
+        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;

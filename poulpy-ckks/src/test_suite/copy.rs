@@ -28,7 +28,7 @@ pub fn test_copy_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -75,7 +75,7 @@ pub fn test_copy_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,

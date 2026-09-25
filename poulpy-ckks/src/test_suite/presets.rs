@@ -71,7 +71,7 @@ pub struct BootstrappingPresetRun<BE: Backend> {
 
 impl<BE> BootstrappingPresetRun<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -242,7 +242,7 @@ where
 /// slow, so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>(fixture_base2k: usize)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -287,8 +287,8 @@ pub fn ci_bootstrapping_preset_meets_precision<BE, STD>(
     preset: crate::presets::bootstrapping::CIBootstrappingPreset,
     fixture_base2k: usize,
 ) where
-    BE: TestContextBackend,
-    STD: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
+    STD: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<STD>: TestContextModule<STD> + CKKSEncodingOps<STD, f64> + CKKSBootstrappingOps<STD> + CKKSDFTMatrixOps<STD, f64>,
     for<'a> STD::BufRef<'a>: HostDataRef,
     for<'a> STD::BufMut<'a>: HostDataMut,
@@ -303,7 +303,6 @@ pub fn ci_bootstrapping_preset_meets_precision<BE, STD>(
         preset
     };
     let params = crate::test_suite::CKKSTestParams {
-        ring_kind: crate::CKKSRingKind::ConjugateInvariant,
         n: preset.n(),
         base2k: preset.base2k(),
         k: preset.bootstrap_k(),
@@ -362,8 +361,8 @@ pub(crate) struct CIBootstrappingRun<BE: Backend, STD: Backend> {
 
 impl<BE, STD> CIBootstrappingRun<BE, STD>
 where
-    BE: TestContextBackend,
-    STD: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
+    STD: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<STD>: TestContextModule<STD> + CKKSEncodingOps<STD, f64> + CKKSBootstrappingOps<STD> + CKKSDFTMatrixOps<STD, f64>,
     for<'a> STD::BufRef<'a>: HostDataRef,
     for<'a> STD::BufMut<'a>: HostDataMut,
@@ -388,7 +387,6 @@ where
         let standard_host = Module::<HostBytesBackend>::new(standard.n() as u64);
         let ci_host = Module::<HostBytesBackend>::new(ci.n() as u64);
         let standard_params = crate::test_suite::CKKSTestParams {
-            ring_kind: crate::CKKSRingKind::Standard,
             n: standard.n(),
             ..params
         };
@@ -493,7 +491,6 @@ where
             .map(|(ct, want)| {
                 assert_eq!(ct.k().as_usize(), self.output_k);
                 assert_eq!(ct.meta(), self.inputs[0].meta());
-                assert_eq!(ct.ring_kind(), crate::CKKSRingKind::ConjugateInvariant);
                 assert_canonical_at_k::<BE>("CI bootstrap", ct);
                 let mut pt = self.ci.ckks_pt_vec_alloc(ct.base2k(), ct.k());
                 pt.set_meta(ct.meta());

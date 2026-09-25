@@ -28,7 +28,7 @@ use poulpy_hal::{
 
 fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -80,7 +80,7 @@ where
 /// guarantee. The registered FFT and NTT fixtures use 19 and 52 respectively.
 pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,

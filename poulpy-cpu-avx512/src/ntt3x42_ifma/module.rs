@@ -9,7 +9,7 @@
 use super::super::Ring;
 #[cfg(feature = "enable-ifma")]
 use super::NTT3x42Ifma;
-use poulpy_cpu_ref::ring::CpuRing;
+use poulpy_hal::layouts::Ring as _;
 
 use std::ptr::NonNull;
 
@@ -82,7 +82,7 @@ impl Backend for NTT3x42Ifma {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT3x42IfmaHandle;
     type Location = poulpy_hal::layouts::Host;
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if Ring::IS_CI { 4 } else { 2 };
+    type Ring = Ring;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)

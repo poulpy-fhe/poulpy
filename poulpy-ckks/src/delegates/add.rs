@@ -19,9 +19,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into", b)?;
         BE::ckks_add_into_impl(self, dst, a, b, scratch)
     }
 
@@ -30,8 +27,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_assign", a)?;
         BE::ckks_add_assign_impl(self, dst, a, scratch)
     }
 
@@ -43,7 +38,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_one_assign", dst)?;
         BE::ckks_add_one_assign_impl(self, dst, scratch)
     }
 
@@ -57,9 +51,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_add_pt_vec_into", pt)?;
         BE::ckks_add_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
 
@@ -68,8 +59,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_add_pt_vec_assign", pt)?;
         BE::ckks_add_pt_vec_assign_impl(self, dst, pt, scratch)
     }
 
@@ -91,9 +80,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_into", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_add_pt_const_into", pt)?;
         BE::ckks_add_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
 
@@ -109,13 +95,11 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_assign", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_add_pt_const_assign", pt)?;
         BE::ckks_add_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         b: &B,
         scratch: &mut ScratchArena<'_, BE>,
@@ -126,15 +110,12 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into_unnormalized", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_into_unnormalized", b)?;
         BE::ckks_add_into_unnormalized_impl(self, dst, a, b, scratch)
     }
 
     fn ckks_add_assign_unnormalized<Dst, A>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -143,14 +124,12 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_assign_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_assign_unnormalized", a)?;
         BE::ckks_add_assign_unnormalized_impl(self, dst, a, scratch)
     }
 
     fn ckks_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
@@ -161,15 +140,12 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_into_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_into_unnormalized", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_add_pt_vec_into_unnormalized", pt)?;
         BE::ckks_add_pt_vec_into_unnormalized_impl(self, dst, a, pt, scratch)
     }
 
     fn ckks_add_pt_vec_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -178,14 +154,12 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_vec_assign_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_add_pt_vec_assign_unnormalized", pt)?;
         BE::ckks_add_pt_vec_assign_unnormalized_impl(self, dst, pt, scratch)
     }
 
     fn ckks_add_pt_const_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         dst_coeff: usize,
         pt: &P,
@@ -198,15 +172,12 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_into_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_into_unnormalized", a)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_add_pt_const_into_unnormalized", pt)?;
         BE::ckks_add_pt_const_into_unnormalized_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
 
     fn ckks_add_pt_const_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         dst_coeff: usize,
         pt: &P,
         pt_coeff: usize,
@@ -217,8 +188,6 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_add_pt_const_assign_unnormalized", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_coefficients("ckks_add_pt_const_assign_unnormalized", pt)?;
         BE::ckks_add_pt_const_assign_unnormalized_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
 }

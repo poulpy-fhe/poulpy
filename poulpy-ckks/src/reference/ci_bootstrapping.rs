@@ -1,9 +1,9 @@
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CKKSModuleInfos, CKKSResult as Result, CKKSRingKind, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult as Result, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSImagOps},
     layouts::{
-        BootstrappingKeys, CIBootstrappingContext, CIBootstrappingKeys, CIBootstrappingKeysLayout, CKKSCiphertextOwned,
-        CKKSModuleAlloc,
+        BootstrappingKeys, CIBootstrappingContext, CIBootstrappingKeys, CIBootstrappingKeysLayout, CKKSCiphertext,
+        CKKSCiphertextOwned, CKKSModuleAlloc,
     },
 };
 use poulpy_core::{
@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut, ZnxWord},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ZnxView, ZnxViewMut, ZnxWord},
 };
 
 pub(crate) fn ckks_ci_bootstrap_tmp_bytes_reference<BE, CI, F>(
@@ -36,7 +36,6 @@ where
     assert_eq!(standard_module.n(), 2 * ci_module.n());
     let standard_base2k = keys_layout.ci_to_standard.base2k;
     let standard_in = CKKSLayout {
-        ring_kind: CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: standard_module.n().into(),
             base2k: standard_base2k,
@@ -46,7 +45,6 @@ where
         meta: ct_in.meta(),
     };
     let standard_out = CKKSLayout {
-        ring_kind: CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: standard_module.n().into(),
             base2k: standard_base2k,
@@ -203,10 +201,10 @@ where
     Ok(())
 }
 
-fn embed_real_ciphertext<BE>(
+fn embed_real_ciphertext<BE, R: Ring>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
-    src: &CKKSCiphertextOwned<BE>,
+    src: &CKKSCiphertext<BE::OwnedBuf, i64, R>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -223,7 +221,7 @@ where
     });
     dst.set_k(src.k());
     if dst.base2k() == src.base2k() {
-        unfold_ciphertext::<BE>(dst, src);
+        unfold_ciphertext::<BE, R>(dst, src);
         module.glwe_normalize_assign(dst, scratch);
     } else {
         let layout = GLWELayout {
@@ -234,7 +232,7 @@ where
         };
         let mut unfolded = module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         unfolded.set_meta(dst.meta());
-        unfold_ciphertext::<BE>(&mut unfolded, src);
+        unfold_ciphertext::<BE, R>(&mut unfolded, src);
         module.glwe_normalize(dst, &unfolded, scratch);
     }
     Ok(())
@@ -247,9 +245,7 @@ fn validate_ci_bootstrap<CI: Backend>(
     left_in: &CKKSCiphertextOwned<CI>,
     right_in: Option<&CKKSCiphertextOwned<CI>>,
 ) -> Result<()> {
-    let ci_ring = ci_module.ckks_ring();
     for ct in [Some(left_in), Some(left_out), right_in, right_out].into_iter().flatten() {
-        ci_ring.check_ciphertext("CI bootstrap", ct)?;
         crate::layouts::validation::validate_storage_capacity("CI bootstrap ciphertext", ct)?;
         crate::ckks_ensure!(
             ct.base2k().as_usize() <= <CI::ZnxWord as ZnxWord>::BITS - 2,
@@ -294,12 +290,15 @@ fn validate_ci_bootstrap<CI: Backend>(
     Ok(())
 }
 
-fn unfold_ciphertext<BE: Backend<ZnxWord = i64>>(dst: &mut CKKSCiphertextOwned<BE>, src: &CKKSCiphertextOwned<BE>)
-where
+/// Crosses rings: reads `src` as raw GLWE storage of the other ring.
+fn unfold_ciphertext<BE: Backend<ZnxWord = i64>, R: Ring>(
+    dst: &mut CKKSCiphertextOwned<BE>,
+    src: &CKKSCiphertext<BE::OwnedBuf, i64, R>,
+) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    let src_ref = GLWEToBackendRef::<BE>::to_backend_ref(src);
+    let src_ref = GLWEToBackendRef::<BE>::to_backend_ref(&src.inner);
     let mut dst_mut = GLWEToBackendMut::<BE>::to_backend_mut(dst);
     let n = src.n().as_usize();
     for col in 0..=src.rank().as_usize() {
@@ -318,10 +317,10 @@ where
     }
 }
 
-fn fold_complex_to_real<BE: Backend<ZnxWord = i64>>(
+fn fold_complex_to_real<BE: Backend<ZnxWord = i64>, R: Ring>(
     ci_module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
-    src: &CKKSCiphertextOwned<BE>,
+    src: &CKKSCiphertext<BE::OwnedBuf, i64, R>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -337,7 +336,7 @@ fn fold_complex_to_real<BE: Backend<ZnxWord = i64>>(
     let fold_into = |dst: &mut CKKSCiphertextOwned<BE>| {
         let n = dst.n().as_usize();
         let rank = dst.rank().as_usize();
-        let src_ref = GLWEToBackendRef::<BE>::to_backend_ref(src);
+        let src_ref = GLWEToBackendRef::<BE>::to_backend_ref(&src.inner);
         let mut dst_mut = GLWEToBackendMut::<BE>::to_backend_mut(dst);
         for col in 0..=rank {
             for limb in 0..dst_mut.data().size() {

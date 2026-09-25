@@ -1,8 +1,8 @@
 use poulpy_core::{GLWEKeyswitch, GLWENormalize, layouts::GLWETensorKeyPrepared};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
 
 use crate::{
-    CKKSModuleInfos, CKKSResult as Result, CKKSRingKind,
+    CKKSResult as Result,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSImagOps},
     layouts::{BootstrappingKeys, CKKSCiphertextOwned, CKKSModuleAlloc},
 };
@@ -17,19 +17,11 @@ pub struct CIRingBridge<'a, CI: Backend, BE: Backend> {
 
 impl<'a, CI, BE> CIRingBridge<'a, CI, BE>
 where
-    BE: Backend,
-    CI: Backend<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    BE: Backend<Ring = Standard>,
+    CI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
-    /// Validates the ring kinds and the degree-doubling relation.
+    /// Validates the degree-doubling relation.
     pub fn new(ci: &'a Module<CI>, standard: &'a Module<BE>) -> Result<Self> {
-        crate::ckks_ensure!(
-            ci.ckks_ring().kind == CKKSRingKind::ConjugateInvariant,
-            "bridge requires a CI backend"
-        );
-        crate::ckks_ensure!(
-            standard.ckks_ring().kind == CKKSRingKind::Standard,
-            "bridge requires a standard backend"
-        );
         crate::ckks_ensure!(
             ci.n().checked_mul(2) == Some(standard.n()),
             "bridge requires standard degree 2N"

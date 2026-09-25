@@ -30,8 +30,6 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_into", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_into", src)?;
         let p = self.ckks_galois_element(k);
         if p == 1 {
             return self.ckks_copy(dst, src, scratch);
@@ -43,7 +41,6 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
                 rotation: k,
                 k: src.k().into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_rotate_into", key.n())?;
         BE::ckks_rotate_into_impl(self, dst, src, &key, scratch)
     }
 
@@ -52,7 +49,6 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_rotate_assign", dst)?;
         let p = self.ckks_galois_element(k);
         if p == 1 {
             return Ok(());
@@ -64,7 +60,6 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
                 rotation: k,
                 k: dst.k().into(),
             })?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_degree("ckks_rotate_assign", key.n())?;
         BE::ckks_rotate_assign_impl(self, dst, &key, scratch)
     }
 }

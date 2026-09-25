@@ -42,18 +42,18 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes())
 }
 
-struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord> {
+struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord, R: poulpy_hal::layouts::Ring> {
     degree: usize,
-    value: CKKSCiphertext<D, W>,
+    value: CKKSCiphertext<D, W, R>,
 }
 
-impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord>
+impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord, BE::Ring>
 where
     BE: Backend,
     D: poulpy_hal::layouts::Data,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    type Value = CKKSCiphertext<D, BE::ZnxWord>;
+    type Value = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
 
     fn degree(&self) -> usize {
         self.degree

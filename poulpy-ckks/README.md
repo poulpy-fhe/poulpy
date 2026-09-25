@@ -97,11 +97,11 @@ test. Data-management methods (`.set_meta_checked()`,
 exceptions: they live on the struct because they are inherently tied to the
 type, not to the backend.
 
-Ring identity is the pair `(CKKSRingKind, degree)`, separate from editable
-scale and slot metadata. `Standard` and `ConjugateInvariant` values cannot be
-combined by CKKS operations. A standard ciphertext with real slots still
-belongs to the standard ring; CI values always report real slots. Copies,
-host transfers, scratch views, and prepared operands retain their identity.
+The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
+backend (`Backend::Ring`): a module only accepts operands of its own ring, so
+mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
+ciphertext with real slots still belongs to the standard ring; CI values always
+report real slots.
 Compact plaintexts must have a degree that embeds in the module; scalar
 coefficient banks need the same ring kind but may have arbitrary lengths.
 
@@ -287,14 +287,13 @@ power basis built from the encrypted input:
 ```rust,ignore
 use poulpy_ckks::{
     api::CKKSPolynomialEvaluationOps,
-    layouts::CKKSRingKind,
     polynomial::{Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
 // host side: degree-31 Chebyshev interpolation of sin on [-1, 1], in BSGS form
 let poly = Polynomial::chebyshev_interpolate(DEGREE, -1.0, 1.0, f64::sin)?;
-let bsgs = poly.encode_bsgs(&host_module, CKKSRingKind::Standard, BASE2K.into(), COEFF_META)?;
+let bsgs = poly.encode_bsgs::<Standard>(&host_module, BASE2K.into(), COEFF_META)?;
 
 // encrypted side: populate the Chebyshev power basis, then evaluate
 let mut pb = PowerBasis::new(Basis::Chebyshev, ct_x);

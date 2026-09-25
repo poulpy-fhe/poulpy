@@ -102,8 +102,7 @@ pub mod prelude {
         CKKSRotateOps, CKKSSubOps,
     };
     pub use crate::layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSRing, CKKSRingKind, PolynomialApproximation,
-        UnnormalizedCKKSCiphertext,
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
     };
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
@@ -154,9 +153,6 @@ impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 
 /// Ring-dependent CKKS slot geometry and automorphism identifiers.
 pub trait CKKSModuleInfos {
-    /// Ring identity used to validate CKKS operands.
-    fn ckks_ring(&self) -> CKKSRing;
-
     /// Whether the module uses the conjugate invariant coefficient basis.
     fn ckks_is_conjugate_invariant(&self) -> bool;
 
@@ -168,17 +164,6 @@ pub trait CKKSModuleInfos {
 }
 
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {
-    fn ckks_ring(&self) -> CKKSRing {
-        CKKSRing {
-            kind: if self.ckks_is_conjugate_invariant() {
-                CKKSRingKind::ConjugateInvariant
-            } else {
-                CKKSRingKind::Standard
-            },
-            n: self.n().into(),
-        }
-    }
-
     fn ckks_is_conjugate_invariant(&self) -> bool {
         self.cyclotomic_order() == 4 * self.n() as i64
     }
@@ -198,80 +183,6 @@ impl<BE: Backend> CKKSModuleInfos for Module<BE> {
             rotation
         };
         galois_element(rotation, self.cyclotomic_order())
-    }
-}
-
-/// Polynomial basis used by a CKKS value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CKKSRingKind {
-    Standard,
-    ConjugateInvariant,
-}
-
-/// Ring identity of a module, ciphertext, or prepared operand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CKKSRing {
-    pub kind: CKKSRingKind,
-    pub n: Degree,
-}
-
-impl CKKSRing {
-    pub(crate) fn check(self, op: &'static str, actual: Self) -> CKKSResult<()> {
-        if self != actual {
-            return Err(CKKSCompositionError::RingMismatch {
-                op,
-                expected: self,
-                actual,
-            }
-            .into());
-        }
-        Ok(())
-    }
-
-    pub(crate) fn check_degree(self, op: &'static str, n: Degree) -> CKKSResult<()> {
-        self.check(op, Self { n, ..self })
-    }
-
-    pub(crate) fn check_ciphertext<C: CKKSInfos + ?Sized>(self, op: &'static str, ct: &C) -> CKKSResult<()> {
-        self.check(
-            op,
-            Self {
-                kind: ct.ring_kind(),
-                n: ct.n(),
-            },
-        )
-    }
-
-    pub(crate) fn check_coefficients<P: CKKSInfos + ?Sized>(self, op: &'static str, pt: &P) -> CKKSResult<()> {
-        if self.kind != pt.ring_kind() {
-            return Err(CKKSCompositionError::RingMismatch {
-                op,
-                expected: self,
-                actual: Self {
-                    kind: pt.ring_kind(),
-                    n: pt.n(),
-                },
-            }
-            .into());
-        }
-        Ok(())
-    }
-
-    pub(crate) fn check_plaintext<P: CKKSInfos + ?Sized>(self, op: &'static str, pt: &P) -> CKKSResult<()> {
-        self.check_coefficients(op, pt)?;
-        let n = pt.n().as_usize();
-        if n == 0 || !self.n.as_usize().is_multiple_of(n) {
-            return Err(CKKSCompositionError::RingMismatch {
-                op,
-                expected: self,
-                actual: Self {
-                    kind: pt.ring_kind(),
-                    n: pt.n(),
-                },
-            }
-            .into());
-        }
-        Ok(())
     }
 }
 
@@ -334,8 +245,8 @@ pub struct CKKSMeta {
 }
 
 impl CKKSMeta {
-    pub(crate) fn for_ring(mut self, kind: CKKSRingKind) -> Self {
-        if kind == CKKSRingKind::ConjugateInvariant {
+    pub(crate) fn for_ring<R: poulpy_hal::layouts::Ring>(mut self) -> Self {
+        if R::IS_CI {
             self.slots = crate::SlotsKind::Real;
         }
         self
@@ -349,9 +260,6 @@ impl CKKSMeta {
 /// derived from the container's torus width `k` (from the wrapped GLWE) and
 /// `log_delta`, so it is only available on containers, not on a bare [`CKKSMeta`].
 pub trait CKKSInfos: LWEInfos {
-    /// Polynomial basis fixed when the value is allocated.
-    fn ring_kind(&self) -> layouts::CKKSRingKind;
-
     /// Returns the complete metadata pair.
     fn meta(&self) -> CKKSMeta;
 
@@ -374,11 +282,7 @@ pub trait CKKSInfos: LWEInfos {
 
     /// Returns the subfield the slots are known to live in. See [`SlotsKind`].
     fn slots(&self) -> SlotsKind {
-        if self.ring_kind() == layouts::CKKSRingKind::ConjugateInvariant {
-            SlotsKind::Real
-        } else {
-            self.meta().slots
-        }
+        self.meta().slots
     }
 }
 
@@ -432,7 +336,6 @@ pub trait SetCKKSInfos: CKKSInfos {
 /// layout exactly as it does on a wrapped ciphertext/plaintext.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CKKSLayout {
-    pub ring_kind: layouts::CKKSRingKind,
     pub glwe_layout: GLWELayout,
     pub meta: CKKSMeta,
 }
@@ -516,10 +419,6 @@ impl GLWEInfos for CKKSLayout {
 }
 
 impl CKKSInfos for CKKSLayout {
-    fn ring_kind(&self) -> layouts::CKKSRingKind {
-        self.ring_kind
-    }
-
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
@@ -660,7 +559,6 @@ mod offset_tests {
 
     fn layout(log_delta: usize, log_budget: usize) -> CKKSLayout {
         CKKSLayout {
-            ring_kind: crate::layouts::CKKSRingKind::Standard,
             glwe_layout: poulpy_core::layouts::GLWELayout {
                 n: Degree(0),
                 base2k: Base2K(1),

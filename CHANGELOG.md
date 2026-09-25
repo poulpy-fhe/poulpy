@@ -6,7 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
-- `Backend::CYCLOTOMIC_ORDER_FACTOR` defines the ambient cyclotomic order per coefficient, defaulting to 2 for the standard negacyclic ring.
+- **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Backend::CYCLOTOMIC_ORDER_FACTOR` derives from it.
 - **Breaking:** replace `Backend::MAX_BASE2K` and `Module::MAX_BASE2K` with runtime `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, dispatched through `MaxBase2k` ([#312](https://github.com/poulpy-fhe/poulpy/issues/312)). NTT and FFT64 helpers use the `squaring` flag to distinguish independent products from squares, selecting a radix from a whole-polynomial Gaussian failure estimate using the tighter Mills-ratio upper bound, capped at `BE::ZnxWord::BITS - 2`. CPU backends and Rayon wrappers implement or forward the query. See [failure estimates](docs/base2k-failure-probability.md) for model assumptions and addition headroom.
 - **Breaking:** `PrimeSet` implementations must provide `LOG_Q_PRODUCT`, the floating-point base-2 logarithm of their actual CRT modulus. `PrimeSet::validate()` checks it against the declared primes; existing prime-set tests run this check.
 - AVX-512/IFMA HAL CI runs natively when supported, with pinned, checksum-verified Intel SDE as the fallback, including Rayon variants. Native ARM CI runs the full NEON backend suite on every push and pull request; additional QEMU HAL and core tests on x86 are available through the manual `run_neon_qemu` workflow input. The AVX-512 execution filters cover HAL and core; CKKS ModUp runtime coverage remains in the separate CKKS follow-up to #234. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
@@ -80,12 +80,11 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- Validate all EvalMod plaintext parameters before evaluation so ring mismatches leave the destination unchanged.
 - Add `CIRingBridge` between a CI backend and a standard backend of twice the degree, with internal ring conversion and dedicated switching keys. `bootstrap` refreshes one real ciphertext; `bootstrap_pair` explicitly packs two. S2C-first without EvalRound+ uses one EvalMod for a single input. Both preserve CI provenance, scale, and slot metadata; prepared keys and transforms retain their backend types.
 - Compile S2C-first normalization into the initial transform. CI bootstrap allocations reserve one trace bit, and return keys cover the retained output scale. Outputs recover the input scale after extraction; paired CI inputs use one inbound key switch.
 - Add CI bootstrapping presets for `2^15` and `2^16` real slots at scale `2^35`, with 19-bit minimum measured precision, covering single and paired evaluation and both ring switching keys.
 
-- **Breaking:** CKKS ciphertexts and plaintexts carry their ring kind and degree; evaluation rejects incompatible rings before mutation. `CKKSInfos` and `CKKSLayout` expose `ring_kind`. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. DFT preparation and ciphertext normalization return `Result`; host polynomial encoding takes an explicit ring kind.
+- **Breaking:** `CKKSCiphertext<D, W, R>` and `CKKSPlaintext<D, W, R>` carry their ring as a type parameter; a module accepts only operands of its backend's `Ring`, so mixing rings is a compile error. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. DFT preparation and ciphertext normalization return `Result`; host polynomial encoding takes the ring as a type parameter.
 
 - Add conjugate invariant encoding and leveled operations with `N` real slots, compact and sparse plaintexts, cyclic rotations, real polynomial evaluation, and real linear transformations. `CKKSModuleInfos` exposes the module's slot capacity and rotation-key identifiers.
 - **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.

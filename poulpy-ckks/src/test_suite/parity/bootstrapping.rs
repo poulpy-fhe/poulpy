@@ -27,7 +27,6 @@ where
         (2, b, 0, 1),
     ] {
         let src_layout = CKKSLayout {
-            ring_kind: crate::CKKSRingKind::Standard,
             glwe_layout: GLWELayout {
                 n: module.n().into(),
                 base2k: b.into(),
@@ -41,7 +40,6 @@ where
             },
         };
         let dst_layout = CKKSLayout {
-            ring_kind: crate::CKKSRingKind::Standard,
             glwe_layout: GLWELayout {
                 k: (small + extra).into(),
                 ..src_layout.glwe_layout

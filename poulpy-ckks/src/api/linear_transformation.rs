@@ -65,9 +65,6 @@ pub use poulpy_core::{
 pub trait LtDiagonalScale {
     /// `log2` of the diagonal plaintext's scaling factor.
     fn lt_log_scale(&self) -> usize;
-
-    /// Validates the diagonal's ring kind and compact degree for evaluation.
-    fn lt_check_ring(&self, op: &'static str, ring: crate::CKKSRing) -> Result<()>;
 }
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.

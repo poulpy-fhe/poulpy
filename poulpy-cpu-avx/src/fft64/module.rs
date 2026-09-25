@@ -1,6 +1,5 @@
 use super::super::Ring;
 use super::FFT64Avx;
-use poulpy_cpu_ref::ring::CpuRing;
 
 use std::ptr::NonNull;
 
@@ -109,7 +108,7 @@ impl Backend for FFT64Avx {
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64AvxHandle;
     type Location = Host;
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if Ring::IS_CI { 4 } else { 2 };
+    type Ring = Ring;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)

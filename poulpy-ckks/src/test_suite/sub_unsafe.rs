@@ -17,7 +17,7 @@ use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::Reference
 
 pub fn test_sub_ct_aligned_unsafe<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -78,7 +78,7 @@ pub fn test_sub_ct_assign_aligned_unsafe<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -138,7 +138,7 @@ pub fn test_sub_ct_assign_aligned_unsafe<BE, F, E>(
 
 pub fn test_sub_pt_vec_into_unsafe<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -194,7 +194,7 @@ pub fn test_sub_pt_const_into_aligned_unsafe<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,

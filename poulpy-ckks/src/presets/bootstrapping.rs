@@ -28,7 +28,6 @@ use poulpy_core::layouts::{
 };
 
 use crate::layouts::CIBootstrappingKeysLayout;
-use crate::layouts::CKKSRingKind;
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
     layouts::{
@@ -97,7 +96,7 @@ pub struct BootstrappingPreset<K = BootstrappingKeysLayout> {
     n: usize,
     plan: BootstrappingPlan,
     keys_layout: K,
-    ring_kind: CKKSRingKind,
+    conjugate_invariant: bool,
     input_k: usize,
     output_k: usize,
     bootstrap_k: usize,
@@ -223,7 +222,6 @@ impl<K> BootstrappingPreset<K> {
 
     fn ciphertext_layout(&self, k: usize) -> CKKSLayout {
         CKKSLayout {
-            ring_kind: self.ring_kind,
             glwe_layout: GLWELayout {
                 n: Degree(self.n as u32),
                 base2k: Base2K(self.spec.base2k as u32),
@@ -233,9 +231,10 @@ impl<K> BootstrappingPreset<K> {
             meta: CKKSMeta {
                 log_delta: self.spec.log_delta,
                 log_sparsity: 0,
-                slots: match self.ring_kind {
-                    CKKSRingKind::Standard => SlotsKind::Complex,
-                    CKKSRingKind::ConjugateInvariant => SlotsKind::Real,
+                slots: if self.conjugate_invariant {
+                    SlotsKind::Real
+                } else {
+                    SlotsKind::Complex
                 },
             },
         }
@@ -249,7 +248,7 @@ impl BootstrappingPreset {
     /// layouts are rebuilt and re-validated against the modulus bounds, so a
     /// radix whose key shapes overflow them is rejected.
     pub fn with_base2k(&self, base2k: usize) -> Result<Self> {
-        build(PresetSpec { base2k, ..self.spec }, CKKSRingKind::Standard)
+        build(PresetSpec { base2k, ..self.spec }, false)
     }
 
     /// Re-derives the preset with gadget digit sizes `key_dsize` for the
@@ -262,7 +261,7 @@ impl BootstrappingPreset {
                 dense_to_sparse_dsize,
                 ..self.spec
             },
-            CKKSRingKind::Standard,
+            false,
         )
     }
 }
@@ -300,7 +299,7 @@ pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
             s2c_log_budget: 2,
             eval_mod: optimized_han_ki(),
         },
-        CKKSRingKind::Standard,
+        false,
     )
 }
 
@@ -313,7 +312,7 @@ pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
 /// The application must hand the ciphertext back at 160 bits: 560 bits (16 rescales at the input
 /// scale) are usable, the same budget as the C2S-first preset despite the larger `k`.
 pub fn n16_d35_k720_p19_s2c() -> Result<BootstrappingPreset> {
-    build(s2c_spec(), CKKSRingKind::Standard)
+    build(s2c_spec(), false)
 }
 
 fn s2c_spec() -> PresetSpec {
@@ -380,7 +379,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
                 ..optimized_han_ki()
             },
         },
-        CKKSRingKind::Standard,
+        false,
     )
 }
 
@@ -462,7 +461,7 @@ fn ci_s2c(log_n: usize) -> Result<CIBootstrappingPreset> {
 }
 
 fn build_ci(spec: PresetSpec, standard_to_ci_dsize: usize) -> Result<CIBootstrappingPreset> {
-    let preset = build(spec, CKKSRingKind::ConjugateInvariant)?;
+    let preset = build(spec, true)?;
     let standard_n = 2 * preset.n();
     ensure!(standard_to_ci_dsize > 0, "CI return key dsize must be nonzero");
     let max_ci_modulus = match preset.spec.log_n {
@@ -493,7 +492,7 @@ fn build_ci(spec: PresetSpec, standard_to_ci_dsize: usize) -> Result<CIBootstrap
     Ok(BootstrappingPreset {
         spec: preset.spec,
         n: preset.n,
-        ring_kind: CKKSRingKind::ConjugateInvariant,
+        conjugate_invariant: true,
         plan: preset.plan,
         keys_layout,
         input_k: preset.input_k,
@@ -517,7 +516,7 @@ const fn optimized_han_ki() -> EvalModSpec {
     }
 }
 
-fn build(spec: PresetSpec, ring_kind: CKKSRingKind) -> Result<BootstrappingPreset> {
+fn build(spec: PresetSpec, conjugate_invariant: bool) -> Result<BootstrappingPreset> {
     ensure!(spec.base2k > 0, "bootstrapping preset base2k must be nonzero");
     ensure!(spec.rank == 1, "bootstrapping presets currently require rank 1");
     ensure!(spec.key_dsize > 0, "bootstrapping preset key dsize must be nonzero");
@@ -593,23 +592,16 @@ fn build(spec: PresetSpec, ring_kind: CKKSRingKind) -> Result<BootstrappingPrese
         output_k >= input_k,
         "bootstrapping preset output width {output_k} is below its input width {input_k}"
     );
-    let bootstrap_k = plan.bootstrap_k(
-        output_k + usize::from(ring_kind == CKKSRingKind::ConjugateInvariant),
-        spec.log_delta,
-    );
+    let bootstrap_k = plan.bootstrap_k(output_k + usize::from(conjugate_invariant), spec.log_delta);
     let keys_layout = keys_layout(&spec, n, bootstrap_k, log_modulus);
 
     validate_modulus_bounds(&spec, bootstrap_k, &keys_layout)?;
     Ok(BootstrappingPreset {
         spec,
-        n: if ring_kind == CKKSRingKind::ConjugateInvariant {
-            n / 2
-        } else {
-            n
-        },
+        n: if conjugate_invariant { n / 2 } else { n },
         plan,
         keys_layout,
-        ring_kind,
+        conjugate_invariant,
         input_k,
         output_k,
         bootstrap_k,
@@ -852,7 +844,6 @@ mod tests {
             assert_eq!(preset.output_k() - preset.input_k(), 16 * preset.log_delta());
             assert!(preset.keys_layout().standard_to_ci.k().as_usize() <= ci_limit);
             for layout in [preset.input_layout(), preset.output_layout(), preset.bootstrap_layout()] {
-                assert_eq!(layout.ring_kind, CKKSRingKind::ConjugateInvariant);
                 assert_eq!(layout.glwe_layout.n.as_usize(), preset.n());
                 assert_eq!(layout.meta.slots, SlotsKind::Real);
                 assert_eq!(layout.meta.log_sparsity, 0);

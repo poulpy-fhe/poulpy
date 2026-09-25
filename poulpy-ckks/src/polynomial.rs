@@ -1,10 +1,10 @@
-use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::CKKSPlaintext;
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow};
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::Base2K;
-use poulpy_hal::layouts::{HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use crate::SlotsKind;
 use crate::{
@@ -17,65 +17,62 @@ pub use poulpy_core::layouts::{
     evaluate_coeffs, split_degree,
 };
 
+/// Host-staged coefficient plaintext of ring `R`.
+pub type HostCoeffs<R> = CKKSPlaintext<<HostBytesBackend as Backend>::OwnedBuf, <HostBytesBackend as Backend>::ZnxWord, R>;
+
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
 pub trait EncodeBSGS {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
-    fn encode_bsgs(
+    fn encode_bsgs<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>>;
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>>;
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
-    fn encode_bsgs_with(
+    fn encode_bsgs_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>>;
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>>;
 
     /// Folds an even/odd polynomial through `x²` (monomial) or `T₂`
     /// (Chebyshev), then encodes the lower-degree polynomial.
-    fn encode_bsgs_folded_with(
+    fn encode_bsgs_folded_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>>;
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>>;
 }
 
 impl<F> EncodeBSGS for Polynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
-    fn encode_bsgs(
+    fn encode_bsgs<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
-        self.encode_bsgs_with(module, ring_kind, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>> {
+        self.encode_bsgs_with::<R>(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
-    fn encode_bsgs_with(
+    fn encode_bsgs_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>> {
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
-            let mut pt = alloc_coefficients(module, ring_kind, baby_coeffs.len(), base2k, coeff_meta.k);
+            let mut pt = alloc_coefficients::<R>(module, baby_coeffs.len(), base2k, coeff_meta.k);
             let mut meta = coeff_meta.meta;
             meta.slots = SlotsKind::Real;
             pt.set_meta(meta);
@@ -86,17 +83,16 @@ where
         })
     }
 
-    fn encode_bsgs_folded_with(
+    fn encode_bsgs_folded_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
+    ) -> Result<BSGSPolynomial<HostCoeffs<R>>> {
         let mut step_idx = 0usize;
         self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
-            let mut pt = alloc_coefficients(module, ring_kind, baby_coeffs.len(), base2k, coeff_meta.k);
+            let mut pt = alloc_coefficients::<R>(module, baby_coeffs.len(), base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs_folded: step {step_idx}: {e}"))?;
@@ -133,7 +129,6 @@ pub struct ComplexBSGSPolynomial<C> {
 impl<F> ComplexPolynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
     /// Constructs a complex polynomial, padding `re`/`im` to equal length. The
     /// interval defaults to `[-1, 1]`; set it with [`Self::with_interval`].
@@ -172,44 +167,41 @@ where
 
     /// Encodes both parts into a [`ComplexBSGSPolynomial`] using
     /// [`DEFAULT_SPLIT_STRATEGY`].
-    pub fn encode_bsgs(
+    pub fn encode_bsgs<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
-        self.encode_bsgs_with(module, ring_kind, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+    ) -> Result<ComplexBSGSPolynomial<HostCoeffs<R>>> {
+        self.encode_bsgs_with::<R>(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
     /// Encodes both parts with a shared parity and `strategy`, yielding two
     /// `BSGSPolynomial`s with identical baby-step structure.
-    pub fn encode_bsgs_with(
+    pub fn encode_bsgs_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
+    ) -> Result<ComplexBSGSPolynomial<HostCoeffs<R>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
-        let re = re_poly.encode_bsgs_with(module, ring_kind, base2k, coeff_meta, strategy)?;
-        let im = im_poly.encode_bsgs_with(module, ring_kind, base2k, coeff_meta, strategy)?;
+        let re = re_poly.encode_bsgs_with::<R>(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_with::<R>(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
     }
 
     /// Encodes both components through the same even/odd quadratic fold.
-    pub fn encode_bsgs_folded_with(
+    pub fn encode_bsgs_folded_with<R: Ring>(
         &self,
         module: &Module<HostBytesBackend>,
-        ring_kind: crate::layouts::CKKSRingKind,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
+    ) -> Result<ComplexBSGSPolynomial<HostCoeffs<R>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
-        let re = re_poly.encode_bsgs_folded_with(module, ring_kind, base2k, coeff_meta, strategy)?;
-        let im = im_poly.encode_bsgs_folded_with(module, ring_kind, base2k, coeff_meta, strategy)?;
+        let re = re_poly.encode_bsgs_folded_with::<R>(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_folded_with::<R>(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
     }
 }
@@ -279,21 +271,19 @@ impl<C> ComplexBSGSPolynomial<C> {
     }
 }
 
-pub(crate) fn alloc_coefficients(
+pub(crate) fn alloc_coefficients<R: Ring>(
     module: &Module<HostBytesBackend>,
-    ring_kind: crate::layouts::CKKSRingKind,
     count: usize,
     base2k: Base2K,
     k: poulpy_core::layouts::TorusPrecision,
-) -> CKKSPlaintextOwned<HostBytesBackend> {
+) -> HostCoeffs<R> {
     use poulpy_core::layouts::{GLWEPlaintextLayout, ModuleCoreAlloc};
-    crate::layouts::CKKSPlaintext::from_inner(
+    CKKSPlaintext::from_inner(
         module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
             n: count.into(),
             base2k,
             k,
         }),
         crate::CKKSMeta::default(),
-        ring_kind,
     )
 }

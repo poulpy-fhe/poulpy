@@ -12,7 +12,6 @@ use crate::{
 
 #[derive(Clone, Copy)]
 struct EvalModWorkCtInfos {
-    ring_kind: crate::layouts::CKKSRingKind,
     n: Degree,
     base2k: Base2K,
     rank: Rank,
@@ -46,9 +45,6 @@ impl GLWEInfos for EvalModWorkCtInfos {
 }
 
 impl CKKSInfos for EvalModWorkCtInfos {
-    fn ring_kind(&self) -> crate::layouts::CKKSRingKind {
-        self.ring_kind
-    }
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
@@ -78,7 +74,6 @@ where
 {
     let work_k = ct.k().as_usize().max(ct.log_budget() + params.plan.f_mod_log_delta);
     let work = EvalModWorkCtInfos {
-        ring_kind: ct.ring_kind(),
         n: ct.n(),
         base2k: ct.base2k(),
         rank: ct.rank(),

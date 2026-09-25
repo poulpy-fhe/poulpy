@@ -27,7 +27,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextModule<BE>
@@ -37,7 +37,6 @@ pub fn test_conjugate_invariant_leveled<BE>(
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
-    params.ring_kind = crate::layouts::CKKSRingKind::ConjugateInvariant;
     params.prec_meta.slots = SlotsKind::Real;
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -235,7 +234,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     for basis in [Basis::Monomial, Basis::Chebyshev] {
         let poly = Polynomial::new(basis, vec![0.125f64, 0.25, 0.125, -0.0625]);
         let host_poly = poly
-            .encode_bsgs(host_module, params.ring_kind, params.base2k.into(), params.prec().into())
+            .encode_bsgs::<BE::Ring>(host_module, params.base2k.into(), params.prec().into())
             .unwrap();
         let encoded = host_poly.map_baby_steps_ref(|pt| super::helpers::upload_pt(module, pt));
         let mut result = alloc_ct(&params, module, params.k);
@@ -355,7 +354,7 @@ fn assert_reim_close(re: &[f64], im: &[f64], want: &[f64]) {
 
 pub fn test_conjugate_invariant_encoding<BE, F>(module: &Module<BE>, log_delta: usize, tolerance: f64)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
     F: crate::api::CKKSEncodingScalar,
     Module<BE>: CKKSModuleAlloc<BE> + crate::api::CKKSEncodingOps<BE, F>,
 {
@@ -461,17 +460,6 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let module = Module::<$backend>::new(256);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_encoding::<$backend, $crate::Quad>(
                     &module, 80, 1e-20,
-                );
-            }
-            #[test]
-            fn ckks_ci_ring_checks() {
-                let params = $params;
-                let ci = Module::<$backend>::new(params.n as u64);
-                let standard = Module::<$standard>::new(params.n as u64);
-                let ambient = Module::<$standard>::new((2 * params.n) as u64);
-                let host = Module::<HostBytesBackend>::new(params.n as u64);
-                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_checks(
-                    params, &ci, &standard, &ambient, &host,
                 );
             }
             #[test]
@@ -599,310 +587,6 @@ macro_rules! conjugate_invariant_ckks_test_suite {
     };
 }
 
-pub fn test_conjugate_invariant_ring_checks<BE, STD>(
-    mut params: CKKSTestParams,
-    ci: &Module<BE>,
-    standard: &Module<STD>,
-    ambient: &Module<STD>,
-    host: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
-    STD: TestContextBackend,
-    for<'a> STD::BufRef<'a>: HostDataRef,
-    for<'a> STD::BufMut<'a>: HostDataMut,
-    Module<STD>: TestContextModule<STD>
-        + CKKSEncodingHostOps<STD, f64>
-        + CKKSLinearTransformationOps<STD>
-        + CKKSPolynomialEvaluationOps<STD>
-        + poulpy_hal::api::CnvPVecAlloc<STD>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingHostOps<BE, f64>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSPolynomialEvaluationOps<BE>
-        + poulpy_hal::api::CnvPVecAlloc<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
-{
-    assert!(crate::layouts::CIRingBridge::new(ci, ambient).is_ok());
-    assert!(crate::layouts::CIRingBridge::new(ci, standard).is_err());
-    assert!(crate::layouts::CIRingBridge::new(standard, ambient).is_err());
-    assert!(crate::layouts::CIRingBridge::new(ci, ci).is_err());
-    use crate::{
-        CKKSCompositionError,
-        api::{CKKSAddManyOps, CKKSDotProductOps, CKKSEvalModOps},
-        layouts::{
-            CKKSRingKind, LinearTransformationBabySteps, LinearTransformationPrepared, UnnormalizedCKKSCiphertext,
-            eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
-        },
-        polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
-        power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
-    };
-    use poulpy_core::layouts::{Diagonals, LinearTransformationStrategy};
-    use poulpy_hal::layouts::CyclotomicOrder;
-    let mut scratch = alloc_scratch(&params, ci);
-    let (ci_raw, ci_sk) = gen_sk_with_raw(&params, ci, host, [1; 32]);
-    let (_std_raw, std_sk) = gen_sk_with_raw(&params, standard, host, [2; 32]);
-    let ci_tsk = gen_tsk(&params, ci, &ci_raw, &mut scratch.borrow());
-    let mut ci_pt = ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
-    let mut std_pt = standard.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
-    ci_pt.set_meta(params.prec().meta());
-    std_pt.set_meta(params.prec().meta());
-    ci.ckks_encode_reim_into(&mut ci_pt, &vec![0.25; params.n], &vec![0.0; params.n], &mut scratch.borrow())
-        .unwrap();
-    standard
-        .ckks_encode_reim_into(
-            &mut std_pt,
-            &vec![0.25; params.n / 2],
-            &vec![0.0; params.n / 2],
-            &mut scratch.borrow().into_backend::<STD>(),
-        )
-        .unwrap();
-    params.ring_kind = CKKSRingKind::ConjugateInvariant;
-    let ci_ct = ckks_encrypt_pt(
-        &params,
-        ci,
-        &ci_sk,
-        params.k,
-        &ci_pt.to_host_owned::<BE>(),
-        &mut scratch.borrow(),
-    );
-    params.ring_kind = CKKSRingKind::Standard;
-    let mut std_ct = ckks_encrypt_pt(
-        &params,
-        standard,
-        &std_sk,
-        params.k,
-        &std_pt.to_host_owned::<BE>(),
-        &mut scratch.borrow().into_backend::<STD>(),
-    );
-    std_ct.set_slots(SlotsKind::Real);
-    let mut dst = ci_ct.clone();
-    let mut meta = dst.meta();
-    meta.slots = SlotsKind::Complex;
-    dst.set_meta(meta);
-    assert_eq!(dst.meta().slots, SlotsKind::Real);
-    assert_eq!(dst.ring_kind(), CKKSRingKind::ConjugateInvariant);
-    assert_eq!(dst.to_host_owned::<BE>().ring_kind(), dst.ring_kind());
-    assert_eq!(ci_pt.to_host_owned::<BE>().ring_kind(), dst.ring_kind());
-    assert_eq!(standard.ckks_ciphertext_alloc_from_infos(&dst).ring_kind(), dst.ring_kind());
-    assert_eq!(standard.ckks_plaintext_alloc_from_infos(&ci_pt).ring_kind(), dst.ring_kind());
-    let original = dst.to_host_owned::<BE>();
-    macro_rules! mismatch {
-        ($call:expr) => {{
-            let error = $call.err().expect("mixed rings must be rejected");
-            assert!(
-                matches!(error.composition(), Some(CKKSCompositionError::RingMismatch { .. })),
-                "{error}"
-            );
-        }};
-    }
-    macro_rules! rejected {
-        ($call:expr) => {{
-            mismatch!($call);
-            assert_eq!(dst.meta(), original.meta());
-            assert_eq!(dst.k(), original.k());
-            assert_eq!(dst.data().data().as_ref(), original.data().data().as_ref());
-        }};
-    }
-    rejected!(ci.ckks_add_into(&mut dst, &ci_ct, &std_ct, &mut scratch.borrow()));
-    rejected!(ci.ckks_sub_into(&mut dst, &std_ct, &ci_ct, &mut scratch.borrow()));
-    rejected!(standard.ckks_copy(&mut dst, &std_ct, &mut scratch.borrow().into_backend::<STD>()));
-    rejected!(standard.ckks_neg_assign(&mut dst));
-    rejected!(ci.ckks_mul_into(&mut dst, &ci_ct, &std_ct, &ci_tsk, &mut scratch.borrow()));
-    rejected!(ci.ckks_add_pt_vec_into(&mut dst, &ci_ct, &std_pt, &mut scratch.borrow()));
-    rejected!(ci.ckks_mul_pt_const_into(&mut dst, &ci_ct, &std_pt, 0, &mut scratch.borrow()));
-    rejected!(ci.ckks_add_many(&mut dst, &[&ci_ct, &std_ct], &mut scratch.borrow()));
-    rejected!(ci.ckks_dot_product_ct(
-        &mut dst,
-        &[&ci_ct, &std_ct],
-        &[&ci_ct, &ci_ct],
-        &ci_tsk,
-        &mut scratch.borrow()
-    ));
-    rejected!(ci.ckks_dot_product_pt_vec(&mut dst, &[&ci_ct, &std_ct], &[&ci_pt, &ci_pt], &mut scratch.borrow()));
-    rejected!(ci.ckks_dot_product_pt_const(
-        &mut dst,
-        &[&ci_ct, &ci_ct],
-        &[&ci_pt, &std_pt],
-        &[0, 0],
-        &mut scratch.borrow()
-    ));
-    let larger_ci = Module::<BE>::new((2 * params.n) as u64);
-    let mut larger_ct = larger_ci.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
-    larger_ct.set_meta(ci_ct.meta());
-    let mut larger_params = params;
-    larger_params.n *= 2;
-    let mut larger_scratch = alloc_scratch(&larger_params, &larger_ci);
-    let prepared = larger_ci
-        .ckks_prepare_right(&larger_ct, &mut larger_scratch.borrow())
-        .unwrap();
-    assert_eq!(prepared.ring().n.as_usize(), 2 * params.n);
-    {
-        use crate::api::CKKSEncryptOps;
-        use poulpy_core::{
-            EncryptionLayout,
-            layouts::{
-                GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory, SetGaloisElement,
-            },
-        };
-        use poulpy_hal::source::Source;
-        let larger_sk = larger_ci.glwe_secret_prepared_alloc_from_infos(&larger_params.glwe_layout());
-        let enc = EncryptionLayout::new_from_default_sigma(params.glwe_layout()).unwrap();
-        let mut xe = Source::new([7; 32]);
-        let mut xa = Source::new([8; 32]);
-        rejected!(ci.ckks_encrypt_sk(&mut dst, &ci_pt, &larger_sk, &enc, &mut xe, &mut xa, &mut scratch.borrow()));
-        let pt_before = ci_pt.to_host_owned::<BE>();
-        mismatch!(ci.ckks_decrypt(&mut ci_pt, &ci_ct, &larger_sk, &mut scratch.borrow()));
-        assert_eq!(ci_pt.meta(), pt_before.meta());
-        assert_eq!(ci_pt.data().data().as_ref(), pt_before.data().data().as_ref());
-        let larger_tsk = larger_ci.alloc_tensor_key_prepared_from_infos(&larger_params.tsk_layout());
-        rejected!(ci.ckks_mul_into(&mut dst, &ci_ct, &ci_ct, &larger_tsk, &mut scratch.borrow()));
-        rejected!(ci.ckks_square_assign(&mut dst, &larger_tsk, &mut scratch.borrow()));
-        let p = ci.ckks_galois_element(1);
-        let mut larger_atk = larger_ci.glwe_automorphism_key_prepared_alloc_from_infos(&larger_params.atk_layout());
-        larger_atk.set_p(p);
-        let keys = HashMap::from([(p, larger_atk)]);
-        rejected!(ci.ckks_rotate_into(&mut dst, &ci_ct, 1, &keys, &mut scratch.borrow()));
-        rejected!(ci.ckks_rotate_assign(&mut dst, 1, &keys, &mut scratch.borrow()));
-    }
-
-    rejected!(ci.ckks_mul_prepared_assign(&mut dst, &prepared, &ci_tsk, &mut scratch.borrow()));
-    mismatch!(standard.ckks_prepare_right(&ci_ct, &mut scratch.borrow().into_backend::<STD>()));
-    {
-        use crate::layouts::ScratchArenaTakeCKKS;
-        let (view, arena) = scratch.borrow().take_ckks_ciphertext_like_scratch(&ci_ct);
-        assert_eq!(view.ring_kind(), ci_ct.ring_kind());
-        let (pt_view, _) = arena.take_ckks_plaintext_like_scratch(&ci_pt);
-        assert_eq!(pt_view.ring_kind(), ci_pt.ring_kind());
-    }
-    let normalized = UnnormalizedCKKSCiphertext::new(ci_ct.clone())
-        .normalize(ci, &mut scratch.borrow())
-        .unwrap();
-    assert_eq!(normalized.ring_kind(), CKKSRingKind::ConjugateInvariant);
-    mismatch!(UnnormalizedCKKSCiphertext::new(ci_ct.clone()).normalize(standard, &mut scratch.borrow().into_backend::<STD>()));
-    let pt_before = ci_pt.to_host_owned::<BE>();
-    mismatch!(standard.ckks_encode_reim_into(
-        &mut ci_pt,
-        &vec![0.0; params.n / 2],
-        &vec![0.0; params.n / 2],
-        &mut scratch.borrow().into_backend::<STD>()
-    ));
-    assert_eq!(ci_pt.data().data().as_ref(), pt_before.data().data().as_ref());
-    let mut re = vec![17.0; params.n / 2];
-    let mut im = re.clone();
-    mismatch!(standard.ckks_decode_reim_into(&ci_pt, &mut re, &mut im, &mut scratch.borrow().into_backend::<STD>()));
-    assert!(re.iter().chain(&im).all(|&x| x == 17.0));
-    assert_eq!(ci.cyclotomic_order(), ambient.cyclotomic_order());
-    let ambient_ct = ambient.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
-    rejected!(ci.ckks_add_into(&mut dst, &ci_ct, &ambient_ct, &mut scratch.borrow()));
-    rejected!(ambient.ckks_copy(&mut dst, &ambient_ct, &mut scratch.borrow().into_backend::<STD>()));
-
-    let mut re = Diagonals::new(params.n / 2);
-    re.set(0, vec![1.0; params.n / 2]);
-    let diagonals = crate::layouts::ComplexDiagonals::new(re, Diagonals::new(params.n / 2));
-    let make_lt = |module: &Module<BE>, scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>| {
-        crate::reference::ckks_encode_linear_transformation_from_diagonals(
-            module,
-            params.base2k.into(),
-            params.prec().into(),
-            &diagonals,
-            LinearTransformationStrategy::Direct,
-            false,
-            scratch,
-        )
-        .unwrap()
-    };
-    let ci_lt = make_lt(ci, &mut scratch.borrow());
-    let mut std_lt = make_lt(ci, &mut scratch.borrow());
-    let diagonal = &std_lt.giant_steps[0].diagonals[0].plaintext;
-    let mut wrong = standard.ckks_plaintext_alloc(diagonal.n(), diagonal.base2k(), diagonal.k());
-    wrong.set_meta(diagonal.meta());
-    std_lt.baby_steps.push(1);
-    std_lt.giant_steps[0]
-        .diagonals
-        .push(poulpy_core::LinearTransformationDiagonal {
-            baby: 1,
-            plaintext: wrong,
-        });
-    let mut prep = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(
-        ci,
-        &ci_lt.index(),
-        ci_lt.first_diagonal_plaintext().unwrap(),
-    );
-    ci.ckks_prepare_linear_transformation_rhs(&mut prep, &ci_lt, &mut scratch.borrow())
-        .unwrap();
-    mismatch!(ci.ckks_prepare_linear_transformation_rhs(&mut prep, &std_lt, &mut scratch.borrow()));
-    let empty = HashMap::<i64, poulpy_core::layouts::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>::new();
-    rejected!(ci.ckks_eval_linear_transformation_self_into(&mut dst, &ci_ct, &std_lt, &empty, &mut scratch.borrow()));
-    let larger_pt = larger_ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
-    let larger_prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&larger_ci, &ci_lt.index(), &larger_pt);
-    rejected!(ci.ckks_eval_linear_transformation_self_into(&mut dst, &ci_ct, &larger_prepared, &empty, &mut scratch.borrow()));
-    let mut babies = LinearTransformationBabySteps::<BE>::alloc(&larger_ci, &[0], &larger_ct);
-    mismatch!(ci.ckks_prepare_linear_transformation_baby_steps(&mut babies, &ci_ct, &empty, &mut scratch.borrow()));
-    rejected!(ci.ckks_eval_linear_transformation_into(&mut dst, &ci_ct, &babies, &ci_lt, &empty, &mut scratch.borrow()));
-    let host_poly = Polynomial::new(Basis::Monomial, vec![0.125f64; 9])
-        .encode_bsgs(
-            host,
-            CKKSRingKind::ConjugateInvariant,
-            params.base2k.into(),
-            params.prec().into(),
-        )
-        .unwrap();
-    let mut i = 0;
-    let mixed_poly = host_poly.map_baby_steps_ref(|pt| {
-        i += 1;
-        if i == 1 {
-            super::helpers::upload_pt(ci, pt)
-        } else {
-            let mut wrong = standard.ckks_plaintext_alloc(pt.n(), pt.base2k(), pt.k());
-            wrong.set_meta(pt.meta());
-            wrong
-        }
-    });
-    assert!(i > 1);
-    rejected!(ci.ckks_eval_poly_real_const_coeffs(&mut dst, &ci_ct, &mixed_poly, &ci_tsk, &mut scratch.borrow()));
-    let mut eval_mod = compile_eval_mod::<BE, f64>(
-        params.base2k.into(),
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosCheby,
-            log_msg_ratio: 3,
-            f_mod_degree: 3,
-            f_mod_interval: 1,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: crate::CoeffsMeta::from_delta_budget(10, 2),
-            f_mod_log_delta: 10,
-        },
-        ci,
-        &mut scratch.borrow(),
-    )
-    .unwrap();
-    let constants = eval_mod.range_extension_consts.take().unwrap();
-    let mut wrong_constants = standard.ckks_pt_coeffs_alloc(constants.n().as_usize(), constants.base2k(), constants.k());
-    wrong_constants.set_meta(constants.meta());
-    eval_mod.range_extension_consts = Some(wrong_constants);
-    rejected!(ci.ckks_eval_mod(&mut dst, &ci_ct, &eval_mod, &ci_tsk, &mut scratch.borrow()));
-    eval_mod.range_extension_consts = Some(constants);
-    let mut wrong_offset = standard.ckks_pt_coeffs_alloc(1, params.base2k.into(), eval_mod.plan.coeffs_meta.k);
-    wrong_offset.set_meta(eval_mod.plan.coeffs_meta.meta);
-    eval_mod.f_mod_input_offset = Some(wrong_offset);
-    rejected!(ci.ckks_eval_mod(&mut dst, &ci_ct, &eval_mod, &ci_tsk, &mut scratch.borrow()));
-    let mut powers = PowerBasis::new(Basis::Monomial, ci_ct.clone());
-    assert!(powers.insert(2, std_ct.clone()).is_err());
-    assert!(!powers.contains_power(2));
-    powers.set_power(3, std_ct.clone());
-    assert!(
-        powers
-            .populate(3, 2, crate::api::Parity::Full, ci, &ci_tsk, &mut scratch.borrow())
-            .is_err()
-    );
-    assert!(!powers.contains_power(2));
-    assert!(powers.gen_power(3, ci, &ci_tsk, &mut scratch.borrow()).is_err());
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     mut params: CKKSTestParams,
@@ -914,8 +598,8 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     eval_round: bool,
     guard_bits: usize,
 ) where
-    BE: TestContextBackend,
-    STD: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
+    STD: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> STD::BufRef<'a>: HostDataRef,
     for<'a> STD::BufMut<'a>: HostDataMut,
     Module<STD>: TestContextModule<STD>
@@ -992,7 +676,6 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     let input_k = plan.input_k(log_delta + log_msg_ratio);
     params.n = ci.n();
     params.k = plan.bootstrap_k(output_k + 1, log_delta);
-    params.ring_kind = crate::CKKSRingKind::ConjugateInvariant;
     params.prec_meta = crate::CKKSMeta {
         log_delta,
         log_sparsity,
@@ -1077,26 +760,7 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     assert_eq!(too_wide.k(), before_too_wide.k());
     let before = run.outputs[0].to_host_owned::<BE>();
     let before_right = run.outputs[1].to_host_owned::<BE>();
-    let wrong = run.standard.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
     let [left, right] = &mut run.outputs;
-    assert!(
-        crate::layouts::CIRingBridge::new(&run.ci, &run.standard)
-            .unwrap()
-            .bootstrap_pair(
-                left,
-                right,
-                &run.inputs[0],
-                &wrong,
-                &run.context,
-                &run.keys,
-                &mut run.std_scratch.borrow()
-            )
-            .is_err()
-    );
-    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
-    assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
-    assert_eq!(left.meta(), before.meta());
-    assert_eq!(right.meta(), before_right.meta());
     let right_meta = run.inputs[1].meta();
     run.inputs[1].set_log_delta(right_meta.log_delta + 1);
     assert!(
@@ -1114,7 +778,6 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
             .is_err()
     );
     run.inputs[1].set_meta(right_meta);
-    assert!(crate::layouts::CIRingBridge::new(&run.standard, &run.standard).is_err());
     assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
     assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
     assert_eq!(left.k(), before.k());

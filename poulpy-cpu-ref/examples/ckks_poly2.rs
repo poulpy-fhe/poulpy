@@ -61,7 +61,6 @@ const DSIZE: usize = 1;
 
 /// Encoding precision for the input slot vector.
 const PREC_CT: CKKSLayout = CKKSLayout {
-    ring_kind: poulpy_ckks::layouts::CKKSRingKind::Standard,
     glwe_layout: GLWELayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
@@ -100,18 +99,18 @@ struct SetupArtifacts {
 struct EncodingArtifacts {
     x_re: Vec<f64>,
     poly: Polynomial<f64>,
-    bsgs: BSGSPolynomial<CKKSPlaintext<AlignedBuf, i64>>,
-    pt_znx: CKKSPlaintext<AlignedBuf, i64>,
+    bsgs: BSGSPolynomial<CKKSPlaintext<AlignedBuf, i64, poulpy_hal::layouts::Standard>>,
+    pt_znx: CKKSPlaintext<AlignedBuf, i64, poulpy_hal::layouts::Standard>,
 }
 
 /// Ciphertext produced by the encryption phase.
 struct EncryptionArtifacts {
-    ct_x: CKKSCiphertext<AlignedBuf, i64>,
+    ct_x: CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard>,
 }
 
 /// Ciphertext produced by the homomorphic evaluation phase.
 struct EvaluationArtifacts {
-    ct_sin: CKKSCiphertext<AlignedBuf, i64>,
+    ct_sin: CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard>,
 }
 
 /// Decoded values recovered after decryption.
@@ -162,7 +161,7 @@ fn print_phase(name: &str) {
     println!("\n== {name} ==");
 }
 
-fn print_ct_meta(label: &str, ct: &CKKSCiphertext<AlignedBuf, i64>) {
+fn print_ct_meta(label: &str, ct: &CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         ct.log_delta(),
@@ -173,7 +172,7 @@ fn print_ct_meta(label: &str, ct: &CKKSCiphertext<AlignedBuf, i64>) {
     );
 }
 
-fn print_pt_meta(label: &str, pt: &CKKSPlaintext<AlignedBuf, i64>) {
+fn print_pt_meta(label: &str, pt: &CKKSPlaintext<AlignedBuf, i64, poulpy_hal::layouts::Standard>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         pt.log_delta(),
@@ -212,7 +211,6 @@ fn setup() -> Result<SetupArtifacts> {
     // Scratch sizing wants the full plaintext layout: the ring/radix the
     // coefficient plaintexts will actually live in, plus the coefficient meta.
     let coeff_prec = CKKSLayout {
-        ring_kind: poulpy_ckks::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: N.into(),
             base2k: BASE2K.into(),
@@ -267,12 +265,7 @@ fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
     println!("  degree={}, parity={:?}", poly.degree(), poly.parity);
 
     let host_module = Module::<HostBytesBackend>::new(N as u64);
-    let bsgs = poly.encode_bsgs(
-        &host_module,
-        poulpy_ckks::layouts::CKKSRingKind::Standard,
-        BASE2K.into(),
-        COEFF_META,
-    )?;
+    let bsgs = poly.encode_bsgs::<poulpy_hal::layouts::Standard>(&host_module, BASE2K.into(), COEFF_META)?;
     println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps().len(), bsgs.parity());
 
     let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT.k());
@@ -349,7 +342,7 @@ fn evaluation(
             let mut scratch = setup.scratch.borrow();
             setup
                 .module
-                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<AlignedBuf, i64>, _, _>(
+                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard>, _, _>(
                     &mut ct_sin,
                     &encoding.bsgs,
                     &pb,

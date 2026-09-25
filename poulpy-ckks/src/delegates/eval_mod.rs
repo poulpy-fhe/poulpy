@@ -32,26 +32,11 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", res)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_eval_mod", ct)?;
-        let ring = crate::api::CKKSModuleInfos::ckks_ring(self);
-        match &params.f_mod_bsgs {
-            EvalModBsgs::Real(poly) => super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, poly)?,
-            EvalModBsgs::Complex(poly) => {
-                crate::ckks_ensure!(
-                    !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
-                    "complex EvalMod requires the standard CKKS ring"
-                );
-                super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, &poly.re)?;
-                super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, &poly.im)?;
-            }
-        }
-        if let Some(poly) = &params.f_mod_inv_bsgs {
-            super::polynomial_evaluation::check_polynomial_ring::<BE, _>(ring, poly)?;
-        }
-        for pt in params.range_extension_consts.iter().chain(params.f_mod_input_offset.iter()) {
-            ring.check_coefficients("ckks_eval_mod", pt)?;
-        }
+        crate::ckks_ensure!(
+            !matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_))
+                || !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "complex EvalMod requires the standard CKKS ring"
+        );
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }

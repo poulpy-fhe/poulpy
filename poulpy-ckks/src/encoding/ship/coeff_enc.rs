@@ -68,11 +68,11 @@ where
 /// [`CKKSShipCoeffEncodingImpl`](crate::oep::CKKSShipCoeffEncodingImpl).
 pub fn ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D, BE::ZnxWord>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
     plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
-) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
+) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord, BE::Ring>>
 where
     // Host reference encoder: recomposes the ciphertext limbs through the i64
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device

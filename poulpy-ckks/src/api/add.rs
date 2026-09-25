@@ -159,7 +159,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// operations such as keyswitching, convolution, or automorphisms.
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         b: &B,
         scratch: &mut ScratchArena<'_, BE>,
@@ -173,7 +173,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += a` without normalizing `dst`.
     fn ckks_add_assign_unnormalized<Dst, A>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -185,7 +185,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst = a + pt` without normalizing `dst`.
     fn ckks_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
@@ -199,7 +199,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += pt` without normalizing `dst`.
     fn ckks_add_pt_vec_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -211,7 +211,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst = a + pt[pt_coeff]` without normalizing `dst`.
     fn ckks_add_pt_const_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         dst_coeff: usize,
         pt: &P,
@@ -227,7 +227,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += pt[pt_coeff]` without normalizing `dst`.
     fn ckks_add_pt_const_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         dst_coeff: usize,
         pt: &P,
         pt_coeff: usize,

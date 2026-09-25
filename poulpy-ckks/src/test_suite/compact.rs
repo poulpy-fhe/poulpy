@@ -47,7 +47,7 @@ fn encode_dense_and_compact<BE, F, E>(
     im: &[F],
 ) -> (CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<HostBytesBackend>: CKKSModuleAlloc<HostBytesBackend>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
@@ -83,7 +83,7 @@ pub fn test_compact_plaintext_embedding<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + VecZnxSwitchRing<BE>,
@@ -124,7 +124,7 @@ pub fn test_compact_plaintext_add_sub_mul<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -316,7 +316,7 @@ fn encode_compact_lt<BE, F>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> LinearTransformation<CKKSPlaintextOwned<BE>>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F>,
     F: TestScalar,
 {
@@ -336,7 +336,7 @@ pub fn test_compact_linear_transformation<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
@@ -431,7 +431,7 @@ pub fn test_compact_diagonal_encoder<BE, F, E>(
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

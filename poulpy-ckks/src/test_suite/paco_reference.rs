@@ -60,7 +60,7 @@ pub fn test_paco_cleartext_reference<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

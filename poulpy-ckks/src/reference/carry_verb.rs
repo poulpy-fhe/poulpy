@@ -40,11 +40,8 @@ where
     // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
     // coefficient `1 << log_delta`, so the limb bytes are built with the integer
     // codec and uploaded as raw bytes — no float codec or backend transfer op.
-    let mut host_pt = CKKSPlaintext::from_inner(
-        GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()),
-        meta,
-        module.ckks_ring().kind,
-    );
+    let mut host_pt =
+        CKKSPlaintext::<_, _, BE::Ring>::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
     let max_k = host_pt.encoded_k();
     host_pt.encode_vec_i64(&[1i64 << meta.log_delta], max_k);
 
@@ -373,7 +370,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, B>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 a: &A,
                 b: &B,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
@@ -396,7 +393,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
             ) -> crate::CKKSResult<()>
@@ -417,7 +414,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _assign_unnormalized_ref_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, BE::ZnxWord, BE::Ring>,
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
             ) -> crate::CKKSResult<()>
@@ -429,7 +426,7 @@ macro_rules! ckks_carry_verb_reference {
                     + ::poulpy_hal::api::VecZnxLshTmpBytes
                     + ::poulpy_hal::api::VecZnxRshTmpBytes,
                 Dst: ::poulpy_hal::layouts::Data,
-                crate::layouts::CKKSCiphertext<Dst, BE::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
+                crate::layouts::CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: ::poulpy_core::layouts::GLWEToBackendMut<BE>,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<BE> + crate::CKKSInfos,
             {
                 $Trait::[<ckks_ $verb _assign_unnormalized_reference>](module, dst.inner, a, scratch)
@@ -438,7 +435,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _pt_vec_into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 a: &A,
                 pt: &P,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
@@ -467,7 +464,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _pt_vec_assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, P>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 pt: &P,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
             ) -> crate::CKKSResult<()>
@@ -493,7 +490,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _pt_const_into_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 a: &A,
                 dst_coeff: usize,
                 pt: &P,
@@ -526,7 +523,7 @@ macro_rules! ckks_carry_verb_reference {
             /// Reference entry point for an unnormalized ciphertext wrapper.
             pub fn [<ckks_ $verb _pt_const_assign_unnormalized_wrapped_reference>]<BE: ::poulpy_hal::layouts::Backend, Dst, P>(
                 module: &::poulpy_hal::layouts::Module<BE>,
-                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                dst: &mut crate::layouts::UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
                 dst_coeff: usize,
                 pt: &P,
                 pt_coeff: usize,

@@ -10,7 +10,7 @@ use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
 use poulpy_core::layouts::ModuleCoreAlloc;
-use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, Standard};
 
 use crate::{
     CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
@@ -59,13 +59,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     {
         ensure!(table.len() >= 2, "LUT length must be at least two");
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
-        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with(
-            host_module,
-            super::CKKSRingKind::Standard,
-            base2k,
-            coeffs_meta,
-            strategy,
-        )?;
+        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with::<Standard>(host_module, base2k, coeffs_meta, strategy)?;
         Ok(Self {
             kind: EncodedLutKind::General(bsgs),
             log_msg_ratio,
@@ -95,14 +89,8 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
-        let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(
-            &cos_poly,
-            host_module,
-            super::CKKSRingKind::Standard,
-            base2k,
-            coeffs_meta,
-            strategy,
-        )?;
+        let cos =
+            <Polynomial<F> as EncodeBSGS>::encode_bsgs_with::<Standard>(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;
         let mut affine_pt = host_module.ckks_pt_coeffs_alloc(2, base2k, coeffs_meta.k);
         let mut affine_meta = coeffs_meta.meta;
         affine_meta.slots = SlotsKind::Real;
@@ -123,13 +111,13 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     /// preserving the LUT kind and message-ratio metadata.
     pub fn transfer_to<BE>(&self, module: &Module<BE>) -> EncodedLut<CKKSPlaintextOwned<BE>>
     where
-        BE: Backend + HostStaged,
+        BE: Backend<Ring = Standard> + HostStaged,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     {
         self.map(|pt| {
             let mut inner = module.glwe_plaintext_alloc_from_infos(&pt.inner);
             pt.inner.transfer_into(&mut inner);
-            CKKSPlaintext::from_inner(inner, pt.meta(), pt.ring_kind())
+            CKKSPlaintext::from_inner(inner, pt.meta())
         })
     }
 }
@@ -210,26 +198,6 @@ fn table_log_msg_ratio(len: usize) -> Result<usize> {
         .checked_next_power_of_two()
         .ok_or_else(|| anyhow!("LUT length {len} is too large"))?;
     Ok(binary_span.ilog2() as usize)
-}
-
-impl<P: crate::CKKSCtBounds> EncodedLut<P> {
-    pub(crate) fn check_ring<BE: Backend>(&self, ring: crate::layouts::CKKSRing) -> crate::CKKSResult<()>
-    where
-        P: poulpy_core::layouts::GLWEToBackendRef<BE> + poulpy_core::layouts::IntPolyInfos + poulpy_core::layouts::BSGSMeta,
-    {
-        use crate::delegates::polynomial_evaluation::check_polynomial_ring;
-        match self.kind() {
-            EncodedLutKind::General(poly) => {
-                check_polynomial_ring::<BE, _>(ring, &poly.re)?;
-                check_polynomial_ring::<BE, _>(ring, &poly.im)?;
-            }
-            EncodedLutKind::Binary { cos, affine, .. } => {
-                check_polynomial_ring::<BE, _>(ring, cos)?;
-                ring.check_coefficients("lookup table", affine)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]

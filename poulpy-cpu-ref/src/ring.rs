@@ -2,36 +2,19 @@
 
 use std::marker::PhantomData;
 
-mod sealed {
-    pub trait Sealed {}
-}
+pub use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
-/// Sealed ring choice for the CPU transform implementations.
-pub trait CpuRing: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
-    /// Whether coefficients use the conjugate-invariant basis.
-    const IS_CI: bool;
+/// Ring choice for the CPU transform implementations.
+pub trait CpuRing: poulpy_hal::layouts::Ring {
     /// CI-specific state, absent from standard-ring handles.
     type Data<T: Send + Sync>: RingData<T> + Send + Sync;
 }
 
-/// The standard negacyclic ring.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Standard;
-
-/// The conjugate-invariant subring of a degree-doubled negacyclic ring.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConjugateInvariant;
-
-impl sealed::Sealed for Standard {}
-impl sealed::Sealed for ConjugateInvariant {}
-
 impl CpuRing for Standard {
-    const IS_CI: bool = false;
     type Data<T: Send + Sync> = NoRingData<T>;
 }
 
 impl CpuRing for ConjugateInvariant {
-    const IS_CI: bool = true;
     type Data<T: Send + Sync> = T;
 }
 

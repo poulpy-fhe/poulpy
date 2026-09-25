@@ -14,8 +14,6 @@ impl<BE: Backend + CKKSCopyImpl> CKKSCopyOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_copy", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_copy", src)?;
         BE::ckks_copy_impl(self, dst, src, scratch)
     }
 }

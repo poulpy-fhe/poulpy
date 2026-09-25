@@ -64,7 +64,7 @@ const PACO_C: usize = 8;
 /// against the cleartext model.
 pub fn test_paco_partial_pipeline<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -84,7 +84,7 @@ where
 /// lands on its `P`-relabel (`slot j = z_7[P(j)]`).
 fn test_paco_partial_pipeline_with<BE, F, E>(params: &CKKSTestParams, slot_order: crate::layouts::PaCoSlotOrder)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
     Module<HostBytesBackend>: TestContextHostModule,

@@ -54,7 +54,7 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -81,7 +81,7 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -113,7 +113,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -140,7 +140,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -169,7 +169,7 @@ fn run_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     guard_bits: usize,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -335,7 +335,6 @@ fn run_case<BE, F, E>(
     let boot_tmp = module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, &backend_luts, &keys_layout);
     if backend_luts.iter().any(|lut| lut.requires_eval_mod()) {
         let boot_layout = crate::CKKSLayout {
-            ring_kind: crate::layouts::CKKSRingKind::Standard,
             glwe_layout: output_spec.glwe_layout,
             meta: CKKSMeta::default(),
         };

@@ -19,8 +19,6 @@ impl<BE: Backend + CKKSPlaintextZnxImpl> CKKSPlaintextVecOps<BE> for Module<BE> 
         D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_plaintext("ckks_extract_pt", dst)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_extract_pt", src)?;
         BE::ckks_extract_pt_impl(self, dst, src, scratch)
     }
 }

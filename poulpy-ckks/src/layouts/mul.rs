@@ -34,16 +34,3 @@ pub struct CKKSPreparedRight<BE: Backend> {
     /// against the destination before use.
     pub(crate) layout: GLWELayout,
 }
-
-impl<BE: Backend> CKKSPreparedRight<BE> {
-    pub fn ring(&self) -> super::CKKSRing {
-        super::CKKSRing {
-            kind: if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
-                super::CKKSRingKind::ConjugateInvariant
-            } else {
-                super::CKKSRingKind::Standard
-            },
-            n: self.layout.n,
-        }
-    }
-}

@@ -89,7 +89,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     bound: f64,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -100,7 +100,6 @@ pub(crate) fn assert_slots<BE, F, E>(
 
     let (log_delta, base2k) = (ct.log_delta(), ct.base2k());
     let prec = crate::CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: ct.n(),
             base2k,
@@ -154,7 +153,7 @@ pub(crate) fn assert_slots<BE, F, E>(
 /// `Tr_{a→b}` matches the cleartext fold and consumes no budget.
 pub fn test_paco_slot_trace<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -208,7 +207,7 @@ where
 /// exactly `log(a/b) · log_delta` budget bits.
 pub fn test_paco_slot_product<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -277,7 +276,7 @@ where
 /// A single automorphism keyed at `−5^k` equals `conj ∘ rotate_k`.
 pub fn test_paco_conj_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

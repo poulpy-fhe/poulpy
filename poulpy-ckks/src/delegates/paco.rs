@@ -62,8 +62,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_direct_tmp_bytes", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_direct_tmp_bytes", input)?;
         paco_bootstrap_tmp_bytes(self, output, input, context, keys, false)
     }
 
@@ -82,8 +80,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_tmp_bytes", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_tmp_bytes", input)?;
         paco_bootstrap_tmp_bytes(self, output, input, context, keys, true)
     }
 
@@ -100,7 +96,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_coeff_encodings", ciphertext)?;
         let required = BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())?;
         ckks_ensure!(
             scratch.available() >= required,
@@ -130,8 +125,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_direct_into", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_direct_into", input)?;
         paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
@@ -151,8 +144,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_into", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_into", input)?;
         paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
@@ -174,8 +165,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_parallel_direct_into", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_parallel_direct_into", input)?;
         paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 
@@ -197,8 +186,6 @@ where
             !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
             "PACO requires a standard ring"
         );
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_parallel_into", output)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_paco_bootstrap_parallel_into", input)?;
         paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 }

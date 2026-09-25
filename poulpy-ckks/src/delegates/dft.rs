@@ -29,14 +29,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        for factor in &dft.inner().factors {
-            for step in &factor.giant_steps {
-                for diagonal in &step.diagonals {
-                    crate::api::CKKSModuleInfos::ckks_ring(self)
-                        .check_plaintext("ckks_prepare_dft_matrix", &diagonal.plaintext)?;
-                }
-            }
-        }
         BE::ckks_prepare_dft_matrix_impl::<Dir, Fmt, P>(self, dft, scratch)
     }
 
@@ -52,14 +44,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_dft_evaluate_assign",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_dft_evaluate_assign", ct)?;
         BE::ckks_dft_evaluate_assign_impl(self, ct, dft, keys, scratch)
     }
 
@@ -75,14 +59,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_coeffs_to_slots",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots", ct)?;
         BE::ckks_coeffs_to_slots_impl(self, ct, dft, keys, scratch)
     }
 
@@ -98,14 +74,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_slots_to_coeffs",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs", ct)?;
         BE::ckks_slots_to_coeffs_impl(self, ct, dft, keys, scratch)
     }
 
@@ -124,16 +92,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_coeffs_to_slots_split",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots_split", ct_real)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots_split", ct_imag)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots_split", ct_in)?;
         BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
@@ -152,16 +110,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_slots_to_coeffs_split",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs_split", op_out)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs_split", ct_real)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs_split", ct_imag)?;
         BE::ckks_slots_to_coeffs_split_impl(self, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
@@ -179,15 +127,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_coeffs_to_slots_repack",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots_repack", ct_out)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_coeffs_to_slots_repack", ct_in)?;
         BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, scratch)
     }
 
@@ -205,15 +144,6 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        for factor in &dft.inner().factors {
-            crate::reference::linear_transformation::check_linear_transformation(
-                "ckks_slots_to_coeffs_repack",
-                crate::api::CKKSModuleInfos::ckks_ring(self),
-                factor,
-            )?;
-        }
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs_repack", op_out)?;
-        crate::api::CKKSModuleInfos::ckks_ring(self).check_ciphertext("ckks_slots_to_coeffs_repack", ct_in)?;
         BE::ckks_slots_to_coeffs_repack_impl(self, op_out, ct_in, dft, keys, scratch)
     }
 }

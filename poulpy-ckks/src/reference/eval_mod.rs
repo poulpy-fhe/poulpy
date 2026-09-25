@@ -185,8 +185,7 @@ where
                 module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
-                    let (mut input, mut nested) =
-                        scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta, ct.ring_kind());
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct, &mut nested);
                     if let Some(offset) = params.f_mod_input_offset.as_ref() {
                         module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
@@ -207,8 +206,7 @@ where
                 // The inverse consumes the base result, so this is the only
                 // stage that still needs a separate working copy.
                 scratch.scope(|scratch_local| {
-                    let (mut input, mut nested) =
-                        scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta, ct.ring_kind());
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.ckks_copy(&mut input, &*res, &mut nested)?;
                     module.ckks_eval_poly_real_const_coeffs(res, &input, inv, tsk, &mut nested)
                 })?;
@@ -224,8 +222,7 @@ where
                 module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
-                    let (mut input, mut nested) =
-                        scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta, ct.ring_kind());
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct, &mut nested);
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;

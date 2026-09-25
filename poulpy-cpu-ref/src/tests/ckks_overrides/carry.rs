@@ -41,7 +41,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _into_unnormalized_impl>]<Dst, A, B>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     a: &A,
                     b: &B,
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -70,7 +70,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _assign_unnormalized_impl>]<Dst, A>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     a: &A,
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
                 ) -> ::poulpy_ckks::CKKSResult<()>
@@ -84,13 +84,13 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _assign_unnormalized_ref_impl>]<Dst, A>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, Self::ZnxWord, Self::Ring>,
                     a: &A,
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
                 ) -> ::poulpy_ckks::CKKSResult<()>
                 where
                     Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_ckks::layouts::CKKSCiphertext<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
+                    ::poulpy_ckks::layouts::CKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
                     A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSInfos,
                 {
                     ::poulpy_ckks::reference::$verb::[<ckks_ $verb _assign_unnormalized_ref_wrapped_reference>](module, dst, a, scratch)
@@ -117,7 +117,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _pt_vec_into_unnormalized_impl>]<Dst, A, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     a: &A,
                     pt: &P,
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -146,7 +146,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _pt_vec_assign_unnormalized_impl>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     pt: &P,
                     scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
                 ) -> ::poulpy_ckks::CKKSResult<()>
@@ -183,7 +183,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _pt_const_into_unnormalized_impl>]<Dst, A, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     a: &A,
                     dst_coeff: usize,
                     pt: &P,
@@ -223,7 +223,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
                 fn [<ckks_ $verb _pt_const_assign_unnormalized_impl>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
+                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
                     dst_coeff: usize,
                     pt: &P,
                     pt_coeff: usize,
@@ -256,7 +256,6 @@ fn unit_shifts_use_selected_plaintext_scratch() {
         assert_eq!(module.ckks_sub_one_tmp_bytes(size), module.ckks_sub_pt_const_tmp_bytes(size));
     }
     let params = CKKSTestParams {
-        ring_kind: poulpy_ckks::CKKSRingKind::Standard,
         n: 64,
         base2k: 16,
         k: 64,

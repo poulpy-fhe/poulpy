@@ -40,7 +40,6 @@ use crate::{
 /// would understate the scratch needed when that buffer is reused.
 #[derive(Clone, Copy)]
 struct BranchScratchLayout {
-    ring_kind: crate::layouts::CKKSRingKind,
     glwe_layout: GLWELayout,
     max_size: usize,
     meta: CKKSMeta,
@@ -71,9 +70,6 @@ impl GLWEInfos for BranchScratchLayout {
 }
 
 impl CKKSInfos for BranchScratchLayout {
-    fn ring_kind(&self) -> crate::layouts::CKKSRingKind {
-        self.ring_kind
-    }
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
@@ -142,7 +138,6 @@ where
     let working_k = super::bootstrap::branch_working_k(plan, output.k().as_usize())?;
     let working_precision = TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?);
     let branch_layout = BranchScratchLayout {
-        ring_kind: canonical.ring_kind(),
         glwe_layout: GLWELayout {
             n: canonical.n(),
             base2k: canonical.base2k(),
@@ -159,7 +154,6 @@ where
     let degree = u32::try_from(plan.n()).context("PaCo degree does not fit the layout type")?;
     let beta_k = u32::try_from(beta_k).context("PaCo coefficient-encoding width does not fit the layout type")?;
     let beta_layout = CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: poulpy_core::layouts::GLWELayout {
             n: Degree(degree),
             base2k: context.base2k(),
@@ -190,7 +184,6 @@ where
         );
     let factor_k = u32::try_from(factor_k).context("PaCo factor width does not fit the layout type")?;
     let factor_layout = CKKSLayout {
-        ring_kind: crate::layouts::CKKSRingKind::Standard,
         glwe_layout: poulpy_core::layouts::GLWELayout {
             n: Degree(degree),
             base2k: context.base2k(),
@@ -420,7 +413,6 @@ fn encapsulated_input_layout<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoSca
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {
     CKKSLayout {
-        ring_kind: input.ring_kind(),
         glwe_layout: GLWELayout {
             n: input.n(),
             base2k: context.base2k(),

@@ -144,7 +144,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// the digit-growth analysis and safety bound.
     fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         pt_coeff: usize,
@@ -161,7 +161,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// [`Self::ckks_mul_add_pt_const_into_unnormalized`].
     fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
@@ -415,16 +415,16 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// ```
     fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
@@ -440,14 +440,14 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// ```
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 
     /// Computes `dst = Σ a[i] * b[i][pt_coeffs[i]]` over ciphertext–scalar-constant pairs.
@@ -456,14 +456,14 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// Metadata follows the same rule as [`Self::ckks_dot_product_pt_vec`].
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         pt_coeffs: &[usize],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 }

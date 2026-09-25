@@ -37,7 +37,6 @@ where
     B::copy_view_to_host(view.data().data(), bytemuck::cast_slice_mut(&mut digits));
     Snapshot {
         layout: CKKSLayout {
-            ring_kind: value.ring_kind(),
             glwe_layout: poulpy_core::layouts::GLWELayout {
                 n: value.n(),
                 base2k: value.base2k(),

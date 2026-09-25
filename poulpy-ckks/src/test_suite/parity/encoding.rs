@@ -139,7 +139,6 @@ where
         for log_sparsity in [0, 2] {
             for slots in [SlotsKind::Real, SlotsKind::Complex] {
                 let layout = CKKSLayout {
-                    ring_kind: crate::CKKSRingKind::Standard,
                     glwe_layout: GLWELayout {
                         n: params.n.into(),
                         base2k: params.base2k.into(),
@@ -262,7 +261,6 @@ where
             .unwrap()
             .with_slot_order(order);
         let layout = CKKSLayout {
-            ring_kind: crate::CKKSRingKind::Standard,
             glwe_layout: GLWELayout {
                 n: params.n.into(),
                 base2k: params.base2k.into(),
@@ -346,7 +344,6 @@ where
     let plan = ShipPlan::new(params.log_n(), 4, 40, 3, 2, 2, 2, 2).unwrap();
     let base2k = params.base2k;
     let layout = CKKSLayout {
-        ring_kind: crate::CKKSRingKind::Standard,
         glwe_layout: GLWELayout {
             n: params.n.into(),
             base2k: base2k.into(),

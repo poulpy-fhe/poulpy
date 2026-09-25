@@ -45,7 +45,6 @@ where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
-        self.ckks_ring().check_plaintext("ckks_encode_slots_assign_into", pt)?;
         validate_transform(2 * self.ckks_max_slots(), slots.len())?;
         let count = if self.ckks_is_conjugate_invariant() {
             slots.len() / 2
@@ -67,7 +66,6 @@ where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
-        self.ckks_ring().check_plaintext("ckks_decode_slots_into", pt)?;
         validate_transform(2 * self.ckks_max_slots(), slots.len())?;
         let count = if self.ckks_is_conjugate_invariant() {
             slots.len() / 2
@@ -91,7 +89,6 @@ where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>,
     {
-        self.ckks_ring().check_coefficients("ckks_encode_coeffs_into", pt)?;
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
         BE::ckks_encode_coeffs_into_impl(self, pt, &coeffs.to_backend_ref())
     }
@@ -101,7 +98,6 @@ where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
-        self.ckks_ring().check_coefficients("ckks_decode_coeffs_into", pt)?;
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
         BE::ckks_decode_coeffs_into_impl(self, pt, &mut coeffs.to_backend_mut())
     }
