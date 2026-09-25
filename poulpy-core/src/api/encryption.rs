@@ -31,6 +31,11 @@ pub trait GLWEMaskFill<BE: Backend> {
     fn fill_glwe_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>;
+
+    /// Fills every column of `res`, body included, uniform at its radix and `k`, from `source`.
+    fn fill_glwe_from_source<R>(&self, res: &mut R, source: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>;
 }
 
 pub trait LWEFillMask<BE: Backend> {

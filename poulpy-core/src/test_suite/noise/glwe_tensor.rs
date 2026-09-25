@@ -1,4 +1,3 @@
-use crate::layouts::GLWEToBackendMut;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing,
@@ -588,7 +587,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEMaskFill<BE> + VecZnxFillUniformSource<BE>,
+    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -603,14 +602,7 @@ where
             rank: rank.into(),
         };
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            a.k().as_usize(),
-            GLWEToBackendMut::<BE>::to_backend_mut(&mut a).data_mut(),
-            0,
-            &mut source,
-        );
-        module.fill_glwe_mask_from_source(&mut a, &mut source);
+        module.fill_glwe_from_source(&mut a, &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
             let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
@@ -618,13 +610,7 @@ where
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
-            module.vec_znx_fill_uniform_source(
-                base2k,
-                pt_compact.k().as_usize(),
-                GLWEToBackendMut::<BE>::to_backend_mut(&mut pt_compact).data_mut(),
-                0,
-                &mut source,
-            );
+            module.fill_glwe_from_source(&mut pt_compact, &mut source);
             let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),

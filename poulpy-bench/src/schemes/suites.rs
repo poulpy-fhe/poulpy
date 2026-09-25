@@ -17,7 +17,6 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, Module, ScratchOwned},
@@ -273,7 +272,6 @@ where
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
@@ -392,7 +390,6 @@ where
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>
@@ -460,7 +457,6 @@ where
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>

@@ -6,10 +6,9 @@ use poulpy_core::{
         GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, prepared::GGLWEPreparedFactory,
     },
 };
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostDataMut, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
 };
 
 use std::marker::PhantomData;
@@ -90,7 +89,6 @@ pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::M
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -109,7 +107,6 @@ pub fn external_product_ops<BE: Backend<ZnxWord = i64>, M: criterion::measuremen
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -135,7 +132,6 @@ pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Meas
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -154,7 +150,6 @@ pub fn glwe_tensor_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Me
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -185,7 +180,6 @@ pub fn operations_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Mea
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEAdd<BE>
         + GLWESub<BE>
         + GLWENormalize<BE>
@@ -247,7 +241,6 @@ pub fn all_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measuremen
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -272,7 +265,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     let mut ops: Vec<BenchOp<M, CoreParams>> = Vec::new();
@@ -294,7 +287,6 @@ pub fn standard_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measu
 where
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -359,7 +351,6 @@ where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -384,7 +375,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_core(), c);
@@ -401,7 +392,6 @@ where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -426,7 +416,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     bench_ops(
@@ -453,7 +443,6 @@ pub mod standard {
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_standard_n};
-    use poulpy_hal::api::VecZnxFillUniformSource;
 
     /// Core ops swept at the sizes matching CKKS (`log_n` 13/14/15).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
@@ -461,7 +450,6 @@ pub mod standard {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + GLWEMaskFill<BE>
-            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -496,7 +484,6 @@ pub mod standard {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + GLWEMaskFill<BE>
-            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -540,7 +527,6 @@ pub mod light {
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_light_n};
-    use poulpy_hal::api::VecZnxFillUniformSource;
 
     /// Core ops swept at the single size matching CKKS (`log_n` = 14).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
@@ -548,7 +534,6 @@ pub mod light {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + GLWEMaskFill<BE>
-            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -583,7 +568,6 @@ pub mod light {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + GLWEMaskFill<BE>
-            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>

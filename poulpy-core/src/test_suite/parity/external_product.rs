@@ -1,9 +1,6 @@
 //! External-product parity: the other consumer of the gadget digit loop.
 
 use super::poisoned_scratch;
-use crate::layouts::GLWEToBackendMut;
-use crate::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
@@ -37,8 +34,6 @@ pub fn test_glwe_external_product_parity<BR, BT>(
     Module<BR>: GLWEExternalProduct<BR>
         + GGSWPreparedFactory<BR>
         + GLWEExternalProductInternal<BR>
-        + GLWEMaskFill<BR>
-        + VecZnxFillUniformSource<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxIdftNormalizeConsume<BR>
         + VecZnxIdftNormalizeConsumeTmpBytes,
@@ -85,14 +80,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
             let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
             for row in 0..ggsw_infos.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    module_ref.vec_znx_fill_uniform_source(
-                        base2k,
-                        ggsw_ref_coeffs.k().as_usize(),
-                        GLWEToBackendMut::<BR>::to_backend_mut(&mut ggsw_ref_coeffs.at_view_mut(row, col)).data_mut(),
-                        0,
-                        &mut source,
-                    );
-                    module_ref.fill_glwe_mask_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
+                    module_ref.fill_glwe_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
                 }
             }
 

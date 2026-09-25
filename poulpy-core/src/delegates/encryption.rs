@@ -56,6 +56,12 @@ impl_encryption_delegate!(
         R: GLWEToBackendMut<BE>,
     {
         BE::fill_glwe_mask_from_seed(self, res, seed_xa)
+    },
+    fn fill_glwe_from_source<R>(&self, res: &mut R, source: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>,
+    {
+        BE::fill_glwe_from_source(self, res, source)
     }
 );
 

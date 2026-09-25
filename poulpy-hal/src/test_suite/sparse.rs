@@ -9,7 +9,7 @@ use crate::{
         ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource, VecZnxLshAdd, VecZnxLshSub,
+        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceAll, VecZnxLshAdd, VecZnxLshSub,
         VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign,
         VecZnxSwitchRing,
     },
@@ -106,19 +106,11 @@ fn check_assign<BE: TestBackend>(
     source: &mut Source,
     op: impl Fn(&mut VecZnxBackendMut<'_, BE>, usize, &VecZnxBackendRef<'_, BE>, usize),
 ) where
-    Module<BE>: ModuleN + VecZnxSwitchRing<BE> + VecZnxFillUniformSource<BE>,
+    Module<BE>: ModuleN + VecZnxSwitchRing<BE>,
 {
     let cols = a.cols();
     let mut seed = module.vec_znx_alloc(n, cols, res_size);
-    for col in 0..cols {
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            res_size * base2k,
-            &mut vec_znx_backend_mut::<BE>(&mut seed),
-            col,
-            source,
-        );
-    }
+    module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed, source);
     let a_dense = embed(module, n, a);
     let mut want = embed(module, n, &seed);
     let mut have = embed(module, n, &seed);
@@ -151,7 +143,6 @@ fn check_assign<BE: TestBackend>(
 pub fn test_vec_znx_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + VecZnxFillUniformSource<BE>
         + VecZnxSwitchRing<BE>
         + VecZnxAdd<BE>
         + VecZnxAddAssign<BE>
@@ -177,25 +168,9 @@ where
                     continue;
                 }
                 let mut a = module.vec_znx_alloc(a_n, cols, a_size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        a_size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut a),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 let mut b = module.vec_znx_alloc(b_n, cols, b_size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        b_size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut b),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
                 check_binary(module, n, "vec_znx_add", res_size, &a, &b, |r, rc, x, xc, y, yc| {
                     module.vec_znx_add(r, rc, x, xc, y, yc)
                 });
@@ -204,15 +179,7 @@ where
                 });
             }
             let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    a_size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut a),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
             check_assign(
                 module,
                 n,
@@ -252,15 +219,7 @@ where
             ));
             for k in [0usize, 3, base2k, base2k + 5] {
                 let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        a_size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut a),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 check_assign(
                     module,
                     n,
@@ -307,9 +266,7 @@ where
 
     // A degree above the destination's is not an embedding and is rejected.
     let mut too_big = module.vec_znx_alloc(n << 1, cols, 1);
-    for col in 0..cols {
-        module.vec_znx_fill_uniform_source(base2k, base2k, &mut vec_znx_backend_mut::<BE>(&mut too_big), col, &mut source);
-    }
+    module.vec_znx_fill_uniform_source_all(base2k, base2k, &mut too_big, &mut source);
     let mut res = upload_vec_znx::<BE>(&VecZnx::alloc(n, cols, 1));
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_add_assign(
@@ -387,7 +344,6 @@ type SmallAssign<'m, BE> = &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE>, usize, &
 pub fn test_vec_znx_big_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + VecZnxFillUniformSource<BE>
         + VecZnxSwitchRing<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigFromSmall<BE>
@@ -447,25 +403,9 @@ where
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(sparse_n, n), (n, sparse_n)] {
                 let mut a = module.vec_znx_alloc(a_n, cols, a_size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        a_size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut a),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 let mut b = module.vec_znx_alloc(b_n, cols, b_size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        b_size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut b),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
                 let (a_dense, b_dense) = (big_embedded(module, n, &a), big_embedded(module, n, &b));
                 let (a_own, b_own) = (big_at_own_degree(module, &a), big_at_own_degree(module, &b));
                 let (a_small_dense, b_small_dense) = (embed(module, n, &a), embed(module, n, &b));
@@ -574,25 +514,9 @@ where
 
             // In-place forms: the destination is a random degree-N Big, the operand is sparse.
             let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    a_size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut a),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
             let mut seed = module.vec_znx_alloc(n, cols, res_size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    res_size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut seed),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed, &mut source);
             let a_dense = big_embedded(module, n, &a);
             let a_own = big_at_own_degree(module, &a);
             for (what, op) in big_assign.iter() {

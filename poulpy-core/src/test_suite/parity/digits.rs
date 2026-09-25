@@ -8,15 +8,15 @@ use poulpy_hal::{
     AlignedBuf,
     api::{
         VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxFillUniformSource,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxFillUniformSourceAll, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxViewMut,
     },
     source::Source,
-    test_suite::{TestParams, download_mat_znx, download_vec_znx, upload_mat_znx, upload_vec_znx, vec_znx_backend_mut},
+    test_suite::{TestParams, download_mat_znx, download_vec_znx, upload_mat_znx, upload_vec_znx},
 };
 
 /// HAL operations needed to construct and canonically observe a digit product.
@@ -28,7 +28,6 @@ pub trait DigitParityModule<BE: ParityBackend>:
     + VecZnxDftBytesOf
     + VecZnxDftCopy<BE>
     + VecZnxDftZero<BE>
-    + VecZnxFillUniformSource<BE>
     + VecZnxIdftNormalizeConsume<BE>
     + VecZnxIdftNormalizeConsumeTmpBytes
     + VmpPMatAlloc<BE>
@@ -47,7 +46,6 @@ impl<BE: ParityBackend, M> DigitParityModule<BE> for M where
         + VecZnxDftBytesOf
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
-        + VecZnxFillUniformSource<BE>
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
         + VmpPMatAlloc<BE>
@@ -141,15 +139,7 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
     for (dsize, cols_in, cols_out, size) in [(1usize, 1, 1, 1), (2, 1, 2, 5), (3, 2, 1, 8), (7, 1, 2, 15)] {
         for sparse in [false, true] {
             let mut a = r.vec_znx_alloc(r.n(), cols_in, size);
-            for col in 0..cols_in {
-                r.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BR>(&mut a),
-                    col,
-                    &mut source,
-                );
-            }
+            r.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
             let mut a = download_vec_znx::<BR>(&a);
             if sparse {
                 for col in 0..cols_in {

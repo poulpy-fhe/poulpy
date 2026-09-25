@@ -1,7 +1,5 @@
-use crate::layouts::GLWEToBackendMut;
 use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
     layouts::{Module, ReaderFrom, ScratchOwned, ZnxView},
@@ -98,8 +96,7 @@ where
         + GLWENormalize<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWENoise<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>,
+        + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
@@ -161,14 +158,7 @@ where
             let mut data: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();
             ct_in.data().decode_vec_float(ct_in.base2k().into(), 0, &mut data);
 
-            module.vec_znx_fill_uniform_source(
-                bases[1],
-                ct_out.k().as_usize(),
-                GLWEToBackendMut::<BE>::to_backend_mut(&mut ct_out).data_mut(),
-                0,
-                &mut source_xa,
-            );
-            module.fill_glwe_mask_from_source(&mut ct_out, &mut source_xa);
+            module.fill_glwe_from_source(&mut ct_out, &mut source_xa);
             module.glwe_normalize(&mut ct_out, &ct_in, &mut scratch.borrow());
 
             let mut data_conv: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();

@@ -93,6 +93,9 @@ poulpy_core::impl_glwe_copy_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_normalize_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Ref);
+poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Ref);
+poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Ref);
+crate::impl_sampling_host!(DelegatingFFT64Ref, fft64);
 // The pairwise suite must use a selected comparison backend's implementation
 // and its own scratch query, even when that backend delegates its arithmetic.
 unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Ref {
@@ -365,14 +368,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
     for row in 0..layout.dnum.as_usize() {
         for col in 0..layout.rank.as_usize() + 1 {
             let mut entry = GGSWAtViewMut::<FFT64Ref>::at_view_mut(&mut input, row, col);
-            reference.vec_znx_fill_uniform_source(
-                17,
-                entry.k().as_usize(),
-                GLWEToBackendMut::<FFT64Ref>::to_backend_mut(&mut entry).data_mut(),
-                0,
-                &mut source,
-            );
-            reference.fill_glwe_mask_from_source(&mut entry, &mut source);
+            reference.fill_glwe_from_source(&mut entry, &mut source);
         }
     }
     let mut actual = module.ggsw_alloc_from_infos(&layout);
@@ -406,15 +402,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let module = Module::<DelegatingFFT64Ref>::new(256);
     let reference = Module::<FFT64Ref>::new(256);
     let mut input = sample_glwe();
-    let mut mask_source = Source::new([61; 32]);
-    reference.vec_znx_fill_uniform_source(
-        17,
-        input.k().as_usize(),
-        GLWEToBackendMut::<FFT64Ref>::to_backend_mut(&mut input).data_mut(),
-        0,
-        &mut mask_source,
-    );
-    reference.fill_glwe_mask_from_source(&mut input, &mut mask_source);
+    reference.fill_glwe_from_source(&mut input, &mut Source::new([61; 32]));
     let saved_input = input.clone();
     let key_layout = GLWEAutomorphismKeyLayout {
         n: input.n(),

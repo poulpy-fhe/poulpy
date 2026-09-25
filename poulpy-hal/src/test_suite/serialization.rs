@@ -27,10 +27,7 @@ where
 }
 
 /// Round-trips `ScalarZnx`, `VecZnx` and `MatZnx` fixtures sampled by `module`.
-pub fn test_serialization<BE: TestBackend>(module: &Module<BE>)
-where
-    Module<BE>: VecZnxFillUniformSource<BE>,
-{
+pub fn test_serialization<BE: TestBackend>(module: &Module<BE>) {
     let n: usize = module.n();
     let base2k: usize = 50;
     let mut source = Source::new([0u8; 32]);

@@ -2,7 +2,6 @@
 use super::helpers::*;
 use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, layouts::*, oep::*, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::layouts::{Backend, Module};
 
 pub trait ArithmeticParityBackend:
@@ -39,7 +38,7 @@ pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize
 
 fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
-    Module<B>: GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
+    Module<B>: GLWEMaskFill<B>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -291,8 +290,8 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    Module<BR>: GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
-    Module<BT>: GLWEMaskFill<BT> + VecZnxFillUniformSource<BT>,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(arithmetic(params, r), arithmetic(params, t));
@@ -301,7 +300,7 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
+    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
@@ -422,8 +421,8 @@ pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + VecZnxFillUniformSource<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(products(params, r), products(params, t));
@@ -432,7 +431,7 @@ where
 fn automorphisms<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
@@ -514,8 +513,8 @@ pub fn test_automorphism_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR
 where
     BR: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
     BT: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + VecZnxFillUniformSource<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(automorphisms(params, r), automorphisms(params, t));

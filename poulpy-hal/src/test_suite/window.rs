@@ -7,7 +7,7 @@ use crate::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall,
         VecZnxBigNegate, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxDftApply, VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
         VecZnxNegate, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd,
         VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
     },
@@ -73,7 +73,7 @@ where
 
 pub fn test_vec_znx_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxZero<BE> + VecZnxCopy<BE> + VecZnxAdd<BE> + VecZnxSub<BE> + VecZnxNegate<BE> + VecZnxFillUniformSource<BE>,
+    Module<BE>: VecZnxZero<BE> + VecZnxCopy<BE> + VecZnxAdd<BE> + VecZnxSub<BE> + VecZnxNegate<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -85,35 +85,11 @@ where
         let shape = shape_of(base, w);
         for op in 0..5 {
             let mut a_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut a_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
             let mut b_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut b_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut b_be, &mut source);
             let mut res_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut res_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
             let a = download_vec_znx::<BE>(&a_be);
             let b = download_vec_znx::<BE>(&b_be);
             let res = download_vec_znx::<BE>(&res_be);
@@ -227,8 +203,7 @@ where
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>
-        + VecZnxFillUniformSource<BE>,
+        + Convolution<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -237,35 +212,11 @@ where
     let shape = VecZnxShape::new(n, cols, size).window_coeffs(0, 4);
 
     let mut a_be = module.vec_znx_alloc(n, cols, size);
-    for col in 0..cols {
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            size * base2k,
-            &mut vec_znx_backend_mut::<BE>(&mut a_be),
-            col,
-            &mut source,
-        );
-    }
+    module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
     let mut b_be = module.vec_znx_alloc(n, cols, size);
-    for col in 0..cols {
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            size * base2k,
-            &mut vec_znx_backend_mut::<BE>(&mut b_be),
-            col,
-            &mut source,
-        );
-    }
+    module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut b_be, &mut source);
     let mut res_be = module.vec_znx_alloc(n, cols, size);
-    for col in 0..cols {
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            size * base2k,
-            &mut vec_znx_backend_mut::<BE>(&mut res_be),
-            col,
-            &mut source,
-        );
-    }
+    module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
 
     let rotate_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_rotate(
@@ -347,7 +298,7 @@ fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE
 
 pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigAdd<BE> + VecZnxBigSub<BE> + VecZnxBigNegate<BE> + VecZnxFillUniformSource<BE>,
+    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigAdd<BE> + VecZnxBigSub<BE> + VecZnxBigNegate<BE>,
     BE::BigWord: PartialEq + std::fmt::Debug,
 {
     let n = params.size;
@@ -359,25 +310,9 @@ where
     for w in windows(n, size) {
         let shape = shape_of(base, w);
         let mut a_be = module.vec_znx_alloc(n, cols, size);
-        for col in 0..cols {
-            module.vec_znx_fill_uniform_source(
-                base2k,
-                size * base2k,
-                &mut vec_znx_backend_mut::<BE>(&mut a_be),
-                col,
-                &mut source,
-            );
-        }
+        module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
         let mut b_be = module.vec_znx_alloc(n, cols, size);
-        for col in 0..cols {
-            module.vec_znx_fill_uniform_source(
-                base2k,
-                size * base2k,
-                &mut vec_znx_backend_mut::<BE>(&mut b_be),
-                col,
-                &mut source,
-            );
-        }
+        module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut b_be, &mut source);
         let a = download_vec_znx::<BE>(&a_be);
         let b = download_vec_znx::<BE>(&b_be);
         let (am, bm) = (materialize(&a, shape), materialize(&b, shape));
@@ -390,15 +325,7 @@ where
         // running past the window shows up as a changed outside-window element.
         for big in [&mut big_a, &mut big_b, &mut big_r] {
             let mut seed_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut seed_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut seed_be, &mut source);
             for col in 0..cols {
                 module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&seed_be), col);
             }
@@ -515,8 +442,7 @@ where
         + VecZnxLshAssign<BE>
         + VecZnxRshAssign<BE>
         + VecZnxLshTmpBytes
-        + VecZnxRshTmpBytes
-        + VecZnxFillUniformSource<BE>,
+        + VecZnxRshTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.size;
@@ -536,25 +462,9 @@ where
         for op in 0..11 {
             for k in [0usize, 3, base2k, base2k + 2] {
                 let mut a_be = module.vec_znx_alloc(n, cols, size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut a_be),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
                 let mut res_be = module.vec_znx_alloc(n, cols, size);
-                for col in 0..cols {
-                    module.vec_znx_fill_uniform_source(
-                        base2k,
-                        size * base2k,
-                        &mut vec_znx_backend_mut::<BE>(&mut res_be),
-                        col,
-                        &mut source,
-                    );
-                }
+                module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
                 let a = download_vec_znx::<BE>(&a_be);
                 let res = download_vec_znx::<BE>(&res_be);
                 let res_before = res.clone();
@@ -645,7 +555,7 @@ where
 /// `vec_znx_big_normalize` through windows on both operands.
 pub fn test_vec_znx_big_window_normalize<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxFillUniformSource<BE>,
+    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.size;
@@ -660,25 +570,9 @@ where
         let wsize = shape.size();
         for (res_offset, res_k) in [(-3i64, wsize * base2k), (0, wsize * base2k - 2), (5, wsize * base2k)] {
             let mut a_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut a_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
             let mut res_be = module.vec_znx_alloc(n, cols, size);
-            for col in 0..cols {
-                module.vec_znx_fill_uniform_source(
-                    base2k,
-                    size * base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut res_be),
-                    col,
-                    &mut source,
-                );
-            }
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
             let a = download_vec_znx::<BE>(&a_be);
             let res = download_vec_znx::<BE>(&res_be);
             let res_before = res.clone();

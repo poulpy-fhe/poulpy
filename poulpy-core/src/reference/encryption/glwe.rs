@@ -29,6 +29,10 @@ pub trait GLWEMaskFillReference<BE: Backend> {
     fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
+
+    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>;
 }
 
 impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
@@ -43,6 +47,17 @@ where
         let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
         for col in 1..res.data.cols() {
             self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
+        }
+    }
+
+    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>,
+    {
+        let mut res = res.to_backend_mut();
+        let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
+        for col in 0..res.data.cols() {
+            self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source);
         }
     }
 }

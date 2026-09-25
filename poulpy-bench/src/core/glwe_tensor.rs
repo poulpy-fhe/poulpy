@@ -1,6 +1,3 @@
-use poulpy_core::layouts::GLWEToBackendMut;
-use poulpy_core::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSource;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -50,7 +47,6 @@ where
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -62,14 +58,7 @@ where
 
     let mut res = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.vec_znx_fill_uniform_source(
-        cp.base2k as usize,
-        tensor.k().as_usize(),
-        GLWEToBackendMut::<BE>::to_backend_mut(&mut tensor).data_mut(),
-        0,
-        &mut source,
-    );
-    module.fill_glwe_mask_from_source(&mut tensor, &mut source);
+    module.fill_glwe_from_source(&mut tensor, &mut source);
 
     let mut tsk_coeffs: GLWETensorKey<BE::OwnedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     fill_by_digit(&module, &mut tsk_coeffs, 1, &mut source);
@@ -90,11 +79,7 @@ where
 
 pub fn runner_glwe_tensor_apply<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE>
-        + GLWETensoring<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos = glwe_layout(cp);
@@ -104,22 +89,8 @@ where
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut b = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.vec_znx_fill_uniform_source(
-        cp.base2k as usize,
-        a.k().as_usize(),
-        GLWEToBackendMut::<BE>::to_backend_mut(&mut a).data_mut(),
-        0,
-        &mut source,
-    );
-    module.fill_glwe_mask_from_source(&mut a, &mut source);
-    module.vec_znx_fill_uniform_source(
-        cp.base2k as usize,
-        b.k().as_usize(),
-        GLWEToBackendMut::<BE>::to_backend_mut(&mut b).data_mut(),
-        0,
-        &mut source,
-    );
-    module.fill_glwe_mask_from_source(&mut b, &mut source);
+    module.fill_glwe_from_source(&mut a, &mut source);
+    module.fill_glwe_from_source(&mut b, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     bencher.iter(|| {
@@ -130,11 +101,7 @@ where
 
 pub fn runner_glwe_tensor_square_apply<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE>
-        + GLWETensoring<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxFillUniformSource<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos = glwe_layout(cp);
@@ -143,14 +110,7 @@ where
 
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.vec_znx_fill_uniform_source(
-        cp.base2k as usize,
-        a.k().as_usize(),
-        GLWEToBackendMut::<BE>::to_backend_mut(&mut a).data_mut(),
-        0,
-        &mut source,
-    );
-    module.fill_glwe_mask_from_source(&mut a, &mut source);
+    module.fill_glwe_from_source(&mut a, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_square_apply_tmp_bytes(&tensor, &a));
 
     bencher.iter(|| {

@@ -3,12 +3,10 @@ use crate::{
     CKKSInfos, CKKSLayout,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
 };
-use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::{
     GLWEMaskFill,
     layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos},
 };
-use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena, ScratchOwned},
     source::Source,
@@ -59,18 +57,10 @@ pub(crate) fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> CKKSCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
+    Module<B>: GLWEMaskFill<B>,
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
-    let mut mask_source = Source::new([seed; 32]);
-    module.vec_znx_fill_uniform_source(
-        layout.base2k().as_usize(),
-        out.k().as_usize(),
-        GLWEToBackendMut::<B>::to_backend_mut(&mut out).data_mut(),
-        0,
-        &mut mask_source,
-    );
-    module.fill_glwe_mask_from_source(&mut out, &mut mask_source);
+    module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
     out
 }
 
@@ -80,16 +70,10 @@ pub(crate) fn fixture_plaintext<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> CKKSPlaintextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
+    Module<B>: GLWEMaskFill<B>,
 {
     let mut out = module.ckks_plaintext_alloc_from_infos(layout);
-    module.vec_znx_fill_uniform_source(
-        layout.base2k().as_usize(),
-        out.k().as_usize(),
-        GLWEToBackendMut::<B>::to_backend_mut(&mut out).data_mut(),
-        0,
-        &mut Source::new([seed; 32]),
-    );
+    module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
     out
 }
 

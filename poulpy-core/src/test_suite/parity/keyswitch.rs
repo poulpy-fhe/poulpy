@@ -6,8 +6,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VecZnxFillUniformSource, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint,
@@ -15,11 +15,11 @@ use poulpy_hal::{
         VmpPMatToBackendRef,
     },
     source::Source,
-    test_suite::{TestParams, download_mat_znx, upload_mat_znx, vec_znx_backend_mut},
+    test_suite::{TestParams, download_mat_znx, upload_mat_znx},
 };
 
 use crate::{
-    GGLWEKeyswitch, GLWEKeyswitch, GLWEMaskFill,
+    GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
@@ -41,7 +41,6 @@ where
         + VecZnxDftBytesOf
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
-        + VecZnxFillUniformSource<BE>
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAdd<BE>
         + VmpApplyDftToDftTmpBytes
@@ -89,15 +88,7 @@ where
         let mut scratch = poisoned_scratch::<BE>(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out));
 
         let mut a = module.vec_znx_alloc(module.n(), cols_in, a_size);
-        for col in 0..cols_in {
-            module.vec_znx_fill_uniform_source(
-                base2k,
-                a_size * base2k,
-                &mut vec_znx_backend_mut::<BE>(&mut a),
-                col,
-                &mut source,
-            );
-        }
+        module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, a_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
@@ -190,7 +181,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
+    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
     Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -268,7 +259,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
+    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
     Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -330,7 +321,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
+    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
     Module<BT>: GGLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -408,8 +399,7 @@ where
         + VecZnxDftApply<BE>
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
-        + VecZnxFillUniformSource<BE>,
+        + VmpPrepareTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([3u8; 32]);
@@ -453,15 +443,7 @@ where
         let mut prep = ScratchOwned::<BE>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
         let mut a = module.vec_znx_alloc(module.n(), cols_in, input_size);
-        for col in 0..cols_in {
-            module.vec_znx_fill_uniform_source(
-                base2k,
-                input_size * base2k,
-                &mut vec_znx_backend_mut::<BE>(&mut a),
-                col,
-                &mut source,
-            );
-        }
+        module.vec_znx_fill_uniform_source_all(base2k, input_size * base2k, &mut a, &mut source);
         let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, input_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
