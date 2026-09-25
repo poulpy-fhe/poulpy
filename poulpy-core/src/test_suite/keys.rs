@@ -1,12 +1,15 @@
 use crate::layouts::GLWEToBackendMut;
 use crate::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     layouts::{Backend, Module},
     source::Source,
 };
 
-use crate::layouts::{GGLWEAtViewMut, GGLWEInfos};
+use crate::{
+    GLWEMaskFill,
+    layouts::{GGLWEAtViewMut, GGLWEInfos},
+};
 
 /// Fills `key` from `source`, one draw per digit a `stride`-strided read
 /// reaches, in digit order; every row no digit maps to is poisoned from an
@@ -18,7 +21,7 @@ use crate::layouts::{GGLWEAtViewMut, GGLWEInfos};
 /// exactly where the coarsening says they are and nowhere else.
 pub fn fill_by_digit<BE: Backend, K>(module: &Module<BE>, key: &mut K, stride: usize, source: &mut Source)
 where
-    Module<BE>: VecZnxFillUniformSourceAll<BE>,
+    Module<BE>: GLWEMaskFill<BE> + VecZnxFillUniformSource<BE>,
     K: GGLWEAtViewMut<BE> + GGLWEInfos,
 {
     let base2k: usize = key.base2k().into();
@@ -31,12 +34,14 @@ where
             } else {
                 &mut poison
             };
-            module.vec_znx_fill_uniform_source_all(
+            module.vec_znx_fill_uniform_source(
                 base2k,
                 key.k().as_usize(),
-                &mut GLWEToBackendMut::<BE>::to_backend_mut(&mut key.at_view_mut(row, col)).data_mut(),
+                GLWEToBackendMut::<BE>::to_backend_mut(&mut key.at_view_mut(row, col)).data_mut(),
+                0,
                 stream,
             );
+            module.fill_glwe_mask_from_source(&mut key.at_view_mut(row, col), stream);
         }
     }
 }

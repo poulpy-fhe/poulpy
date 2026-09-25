@@ -3,7 +3,7 @@
 use super::poisoned_scratch;
 use crate::layouts::GLWEToBackendMut;
 use crate::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
@@ -15,7 +15,7 @@ use poulpy_hal::{
 
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
-    GLWEExternalProduct, GLWEExternalProductInternal,
+    GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -37,7 +37,8 @@ pub fn test_glwe_external_product_parity<BR, BT>(
     Module<BR>: GLWEExternalProduct<BR>
         + GGSWPreparedFactory<BR>
         + GLWEExternalProductInternal<BR>
-        + VecZnxFillUniformSourceAll<BR>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxIdftNormalizeConsume<BR>
         + VecZnxIdftNormalizeConsumeTmpBytes,
@@ -84,12 +85,14 @@ pub fn test_glwe_external_product_parity<BR, BT>(
             let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
             for row in 0..ggsw_infos.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    module_ref.vec_znx_fill_uniform_source_all(
+                    module_ref.vec_znx_fill_uniform_source(
                         base2k,
                         ggsw_ref_coeffs.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut ggsw_ref_coeffs.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut ggsw_ref_coeffs.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    module_ref.fill_glwe_mask_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
                 }
             }
 

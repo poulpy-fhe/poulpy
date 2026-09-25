@@ -1,10 +1,11 @@
+use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, LWEFillMask,
+    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
         Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
@@ -45,7 +46,8 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
@@ -106,12 +108,14 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
     brk_prepared.prepare(&module, &brk, &mut scratch.borrow());
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_infos);
-    module.vec_znx_fill_uniform_source_all(
+    module.vec_znx_fill_uniform_source(
         glwe_infos.base2k().as_usize(),
         res.k().as_usize(),
-        res.data_mut(),
+        GLWEToBackendMut::<BE>::to_backend_mut(&mut res).data_mut(),
+        0,
         &mut source_xa,
     );
+    module.fill_glwe_mask_from_source(&mut res, &mut source_xa);
     let mut lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     module.fill_lwe_mask_from_source(lwe_infos.base2k().as_usize(), &mut lwe, &mut source_xa);
 

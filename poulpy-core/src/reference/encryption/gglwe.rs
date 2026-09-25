@@ -118,7 +118,6 @@ where
         let dsize: usize = res.dsize().into();
         let base2k: usize = res.base2k().into();
         let rank_in: usize = res.rank_in().into();
-
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         let tmp_pt_k = tmp_pt.k().as_usize();
 

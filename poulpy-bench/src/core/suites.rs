@@ -1,12 +1,12 @@
 use poulpy_core::{
     GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
-    GLWEKeyswitch, GLWEMulPlain, GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensoring,
+    GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensoring,
     layouts::{
         GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, prepared::GGLWEPreparedFactory,
     },
 };
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostDataMut, Module, ScratchOwned},
@@ -89,7 +89,8 @@ where
 pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -107,7 +108,8 @@ where
 pub fn external_product_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 2]
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -132,7 +134,8 @@ where
 pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -150,7 +153,8 @@ where
 pub fn glwe_tensor_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 3]
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -180,7 +184,8 @@ where
 pub fn operations_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 8]
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEAdd<BE>
         + GLWESub<BE>
         + GLWENormalize<BE>
@@ -241,7 +246,8 @@ where
 pub fn all_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -287,7 +293,8 @@ where
 pub fn standard_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -351,7 +358,8 @@ pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -392,7 +400,8 @@ pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -439,19 +448,20 @@ pub mod standard {
 
     use super::{
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
-        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_standard_n};
-    use poulpy_hal::api::VecZnxFillUniformSourceAll;
+    use poulpy_hal::api::VecZnxFillUniformSource;
 
     /// Core ops swept at the sizes matching CKKS (`log_n` 13/14/15).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
-            + VecZnxFillUniformSourceAll<BE>
+            + GLWEMaskFill<BE>
+            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -485,7 +495,8 @@ pub mod standard {
     where
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
-            + VecZnxFillUniformSourceAll<BE>
+            + GLWEMaskFill<BE>
+            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -520,25 +531,24 @@ pub mod light {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::{
-        api::VecZnxFillUniformSourceAll,
-        layouts::{Backend, Module, ScratchOwned},
-    };
+    use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
 
     use super::{
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
-        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_light_n};
+    use poulpy_hal::api::VecZnxFillUniformSource;
 
     /// Core ops swept at the single size matching CKKS (`log_n` = 14).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
-            + VecZnxFillUniformSourceAll<BE>
+            + GLWEMaskFill<BE>
+            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -572,7 +582,8 @@ pub mod light {
     where
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
-            + VecZnxFillUniformSourceAll<BE>
+            + GLWEMaskFill<BE>
+            + VecZnxFillUniformSource<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>

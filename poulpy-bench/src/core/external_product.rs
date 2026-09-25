@@ -1,12 +1,13 @@
+use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::LWEInfos;
 use poulpy_core::{
-    GLWEExternalProduct,
+    GLWEExternalProduct, GLWEMaskFill,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedFactory},
     },
 };
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -46,7 +47,8 @@ where
     Module<BE>: ModuleNew<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -58,16 +60,25 @@ where
     let mut ct_glwe_in = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_glwe_out = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    module.vec_znx_fill_uniform_source_all(
+    module.vec_znx_fill_uniform_source(
         cp.base2k as usize,
         ct_glwe_in.k().as_usize(),
-        ct_glwe_in.data_mut(),
+        GLWEToBackendMut::<BE>::to_backend_mut(&mut ct_glwe_in).data_mut(),
+        0,
         &mut source,
     );
+    module.fill_glwe_mask_from_source(&mut ct_glwe_in, &mut source);
     for row in 0..ggsw_infos.dnum.as_usize() {
         for col in 0..cp.rank as usize + 1 {
             let mut entry = GGSWAtViewMut::<BE>::at_view_mut(&mut ct_ggsw, row, col);
-            module.vec_znx_fill_uniform_source_all(cp.base2k as usize, entry.k().as_usize(), &mut entry.data_mut(), &mut source);
+            module.vec_znx_fill_uniform_source(
+                cp.base2k as usize,
+                entry.k().as_usize(),
+                GLWEToBackendMut::<BE>::to_backend_mut(&mut entry).data_mut(),
+                0,
+                &mut source,
+            );
+            module.fill_glwe_mask_from_source(&mut entry, &mut source);
         }
     }
 
@@ -99,7 +110,8 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
     Module<BE>: ModuleNew<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSourceAll<BE>
+        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSource<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -110,11 +122,25 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
 
     let mut ct_glwe = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    module.vec_znx_fill_uniform_source_all(cp.base2k as usize, ct_glwe.k().as_usize(), ct_glwe.data_mut(), &mut source);
+    module.vec_znx_fill_uniform_source(
+        cp.base2k as usize,
+        ct_glwe.k().as_usize(),
+        GLWEToBackendMut::<BE>::to_backend_mut(&mut ct_glwe).data_mut(),
+        0,
+        &mut source,
+    );
+    module.fill_glwe_mask_from_source(&mut ct_glwe, &mut source);
     for row in 0..ggsw_infos.dnum.as_usize() {
         for col in 0..cp.rank as usize + 1 {
             let mut entry = GGSWAtViewMut::<BE>::at_view_mut(&mut ct_ggsw, row, col);
-            module.vec_znx_fill_uniform_source_all(cp.base2k as usize, entry.k().as_usize(), &mut entry.data_mut(), &mut source);
+            module.vec_znx_fill_uniform_source(
+                cp.base2k as usize,
+                entry.k().as_usize(),
+                GLWEToBackendMut::<BE>::to_backend_mut(&mut entry).data_mut(),
+                0,
+                &mut source,
+            );
+            module.fill_glwe_mask_from_source(&mut entry, &mut source);
         }
     }
 

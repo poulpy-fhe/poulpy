@@ -46,14 +46,16 @@ pub use polynomial_evaluation::*;
 pub use preparation::*;
 pub use structure::*;
 
+use crate::layouts::GLWEToBackendMut;
 use crate::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Module},
     source::Source,
 };
 
 use crate::{
+    api::GLWEMaskFill,
     layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, ModuleCoreAlloc},
     test_suite::keys::fill_by_digit,
 };
@@ -110,11 +112,18 @@ pub(crate) fn poisoned_scratch<B: Backend>(bytes: usize) -> poulpy_hal::layouts:
 pub(crate) fn ref_glwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGLWE<BR>
 where
     BR: ParityBackend,
-    Module<BR>: VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     A: GLWEInfos,
 {
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
-    module_ref.vec_znx_fill_uniform_source_all(infos.base2k().into(), glwe.k().as_usize(), glwe.data_mut(), source);
+    module_ref.vec_znx_fill_uniform_source(
+        infos.base2k().into(),
+        glwe.k().as_usize(),
+        GLWEToBackendMut::<BR>::to_backend_mut(&mut glwe).data_mut(),
+        0,
+        source,
+    );
+    module_ref.fill_glwe_mask_from_source(&mut glwe, source);
     glwe
 }
 
@@ -122,7 +131,7 @@ where
 pub(crate) fn ref_gglwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGGLWE<BR>
 where
     BR: ParityBackend,
-    Module<BR>: VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     A: GGLWEInfos,
 {
     let mut gglwe = module_ref.gglwe_alloc_from_infos(infos);

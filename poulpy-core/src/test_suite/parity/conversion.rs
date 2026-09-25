@@ -1,7 +1,7 @@
 //! Deterministic LWE/GLWE conversion and extraction parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
 use crate::{
-    GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFillMask, LWEFromGLWE, LWEKeyswitch, LWESampleExtract,
+    GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, LWEFillMask, LWEFromGLWE, LWEKeyswitch, LWESampleExtract,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, GLWELayout, GLWEToLWEKeyLayout, LWEInfos, LWELayout, LWEMatrixInfos, LWEMatrixLayout,
@@ -12,7 +12,7 @@ use crate::{
     },
     test_suite::keys::fill_by_digit,
 };
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned},
@@ -36,7 +36,8 @@ where
         + GLWEToLWEKeyPreparedFactory<BR>
         + LWEToGLWEKeyPreparedFactory<BR>
         + LWESwitchingKeyPreparedFactory<BR>
-        + VecZnxFillUniformSourceAll<BR>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>
         + LWEFillMask<BR>,
     Module<BT>: GLWEExpandLWE<BT>
         + GLWEExpandLWEMatrix<BT>

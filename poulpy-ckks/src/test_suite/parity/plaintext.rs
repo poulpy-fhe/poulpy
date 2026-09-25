@@ -1,13 +1,13 @@
 //! Plaintext extraction on coefficients each backend samples from the same seed, and metadata.
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SlotsKind, oep::CKKSPlaintextZnxImpl, test_suite::CKKSTestParams};
-use poulpy_core::layouts::LWEInfos;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_core::{GLWEMaskFill, layouts::LWEInfos};
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::layouts::{Backend, Module};
 
 fn exercise<B: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
 where
-    Module<B>: VecZnxFillUniformSourceAll<B>,
+    Module<B>: GLWEMaskFill<B> + VecZnxFillUniformSource<B>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -49,8 +49,8 @@ pub fn test_plaintext_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, 
 where
     BR: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl,
     BT: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl,
-    Module<BR>: VecZnxFillUniformSourceAll<BR>,
-    Module<BT>: VecZnxFillUniformSourceAll<BT>,
+    Module<BR>: GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
+    Module<BT>: GLWEMaskFill<BT> + VecZnxFillUniformSource<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(exercise(params, r), exercise(params, t));

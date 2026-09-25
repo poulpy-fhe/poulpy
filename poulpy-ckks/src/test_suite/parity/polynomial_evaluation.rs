@@ -15,8 +15,11 @@ use crate::{
     power_basis::{PowerBasis, PowerBasisGen},
     test_suite::CKKSTestParams,
 };
-use poulpy_core::layouts::{GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos};
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_core::{
+    GLWEMaskFill,
+    layouts::{GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos},
+};
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module},
     test_suite::upload_vec_znx,
@@ -32,7 +35,11 @@ fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
 where
     B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + CKKSEvalModOps<B> + GLWETensorKeyPreparedFactory<B> + VecZnxFillUniformSourceAll<B>,
+    Module<B>: CKKSAllOpsTmpBytes<B>
+        + CKKSEvalModOps<B>
+        + GLWETensorKeyPreparedFactory<B>
+        + GLWEMaskFill<B>
+        + VecZnxFillUniformSource<B>,
 {
     let b = params.base2k;
     let layout = CKKSLayout {
@@ -245,8 +252,16 @@ where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSAllOpsTmpBytes<BR> + CKKSEvalModOps<BR> + GLWETensorKeyPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
-    Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + VecZnxFillUniformSourceAll<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR>
+        + CKKSEvalModOps<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT>
+        + CKKSEvalModOps<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + GLWEMaskFill<BT>
+        + VecZnxFillUniformSource<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(

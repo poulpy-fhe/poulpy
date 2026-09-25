@@ -19,7 +19,7 @@
 
 use super::{
     TestParams, download_mat_znx, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx,
-    upload_scalar_znx, upload_vec_znx,
+    upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut,
     vec_znx_dft::{dft_of_uploaded_vec_znx, idft_apply_to_host},
 };
 use crate::layouts::SvpPPolToBackendMut;
@@ -28,8 +28,7 @@ use crate::layouts::VmpPMatToBackendMut;
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VmpPMatAlloc,
-        VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, HostBytesBackend, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint,
@@ -49,7 +48,7 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
 ) where
     BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA> + VecZnxFillUniformSourceAll<BA>,
+    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA> + VecZnxFillUniformSource<BA>,
     Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB>,
 {
     let base2k = params.base2k;
@@ -59,7 +58,15 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
 
     for size in [1, 2, 3, 4] {
         let mut a = module_a.vec_znx_alloc(params.n, cols, size);
-        module_a.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
+        for col in 0..cols {
+            module_a.vec_znx_fill_uniform_source(
+                base2k,
+                size * base2k,
+                &mut vec_znx_backend_mut::<BA>(&mut a),
+                col,
+                &mut source,
+            );
+        }
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);
         assert!(
@@ -196,7 +203,7 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
         + VecZnxIdftApply<BA>
         + VecZnxBigNormalize<BA>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxFillUniformSourceAll<BA>,
+        + VecZnxFillUniformSource<BA>,
     Module<BB>: VecZnxDftAlloc<BB>
         + VecZnxDftApply<BB>
         + VecZnxBigAlloc<BB>
@@ -215,7 +222,15 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
 
     for size in [1, 2, 3, 4] {
         let mut a = module_a.vec_znx_alloc(params.n, cols, size);
-        module_a.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
+        for col in 0..cols {
+            module_a.vec_znx_fill_uniform_source(
+                base2k,
+                size * base2k,
+                &mut vec_znx_backend_mut::<BA>(&mut a),
+                col,
+                &mut source,
+            );
+        }
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);

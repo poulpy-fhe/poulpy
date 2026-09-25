@@ -1,8 +1,9 @@
 //! Trace, packing, relinearization and tensor-secret parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
+use crate::layouts::GLWEToBackendMut;
 use crate::layouts::LWEInfos;
 use crate::{
-    Distribution, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
+    Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretTensorFactory,
@@ -14,7 +15,7 @@ use crate::{
     },
     test_suite::keys::fill_by_digit,
 };
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
@@ -30,7 +31,8 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>:
+        GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWETrace<BT> + GLWEPacking<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -336,7 +338,8 @@ where
         + GLWESecretPreparedFactory<BR>
         + GLWESecretTensorFactory<BR>
         + GLWESecretTensorPreparedFactory<BR>
-        + VecZnxFillUniformSourceAll<BR>,
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
@@ -393,11 +396,24 @@ where
                 rank: Rank(rank as u32),
             };
             let mut a_r = r.glwe_tensor_alloc_from_infos(&g);
-            r.vec_znx_fill_uniform_source_all(b, a_r.k().as_usize(), a_r.data_mut(), &mut source);
+            r.vec_znx_fill_uniform_source(
+                b,
+                a_r.k().as_usize(),
+                GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r).data_mut(),
+                0,
+                &mut source,
+            );
+            r.fill_glwe_mask_from_source(&mut a_r, &mut source);
             let mut a_t = t.glwe_tensor_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             let mut pt_r = r.glwe_plaintext_alloc_from_infos(&g);
-            r.vec_znx_fill_uniform_source_all(b, pt_r.k().as_usize(), pt_r.data_mut(), &mut source);
+            r.vec_znx_fill_uniform_source(
+                b,
+                pt_r.k().as_usize(),
+                GLWEToBackendMut::<BR>::to_backend_mut(&mut pt_r).data_mut(),
+                0,
+                &mut source,
+            );
             let mut pt_t = t.glwe_plaintext_alloc_from_infos(&g);
             pt_r.transfer_into(&mut pt_t);
             r.glwe_tensor_decrypt(

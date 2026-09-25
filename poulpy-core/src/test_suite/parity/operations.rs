@@ -4,7 +4,7 @@
 //! compare.
 
 use crate::layouts::GLWEToBackendMut;
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned, ZnxView, ZnxViewMut},
@@ -13,8 +13,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWERotate,
-    GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GGSWRotate, GLWEAdd, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize,
+    GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
     layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
@@ -56,7 +56,7 @@ fn compare<BR, BT, FR, FT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -136,7 +136,7 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEAdd<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWEAdd<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWEAdd<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -171,7 +171,7 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWESub<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWESub<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWESub<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -266,7 +266,7 @@ pub fn test_glwe_negate_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWENegate<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWENegate<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWENegate<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -308,7 +308,7 @@ pub fn test_glwe_normalize_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWENormalize<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWENormalize<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWENormalize<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -348,7 +348,7 @@ pub fn test_glwe_rotate_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWERotate<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWERotate<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWERotate<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -392,7 +392,10 @@ pub fn test_glwe_tensor_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWETensoring<BR>
+        + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -436,7 +439,10 @@ pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWETensoring<BR>
+        + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -455,7 +461,10 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWETensoring<BR>
+        + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -515,7 +524,7 @@ pub fn test_glwe_copy_zero_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWECopy<BR> + GLWEZero<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWECopy<BR> + GLWEZero<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWECopy<BT> + GLWEZero<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -554,7 +563,7 @@ pub fn test_glwe_shift_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEShift<BR> + GLWEMulXpMinusOne<BR> + GLWERotate<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWEShift<BR> + GLWEMulXpMinusOne<BR> + GLWERotate<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWEShift<BT> + GLWEMulXpMinusOne<BT> + GLWERotate<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -743,7 +752,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEMulConst<BR> + GLWEMulPlain<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GLWEMulConst<BR> + GLWEMulPlain<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GLWEMulConst<BT> + GLWEMulPlain<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -761,10 +770,11 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
             let mut a_test = module_test.glwe_alloc_from_infos(&infos);
             a_ref.transfer_into(&mut a_test);
             let mut plain_ref = module_ref.glwe_plaintext_alloc(infos.base2k, infos.k);
-            module_ref.vec_znx_fill_uniform_source_all(
+            module_ref.vec_znx_fill_uniform_source(
                 params.base2k,
                 plain_ref.k().as_usize(),
-                plain_ref.data_mut(),
+                GLWEToBackendMut::<BR>::to_backend_mut(&mut plain_ref).data_mut(),
+                0,
                 &mut source,
             );
             let mut plain_test = module_test.glwe_plaintext_alloc(infos.base2k, infos.k);
@@ -853,7 +863,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGSWRotate<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GGSWRotate<BR> + GLWEMaskFill<BR> + VecZnxFillUniformSource<BR>,
     Module<BT>: GGSWRotate<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -871,12 +881,14 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
         let mut a_ref = module_ref.ggsw_alloc_from_infos(&infos);
         for row in 0..infos.dnum.as_usize() {
             for col in 0..rank + 1 {
-                module_ref.vec_znx_fill_uniform_source_all(
+                module_ref.vec_znx_fill_uniform_source(
                     params.base2k,
                     a_ref.k().as_usize(),
-                    &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut a_ref.at_view_mut(row, col)).data_mut(),
+                    GLWEToBackendMut::<BR>::to_backend_mut(&mut a_ref.at_view_mut(row, col)).data_mut(),
+                    0,
                     &mut source,
                 );
+                module_ref.fill_glwe_mask_from_source(&mut a_ref.at_view_mut(row, col), &mut source);
             }
         }
         let mut a_test = module_test.ggsw_alloc_from_infos(&infos);

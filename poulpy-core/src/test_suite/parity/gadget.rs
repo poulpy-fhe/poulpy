@@ -5,7 +5,7 @@ use crate::layouts::GLWEToBackendMut;
 use crate::layouts::LWEInfos;
 use crate::{
     GGLWEExternalProduct, GGSWAutomorphism, GGSWExpandRows, GGSWExternalProduct, GGSWFromGGLWE, GGSWKeyswitch,
-    GLWEAutomorphismKeyAutomorphism,
+    GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWLayout,
@@ -18,7 +18,7 @@ use crate::{
     },
     test_suite::keys::fill_by_digit,
 };
-use poulpy_hal::api::VecZnxFillUniformSourceAll;
+use poulpy_hal::api::VecZnxFillUniformSource;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{DataView, HostDataMut, Module, ScratchOwned},
@@ -32,7 +32,11 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEExternalProduct<BR> + GGSWExternalProduct<BR> + GGSWPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BR>: GGLWEExternalProduct<BR>
+        + GGSWExternalProduct<BR>
+        + GGSWPreparedFactory<BR>
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GGLWEExternalProduct<BT> + GGSWExternalProduct<BT> + GGSWPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -68,12 +72,14 @@ where
             let mut key_r = r.ggsw_alloc_from_infos(&k);
             for row in 0..k.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.vec_znx_fill_uniform_source_all(
+                    r.vec_znx_fill_uniform_source(
                         b,
                         key_r.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut key_r.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut key_r.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    r.fill_glwe_mask_from_source(&mut key_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut key_t = t.ggsw_alloc_from_infos(&k);
@@ -97,18 +103,22 @@ where
                     let (rows, cols_in) = (a_r.data.rows(), a_r.data.cols_in());
                     for row in 0..rows {
                         for col in 0..cols_in {
-                            r.vec_znx_fill_uniform_source_all(
+                            r.vec_znx_fill_uniform_source(
                                 b,
                                 a_r.k().as_usize(),
-                                &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                                GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                                0,
                                 &mut source,
                             );
-                            r.vec_znx_fill_uniform_source_all(
+                            r.fill_glwe_mask_from_source(&mut a_r.at_view_mut(row, col), &mut source);
+                            r.vec_znx_fill_uniform_source(
                                 b,
                                 out_r.k().as_usize(),
-                                &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                                GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                                0,
                                 &mut source,
                             );
+                            r.fill_glwe_mask_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                         }
                     }
                     let mut a_t = t.$alloc(&$infos);
@@ -166,12 +176,14 @@ where
             let mut a_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.vec_znx_fill_uniform_source_all(
+                    r.vec_znx_fill_uniform_source(
                         b,
                         a_r.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    r.fill_glwe_mask_from_source(&mut a_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
@@ -214,7 +226,8 @@ where
         + GGLWEPreparedFactory<BR>
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GGLWEToGGSWKeyPreparedFactory<BR>
-        + VecZnxFillUniformSourceAll<BR>,
+        + GLWEMaskFill<BR>
+        + VecZnxFillUniformSource<BR>,
     Module<BT>: GGSWAutomorphism<BT>
         + GGSWKeyswitch<BT>
         + GLWEAutomorphismKeyAutomorphism<BT>
@@ -321,12 +334,14 @@ where
             let mut a_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.vec_znx_fill_uniform_source_all(
+                    r.vec_znx_fill_uniform_source(
                         b,
                         a_r.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut a_r.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    r.fill_glwe_mask_from_source(&mut a_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
@@ -336,12 +351,14 @@ where
                     let mut out_r = r.ggsw_alloc_from_infos(&g);
                     for row in 0..g.dnum.as_usize() {
                         for col in 0..rank + 1 {
-                            r.vec_znx_fill_uniform_source_all(
+                            r.vec_znx_fill_uniform_source(
                                 b,
                                 out_r.k().as_usize(),
-                                &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                                GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                                0,
                                 &mut source,
                             );
+                            r.fill_glwe_mask_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                         }
                     }
                     let mut out_t = t.ggsw_alloc_from_infos(&g);
@@ -400,12 +417,14 @@ where
             let mut short_r = r.ggsw_alloc_from_infos(&short);
             for row in 0..short.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.vec_znx_fill_uniform_source_all(
+                    r.vec_znx_fill_uniform_source(
                         b,
                         short_r.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut short_r.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut short_r.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    r.fill_glwe_mask_from_source(&mut short_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut short_t = t.ggsw_alloc_from_infos(&short);
@@ -475,12 +494,14 @@ where
             let mut out_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.vec_znx_fill_uniform_source_all(
+                    r.vec_znx_fill_uniform_source(
                         b,
                         out_r.k().as_usize(),
-                        &mut GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                        GLWEToBackendMut::<BR>::to_backend_mut(&mut out_r.at_view_mut(row, col)).data_mut(),
+                        0,
                         &mut source,
                     );
+                    r.fill_glwe_mask_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut out_t = t.ggsw_alloc_from_infos(&g);

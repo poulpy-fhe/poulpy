@@ -1,7 +1,5 @@
 use crate::{
-    layouts::{
-        Backend, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
-    },
+    layouts::{Backend, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
     source::Source,
 };
 
@@ -777,24 +775,4 @@ pub trait VecZnxFillUniformSource<B: Backend> {
         res_col: usize,
         source: &mut Source,
     );
-}
-
-/// Filling of every column with independent uniform torus values drawn from a pseudorandom stream.
-///
-/// ```text
-/// op         vec_znx_fill_uniform_source_all(base2k, k, res, source)
-/// class      derived
-/// mutation   out-of-place
-/// definition vec_znx_fill_uniform_source(base2k, k, res, c, source) for c = 0, 1, ..., res.cols() - 1, in that order
-/// domain     res: a dense VecZnx; base2k in 1..=62; 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
-/// ensures    every column of res is uniform over the torus at precision k and canonical at radix base2k; source advances by the 32 bytes of res.cols() seeds, column 0 first
-/// fallback   default body: vec_znx_fill_uniform on each column in increasing order, each with the next seed of source
-/// override   allowed, drawing the same values
-/// test       test_vec_znx_fill_uniform_source_all_derived
-/// ```
-pub trait VecZnxFillUniformSourceAll<B: Backend> {
-    /// Writes an independent uniform torus value of precision `k`, canonical at radix `base2k`, into every column of `res`, drawing from `source`.
-    fn vec_znx_fill_uniform_source_all<R>(&self, base2k: usize, k: usize, res: &mut R, source: &mut Source)
-    where
-        R: VecZnxToBackendMut<B>;
 }
