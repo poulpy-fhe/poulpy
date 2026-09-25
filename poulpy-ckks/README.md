@@ -344,7 +344,8 @@ Negation, copies and multiplication by `±i` keep their operand's flag. The next
 operation that reads the digits through a DFT (products, rotations,
 conjugation, keyswitching, decryption) normalizes a flag-clear operand first,
 so a chain of linear steps costs one normalization. Normalize a value that
-several such operations read once, with `glwe_normalize_assign`.
+several such operations read once, with `glwe_normalize_assign`. Serializing
+a ciphertext whose flag is clear fails: normalize it first.
 
 ## Backend selection
 

@@ -99,8 +99,9 @@ impl GLWEInfos for GLWELayout {
 /// [`GLWE::is_canonical`] states that the data is in normalized form.
 /// Normalizing operations set it, additions and subtractions clear it, digit
 /// permutations keep the source's, lowering `k` clears it. Operations that read
-/// the digits through a DFT normalize a flag-clear operand first. The flag is
-/// not serialized (a loaded GLWE is flagged canonical) and equality ignores it.
+/// the digits through a DFT normalize a flag-clear operand first. Serialization
+/// rejects a flag-clear GLWE, so a loaded GLWE is flagged canonical; equality
+/// ignores the flag.
 /// Only a `GLWE` stores it: the GLWE views of GGLWE and GGSW rows, tensors and
 /// plaintexts report it set and drop a clear, so their data must stay canonical;
 /// normalize after writing a flag-clearing result into one.
@@ -332,7 +333,16 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
     /// Serialises the [`GLWE`] in little-endian binary format.
+    ///
+    /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
+    /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if !self.canonical {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "GLWE is not canonical: normalize it before serializing",
+            ));
+        }
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         self.data.write_to(writer)
     }
@@ -432,5 +442,22 @@ pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::Buf
         k: glwe.k,
         canonical: glwe.canonical,
         data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_to_rejects_flag_clear_glwe() {
+        let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        glwe.set_canonical(false);
+        let mut bytes = Vec::new();
+        let err = glwe.write_to(&mut bytes).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(bytes.is_empty());
+        glwe.set_canonical(true);
+        glwe.write_to(&mut bytes).unwrap();
     }
 }

@@ -44,9 +44,9 @@
 //! keep their operand's, and the next operation that reads the digits through a
 //! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
 //! flag-clear operand first. A value several such operations read is best
-//! normalized once with `glwe_normalize_assign`. Each lazy addition can grow the
-//! digits by one bit; a sum of `n` terms stays within `i64` while
-//! `n <= 2^(63 - base2k)`.
+//! normalized once with `glwe_normalize_assign`, and serializing requires a
+//! normalized ciphertext. Each lazy addition can grow the digits by one bit; a
+//! sum of `n` terms stays within `i64` while `n <= 2^(63 - base2k)`.
 //!
 //! ## Modules
 //!

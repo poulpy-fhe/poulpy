@@ -6,6 +6,7 @@ use poulpy_hal::{
     test_suite::serialization::test_reader_writer_interface,
 };
 
+use crate::api::GLWEMaskFill;
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWESwitchingKey, GLWETensorKey, GLWEToLWEKey, LWE,
     LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
@@ -32,7 +33,7 @@ const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 * BASE2K.0 + N_GLWE.0.i
 pub fn test_serialization<BE>(module: &Module<BE>)
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
+    Module<BE>: GLWEMaskFill<BE> + VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -40,10 +41,12 @@ where
     let mut glwe_c: [GLWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWECompressed::alloc::<BE>(N_GLWE, BASE2K, K, RANK));
     let mut lwe: [LWE<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWE::alloc(N_LWE, BASE2K, K));
     let mut lwe_c: [LWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWECompressed::alloc::<BE>(BASE2K, K));
-    for v in glwe
+    for glwe in &mut glwe {
+        module.fill_glwe_from_source(glwe, &mut source);
+    }
+    for v in glwe_c
         .iter_mut()
         .map(|x| &mut x.data)
-        .chain(glwe_c.iter_mut().map(|x| &mut x.data))
         .chain(lwe.iter_mut().map(|x| &mut x.mask))
         .chain(lwe_c.iter_mut().map(|x| &mut x.data))
     {
