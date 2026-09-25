@@ -78,6 +78,7 @@ where
 
     let mut lazy: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     module.glwe_pat_compressed_finalize(&mut lazy, &acc, &mut scratch.borrow());
+    assert!(lazy.is_canonical());
     assert!(!acc.is_canonical());
     let noise: f64 = module.glwe_noise(&lazy, &pt, &sk_ideal, &mut scratch.borrow()).std().log2();
     assert!(noise <= aggregate_noise_bound(K.as_usize()), "noise {noise} above bound");
@@ -86,6 +87,7 @@ where
     assert!(acc.is_canonical());
     let mut eager: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     module.glwe_pat_compressed_finalize(&mut eager, &acc, &mut scratch.borrow());
+    assert!(eager.is_canonical());
     assert_eq!(lazy, eager);
     acc.write_to(&mut Vec::new()).unwrap();
 }
