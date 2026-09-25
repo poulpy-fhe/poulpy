@@ -527,6 +527,7 @@ mod limb_range_tests {
         type ZnxWord = i64;
         type BigWord = i128;
         type DftWord = i64;
+        type Ring = crate::layouts::Standard;
         crate::layouts::impl_host_byte_storage!();
 
         fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {

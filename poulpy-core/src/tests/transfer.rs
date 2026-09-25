@@ -22,6 +22,7 @@ fn host_alloc(len: usize) -> Vec<u8> {
 
 impl Backend for SrcBackend {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
@@ -146,6 +147,7 @@ unsafe impl HalModuleImpl for SrcBackend {
 
 impl Backend for DstBackend {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;

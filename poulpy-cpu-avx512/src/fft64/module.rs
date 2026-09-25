@@ -100,6 +100,7 @@ impl Backend for FFT64Avx512 {
     const MIN_DEGREE: usize = 16;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
