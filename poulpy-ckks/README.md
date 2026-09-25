@@ -101,6 +101,13 @@ backend (`Backend::Ring`): a module only accepts operands of its own ring, so
 mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
 ciphertext with real slots still belongs to the standard ring; CI values always
 report real slots.
+Compact plaintexts must have a degree that embeds in the module; scalar
+coefficient banks need the same ring kind but may have arbitrary lengths.
+
+Secret and evaluation keys use the Core key types and preparation methods.
+Prepared keys, diagonals, and baby-step caches carry the backend type, so CI
+and standard prepared objects cannot be mixed. Raw key coefficients have no
+ring tag: callers must prepare them with the backend used to generate them.
 
 ## Crate organization
 
@@ -372,19 +379,29 @@ The core leveled evaluator building blocks are now implemented:
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../docs/ship.md))
 
-Planned evaluator work:
-
-- conjugate invariant ring
-
 Higher-level functionality on top of that foundation:
 
 - scheme switching
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-The intent is to keep the low-level API modular and agnostic enough of the encoding
-(for example to easily support the conjugate invariant ring) while progressively adding
-these higher-level features without changing the backend-agnostic programming model.
+## Conjugate invariant CKKS
+
+A CI backend such as `FFT64CIRef` or `NTT4x30CIRef` supports `N` real slots
+at degree `N`, constructed with `Module::<Backend>::new(N)`.
+`CKKSModuleInfos::ckks_max_slots` reports the capacity, and
+`ckks_galois_element` provides the identifiers for rotation keys.
+
+The slot encoder accepts planar real/imaginary buffers, discards imaginary
+inputs, and decodes with zero imaginary parts. Compact plaintexts use one
+coefficient per real slot, subject to the backend's minimum degree. Raw
+coefficient encoding uses the invariant basis directly.
+
+Leveled arithmetic, real polynomial evaluation, and real linear
+transformations use the module's invariant ring. Conjugation and multiplication
+by `i` require a standard module. Real linear transformations reject nonzero
+imaginary diagonals. Prepared plaintexts, ciphertexts, and evaluation keys must
+be used with their producing ring and backend.
 
 ## Where to look next
 

@@ -1,9 +1,11 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
+use crate::api::CKKSCopyOps;
+use crate::api::CKKSModuleInfos;
 use crate::api::CKKSRotateOps;
 
 impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
@@ -12,7 +14,7 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos)
+        BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos).max(BE::ckks_copy_tmp_bytes_impl(self, ct_infos, ct_infos))
     }
 
     fn ckks_rotate_into<Dst, Src, H>(
@@ -28,7 +30,10 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let p = self.galois_element(k);
+        let p = self.ckks_galois_element(k);
+        if p == 1 {
+            return self.ckks_copy(dst, src, scratch);
+        }
         let key = keys
             .get_automorphism_key(p, src.k())
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
@@ -44,7 +49,10 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        let p = self.galois_element(k);
+        let p = self.ckks_galois_element(k);
+        if p == 1 {
+            return Ok(());
+        }
         let key = keys
             .get_automorphism_key(p, dst.k())
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {

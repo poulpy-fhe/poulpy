@@ -23,8 +23,9 @@ pub trait CKKSEncodingBufferInfos {
 /// A one-dimensional array of CKKS encoding scalars in backend storage.
 ///
 /// Slot values use planar layout `[re_0, ..., re_{m-1}, im_0, ..., im_{m-1}]`.
-/// The same storage holds the `2m` real polynomial coefficients after the
-/// in-place slot-to-coefficient transform.
+/// After the slot-to-coefficient transform, a standard ring uses all `2m`
+/// entries as coefficients. An invariant ring uses the first `m` entries for
+/// its independent coefficients and the second half as transform workspace.
 #[repr(C)]
 pub struct CKKSEncodingBuffer<D: Data, F> {
     /// Opaque host- or device-resident bytes.

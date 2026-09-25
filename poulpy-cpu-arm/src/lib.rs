@@ -214,6 +214,38 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
     crate::NTT4x30NeonRayon
 );
 
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-neon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64neon,
+    crate::FFT64CINeon,
+    crate::FFT64Neon,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-neon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30neon,
+    crate::NTT4x30CINeon,
+    crate::NTT4x30Neon,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-neon", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64neonrayon,
+    crate::FFT64CINeonRayon,
+    crate::FFT64NeonRayon,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-neon", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30neonrayon,
+    crate::NTT4x30CINeonRayon,
+    crate::NTT4x30NeonRayon,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
 #[cfg(feature = "enable-neon")]
 use poulpy_cpu_ref::ring::Standard as Ring;
 #[cfg(feature = "enable-neon")]

@@ -25,7 +25,16 @@ pub use ntt3x42_ifma::NTT3x42Ifma;
 #[cfg(feature = "enable-ifma")]
 #[cfg(feature = "enable-rayon")]
 pub use ntt3x42_ifma::NTT3x42IfmaRayon;
+#[cfg(feature = "enable-ckks")]
+#[path = "ckks_impl.rs"]
+mod ckks_impl;
+#[cfg(feature = "enable-ckks")]
+#[path = "ckks_mod_up.rs"]
+mod ckks_mod_up;
 #[path = "core_impl.rs"]
 mod core_impl;
 #[path = "hal_impl.rs"]
 mod hal_impl;
+
+#[cfg(feature = "enable-ckks")]
+use crate::FFT64Avx512ReimTable;

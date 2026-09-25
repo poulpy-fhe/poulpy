@@ -1,17 +1,17 @@
 use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
+use crate::{CKKSInfos, CKKSMeta, SlotsKind, api::CKKSModuleInfos};
 
 use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned};
 
 /// CKKS container allocation on a backend module.
 ///
-/// Every method is default-bodied over the [`ModuleCoreAlloc`] supertrait, so
-/// the blanket impl for `Module<BE>` is empty: the whole constructor matrix is
-/// two primitive shapes (ciphertext with explicit rank, plaintext with explicit
-/// degree) plus thin conveniences over them.
-pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> {
+/// Composes Core allocations with ring-dependent CKKS metadata. Invariant
+/// modules initialize the slot kind to [`SlotsKind::Real`].
+pub trait CKKSModuleAlloc<BE: Backend>:
+    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + CKKSModuleInfos
+{
     /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
     /// (`log_delta`, `log_sparsity`), mirroring
     /// [`Self::ckks_plaintext_alloc_from_infos`]. Use
@@ -30,12 +30,12 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
     where
         A: GLWEInfos,
     {
-        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), CKKSMeta::default())
+        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), default_meta(self))
     }
 
     /// Allocates a default-meta ciphertext of the given `rank`.
     fn ckks_ciphertext_alloc_with_rank(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> CKKSCiphertextOwned<BE> {
-        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), CKKSMeta::default())
+        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), default_meta(self))
     }
 
     /// Rank-1 convenience over [`Self::ckks_ciphertext_alloc_with_rank`].
@@ -47,14 +47,19 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
     where
         A: CKKSInfos,
     {
-        let mut pt = self.ckks_plaintext_alloc(infos.n(), infos.base2k(), infos.k());
-        pt.set_meta(infos.meta());
-        pt
+        CKKSPlaintext::from_inner(
+            self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                n: infos.n(),
+                base2k: infos.base2k(),
+                k: infos.k(),
+            }),
+            infos.meta(),
+        )
     }
 
     /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
     /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
-    /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
+    /// [`SetCKKSInfos::set_meta`](crate::SetCKKSInfos::set_meta) (the `_from_infos` variants do this for you).
     fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
         // auto-sizes to `ceil(k / base2k)` limbs, so the integer-poly storage spans
@@ -62,7 +67,7 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
         // independent of sizing and defaults here; callers set it via `set_meta`.
         CKKSPlaintext::from_inner(
             self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout { n, base2k, k }),
-            CKKSMeta::default(),
+            default_meta(self),
         )
     }
 
@@ -79,18 +84,21 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
         self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
     }
 
-    /// Allocates the compact plaintext for `slots` complex slots: degree
-    /// `2 * slots`, raised to the backend's minimum degree and capped at the
-    /// ring degree. Its value under the ring embedding is `M(X^(N/n))` for the
-    /// degree-`n` polynomial `M` it stores; `slots == N/2` gives the dense
-    /// plaintext.
+    /// Allocates a compact plaintext at degree `slots` for an invariant ring
+    /// or `2 * slots` for a standard ring, respecting the backend minimum
+    /// and capped at the module degree.
     fn ckks_pt_vec_alloc_compact(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
     where
         Self: GetDegree,
     {
         assert!(slots.is_power_of_two(), "a compact plaintext holds a power-of-two slot count");
         let ring = self.ring_degree().as_usize();
-        let n = (2 * slots).max(BE::MIN_DEGREE).min(ring);
+        let n = if self.ckks_is_conjugate_invariant() {
+            slots
+        } else {
+            slots.checked_mul(2).expect("slot count overflow")
+        };
+        let n = n.max(BE::MIN_DEGREE).min(ring);
         self.ckks_plaintext_alloc(n.into(), base2k, k)
     }
 }
@@ -98,4 +106,15 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
 impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
+}
+
+fn default_meta<M: CKKSModuleInfos + ?Sized>(module: &M) -> CKKSMeta {
+    CKKSMeta {
+        slots: if module.ckks_is_conjugate_invariant() {
+            SlotsKind::Real
+        } else {
+            SlotsKind::Complex
+        },
+        ..CKKSMeta::default()
+    }
 }

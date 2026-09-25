@@ -1074,7 +1074,6 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42IfmaRayon
 
 #[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code, reason = "CKKS does not run on CI backends yet")]
 pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
     module: &Module<NTT3x42IfmaRayon>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon>,

@@ -34,6 +34,8 @@ pub use NTT3x42CIIfma as NTT3x42Ifma;
 pub struct NTT3x42CIIfmaRayon;
 #[cfg(feature = "enable-rayon")]
 pub use NTT3x42CIIfmaRayon as NTT3x42IfmaRayon;
+#[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
+pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 #[cfg(feature = "enable-rayon")]
 pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
 #[cfg(feature = "enable-rayon")]

@@ -129,6 +129,10 @@ where
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "bootstrapping requires a standard ring"
+        );
         BootstrappingReference::new(self).ckks_bootstrap_reference(ct_out, ct_in, ctx, keys, scratch)
     }
 
@@ -144,6 +148,10 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "bootstrapping requires a standard ring"
+        );
         BootstrappingReference::new(self).ckks_functional_bootstrap_reference(ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

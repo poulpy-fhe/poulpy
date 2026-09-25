@@ -163,6 +163,10 @@ where
         Dir: DftDirection,
         Fmt: DftFormat,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "homomorphic DFT requires a standard ring"
+        );
         BE::ckks_new_dft_matrix_impl::<Dir, Fmt>(self, base2k, literal, scratch)
     }
 }

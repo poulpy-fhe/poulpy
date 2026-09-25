@@ -168,7 +168,8 @@ macro_rules! impl_ckks_encoding {
             fn ckks_encoding_plans_create_impl(
                 module: &::poulpy_hal::layouts::Module<$be>,
             ) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
-                $crate::ckks_encoding::OwnedEncodingPlanSet::new(module.max_n()).map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_encoding::OwnedEncodingPlanSet::new(2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_encode_coeffs_into_impl<P>(
@@ -202,8 +203,12 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                map.slots_to_coeffs_assign(fft, values.as_mut_slice())
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                if ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module) {
+                    map.ci_slots_to_coeffs_assign(fft, values.as_mut_slice())
+                } else {
+                    map.slots_to_coeffs_assign(fft, values.as_mut_slice())
+                }
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_coeffs_to_slots_assign_impl(
@@ -213,8 +218,12 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                map.coeffs_to_slots_assign(fft, values.as_mut_slice())
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                if ::poulpy_ckks::api::CKKSModuleInfos::ckks_is_conjugate_invariant(_module) {
+                    map.ci_coeffs_to_slots_assign(fft, values.as_mut_slice())
+                } else {
+                    map.coeffs_to_slots_assign(fft, values.as_mut_slice())
+                }
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
         }
     };

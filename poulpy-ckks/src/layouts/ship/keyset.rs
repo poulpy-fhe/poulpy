@@ -243,6 +243,11 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             + CnvPVecAlloc<BE>
             + CnvPVecBytesOf,
     {
+        ensure!(
+            !<BE::Ring as poulpy_hal::layouts::Ring>::IS_CI && module.n() == self.parameters.plan.n(),
+            "SHIP key preparation requires a standard-ring module of degree {}",
+            self.parameters.plan.n()
+        );
         validate_material(
             &self.parameters,
             &self.index_keys,
@@ -376,6 +381,10 @@ where
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
     Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
+    anyhow::ensure!(
+        !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
+        "SHIP keys require a standard ring"
+    );
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
     let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
@@ -464,6 +473,10 @@ impl<D: Data> ShipKeySet<D, i64> {
         CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {
+        anyhow::ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
+            "SHIP keys require a standard ring"
+        );
         let n = sk_dense_host.n();
         ensure!(
             n.as_usize() == plan.n(),

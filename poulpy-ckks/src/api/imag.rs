@@ -6,6 +6,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Multiplication and division of a ciphertext by the imaginary unit `i`.
 ///
+/// These operations require the standard CKKS ring.
+///
 /// Multiplication by `i` uses the monomial `X^(N/2)`; division by `i`
 /// uses `X^(-N/2)` in the ring modulo `X^N + 1`. The reference implementations
 /// apply one core monomial rotation, after any required destination narrowing.

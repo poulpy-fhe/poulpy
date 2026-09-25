@@ -8,6 +8,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic complex conjugation.
 ///
+/// These operations require the standard CKKS ring.
+///
 /// Applies the automorphism `X ↦ X^(2n−1)` to the Module-LWE ciphertext, which
 /// maps every complex slot value `z_j` to its conjugate `z̄_j`.
 ///

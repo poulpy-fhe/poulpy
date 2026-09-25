@@ -17,7 +17,16 @@ pub(crate) mod ntt4x30;
 pub use ntt4x30::NTT4x30Avx;
 #[cfg(feature = "enable-rayon")]
 pub use ntt4x30::NTT4x30AvxRayon;
+#[cfg(feature = "enable-ckks")]
+#[path = "ckks_impl.rs"]
+mod ckks_impl;
+#[cfg(feature = "enable-ckks")]
+#[path = "ckks_mod_up.rs"]
+mod ckks_mod_up;
 #[path = "core_impl.rs"]
 mod core_impl;
 #[path = "hal_impl.rs"]
 mod hal_impl;
+
+#[cfg(feature = "enable-ckks")]
+use crate::FFT64AvxReimTable;

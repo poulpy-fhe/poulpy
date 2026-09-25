@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use crate::layouts::EvalModBsgs;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -31,6 +32,11 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
+        crate::ckks_ensure!(
+            !matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_))
+                || !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "complex EvalMod requires the standard CKKS ring"
+        );
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }

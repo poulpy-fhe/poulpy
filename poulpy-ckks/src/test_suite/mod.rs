@@ -1005,5 +1005,6 @@ pub mod ship;
 pub mod slots_kind;
 pub mod sub;
 
+pub mod conjugate_invariant;
 /// Paired OEP conformance with caller-selected comparison backends.
 pub mod parity;

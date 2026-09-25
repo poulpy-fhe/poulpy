@@ -50,6 +50,11 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "complex polynomial evaluation requires the standard CKKS ring"
+        );
+
         BE::ckks_eval_poly_complex_const_coeffs_from_power_basis_impl::<R, C, A, G, H>(self, res, poly, power_basis, tsk, scratch)
     }
 
@@ -87,6 +92,11 @@ where
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "complex polynomial evaluation requires the standard CKKS ring"
+        );
+
         BE::ckks_eval_poly_complex_const_coeffs_impl::<R, S, C, H>(self, dst, src, poly, tsk, scratch)
     }
 }
