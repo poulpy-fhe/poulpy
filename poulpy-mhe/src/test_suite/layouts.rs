@@ -2,11 +2,12 @@
 //! compressed encryption and decompression.
 
 use poulpy_core::{
-    EncryptionLayout, GLWECompressedEncryptSk,
+    EncryptionLayout, GGLWECompressedEncryptSk, GLWECompressedEncryptSk,
     layouts::{
-        Base2K, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPrepared,
-        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
-        compressed::{GLWECompressed, GLWEDecompress},
+        Base2K, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWELayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
+        GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+        compressed::{GGLWECompressed, GGLWEDecompress, GLWECompressed, GLWEDecompress},
     },
 };
 use poulpy_hal::{
@@ -17,11 +18,13 @@ use poulpy_hal::{
     test_suite::serialization::test_reader_writer_interface,
 };
 
-use crate::layouts::{GLWEPatCompressed, MHEModuleAlloc};
+use crate::layouts::{GGLWEPatCompressed, GLWEPatCompressed, MHEModuleAlloc};
 
 const BASE2K: Base2K = Base2K(12);
 const K: TorusPrecision = TorusPrecision(33);
 const RANK: Rank = Rank(2);
+const DNUM: Dnum = Dnum(3);
+const DSIZE: Dsize = Dsize(1);
 const SEEDS: [[u8; 32]; 2] = [[1u8; 32], [2u8; 32]];
 const SEED_XE: [u8; 32] = [3u8; 32];
 
@@ -96,6 +99,85 @@ where
     assert!(flagged.is_canonical());
 
     test_reader_writer_interface(pats);
+}
+
+/// Allocation, serialization and core interop of [`GGLWEPatCompressed`].
+pub fn test_gglwe_pat_compressed<BE>(module: &Module<BE>)
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GGLWECompressedEncryptSk<BE>
+        + GLWEDecompress<Backend = BE>
+        + GGLWEDecompress,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = gglwe_layout(module);
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
+    let alloc: GGLWEPatCompressed<AlignedBuf, i64> =
+        module.gglwe_pat_compressed_alloc(BASE2K, DNUM, DSIZE, layout.k_aux, RANK, RANK);
+    assert_eq!(alloc.gglwe_layout(), layout);
+    assert!(alloc.is_canonical());
+
+    let (sk, sk_prepared) = secret(module);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_compressed_encrypt_sk_tmp_bytes(&layout));
+
+    let mut pats: [GGLWEPatCompressed<AlignedBuf, i64>; 2] =
+        [(); 2].map(|_| module.gglwe_pat_compressed_alloc_from_infos(&layout));
+    for (pat, seed) in pats.iter_mut().zip(SEEDS) {
+        module.gglwe_compressed_encrypt_sk(
+            pat,
+            sk.data(),
+            &sk_prepared,
+            seed,
+            &enc_infos,
+            &mut Source::new(SEED_XE),
+            &mut scratch.borrow(),
+        );
+    }
+
+    let mut core: GGLWECompressed<AlignedBuf, i64> = module.gglwe_compressed_alloc_from_infos(&layout);
+    module.gglwe_compressed_encrypt_sk(
+        &mut core,
+        sk.data(),
+        &sk_prepared,
+        SEEDS[0],
+        &enc_infos,
+        &mut Source::new(SEED_XE),
+        &mut scratch.borrow(),
+    );
+    assert_eq!(pats[0].inner, core);
+
+    let mut have: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
+    let mut want: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
+    module.decompress_gglwe(&mut have, &pats[0]);
+    module.decompress_gglwe(&mut want, &core);
+    assert_eq!(have, want);
+
+    let mut flagged = pats[0].clone();
+    flagged.set_canonical(false);
+    assert_write_rejects(&flagged);
+    let mut bytes: Vec<u8> = Vec::new();
+    pats[0].write_to(&mut bytes).unwrap();
+    flagged.read_from(&mut bytes.as_slice()).unwrap();
+    assert!(flagged.is_canonical());
+
+    test_reader_writer_interface(pats);
+}
+
+fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
+    GGLWELayout {
+        n: module.n().into(),
+        base2k: BASE2K,
+        dnum: DNUM,
+        k_aux: TorusPrecision(DSIZE.0 * BASE2K.0 + module.log_n() as u32),
+        rank_in: RANK,
+        rank_out: RANK,
+        dsize: DSIZE,
+        stride: 1,
+    }
 }
 
 fn secret<BE>(module: &Module<BE>) -> (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>)
