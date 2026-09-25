@@ -423,18 +423,18 @@ where
     {
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
-        let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
+        let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch)?;
 
         let s2c_lt: DFTMatrix<BE, Decode, Split> =
             module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
-        let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch);
+        let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch)?;
 
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
 
         let coeffs_to_slots_bypass = if let Some(bypass) = plan.coeffs_to_slots_bypass() {
             let c2s_lt: DFTMatrix<BE, Encode, Split> = module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?;
 
-            Some(module.ckks_prepare_dft_matrix(&c2s_lt, scratch))
+            Some(module.ckks_prepare_dft_matrix(&c2s_lt, scratch)?)
         } else {
             None
         };

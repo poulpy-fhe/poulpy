@@ -296,7 +296,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
     let poly = || Polynomial::new(Basis::Monomial, vec![0.125f64, 0.5]);
     let encoded = || {
         poly()
-            .encode_bsgs_with(&host, 16usize.into(), coeff_meta, SplitStrategy::MinDepth)
+            .encode_bsgs_with::<poulpy_hal::layouts::Standard>(&host, 16usize.into(), coeff_meta, SplitStrategy::MinDepth)
             .unwrap()
     };
     let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {

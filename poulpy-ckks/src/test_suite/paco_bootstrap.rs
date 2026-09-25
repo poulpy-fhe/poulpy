@@ -54,7 +54,7 @@ const PACO_C: usize = 8;
 /// cleartext oracle (suite-scale parameters).
 pub fn test_paco_seq_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -84,7 +84,7 @@ where
 /// by default, run explicitly with `--ignored`.
 pub fn test_paco_paper_scale<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -125,7 +125,7 @@ fn seq_bootstrap_case<BE, F, E>(
     stc_depth: Vec<usize>,
     slot_order: crate::layouts::PaCoSlotOrder,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>

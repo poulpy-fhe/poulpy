@@ -92,6 +92,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 [::poulpy_ckks::layouts::CKKSPlaintext<
                     <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
                     <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    <$be as ::poulpy_hal::layouts::Backend>::Ring,
                 >; 4],
             >
             where

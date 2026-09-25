@@ -28,6 +28,7 @@ use poulpy_core::{
     },
     reference::linear_transformation::DiagonalProd,
 };
+
 use poulpy_hal::{
     api::CnvPVecAlloc,
     layouts::{Backend, Module, ScratchArena},
@@ -130,7 +131,7 @@ pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
     module: &Module<BE>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> DFTMatrixPrepared<BE, Dir, Fmt>
+) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
 where
     BE: Backend,
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE>,
@@ -143,12 +144,12 @@ where
     for lt in &inner.factors {
         let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch)?;
         factors.push(prepared);
     }
 
     // Same direction/format as the input; only `R` changes.
-    DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors))
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors)))
 }
 
 /// Builds the backend-owned, unprepared homomorphic (I)DFT for direction `Dir` and

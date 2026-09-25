@@ -28,7 +28,7 @@ use poulpy_hal::{
 
 fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -53,7 +53,7 @@ where
         precision = Some(run.precision());
     });
     if let Some((re, im)) = precision {
-        let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+        let backend = crate::backend_name::<BE>();
         println!(
             "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
             re.avg_log2_prec,
@@ -80,7 +80,7 @@ where
 /// guarantee. The registered FFT and NTT fixtures use 19 and 52 respectively.
 pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -90,7 +90,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let backend = crate::backend_name::<BE>();
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {

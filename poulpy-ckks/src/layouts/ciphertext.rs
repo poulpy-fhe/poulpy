@@ -6,6 +6,7 @@
 use poulpy_hal::AlignedBuf;
 use std::{
     fmt,
+    marker::PhantomData,
     mem::align_of,
     ops::{Deref, DerefMut},
 };
@@ -16,7 +17,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
     SetBSGSMeta, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, Ring, ScratchArena, ZnxWord};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
 
@@ -26,24 +27,46 @@ use super::{CKKSEncodingBuffer, CKKSEncodingBufferViewMut, CKKSPlaintextViewMut}
 ///
 /// `inner` contains the raw GLWE torus digits while `meta` describes the
 /// semantic decimal scaling and remaining homomorphic capacity of the value.
-pub struct CKKSCiphertext<D: Data, W: ZnxWord> {
+/// `R` is the ring the value lives in: only a module whose backend serves `R`
+/// accepts it, so mixing rings is a compile error:
+///
+/// ```compile_fail
+/// use poulpy_ckks::layouts::CKKSCiphertext;
+/// use poulpy_core::layouts::GLWEToBackendRef;
+/// use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Standard};
+///
+/// fn dft_domain_op<BE: Backend, T: GLWEToBackendRef<BE>>(_: &T) {}
+///
+/// fn reject<BE: Backend<Ring = Standard, ZnxWord = i64>, D: Data>(ct: &CKKSCiphertext<D, i64, ConjugateInvariant>)
+/// where
+///     poulpy_core::layouts::GLWE<D, i64>: GLWEToBackendRef<BE>,
+/// {
+///     dft_domain_op::<BE, _>(ct); // ERROR: ring mismatch
+/// }
+/// ```
+pub struct CKKSCiphertext<D: Data, W: ZnxWord, R: Ring> {
     /// Raw GLWE ciphertext storage.
     pub(crate) inner: GLWE<D, W>,
     /// Semantic CKKS metadata associated with `inner`.
     pub(crate) meta: CKKSMeta,
+    _ring: PhantomData<R>,
 }
 
-impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
     pub(crate) fn from_inner(inner: GLWE<D, W>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+        Self {
+            inner,
+            meta: meta.for_ring::<R>(),
+            _ring: PhantomData,
+        }
     }
 
-    /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<AlignedBuf, i64>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<AlignedBuf, W>
+    /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<AlignedBuf, W, R>`].
+    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<AlignedBuf, W, R>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSCiphertext::<AlignedBuf, W>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSCiphertext::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
     }
 
     /// Formats this backend-owned ciphertext through the existing host [`fmt::Display`] implementation.
@@ -86,14 +109,17 @@ impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W> {
                 requested_limbs: self.max_size(),
             }
         );
-        self.meta = meta;
+        self.meta = meta.for_ring::<R>();
         Ok(())
     }
 }
 
+// Binding `R` to `BE::Ring` in the backend conversions below rejects a
+// ciphertext of another ring at compile time.
+
 // Without this, `ct.clone()` silently resolves through `Deref` to
 // `GLWE::clone` and drops the CKKS metadata.
-impl<D: Data, W: ZnxWord> Clone for CKKSCiphertext<D, W>
+impl<D: Data, W: ZnxWord, R: Ring> Clone for CKKSCiphertext<D, W, R>
 where
     GLWE<D, W>: Clone,
 {
@@ -101,11 +127,12 @@ where
         Self {
             inner: self.inner.clone(),
             meta: self.meta,
+            _ring: PhantomData,
         }
     }
 }
 
-impl<D: Data, W: ZnxWord> Deref for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> Deref for CKKSCiphertext<D, W, R> {
     type Target = GLWE<D, W>;
 
     fn deref(&self) -> &Self::Target {
@@ -113,13 +140,13 @@ impl<D: Data, W: ZnxWord> Deref for CKKSCiphertext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> DerefMut for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSCiphertext<D, W, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSCiphertext<D, W, R> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -137,21 +164,21 @@ impl<D: Data, W: ZnxWord> LWEInfos for CKKSCiphertext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSCiphertext<D, W, R> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> CKKSInfos for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSCiphertext<D, W, R> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
-impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetCKKSInfos for CKKSCiphertext<D, W, R> {
     fn set_meta(&mut self, meta: CKKSMeta) {
-        self.meta = meta;
+        self.meta = meta.for_ring::<R>();
     }
 
     fn set_k(&mut self, k: TorusPrecision) {
@@ -159,13 +186,13 @@ impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSCiphertext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetK for CKKSCiphertext<D, W, R> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
     }
 }
 
-impl<D: Data, W: ZnxWord> BSGSMeta for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> BSGSMeta for CKKSCiphertext<D, W, R> {
     fn bsgs_log_budget(&self) -> usize {
         CKKSInfos::log_budget(self)
     }
@@ -174,7 +201,7 @@ impl<D: Data, W: ZnxWord> BSGSMeta for CKKSCiphertext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBSGSMeta for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetBSGSMeta for CKKSCiphertext<D, W, R> {
     fn set_bsgs_log_budget(&mut self, log_budget: usize) {
         SetCKKSInfos::set_log_budget(self, log_budget);
     }
@@ -183,13 +210,13 @@ impl<D: Data, W: ZnxWord> SetBSGSMeta for CKKSCiphertext<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for CKKSCiphertext<D, W> {
+impl<D: HostDataRef, W: ZnxWord, R: Ring> fmt::Display for CKKSCiphertext<D, W, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSCiphertext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSCiphertext<D, BE::ZnxWord, BE::Ring>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
@@ -198,7 +225,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSCiphertext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSCiphertext<D, BE::ZnxWord, BE::Ring>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
@@ -212,7 +239,7 @@ where
 }
 
 /// Backend-owned CKKS ciphertext: the backend's buffer type and its coefficient word.
-pub type CKKSCiphertextOwned<BE> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type CKKSCiphertextOwned<BE> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>;
 
 pub(crate) struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
     inner: GLWEViewRef<'a, BE>,
@@ -275,7 +302,10 @@ pub struct CKKSCiphertextViewMut<'a, BE: Backend + 'a> {
 
 impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
     pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+        Self {
+            inner,
+            meta: meta.for_ring::<BE::Ring>(),
+        }
     }
 
     pub(crate) fn to_backend_view_ref(&self) -> CKKSCiphertextViewRef<'_, BE> {

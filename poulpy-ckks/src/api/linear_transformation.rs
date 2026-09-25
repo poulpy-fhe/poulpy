@@ -125,7 +125,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.

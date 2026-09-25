@@ -202,6 +202,15 @@ pub struct CKKSMeta {
     pub slots: SlotsKind,
 }
 
+impl CKKSMeta {
+    pub(crate) fn for_ring<R: poulpy_hal::layouts::Ring>(mut self) -> Self {
+        if R::IS_CI {
+            self.slots = crate::SlotsKind::Real;
+        }
+        self
+    }
+}
+
 /// Common metadata accessors for CKKS ciphertext and plaintext containers.
 ///
 /// This trait exposes the semantic precision of a value independently from the

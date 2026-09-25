@@ -10,7 +10,7 @@ use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
 use poulpy_core::layouts::ModuleCoreAlloc;
-use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, Standard};
 
 use crate::{
     CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
@@ -59,7 +59,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     {
         ensure!(table.len() >= 2, "LUT length must be at least two");
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
-        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
+        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with::<Standard>(host_module, base2k, coeffs_meta, strategy)?;
         Ok(Self {
             kind: EncodedLutKind::General(bsgs),
             log_msg_ratio,
@@ -89,7 +89,8 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
-        let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;
+        let cos =
+            <Polynomial<F> as EncodeBSGS>::encode_bsgs_with::<Standard>(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;
         let mut affine_pt = host_module.ckks_pt_coeffs_alloc(2, base2k, coeffs_meta.k);
         let mut affine_meta = coeffs_meta.meta;
         affine_meta.slots = SlotsKind::Real;
@@ -110,7 +111,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     /// preserving the LUT kind and message-ratio metadata.
     pub fn transfer_to<BE>(&self, module: &Module<BE>) -> EncodedLut<CKKSPlaintextOwned<BE>>
     where
-        BE: Backend + HostStaged,
+        BE: Backend<Ring = Standard> + HostStaged,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     {
         self.map(|pt| {
