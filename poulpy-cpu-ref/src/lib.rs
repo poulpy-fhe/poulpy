@@ -71,12 +71,30 @@ pub mod source {
 }
 
 pub use scalar_znx_fill::ScalarZnxFill;
+pub mod ring;
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
 
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(ci_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(ci_core_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+
 #[cfg(feature = "enable-ckks")]
 mod ckks_comparison;
+
+use crate::ring::Standard as Ring;
+mod ci;
+pub use ci::FFT64Ref as FFT64CIRef;
+pub use ci::NTT4x30Ref as NTT4x30CIRef;
 
 #[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe_impl;

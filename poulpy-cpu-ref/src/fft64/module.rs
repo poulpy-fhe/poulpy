@@ -12,6 +12,9 @@
 //!   trait from `poulpy-hal`, which provides typed access to the FFT tables from
 //!   a `Module<FFT64Ref>` and other FFT64-family backends.
 
+use super::super::Ring;
+use super::FFT64Ref;
+
 use std::ptr::NonNull;
 
 use poulpy_hal::{
@@ -20,8 +23,6 @@ use poulpy_hal::{
 };
 
 use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
-
-use super::FFT64Ref;
 
 /// Opaque handle for the [`FFT64Ref`](super::FFT64Ref) backend.
 ///
@@ -33,7 +34,7 @@ use super::FFT64Ref;
 /// `Module<FFT64Ref>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct FFT64RefHandle {
-    ring_plans: FFT64PlanSet<f64>,
+    ring_plans: FFT64PlanSet<f64, Ring>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
@@ -54,7 +55,6 @@ impl Backend for FFT64Ref {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
@@ -63,6 +63,8 @@ impl Backend for FFT64Ref {
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64RefHandle;
     type Location = Host;
+    type Ring = Ring;
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -174,7 +176,8 @@ unsafe impl FFT64HandleFactory for FFT64RefHandle {
 }
 
 unsafe impl FFTHandleProvider<f64> for FFT64RefHandle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+    type Ring = Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Ring> {
         self.ring_plans.for_ring(n)
     }
 }

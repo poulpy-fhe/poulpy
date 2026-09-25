@@ -206,7 +206,11 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_big_automorphism_default(module, k, &mut res, res_col, &a, a_col)
+            if <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR == 4 {
+                $crate::reference::vec_znx::vec_znx_big_ci_automorphism::<Self>(k, res, res_col, a, a_col);
+            } else {
+                <Self as $defaults>::vec_znx_big_automorphism_default(module, k, &mut res, res_col, &a, a_col)
+            }
         }
 
         fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize {
@@ -221,7 +225,14 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::vec_znx_big_automorphism_assign_default(module, k, &mut res, res_col, &mut scratch);
+            if <Self as ::poulpy_hal::layouts::Backend>::CYCLOTOMIC_ORDER_FACTOR == 4 {
+                let (tmp, _) =
+                    scratch.take_region(res.n() * ::std::mem::size_of::<<Self as ::poulpy_hal::layouts::Backend>::BigWord>());
+                let tmp = ::bytemuck::cast_slice_mut(::poulpy_hal::api::HostBufMut::into_bytes(tmp));
+                $crate::reference::vec_znx::vec_znx_big_ci_automorphism_assign::<Self>(k, res, res_col, tmp);
+            } else {
+                <Self as $defaults>::vec_znx_big_automorphism_assign_default(module, k, &mut res, res_col, &mut scratch);
+            }
         }
     };
 }

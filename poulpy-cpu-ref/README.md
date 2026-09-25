@@ -141,6 +141,23 @@ No modifications to those crates are necessary — the HAL provides the extensio
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
 
+## Conjugate invariant rings
+
+`Module::<FFT64CIRef>::new(n)` and `Module::<NTT4x30CIRef>::new(n)` select
+an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
+The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
+cyclotomic order is `4n`. `FFT64Ref` and `NTT4x30Ref` retain the standard ring.
+NTT modules support invariant degrees up to `2^17` with the current prime sets.
+
+The ring is selected by the backend type. Standard plans store no CI tables,
+and CI plans own their required tables directly. The two rings have distinct
+module handles and prepared-data types; layout compatibility only connects
+implementations of the same ring.
+
+Transforms, polynomial products, and automorphisms use this basis. Sparse
+operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
+not closed in this ring, so rotation and `X^p - 1` operations reject it.
+
 ## Binary-FHE integration
 
 `enable-bin-fhe` selects the binary-FHE reference circuits and registers the
