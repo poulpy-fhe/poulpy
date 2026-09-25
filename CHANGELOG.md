@@ -139,6 +139,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-mhe`
 
 - New crate for backend-agnostic multiparty homomorphic encryption. It starts with the public aggregatable transcript (PAT) layouts: `GLWEPatCompressed` and `GGLWEPatCompressed`, seeded bodies over core compressed layouts, and `GGLWEPat`, an unseeded full GGLWE. Each carries a canonical flag that `write_to` requires, and is allocated through `MHEModuleAlloc`. `poulpy-cpu-ref` runs their tests behind the new `enable-mhe` feature.
+- PAT operations through `API -> delegate -> OEP`: `PatAggregate`, `PatNormalize` and `PatFinalize` for every shape, and the collective public key (`GLWEPublicKeyShare`). The reference implementation composes `poulpy-core` and `poulpy-hal` operations and is selected with `impl_mhe_reference_full!`; `poulpy-cpu-ref` selects it for both reference backends and runs `mhe_backend_test_suite!`.
 
 ### CPU backends
 

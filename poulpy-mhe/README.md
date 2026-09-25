@@ -14,3 +14,14 @@ Parties exchange public aggregatable transcripts (PATs), one type per shape:
 
 A PAT carries a canonical flag; `write_to` requires it set. Allocate PATs
 through `MHEModuleAlloc` on a `Module`.
+
+## Operations
+
+Every operation follows `API -> delegate -> OEP`; `reference` is the default
+implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
+[operation contracts](docs/mhe-contracts.md).
+
+- `PatAggregate`, `PatNormalize`, `PatFinalize`: sum shares, restore canonical
+  digits, expand a PAT into the ciphertext it transcribes.
+- `GLWEPublicKeyShare`: the collective public key, from per-party shares to a
+  `GLWEPublicKey` of the ideal secret.
