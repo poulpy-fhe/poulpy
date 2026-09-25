@@ -42,6 +42,8 @@ pub mod core_impl;
 pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
+#[cfg(feature = "enable-mhe")]
+mod mhe_impl;
 pub mod ntt4x30;
 mod sampling;
 mod scalar_znx_fill;

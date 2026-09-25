@@ -4,9 +4,8 @@
 use poulpy_core::{
     EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWECompressedEncryptSk,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWELayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
-        GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+        GGLWE, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedFactory,
+        GLWESecretSampling, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::{GGLWECompressed, GGLWEDecompress, GLWECompressed, GLWEDecompress},
     },
 };
@@ -18,15 +17,8 @@ use poulpy_hal::{
     test_suite::serialization::test_reader_writer_interface,
 };
 
+use super::fixtures::{BASE2K, DNUM, DSIZE, K, RANK, SEED_XE, SEEDS, assert_write_rejects, gglwe_layout, secret};
 use crate::layouts::{GGLWEPat, GGLWEPatCompressed, GLWEPatCompressed, MHEModuleAlloc};
-
-const BASE2K: Base2K = Base2K(12);
-const K: TorusPrecision = TorusPrecision(33);
-const RANK: Rank = Rank(2);
-const DNUM: Dnum = Dnum(3);
-const DSIZE: Dsize = Dsize(1);
-const SEEDS: [[u8; 32]; 2] = [[1u8; 32], [2u8; 32]];
-const SEED_XE: [u8; 32] = [3u8; 32];
 
 /// Allocation, serialization and core interop of [`GLWEPatCompressed`].
 pub fn test_glwe_pat_compressed<BE>(module: &Module<BE>)
@@ -218,36 +210,4 @@ where
     assert!(flagged.is_canonical());
 
     test_reader_writer_interface(pats);
-}
-
-fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
-    GGLWELayout {
-        n: module.n().into(),
-        base2k: BASE2K,
-        dnum: DNUM,
-        k_aux: TorusPrecision(DSIZE.0 * BASE2K.0 + module.log_n() as u32),
-        rank_in: RANK,
-        rank_out: RANK,
-        dsize: DSIZE,
-        stride: 1,
-    }
-}
-
-fn secret<BE>(module: &Module<BE>) -> (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>)
-where
-    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
-{
-    let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
-    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([0u8; 32]));
-    let mut sk_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
-    module.glwe_secret_prepare(&mut sk_prepared, &sk);
-    (sk, sk_prepared)
-}
-
-fn assert_write_rejects<T: WriterTo>(value: &T) {
-    let mut bytes: Vec<u8> = Vec::new();
-    let err = value.write_to(&mut bytes).unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(bytes.is_empty());
 }

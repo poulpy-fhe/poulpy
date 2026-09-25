@@ -486,24 +486,6 @@ fn test_blind_rotation_key_serialization_fft64_ref() {
     ));
 }
 
-#[cfg(feature = "enable-mhe")]
-#[test]
-fn test_glwe_pat_compressed_fft64_ref() {
-    poulpy_mhe::test_suite::layouts::test_glwe_pat_compressed(&Module::<FFT64Ref>::new(64));
-}
-
-#[cfg(feature = "enable-mhe")]
-#[test]
-fn test_gglwe_pat_compressed_fft64_ref() {
-    poulpy_mhe::test_suite::layouts::test_gglwe_pat_compressed(&Module::<FFT64Ref>::new(64));
-}
-
-#[cfg(feature = "enable-mhe")]
-#[test]
-fn test_gglwe_pat_fft64_ref() {
-    poulpy_mhe::test_suite::layouts::test_gglwe_pat(&Module::<FFT64Ref>::new(64));
-}
-
 #[cfg(feature = "enable-core")]
 #[test]
 fn test_gglwe_product_dft_selected_fft64_ref() {
