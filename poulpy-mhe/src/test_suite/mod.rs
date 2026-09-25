@@ -4,6 +4,7 @@
 pub(crate) mod fixtures;
 pub mod layouts;
 pub mod pat;
+pub mod public_key;
 
 /// Runs every `poulpy-mhe` test against `$backend`.
 #[macro_export]
@@ -46,6 +47,11 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "seeds differ")]
             fn pat_aggregate_seed_mismatch() {
                 $crate::test_suite::pat::test_pat_aggregate_seed_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_public_key() {
+                $crate::test_suite::public_key::test_glwe_public_key(&Module::<$backend>::new(256));
             }
         }
     };
