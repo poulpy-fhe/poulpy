@@ -4,7 +4,7 @@ use crate::{
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEAdd, GLWEMaskFill,
     layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -16,6 +16,7 @@ use poulpy_hal::{
 #[derive(PartialEq, Eq)]
 pub(crate) struct Snapshot {
     pub layout: CKKSLayout,
+    pub canonical: bool,
     pub digits: Vec<i64>,
 }
 
@@ -23,6 +24,7 @@ impl std::fmt::Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Snapshot")
             .field("layout", &self.layout)
+            .field("canonical", &self.canonical)
             .field("total_digits", &self.digits.len())
             .field("first_digits", &&self.digits[..self.digits.len().min(16)])
             .finish()
@@ -47,6 +49,7 @@ where
             },
             meta: value.meta(),
         },
+        canonical: view.is_canonical(),
         digits,
     }
 }
@@ -61,6 +64,26 @@ where
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
     module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
+    out
+}
+
+/// With `lazy`, adds a fixture filled over whole limbs: the digits leave the
+/// canonical range, bits below `k` must round away, and the flag is clear.
+pub(crate) fn fixture_operand<B: Backend<ZnxWord = i64>>(
+    module: &Module<B>,
+    layout: &CKKSLayout,
+    seed: u8,
+    lazy: bool,
+) -> CKKSCiphertextOwned<B>
+where
+    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+{
+    let mut out = fixture_ciphertext(module, layout, seed);
+    if lazy {
+        let mut whole = *layout;
+        whole.glwe_layout.k = (out.size() * out.base2k().as_usize()).into();
+        module.glwe_add_assign(&mut out, &fixture_ciphertext(module, &whole, !seed));
+    }
     out
 }
 

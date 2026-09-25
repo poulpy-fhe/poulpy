@@ -140,10 +140,7 @@ pub use bootstrapping::{
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
-pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
-    Unnormalized, UnnormalizedCKKSCiphertext,
-};
+pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,

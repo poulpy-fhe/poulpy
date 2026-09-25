@@ -1,7 +1,7 @@
 //! Exact arithmetic parity on canonical coefficients, independent of encryption.
 use super::helpers::*;
-use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, layouts::*, oep::*, test_suite::CKKSTestParams};
-use poulpy_core::{GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
+use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, oep::*, test_suite::CKKSTestParams};
+use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
 use poulpy_hal::layouts::{Backend, Module};
 
 pub trait ArithmeticParityBackend:
@@ -59,6 +59,29 @@ where
                 let rhs = fixture_ciphertext(module, &lb, 32);
                 let before_a = snapshot::<B, _>(&a);
                 let before_b = snapshot::<B, _>(&rhs);
+                // `ckks_double_into` is the lazy `a + a` at the source's width and
+                // `ckks_mul_pow2_into` by one bit below it, equal once normalized.
+                for (width, lazy) in [(3 * b + 5, true), (2 * b + 3, false)] {
+                    let dst = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
+                    let mut doubled = fixture_ciphertext(module, &dst, 31);
+                    let mut shifted = fixture_ciphertext(module, &dst, 31);
+                    let bytes =
+                        B::ckks_mul_pow2_tmp_bytes_impl(module, doubled.max_size()).max(B::glwe_normalize_tmp_bytes(module));
+                    with_scratch::<B, _>(bytes, |scratch| {
+                        B::ckks_double_into_impl(module, &mut doubled, &a, scratch)?;
+                        let raw = snapshot::<B, _>(&doubled);
+                        assert_eq!(raw.canonical, !lazy, "double_into k={width}");
+                        results.push(("ckks_double_into_impl", raw));
+                        B::glwe_normalize_assign(module, &mut doubled, scratch);
+                        B::ckks_mul_pow2_into_impl(module, &mut shifted, &a, 1, scratch)
+                    })
+                    .unwrap();
+                    assert_eq!(
+                        snapshot::<B, _>(&doubled).digits,
+                        snapshot::<B, _>(&shifted).digits,
+                        "double_into k={width} differs from mul_pow2 by one bit"
+                    );
+                }
                 for (width, compact) in [(2 * b + 3, false), (4 * b + 1, false), (2 * b + 3, true)] {
                     let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                     let mut pt_layout = layout(params, 0, b + 3, b - 1, sparse, slots);
@@ -75,25 +98,8 @@ where
                     results.push((stringify!($method), snapshot::<B,_>(&out)));
                 }};
             }
-                    macro_rules! raw {
-                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
-                    let mut out = UnnormalizedCKKSCiphertext::new(fixture_ciphertext(module, &$initial, 31));
-                    let bytes = B::$query(module, out.max_size());
-                    with_scratch::<B,_>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
-                    let bytes = B::glwe_normalize_tmp_bytes(module);
-                    let out = with_scratch::<B,_>(bytes, |scratch| out.normalize(module, scratch));
-                    results.push((stringify!($method), snapshot::<B,_>(&out)));
-                }};
-            }
                     run!(ckks_add_into_impl, ckks_add_tmp_bytes_impl, out_layout, [&a, &rhs]);
-                    raw!(
-                        ckks_add_into_unnormalized_impl,
-                        ckks_add_tmp_bytes_impl,
-                        out_layout,
-                        [&a, &rhs]
-                    );
                     run!(ckks_add_assign_impl, ckks_add_tmp_bytes_impl, la, [&rhs]);
-                    raw!(ckks_add_assign_unnormalized_impl, ckks_add_tmp_bytes_impl, la, [&rhs]);
                     run!(ckks_add_one_assign_impl, ckks_add_one_tmp_bytes_impl, la, []);
                     run!(
                         ckks_add_pt_vec_into_impl,
@@ -101,27 +107,9 @@ where
                         out_layout,
                         [&a, &pt]
                     );
-                    raw!(
-                        ckks_add_pt_vec_into_unnormalized_impl,
-                        ckks_add_pt_vec_tmp_bytes_impl,
-                        out_layout,
-                        [&a, &pt]
-                    );
                     run!(ckks_add_pt_vec_assign_impl, ckks_add_pt_vec_tmp_bytes_impl, la, [&pt]);
-                    raw!(
-                        ckks_add_pt_vec_assign_unnormalized_impl,
-                        ckks_add_pt_vec_tmp_bytes_impl,
-                        la,
-                        [&pt]
-                    );
                     run!(
                         ckks_add_pt_const_into_impl,
-                        ckks_add_pt_const_tmp_bytes_impl,
-                        out_layout,
-                        [&a, 7, &pt, 3]
-                    );
-                    raw!(
-                        ckks_add_pt_const_into_unnormalized_impl,
                         ckks_add_pt_const_tmp_bytes_impl,
                         out_layout,
                         [&a, 7, &pt, 3]
@@ -132,34 +120,8 @@ where
                         la,
                         [7, &pt, 3]
                     );
-                    raw!(
-                        ckks_add_pt_const_assign_unnormalized_impl,
-                        ckks_add_pt_const_tmp_bytes_impl,
-                        la,
-                        [7, &pt, 3]
-                    );
-                    {
-                        let mut out = fixture_ciphertext(module, &la, 31);
-                        let bytes = B::ckks_add_tmp_bytes_impl(module, out.max_size());
-                        {
-                            let mut view = crate::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut::new(&mut out);
-                            with_scratch::<B, _>(bytes, |scratch| {
-                                B::ckks_add_assign_unnormalized_ref_impl(module, &mut view, &rhs, scratch)
-                            })
-                            .unwrap();
-                            with_scratch::<B, _>(B::glwe_normalize_tmp_bytes(module), |scratch| view.normalize(module, scratch));
-                        }
-                        results.push(("ckks_add_assign_unnormalized_ref_impl", snapshot::<B, _>(&out)));
-                    }
                     run!(ckks_sub_into_impl, ckks_sub_tmp_bytes_impl, out_layout, [&a, &rhs]);
-                    raw!(
-                        ckks_sub_into_unnormalized_impl,
-                        ckks_sub_tmp_bytes_impl,
-                        out_layout,
-                        [&a, &rhs]
-                    );
                     run!(ckks_sub_assign_impl, ckks_sub_tmp_bytes_impl, la, [&rhs]);
-                    raw!(ckks_sub_assign_unnormalized_impl, ckks_sub_tmp_bytes_impl, la, [&rhs]);
                     run!(ckks_sub_one_assign_impl, ckks_sub_one_tmp_bytes_impl, la, []);
                     run!(
                         ckks_sub_pt_vec_into_impl,
@@ -167,27 +129,9 @@ where
                         out_layout,
                         [&a, &pt]
                     );
-                    raw!(
-                        ckks_sub_pt_vec_into_unnormalized_impl,
-                        ckks_sub_pt_vec_tmp_bytes_impl,
-                        out_layout,
-                        [&a, &pt]
-                    );
                     run!(ckks_sub_pt_vec_assign_impl, ckks_sub_pt_vec_tmp_bytes_impl, la, [&pt]);
-                    raw!(
-                        ckks_sub_pt_vec_assign_unnormalized_impl,
-                        ckks_sub_pt_vec_tmp_bytes_impl,
-                        la,
-                        [&pt]
-                    );
                     run!(
                         ckks_sub_pt_const_into_impl,
-                        ckks_sub_pt_const_tmp_bytes_impl,
-                        out_layout,
-                        [&a, 7, &pt, 3]
-                    );
-                    raw!(
-                        ckks_sub_pt_const_into_unnormalized_impl,
                         ckks_sub_pt_const_tmp_bytes_impl,
                         out_layout,
                         [&a, 7, &pt, 3]
@@ -198,25 +142,6 @@ where
                         la,
                         [7, &pt, 3]
                     );
-                    raw!(
-                        ckks_sub_pt_const_assign_unnormalized_impl,
-                        ckks_sub_pt_const_tmp_bytes_impl,
-                        la,
-                        [7, &pt, 3]
-                    );
-                    {
-                        let mut out = fixture_ciphertext(module, &la, 31);
-                        let bytes = B::ckks_sub_tmp_bytes_impl(module, out.max_size());
-                        {
-                            let mut view = crate::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut::new(&mut out);
-                            with_scratch::<B, _>(bytes, |scratch| {
-                                B::ckks_sub_assign_unnormalized_ref_impl(module, &mut view, &rhs, scratch)
-                            })
-                            .unwrap();
-                            with_scratch::<B, _>(B::glwe_normalize_tmp_bytes(module), |scratch| view.normalize(module, scratch));
-                        }
-                        results.push(("ckks_sub_assign_unnormalized_ref_impl", snapshot::<B, _>(&out)));
-                    }
                     {
                         let mut out = fixture_ciphertext(module, &out_layout, 31);
                         let bytes = B::ckks_copy_tmp_bytes_impl(module, &out, &a);
@@ -224,6 +149,7 @@ where
                         results.push(("ckks_copy_impl", snapshot::<B, _>(&out)));
                     }
                     run!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, out_layout, [&a]);
+                    run!(ckks_double_into_impl, ckks_mul_pow2_tmp_bytes_impl, out_layout, [&a]);
                     let mut neg = fixture_ciphertext(module, &la, 31);
                     B::ckks_neg_assign_impl(module, &mut neg).unwrap();
                     results.push(("neg_assign", snapshot::<B, _>(&neg)));
@@ -300,18 +226,18 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
     let mut results = Vec::new();
     {
         let rank = params.rank;
-        for dsize in [1, 2] {
+        for (dsize, lazy) in [(1, false), (2, true)] {
             let la = layout(params, rank, 4 * b + 5, b - 1, 2, SlotsKind::Real);
             let lb = layout(params, rank, 4 * b + 1, b + 1, 0, SlotsKind::Complex);
-            let a = fixture_ciphertext(module, &la, 51);
-            let rhs = fixture_ciphertext(module, &lb, 52);
+            let a = fixture_operand(module, &la, 51, lazy);
+            let rhs = fixture_operand(module, &lb, 52, lazy);
             let before_a = snapshot::<B, _>(&a);
             let before_b = snapshot::<B, _>(&rhs);
             let key_infos = key_layout(params.n, b, 4 * b + 5, dsize, rank * (rank + 1) / 2, rank);
@@ -330,7 +256,7 @@ where
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_square_into_impl(module, &mut out, &a, &key, scratch)).unwrap();
                 results.push(("square_into", snapshot::<B, _>(&out)));
             }
-            let mut assigned = fixture_ciphertext(module, &la, 51);
+            let mut assigned = fixture_operand(module, &la, 51, lazy);
             let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, &key);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_assign_impl(module, &mut assigned, &rhs, &key, scratch)
@@ -338,7 +264,7 @@ where
             .unwrap();
             let ordinary = snapshot::<B, _>(&assigned);
             let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &rhs, scratch)).unwrap();
-            let mut assigned = fixture_ciphertext(module, &la, 51);
+            let mut assigned = fixture_operand(module, &la, 51, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_prepared_assign_impl(module, &mut assigned, &prepared, &key, scratch)
             })
@@ -350,7 +276,7 @@ where
             );
             results.push(("mul_assign", ordinary));
             results.push(("mul_prepared_assign", snapshot::<B, _>(&assigned)));
-            let mut assigned = fixture_ciphertext(module, &la, 51);
+            let mut assigned = fixture_operand(module, &la, 51, lazy);
             let bytes = B::ckks_square_tmp_bytes_impl(module, &assigned, &assigned, &key);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_square_assign_impl(module, &mut assigned, &key, scratch)
@@ -372,7 +298,7 @@ where
                 })
                 .unwrap();
                 results.push(("mul_pt_vec_into", snapshot::<B, _>(&out)));
-                let mut out = fixture_ciphertext(module, &la, 51);
+                let mut out = fixture_operand(module, &la, 51, lazy);
                 let bytes = B::ckks_mul_pt_vec_tmp_bytes_impl(module, &out, &out, pt.k());
                 with_scratch::<B, _>(bytes, |scratch| {
                     B::ckks_mul_pt_vec_assign_impl(module, &mut out, &pt, scratch)
@@ -387,7 +313,7 @@ where
                     })
                     .unwrap();
                     results.push(("mul_pt_const_into", snapshot::<B, _>(&out)));
-                    let mut out = fixture_ciphertext(module, &la, 51);
+                    let mut out = fixture_operand(module, &la, 51, lazy);
                     let bytes = B::ckks_mul_pt_const_tmp_bytes_impl(module, &out, &out, pt.k());
                     with_scratch::<B, _>(bytes, |scratch| {
                         B::ckks_mul_pt_const_assign_impl(module, &mut out, &pt, coeff, scratch)
@@ -421,8 +347,8 @@ pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(products(params, r), products(params, t));
@@ -431,17 +357,17 @@ where
 fn automorphisms<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
     let mut results = Vec::new();
     {
         let rank = params.rank;
-        for dsize in [1, 2] {
+        for (dsize, lazy) in [(1, false), (2, true)] {
             for p in [5, -1] {
                 let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
-                let input = fixture_ciphertext(module, &la, 61);
+                let input = fixture_operand(module, &la, 61, lazy);
                 let before = snapshot::<B, _>(&input);
                 let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
                 let key = prepared_automorphism_key(module, &key_infos, p, 62);
@@ -476,7 +402,7 @@ where
                         results.push(("conjugate_into", snapshot::<B, _>(&out)));
                     }
                 }
-                let mut out = fixture_ciphertext(module, &la, 61);
+                let mut out = fixture_operand(module, &la, 61, lazy);
                 if p == 5 {
                     let bytes = B::ckks_rotate_tmp_bytes_impl(module, &out, &key);
                     with_scratch::<B, _>(bytes, |scratch| {
@@ -513,8 +439,8 @@ pub fn test_automorphism_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR
 where
     BR: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
     BT: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(automorphisms(params, r), automorphisms(params, t));

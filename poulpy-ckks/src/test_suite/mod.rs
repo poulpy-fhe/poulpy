@@ -208,7 +208,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -219,7 +218,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path, $arg:expr) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
                     }
@@ -230,7 +228,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() -> Result<()> {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
                     }
@@ -315,7 +312,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -326,7 +322,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path, $arg:expr) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
                     }
@@ -338,7 +333,6 @@ macro_rules! ckks_backend_test_suite {
                     #[test]
                     #[ignore = "large parameters; run explicitly with --ignored --release"]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -349,7 +343,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() -> Result<()> {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
                     }
@@ -463,22 +456,6 @@ macro_rules! ckks_backend_test_suite {
                 add_pt_vec_base2k_mismatch_error,
                 $crate::test_suite::add::test_add_pt_vec_base2k_mismatch_error
             );
-            run_test!(
-                add_ct_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_ct_aligned_unsafe
-            );
-            run_test!(
-                add_ct_assign_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_ct_assign_aligned_unsafe
-            );
-            run_test!(
-                add_pt_vec_into_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_pt_vec_into_aligned_unsafe
-            );
-            run_test!(
-                add_const_into_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_const_into_aligned_unsafe
-            );
             run_test!(sub_ct_aligned, $crate::test_suite::sub::test_sub_ct_aligned);
             run_test!(sub_ct_delta_a_lt_b, $crate::test_suite::sub::test_sub_ct_delta_a_lt_b);
             run_test!(sub_ct_delta_a_gt_b, $crate::test_suite::sub::test_sub_ct_delta_a_gt_b);
@@ -521,22 +498,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::sub::test_sub_const_into_lsh_alignment
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
-            run_test!(
-                sub_ct_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_ct_aligned_unsafe
-            );
-            run_test!(
-                sub_ct_assign_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_ct_assign_aligned_unsafe
-            );
-            run_test!(
-                sub_pt_vec_into_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_pt_vec_into_unsafe
-            );
-            run_test!(
-                sub_pt_const_into_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_pt_const_into_aligned_unsafe
-            );
             run_test!(
                 dot_product_overflow_guard,
                 $crate::test_suite::errors::test_dot_product_overflow_guard
@@ -1007,7 +968,6 @@ pub use crate::ckks_backend_test_suite;
 
 pub mod add;
 pub mod add_many;
-pub mod add_unsafe;
 pub mod affine;
 pub mod bootstrapping;
 pub mod compact;
@@ -1044,7 +1004,6 @@ pub mod rotate;
 pub mod ship;
 pub mod slots_kind;
 pub mod sub;
-pub mod sub_unsafe;
 
 /// Paired OEP conformance with caller-selected comparison backends.
 pub mod parity;

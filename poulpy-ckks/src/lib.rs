@@ -38,17 +38,15 @@
 //! width, and allocating a destination at exactly the `k` you want is how
 //! results are narrowed.
 //!
-//! Safe add/sub operations return K-normalized ciphertexts. Their
-//! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
-//! and write into an [`layouts::UnnormalizedCKKSCiphertext`] for callers who
-//! want to fuse several linear steps before normalizing explicitly. Limb
-//! digits in that wrapper may hold un-propagated carries (wider than `base2k`
-//! bits), so passing it to any DFT-domain primitive (keyswitching,
-//! convolution, automorphisms) would produce incorrect decryptions. The
-//! wrapper does not implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`],
-//! making such misuse a compile error. Call
-//! [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the next
-//! keyswitching or convolution step.
+//! Linear operations (additions, subtractions, plaintext additions, doubling,
+//! negation, copies, multiplication by `±i`) do not normalize. Additions,
+//! subtractions and doubling clear the wrapped GLWE's canonical flag, the others
+//! keep their operand's, and the next operation that reads the digits through a
+//! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
+//! flag-clear operand first. A value several such operations read is best
+//! normalized once with `glwe_normalize_assign`. Each lazy addition can grow the
+//! digits by one bit; a sum of `n` terms stays within `i64` while
+//! `n <= 2^(63 - base2k)`.
 //!
 //! ## Modules
 //!
@@ -98,9 +96,7 @@ pub mod prelude {
         CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps,
         CKKSSubOps,
     };
-    pub use crate::layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
-    };
+    pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
     };
@@ -446,45 +442,33 @@ where
     Ok(())
 }
 
-/// Relabels `ct` at `k`, and when that lowers `k` normalizes at the new `k`,
-/// so the bits the relabel leaves below it are rounded away instead of kept.
-/// Raising `k` leaves canonical data canonical. Every relabel that follows a
-/// write goes through here or [`ckks_set_log_delta_normalized`], so no
-/// operation returns data below the `k` it reports.
-pub(crate) fn ckks_set_k_normalized<BE, M, R>(
+/// Copies `src` into `dst` with `src`'s metadata: verbatim when `dst` is wide
+/// enough, otherwise through [`ckks_shift_stamp_unary`], which charges the
+/// offset to the budget and normalizes. Validates before mutating.
+pub(crate) fn ckks_copy_stamp_unary<BE, M, Dst, Src>(
     module: &M,
-    ct: &mut R,
-    k: TorusPrecision,
+    op: &'static str,
+    dst: &mut Dst,
+    src: &Src,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
-) where
+) -> CKKSResult<()>
+where
     BE: Backend,
-    M: poulpy_core::GLWENormalize<BE> + ?Sized,
-    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    M: poulpy_core::GLWECopy<BE> + poulpy_core::GLWEShift<BE> + ?Sized,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSInfos,
 {
-    let lowered = k.as_usize() < ct.k().as_usize();
-    ct.set_k(k);
-    if lowered {
-        module.glwe_normalize_assign(ct, scratch);
+    if ckks_offset_unary(dst, src) != 0 {
+        return ckks_shift_stamp_unary(module, op, dst, src, 0, 0, 0, scratch);
     }
-}
-
-/// [`SetCKKSInfos::set_log_delta`] with the normalization
-/// [`ckks_set_k_normalized`] applies when the relabel lowers `k`.
-pub(crate) fn ckks_set_log_delta_normalized<BE, M, R>(
-    module: &M,
-    ct: &mut R,
-    log_delta: usize,
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: poulpy_core::GLWENormalize<BE> + ?Sized,
-    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-{
-    let k = ct.log_budget() + log_delta;
-    let mut meta = ct.meta();
-    meta.log_delta = log_delta;
-    ct.set_meta(meta);
-    ckks_set_k_normalized(module, ct, k.into(), scratch);
+    // The scratch queries size the copy for the destination as allocated, so it
+    // runs before the relabel.
+    module.glwe_copy(dst, src, scratch);
+    dst.set_meta(src.meta());
+    dst.set_log_budget(src.log_budget());
+    // The copy is exact: lowering `k` back to `src`'s keeps `src`'s form.
+    dst.set_canonical(src.is_canonical());
+    Ok(())
 }
 
 #[cfg(test)]

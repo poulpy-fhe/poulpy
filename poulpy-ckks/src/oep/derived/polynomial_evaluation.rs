@@ -1,5 +1,6 @@
 use crate::api::CKKSPolynomialEvaluationOps;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -67,7 +68,8 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSModuleAlloc<BE>
+        + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE>,
@@ -103,7 +105,8 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSModuleAlloc<BE>
+        + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
     C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,

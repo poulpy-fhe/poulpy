@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWENormalize, GLWEShift, GLWESub,
+    GLWECopy, GLWENormalize, GLWEShift, GLWESub,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{

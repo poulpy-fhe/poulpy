@@ -6,6 +6,7 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
+use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
@@ -134,7 +135,8 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSModuleAlloc<BE>
+        + GLWENormalize<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {

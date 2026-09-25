@@ -1,13 +1,10 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, UnnormalizedCKKSCiphertext},
-};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// Tree-reduction sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
@@ -133,41 +130,6 @@ pub trait CKKSMulAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
-    ///
-    /// The accumulator `dst` carries un-propagated carries in its limb digits.
-    /// Use this to fuse several multiply-add steps before a single
-    /// normalization pass.  See [`crate::api::CKKSAddOps`] for
-    /// the digit-growth analysis and safety bound.
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
-
-    /// Computes `dst += a * pt` without normalizing `dst`.
-    ///
-    /// Metadata follows the same rule as
-    /// [`Self::ckks_mul_add_pt_const_into_unnormalized`].
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }

@@ -17,7 +17,12 @@ use crate::{
 /// Implementations must satisfy the contracts of the polynomial-evaluation
 /// API, including the invariants of the underlying add/mul/copy kernels.
 pub unsafe trait CKKSPolynomialEvaluationImpl:
-    Backend + super::CKKSCopyImpl + super::CKKSMulImpl + super::CKKSPow2Impl + super::CKKSSubImpl
+    Backend
+    + super::CKKSCopyImpl
+    + super::CKKSMulImpl
+    + super::CKKSPow2Impl
+    + super::CKKSSubImpl
+    + poulpy_core::oep::GLWENormalizeImpl
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(
         module: &Module<Self>,

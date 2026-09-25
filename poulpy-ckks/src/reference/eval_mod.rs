@@ -8,7 +8,7 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use crate::{CKKSResult as Result, ckks_ensure, ckks_set_log_delta_normalized};
+use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
@@ -240,11 +240,9 @@ where
     // `s_in` here undoes exactly that, so the scale round-trip is budget-neutral
     // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
     // accounts for in full. When the plan scale is the wider one the relabel
-    // lowers `k` by `s_eval - s_in`, and the bits below the new `k` still hold
-    // the low end of the result; the helper rounds them away so `res` is
-    // canonical at the `k` it reports.
+    // lowers `k` by `s_eval - s_in`, which clears the canonical flag.
     if s_eval != s_in {
-        ckks_set_log_delta_normalized(module, res, s_in, scratch);
+        res.set_log_delta(s_in);
     }
 
     Ok(())

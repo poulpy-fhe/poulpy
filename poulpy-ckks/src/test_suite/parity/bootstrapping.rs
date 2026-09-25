@@ -1,11 +1,11 @@
 //! Encapsulated modulus raising, including optimized and fallback shapes.
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{Snapshot, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
     keys::{fixture_gglwe, key_layout},
 };
 use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, oep::CKKSEncapsulatedModUpImpl, test_suite::CKKSTestParams};
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEAdd, GLWEMaskFill,
     layouts::{GGLWEPreparedFactory, GLWELayout, LWEInfos, prepared::GGLWEPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module};
@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, Module};
 fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
 {
     let b = params.base2k;
     let small = 3 * b + 1;
@@ -60,8 +60,8 @@ where
             });
         }
         let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
-        for seed in [41, 43] {
-            let mut src = fixture_ciphertext(module, &src_layout, seed);
+        for (seed, lazy) in [(41, false), (43, true)] {
+            let mut src = fixture_operand(module, &src_layout, seed, lazy);
             let mut dst = fixture_ciphertext(module, &dst_layout, 47);
             let result = with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_encapsulated_mod_up(
@@ -102,8 +102,8 @@ pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, refere
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(run(params, reference), run(params, tested), "encapsulated ModUp differs");

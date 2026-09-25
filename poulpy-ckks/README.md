@@ -93,9 +93,8 @@ ciphertext/plaintext types themselves. This matches the rest of Poulpy: data
 lives in layouts, behavior lives in module traits, and a backend may override
 an operation with a faster route to the same result, validated by the parity
 test. Data-management methods (`.set_meta_checked()`,
-`.to_host_owned()`) and typestate transitions (`.normalize()`) are the
-exceptions: they live on the struct because they are inherently tied to the
-type, not to the backend.
+`.to_host_owned()`) are the exception: they live on the struct because they
+are inherently tied to the type, not to the backend.
 
 ## Crate organization
 
@@ -137,9 +136,6 @@ all parameters.
 The main CKKS-facing types are:
 
 - `CKKSCiphertext<D>` — encrypted CKKS value; wraps a core GLWE ciphertext
-- `UnnormalizedCKKSCiphertext<D>` — typestate wrapper for ciphertexts produced
-  by unnormalized linear operations; cannot be passed to DFT-domain primitives
-  until `.normalize(module, scratch)` is called
 - `CKKSPlaintext<D>` — quantized CKKS plaintext in the torus / ZNX domain
 - `CKKSMeta` — semantic precision metadata
 - `CKKSPlaintextVecHostCodec<F>` — trait for encoding/decoding host floats
@@ -302,8 +298,8 @@ Leveled operations are invoked through traits implemented on
 |-------|-----------|
 | `CKKSEncryptOps` / `CKKSDecryptOps` | encryption and decryption |
 | `CKKSEncodingOps` / `CKKSEncodingHostOps` | backend-resident slot/coefficient encoding and decoding, plus host-slice adapters |
-| `CKKSAddOps` | normalized and unnormalized ciphertext and plaintext addition |
-| `CKKSSubOps` | normalized and unnormalized subtraction |
+| `CKKSAddOps` | ciphertext and plaintext addition |
+| `CKKSSubOps` | ciphertext and plaintext subtraction |
 | `CKKSNegOps` | negation |
 | `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
@@ -340,22 +336,15 @@ module.ckks_add_into(&mut dst, &lhs, &rhs, scratch)?;
 module.ckks_add_assign(&mut lhs, &rhs, scratch)?;
 ```
 
-### Unnormalized Operations
+### Lazy normalization
 
-The `*_unnormalized` methods on `CKKSAddOps` and `CKKSSubOps` (e.g.
-`ckks_add_into_unnormalized`, `ckks_sub_assign_unnormalized`) write into an
-`UnnormalizedCKKSCiphertext`. This type does not implement
-`GLWEToBackendRef`/`GLWEToBackendMut`, so it cannot be accidentally passed to
-any DFT-domain primitive (keyswitching, convolution, automorphisms). Call
-`.normalize(module, scratch)` to propagate carries and recover a
-`CKKSCiphertext`.
-
-Note that `.normalize()` is an exception to the principle stated above:
-it is a method on the struct rather than on `Module<BE>`. It lives there
-because it must *consume* the `UnnormalizedCKKSCiphertext` by value as the
-only typestate exit, which cannot be expressed as a module method. The
-actual computation is still dispatched through the `module` argument it
-receives.
+Additions, subtractions, plaintext additions and `ckks_double_into` do not
+normalize their result: they clear the wrapped GLWE's canonical flag.
+Negation, copies and multiplication by `±i` keep their operand's flag. The next
+operation that reads the digits through a DFT (products, rotations,
+conjugation, keyswitching, decryption) normalizes a flag-clear operand first,
+so a chain of linear steps costs one normalization. Normalize a value that
+several such operations read once, with `glwe_normalize_assign`.
 
 ## Backend selection
 

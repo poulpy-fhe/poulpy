@@ -39,21 +39,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _into_reference>](module, dst, a, b, scratch)
                 }
 
-                fn [<ckks_ $verb _into_unnormalized_impl>]<Dst, A, B>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    a: &A,
-                    b: &B,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds,
-                    B: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _into_unnormalized_wrapped_reference>](module, dst, a, b, scratch)
-                }
 
                 fn [<ckks_ $verb _assign_impl>]<Dst, A>(
                     module: &::poulpy_hal::layouts::Module<Self>,
@@ -68,33 +53,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _assign_reference>](module, dst, a, scratch)
                 }
 
-                fn [<ckks_ $verb _assign_unnormalized_impl>]<Dst, A>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    a: &A,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _assign_unnormalized_wrapped_reference>](module, dst, a, scratch)
-                }
 
-                fn [<ckks_ $verb _assign_unnormalized_ref_impl>]<Dst, A>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::ciphertext::UnnormalizedCKKSCiphertextRefMut<'_, Dst, Self::ZnxWord>,
-                    a: &A,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_ckks::layouts::CKKSCiphertext<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _assign_unnormalized_ref_wrapped_reference>](module, dst, a, scratch)
-                }
 
                 fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
@@ -115,21 +74,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_into_reference>](module, dst, a, pt, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_vec_into_unnormalized_impl>]<Dst, A, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    a: &A,
-                    pt: &P,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _pt_vec_into_unnormalized_wrapped_reference>](module, dst, a, pt, scratch)
-                }
 
                 fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
@@ -144,19 +88,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_assign_reference>](module, dst, pt, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_vec_assign_unnormalized_impl>]<Dst, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    pt: &P,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _pt_vec_assign_unnormalized_wrapped_reference>](module, dst, pt, scratch)
-                }
 
                 fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                     $workspace + ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_const_tmp_bytes_reference>](module, res_size)
@@ -181,25 +112,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     )
                 }
 
-                fn [<ckks_ $verb _pt_const_into_unnormalized_impl>]<Dst, A, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    a: &A,
-                    dst_coeff: usize,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _pt_const_into_unnormalized_wrapped_reference>](
-                        module, dst, a, dst_coeff, pt, pt_coeff, scratch,
-                    )
-                }
 
                 fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
@@ -221,23 +133,6 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     )
                 }
 
-                fn [<ckks_ $verb _pt_const_assign_unnormalized_impl>]<Dst, P>(
-                    module: &::poulpy_hal::layouts::Module<Self>,
-                    dst: &mut ::poulpy_ckks::layouts::UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
-                    dst_coeff: usize,
-                    pt: &P,
-                    pt_coeff: usize,
-                    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-                ) -> ::poulpy_ckks::CKKSResult<()>
-                where
-                    Dst: ::poulpy_hal::layouts::Data,
-                    ::poulpy_core::layouts::GLWE<Dst, Self::ZnxWord>: ::poulpy_core::layouts::GLWEToBackendMut<Self>,
-                    P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
-                {
-                    ::poulpy_ckks::reference::$verb::[<ckks_ $verb _pt_const_assign_unnormalized_wrapped_reference>](
-                        module, dst, dst_coeff, pt, pt_coeff, scratch,
-                    )
-                }
             }
         }
     };

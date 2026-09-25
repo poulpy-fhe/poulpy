@@ -1,13 +1,13 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// Normalized ciphertext and plaintext subtraction.
+/// Ciphertext and plaintext subtraction.
 ///
-/// Subtraction is the additive inverse of addition.  Metadata rules are
-/// identical to those of [`CKKSAddOps`](crate::api::CKKSAddOps).
+/// Subtraction is the additive inverse of addition. Normalization and metadata
+/// rules are identical to those of [`CKKSAddOps`](crate::api::CKKSAddOps).
 ///
 /// # Metadata
 ///
@@ -121,92 +121,5 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst = a - b` without normalizing `dst`.
-    ///
-    /// Unnormalized variants are for explicit fusion loops. They write into
-    /// an [`UnnormalizedCKKSCiphertext`], whose limb digits may hold
-    /// un-propagated carries. Normalize before passing the value to DFT-domain
-    /// operations such as keyswitching, convolution, or automorphisms.
-    fn ckks_sub_into_unnormalized<Dst, A, B>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds;
-
-    /// Computes `dst -= a` without normalizing `dst`.
-    fn ckks_sub_assign_unnormalized<Dst, A>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSInfos;
-
-    /// Computes `dst = a - pt` without normalizing `dst`.
-    fn ckks_sub_pt_vec_into_unnormalized<Dst, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst -= pt` without normalizing `dst`.
-    fn ckks_sub_pt_vec_assign_unnormalized<Dst, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst = a - pt[pt_coeff]` without normalizing `dst`.
-    fn ckks_sub_pt_const_into_unnormalized<Dst, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        dst_coeff: usize,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-
-    /// Computes `dst -= pt[pt_coeff]` without normalizing `dst`.
-    fn ckks_sub_pt_const_assign_unnormalized<Dst, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        dst_coeff: usize,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: Data,
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 }

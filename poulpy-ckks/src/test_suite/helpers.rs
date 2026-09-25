@@ -24,8 +24,8 @@ use crate::{
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
-        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSNormalizationState, CKKSPlaintextOwned,
-        CKKSPlaintextVecHostCodec, plaintext::CKKSPlaintext,
+        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
+        plaintext::CKKSPlaintext,
     },
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -948,7 +948,7 @@ where
     ct
 }
 
-/// Asserts that the data of `ct` is canonical at `ct.k()`.
+/// Asserts that `ct`, when flagged canonical, is canonical at `ct.k()`.
 ///
 /// Canonical at `k` means, coefficient by coefficient: the low
 /// `(-k) mod base2k` bits of the last live limb are zero, every limb past
@@ -963,11 +963,15 @@ where
 /// and nothing below `k`, so it is allowed here.
 ///
 /// Every decryption helper in this module runs it first, so each operation
-/// test holds its output to the invariant before checking the value.
+/// test holds an output its flag calls canonical to the invariant before
+/// checking the value.
 ///
 /// `BE` cannot be inferred from `CKKSCiphertextOwned<BE>`, which is a type
 /// alias over the backend's buffer and word types, so callers pass it.
 pub fn assert_canonical_at_k<BE: TestContextBackend>(label: &str, ct: &CKKSCiphertextOwned<BE>) {
+    if !ct.is_canonical() {
+        return;
+    }
     let host = ct.to_host_owned::<BE>();
     let base2k: usize = host.base2k().as_usize();
     let k: usize = host.k().as_usize();
@@ -1333,12 +1337,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
 
-pub fn assert_ct_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
-    label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
-    log_delta: usize,
-    log_budget: usize,
-) {
+pub fn assert_ct_meta<D: Data, W: ZnxWord>(label: &str, ct: &CKKSCiphertext<D, W>, log_delta: usize, log_budget: usize) {
     assert_eq!(ct.log_delta(), log_delta, "{label}: unexpected log_delta");
     assert_eq!(ct.log_budget(), log_budget, "{label}: unexpected log_budget");
 }
@@ -1349,9 +1348,9 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
-pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_unary_output_meta<D: Data, W: ZnxWord>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W>,
     input: &CKKSCiphertext<impl Data, W>,
 ) {
     assert_ct_meta(
@@ -1362,9 +1361,9 @@ pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
     );
 }
 
-pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_binary_output_meta<D: Data, W: ZnxWord>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W>,
     a: &CKKSCiphertext<impl Data, W>,
     b: &CKKSCiphertext<impl Data, W>,
 ) {
@@ -1376,9 +1375,9 @@ pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     );
 }
 
-pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
@@ -1390,9 +1389,9 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
-pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {

@@ -5,7 +5,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSInfos, SetCKKSInfos, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos};
 
 pub trait CKKSCopyReference<BE: Backend> {
     fn ckks_copy_tmp_bytes_reference<Dst, Src>(&self, dst: &Dst, src: &Src) -> usize
@@ -24,18 +24,7 @@ pub trait CKKSCopyReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
-        let offset = ckks_offset_unary(dst, src);
-        if offset == 0 {
-            // Use the same destination layout as the scratch query. This copy
-            // is exact, including radix conversion, so its result is already
-            // canonical at the source precision stamped afterward.
-            self.glwe_copy(dst, src, scratch);
-            dst.set_meta(src.meta());
-            dst.set_log_budget(src.log_budget());
-        } else {
-            crate::ckks_shift_stamp_unary(self, "copy", dst, src, 0, 0, 0, scratch)?;
-        }
-        Ok(())
+        crate::ckks_copy_stamp_unary(self, "copy", dst, src, scratch)
     }
 }
 
