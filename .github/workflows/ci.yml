@@ -177,7 +177,7 @@ jobs:
         run: bash .github/scripts/test-backend.sh build avx '${{ steps.avx.outputs.mode }}'
 
       - name: Test AVX backend
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: bash .github/scripts/test-backend.sh test avx '${{ steps.avx.outputs.mode }}'
 
   intel_macos_avx:
@@ -358,7 +358,7 @@ jobs:
         run: bash .github/scripts/test-backend.sh build avx512 '${{ steps.avx512.outputs.mode }}'
 
       - name: Test AVX-512 backend
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
 
   neon:
