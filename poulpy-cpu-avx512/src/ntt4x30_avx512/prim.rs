@@ -26,6 +26,9 @@
 //! AVX-512F lazy conditional subtraction (no division), pair-packing two
 //! coefficients per `__m512i`. Domain conversion also uses AVX-512F kernels.
 
+use super::super::Ring;
+use super::NTT4x30Avx512;
+
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_andnot_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_set1_epi64x,
     _mm256_storeu_si256, _mm256_sub_epi64, _mm256_xor_si256, _mm512_add_epi64, _mm512_broadcast_i64x4, _mm512_cmpgt_epi64_mask,
@@ -51,8 +54,6 @@ use super::mat_vec_avx512::{
     vec_mat1col_product_bbc_avx512, vec_mat1col_product_x2_bbc_avx512, vec_mat2cols_product_x2_bbc_avx512,
 };
 use super::ntt::{intt_avx512, ntt_avx512};
-
-use super::NTT4x30Avx512;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 256-bit lazy arithmetic helpers (used by the odd-coefficient tail)
@@ -297,17 +298,17 @@ unsafe fn ntt_negate_assign_avx512(n: usize, res: &mut [u64]) {
 // NTT execution — AVX-512F butterfly
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Avx512 {
+impl NttDFTExecute<NttTable<Primes30, Ring>> for NTT4x30Avx512 {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Ring>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
         unsafe { ntt_avx512::<Primes30>(table, data) }
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Avx512 {
+impl NttDFTExecute<NttTableInv<Primes30, Ring>> for NTT4x30Avx512 {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Ring>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
         unsafe { intt_avx512::<Primes30>(table, data) }
     }
@@ -453,7 +454,7 @@ impl NttMulBbc1ColX2 for NTT4x30Avx512 {
     #[inline(always)]
     fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { crate::ntt4x30_avx512::mat_vec_avx512::vec_mat_tile4_bbc_canonical_avx512(meta, len, res, a, b) }
+        unsafe { super::mat_vec_avx512::vec_mat_tile4_bbc_canonical_avx512(meta, len, res, a, b) }
     }
 }
 
@@ -469,7 +470,7 @@ impl NttExtract1BlkContiguous for NTT4x30Avx512 {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { crate::ntt4x30_avx512::vmp::extract_1blk_from_contiguous_q120b_avx512(n, row_max, blk, dst, src) }
+        unsafe { super::vmp::extract_1blk_from_contiguous_q120b_avx512(n, row_max, blk, dst, src) }
     }
 }
 

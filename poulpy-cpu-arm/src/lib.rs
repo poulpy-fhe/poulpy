@@ -186,6 +186,49 @@ mod layout_compat;
 
 pub mod capabilities;
 
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64neon, crate::FFT64CINeon, crate::FFT64Neon);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30neon, crate::NTT4x30CINeon, crate::NTT4x30Neon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64neonrayon, crate::FFT64CINeonRayon, crate::FFT64NeonRayon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30neonrayon, crate::NTT4x30CINeonRayon, crate::NTT4x30NeonRayon);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64neon, crate::FFT64CINeon, crate::FFT64Neon);
+
+#[cfg(all(test, feature = "enable-neon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30neon, crate::NTT4x30CINeon, crate::NTT4x30Neon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64neonrayon, crate::FFT64CINeonRayon, crate::FFT64NeonRayon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30neonrayon,
+    crate::NTT4x30CINeonRayon,
+    crate::NTT4x30NeonRayon
+);
+
+#[cfg(feature = "enable-neon")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-neon")]
+mod ci;
+#[cfg(feature = "enable-neon")]
+pub use ci::FFT64Neon as FFT64CINeon;
+#[cfg(feature = "enable-neon")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::FFT64NeonRayon as FFT64CINeonRayon;
+#[cfg(feature = "enable-neon")]
+pub use ci::NTT4x30Neon as NTT4x30CINeon;
+#[cfg(feature = "enable-neon")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::NTT4x30NeonRayon as NTT4x30CINeonRayon;
+
 #[cfg(all(feature = "enable-neon", feature = "enable-bin-fhe"))]
 mod bin_fhe_impl;
 

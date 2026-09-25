@@ -26,6 +26,11 @@ pub fn fft64_vec_znx_dft_automorphism_avx<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    if BE::CYCLOTOMIC_ORDER_FACTOR == 4 {
+        fft64_automorphism_ref::<BE>(plan, res, res_col, a, a_col);
+        return;
+    }
+
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n() >> 1);

@@ -5,6 +5,8 @@
 //! by the other AVX-512 backends). These operate on plain `&[i64]` slices and are
 //! backend-independent.
 
+use super::NTT4x30Avx512;
+
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
@@ -22,8 +24,6 @@ use crate::znx_avx512::{
     znx_normalize_middle_step_avx512, znx_normalize_middle_step_carry_only_avx512, znx_sub_assign_avx512, znx_sub_avx512,
     znx_sub_negate_assign_avx512, znx_switch_ring_avx512,
 };
-
-use super::NTT4x30Avx512;
 
 impl ZnxAdd for NTT4x30Avx512 {
     #[inline(always)]

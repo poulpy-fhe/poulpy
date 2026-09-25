@@ -3,6 +3,9 @@
 // `PrimeSet` is needed in scope on x86 (the scalar fallback paths use
 // `Primes30::Q[prime]`); on aarch64 the NEON kernels never reference it,
 // hence the allow(unused_imports).
+use super::super::Ring;
+use super::NTT4x30Neon;
+
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::ntt4x30::arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref};
 #[allow(unused_imports)]
@@ -17,8 +20,6 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
     primes::{PrimeSet, Primes30},
 };
-
-use super::NTT4x30Neon;
 
 // On aarch64, the q120b lazy-modular kernels and the i64↔q120b↔i128↔q120c
 // conversion kernels are NEON; on other targets we fall back to the scalar
@@ -43,9 +44,9 @@ use crate::neon::{
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::ntt4x30::{arithmetic::add_bbb_ref, types::Q_SHIFTED};
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
+impl NttDFTExecute<NttTable<Primes30, Ring>> for NTT4x30Neon {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Ring>, data: &mut [u64]) {
         #[cfg(target_arch = "aarch64")]
         {
             ntt_neon::<Primes30>(table, data);
@@ -57,9 +58,9 @@ impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
+impl NttDFTExecute<NttTableInv<Primes30, Ring>> for NTT4x30Neon {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Ring>, data: &mut [u64]) {
         #[cfg(target_arch = "aarch64")]
         {
             intt_neon::<Primes30>(table, data);

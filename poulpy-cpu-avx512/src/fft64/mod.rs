@@ -1,10 +1,10 @@
-mod automorphism;
-mod convolution;
+pub(crate) mod automorphism;
+pub(crate) mod convolution;
 mod module;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
-mod reim;
-mod reim4;
+pub(crate) mod reim;
+pub(crate) mod reim4;
 
 /// AVX-512F-accelerated CPU backend for Poulpy HAL.
 ///

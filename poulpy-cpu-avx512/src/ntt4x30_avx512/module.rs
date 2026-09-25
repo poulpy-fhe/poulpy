@@ -11,6 +11,9 @@
 //! - The [`NttHandleProvider`] impl for [`NTT4x30Avx512Handle`], wiring the handle into
 //!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
 
+use super::super::Ring;
+use super::NTT4x30Avx512;
+
 use std::ptr::NonNull;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
@@ -23,8 +26,6 @@ use poulpy_hal::{
     layouts::{Backend, CrtWord},
 };
 
-use super::NTT4x30Avx512;
-
 /// Opaque handle for the [`NTT4x30Avx512`](super::NTT4x30Avx512) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
@@ -35,7 +36,7 @@ use super::NTT4x30Avx512;
 /// `Module<NTT4x30Avx512>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT4x30Avx512Handle {
-    ring_plans: NttPlanSet<Primes30>,
+    ring_plans: NttPlanSet<Primes30, Ring>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
@@ -59,7 +60,6 @@ impl Backend for NTT4x30Avx512 {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
@@ -68,6 +68,8 @@ impl Backend for NTT4x30Avx512 {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30Avx512Handle;
     type Location = poulpy_hal::layouts::Host;
+    type Ring = Ring;
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -193,8 +195,8 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised in [`NTT4x30Avx512::new_impl`].
 unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
-    type Ring = poulpy_hal::layouts::Standard;
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+    type Ring = Ring;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Ring> {
         self.ring_plans.for_ring(n)
     }
 

@@ -22,7 +22,7 @@
 
 pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
-mod execution;
+pub(crate) mod execution;
 pub(crate) mod kernels;
 pub(crate) mod mat_vec_ifma;
 pub(crate) mod module;

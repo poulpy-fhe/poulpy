@@ -1,3 +1,5 @@
+use super::NTT4x30Avx512;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, _mm256_loadu_si256, _mm256_storeu_si256, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_mul_epu32,
@@ -12,7 +14,6 @@ use poulpy_hal::{
 };
 
 use super::{
-    NTT4x30Avx512,
     arithmetic_avx512::{BARRETT_MU, Q_VEC, barrett_reduce_512, bcast_quad},
     vec_znx_dft::{pack_limb_q120, packed_limb, packed_limb_mut},
 };

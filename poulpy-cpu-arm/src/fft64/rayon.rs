@@ -1,10 +1,11 @@
 //! Rayon-scheduled wrapper for the NEON FFT64 backend.
 
+use super::FFT64Neon;
+#[cfg(feature = "enable-rayon")]
+use super::FFT64NeonRayon;
+
 use poulpy_hal::layouts::{DataView, DataViewMut, Module, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef};
 use poulpy_hal::oep::HalVecZnxDftImpl;
-
-use super::FFT64NeonRayon;
-use crate::FFT64Neon;
 
 fn dft_automorphism(
     module: &Module<FFT64NeonRayon>,

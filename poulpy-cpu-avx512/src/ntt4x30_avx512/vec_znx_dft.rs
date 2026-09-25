@@ -1,3 +1,5 @@
+use super::NTT4x30Avx512;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m512i, _mm512_add_epi32, _mm512_cmp_epu32_mask, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
@@ -14,10 +16,7 @@ use poulpy_hal::layouts::{
     ZnxViewMut, check_degree,
 };
 
-use super::{
-    NTT4x30Avx512,
-    arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512},
-};
+use super::arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512};
 
 const Q32X16: [u32; 16] = [
     Primes30::Q[0],

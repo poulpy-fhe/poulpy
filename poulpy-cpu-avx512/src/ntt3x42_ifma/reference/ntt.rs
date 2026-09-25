@@ -19,7 +19,10 @@ use super::super::tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, h
 /// without a pre-reduction; sum path keeps one `cond_sub(·, 4q)`.  A final
 /// `cond_sub(·, 2q)` pass renormalises the output to `[0, 2q)` so downstream
 /// consumers see the usual range.
-pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, data: &mut [u64]) {
+pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(
+    table: &Ntt3x42IfmaTable<P, impl poulpy_cpu_ref::ring::CpuRing>,
+    data: &mut [u64],
+) {
     let n = table.n;
     if n <= 1 {
         return;
@@ -125,7 +128,10 @@ pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, dat
 /// Butterfly values live in `[0, 4q)`.  The final pointwise Harvey pass
 /// reduces to `[0, 2q)` automatically, so no explicit renormalisation is
 /// needed.
-pub fn intt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>, data: &mut [u64]) {
+pub fn intt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(
+    table: &Ntt3x42IfmaTableInv<P, impl poulpy_cpu_ref::ring::CpuRing>,
+    data: &mut [u64],
+) {
     let n = table.n;
     if n <= 1 {
         return;

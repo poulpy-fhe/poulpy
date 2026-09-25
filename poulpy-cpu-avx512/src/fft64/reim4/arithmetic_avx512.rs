@@ -1084,12 +1084,48 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     }
 }
 
+#[target_feature(enable = "avx512f")]
+#[inline]
+pub(crate) unsafe fn reim4_real_convolution_1coeff_avx512(
+    k: usize,
+    dst: &mut [f64; 8],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+) {
+    use core::arch::x86_64::{_mm512_add_pd, _mm512_loadu_pd, _mm512_mul_pd, _mm512_setzero_pd, _mm512_storeu_pd};
+    assert!(a_size <= a.len() / 8 && b_size <= b.len() / 8);
+    if a_size == 0 || b_size == 0 || k >= a_size + b_size - 1 {
+        dst.fill(0.0);
+        return;
+    }
+    unsafe {
+        let mut acc = [_mm512_setzero_pd(); 1];
+        for j in k.saturating_sub(a_size - 1)..(k + 1).min(b_size) {
+            for (lane, acc) in acc.iter_mut().enumerate() {
+                let av = _mm512_loadu_pd(a.as_ptr().add(8 * (k - j) + 8 * lane));
+                let bv = _mm512_loadu_pd(b.as_ptr().add(8 * j + 8 * lane));
+                *acc = _mm512_add_pd(*acc, _mm512_mul_pd(av, bv));
+            }
+        }
+        for (lane, value) in acc.into_iter().enumerate() {
+            _mm512_storeu_pd(dst.as_mut_ptr().add(8 * lane), value);
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
+    #[test]
+    fn conjugate_invariant_real_arithmetic_parity() {
+        poulpy_cpu_ref::test_suite::conjugate_invariant::test_conjugate_invariant_fft_arithmetic::<crate::FFT64Avx512>();
+    }
+
     use poulpy_cpu_ref::reference::fft64::reim4::{
         reim4_convolution_1coeff_ref, reim4_convolution_2coeffs_ref, reim4_extract_1blk_from_reim_contiguous_ref,
         reim4_save_1blk_to_reim_contiguous_ref, reim4_vec_mat1col_product_ref, reim4_vec_mat2cols_product_ref,

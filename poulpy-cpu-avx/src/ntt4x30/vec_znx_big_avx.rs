@@ -64,7 +64,7 @@ unsafe fn nfc_floor_chunk<const CARRY_IN: bool>(
 /// Requires AVX2. Slice lengths and radix parameters are checked before access.
 #[inline]
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND: bool>(
+pub(crate) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND: bool>(
     base2k: usize,
     lsh: usize,
     a: &[i128],
@@ -102,7 +102,7 @@ pub(super) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND:
 /// Requires AVX2. Slice lengths and radix parameters are checked before access.
 #[inline]
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: bool>(
+pub(crate) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: bool>(
     base2k: usize,
     lsh: usize,
     padding: usize,
@@ -148,7 +148,7 @@ pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: b
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[inline(always)]
-pub(super) fn nfc_middle_step_scalar(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+pub(crate) fn nfc_middle_step_scalar(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
             let digit = get_digit_i128(base2k, ai);
@@ -172,7 +172,7 @@ pub(super) fn nfc_middle_step_scalar(base2k: usize, lsh: usize, res: &mut [i64],
 }
 
 #[inline(always)]
-pub(super) fn nfc_middle_step_assign_scalar(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+pub(crate) fn nfc_middle_step_assign_scalar(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
@@ -198,7 +198,7 @@ pub(super) fn nfc_middle_step_assign_scalar(base2k: usize, lsh: usize, res: &mut
 }
 
 #[inline(always)]
-pub(super) fn nfc_final_step_assign_scalar(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+pub(crate) fn nfc_final_step_assign_scalar(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
@@ -398,7 +398,7 @@ unsafe fn nfc_final_chunk(s: &NfcShifts, lo_a: __m256i, lo_c: __m256i) -> __m256
 /// # Safety
 /// Requires AVX2.  `res`, `a`, `carry` must each have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_middle_step_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+pub(crate) unsafe fn nfc_middle_step_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
     if base2k >= 64 {
         nfc_middle_step_scalar(base2k as usize, lsh as usize, res, a, carry);
         return;
@@ -450,7 +450,7 @@ pub(super) unsafe fn nfc_middle_step_avx2(base2k: u32, lsh: u32, n: usize, res: 
 /// # Safety
 /// Requires AVX2.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_middle_step_assign_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
+pub(crate) unsafe fn nfc_middle_step_assign_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
     if base2k >= 64 {
         nfc_middle_step_assign_scalar(base2k as usize, lsh as usize, res, carry);
         return;
@@ -494,7 +494,7 @@ pub(super) unsafe fn nfc_middle_step_assign_avx2(base2k: u32, lsh: u32, n: usize
 /// # Safety
 /// Requires AVX2.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_final_step_assign_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
+pub(crate) unsafe fn nfc_final_step_assign_avx2(base2k: u32, lsh: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
     unsafe {
         let s = NfcShifts::new(base2k, lsh);
         let c_ptr = carry.as_ptr() as *const __m256i;
@@ -706,7 +706,7 @@ unsafe fn neg4_i128(lo_a: __m256i, hi_a: __m256i) -> (__m256i, __m256i) {
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_add_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
+pub(crate) unsafe fn vi128_add_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let b_ptr = b.as_ptr() as *const __m256i;
@@ -732,7 +732,7 @@ pub(super) unsafe fn vi128_add_avx2(n: usize, res: &mut [i128], a: &[i128], b: &
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_add_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
+pub(crate) unsafe fn vi128_add_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -756,7 +756,7 @@ pub(super) unsafe fn vi128_add_assign_avx2(n: usize, res: &mut [i128], a: &[i128
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_add_small_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
+pub(crate) unsafe fn vi128_add_small_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let b_ptr = b.as_ptr() as *const __m256i;
@@ -782,7 +782,7 @@ pub(super) unsafe fn vi128_add_small_avx2(n: usize, res: &mut [i128], a: &[i128]
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_add_small_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
+pub(crate) unsafe fn vi128_add_small_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -806,7 +806,7 @@ pub(super) unsafe fn vi128_add_small_assign_avx2(n: usize, res: &mut [i128], a: 
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
+pub(crate) unsafe fn vi128_sub_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let b_ptr = b.as_ptr() as *const __m256i;
@@ -832,7 +832,7 @@ pub(super) unsafe fn vi128_sub_avx2(n: usize, res: &mut [i128], a: &[i128], b: &
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
+pub(crate) unsafe fn vi128_sub_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -856,7 +856,7 @@ pub(super) unsafe fn vi128_sub_assign_avx2(n: usize, res: &mut [i128], a: &[i128
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_negate_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
+pub(crate) unsafe fn vi128_sub_negate_assign_avx2(n: usize, res: &mut [i128], a: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -880,7 +880,7 @@ pub(super) unsafe fn vi128_sub_negate_assign_avx2(n: usize, res: &mut [i128], a:
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_small_a_avx2(n: usize, res: &mut [i128], a: &[i64], b: &[i128]) {
+pub(crate) unsafe fn vi128_sub_small_a_avx2(n: usize, res: &mut [i128], a: &[i64], b: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let b_ptr = b.as_ptr() as *const __m256i;
@@ -906,7 +906,7 @@ pub(super) unsafe fn vi128_sub_small_a_avx2(n: usize, res: &mut [i128], a: &[i64
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_small_b_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
+pub(crate) unsafe fn vi128_sub_small_b_avx2(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let b_ptr = b.as_ptr() as *const __m256i;
@@ -932,7 +932,7 @@ pub(super) unsafe fn vi128_sub_small_b_avx2(n: usize, res: &mut [i128], a: &[i12
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_small_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
+pub(crate) unsafe fn vi128_sub_small_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -956,7 +956,7 @@ pub(super) unsafe fn vi128_sub_small_assign_avx2(n: usize, res: &mut [i128], a: 
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_sub_small_negate_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
+pub(crate) unsafe fn vi128_sub_small_negate_assign_avx2(n: usize, res: &mut [i128], a: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -980,7 +980,7 @@ pub(super) unsafe fn vi128_sub_small_negate_assign_avx2(n: usize, res: &mut [i12
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_negate_avx2(n: usize, res: &mut [i128], a: &[i128]) {
+pub(crate) unsafe fn vi128_negate_avx2(n: usize, res: &mut [i128], a: &[i128]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -1003,7 +1003,7 @@ pub(super) unsafe fn vi128_negate_avx2(n: usize, res: &mut [i128], a: &[i128]) {
 /// # Safety
 /// Requires AVX2.  Slice must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_negate_assign_avx2(n: usize, res: &mut [i128]) {
+pub(crate) unsafe fn vi128_negate_assign_avx2(n: usize, res: &mut [i128]) {
     unsafe {
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
         let chunks = n / 4;
@@ -1022,7 +1022,7 @@ pub(super) unsafe fn vi128_negate_assign_avx2(n: usize, res: &mut [i128]) {
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_from_small_avx2(n: usize, res: &mut [i128], a: &[i64]) {
+pub(crate) unsafe fn vi128_from_small_avx2(n: usize, res: &mut [i128], a: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -1043,7 +1043,7 @@ pub(super) unsafe fn vi128_from_small_avx2(n: usize, res: &mut [i128], a: &[i64]
 /// # Safety
 /// Requires AVX2.  All slices must have at least `n` elements.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn vi128_neg_from_small_avx2(n: usize, res: &mut [i128], a: &[i64]) {
+pub(crate) unsafe fn vi128_neg_from_small_avx2(n: usize, res: &mut [i128], a: &[i64]) {
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;
         let r_ptr = res.as_mut_ptr() as *mut __m256i;
@@ -1066,7 +1066,7 @@ pub(super) unsafe fn vi128_neg_from_small_avx2(n: usize, res: &mut [i128], a: &[
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FINALIZE: bool>(
+pub(crate) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FINALIZE: bool>(
     base2k: usize,
     lsh: usize,
     res_base2k: usize,

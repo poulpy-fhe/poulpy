@@ -4,6 +4,8 @@
 //! delegate to the AVX2-accelerated functions in `crate::znx_avx` (same kernels used
 //! by `FFT64Avx`). These operate on plain `&[i64]` slices and are backend-independent.
 
+use super::NTT4x30Avx;
+
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
@@ -20,8 +22,6 @@ use crate::znx_avx::{
     znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx, znx_normalize_middle_step_carry_only_avx,
     znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
 };
-
-use super::NTT4x30Avx;
 
 impl ZnxAdd for NTT4x30Avx {
     #[inline(always)]

@@ -1,17 +1,18 @@
 //! NEON-accelerated FFT64 CPU backend.
 
+mod encoding;
 mod module;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
-mod reim;
+pub(crate) mod reim;
 mod znx;
 
 #[cfg(test)]
 mod tests;
 
+pub use encoding::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 #[allow(unused_imports)]
 pub use poulpy_cpu_ref::reference::fft64::module::FFTModuleHandle;
-pub use reim::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 
 /// NEON-accelerated CPU backend for Poulpy HAL.
 /// `DftWord = f64`, `BigWord = i64`.

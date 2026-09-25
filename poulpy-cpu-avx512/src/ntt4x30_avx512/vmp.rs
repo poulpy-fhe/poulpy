@@ -1,8 +1,10 @@
-//! Vector-matrix product AVX-512F kernels for [`NTT4x30Avx512`](crate::NTT4x30Avx512).
+//! Vector-matrix product AVX-512F kernels for [`NTT4x30Avx512`](super::NTT4x30Avx512).
 //!
 //! Uses a backend-local prime-major prepared-matrix layout so the hot VMP
 //! path streams one prime plane at a time and reuses extracted input rows
 //! across the output-column loop.
+
+use super::NTT4x30Avx512;
 
 use std::mem::size_of;
 
@@ -27,7 +29,6 @@ use poulpy_hal::layouts::{
 use super::arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512};
 use super::mat_vec_avx512::{vec_mat1col_product_blkpair_bbc_pm_avx512, vec_mat1col_product_blkpair_bbc_pm_x2_avx512};
 use super::vec_znx_dft::canonicalize_limb_q120;
-use crate::NTT4x30Avx512;
 
 #[derive(Clone, Copy)]
 struct SendU32Ptr(*mut u32);
@@ -514,6 +515,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
 
 #[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code, reason = "CKKS does not run on CI backends yet")]
 pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,

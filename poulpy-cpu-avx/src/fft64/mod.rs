@@ -1,10 +1,10 @@
-mod automorphism;
-mod convolution;
+pub(crate) mod automorphism;
+pub(crate) mod convolution;
 mod module;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
-mod reim;
-mod reim4;
+pub(crate) mod reim;
+pub(crate) mod reim4;
 
 /// AVX2/FMA-accelerated CPU backend for Poulpy HAL.
 ///
@@ -55,7 +55,7 @@ mod reim4;
 /// // Use module for FHE operations...
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx {}
+pub struct FFT64Avx;
 
 /// Rayon-scheduled variant of [`FFT64Avx`].
 #[cfg(feature = "enable-rayon")]

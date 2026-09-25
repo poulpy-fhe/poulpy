@@ -1,9 +1,10 @@
 //! Rayon-scheduled wrapper for the AVX2 FFT64 backend.
 
-use poulpy_hal::layouts::{Module, VecZnxDftBackendMut, VecZnxDftBackendRef};
-
+use super::FFT64Avx;
+#[cfg(feature = "enable-rayon")]
 use super::FFT64AvxRayon;
-use crate::FFT64Avx;
+
+use poulpy_hal::layouts::{Module, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 fn dft_automorphism(
     _module: &Module<FFT64AvxRayon>,

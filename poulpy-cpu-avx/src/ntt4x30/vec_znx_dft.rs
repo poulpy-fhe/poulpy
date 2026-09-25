@@ -1,3 +1,5 @@
+use super::NTT4x30Avx;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, _mm256_add_epi32, _mm256_and_si256, _mm256_castsi128_si256, _mm256_castsi256_si128, _mm256_cmpgt_epi32,
@@ -15,10 +17,7 @@ use poulpy_hal::layouts::{
     ZnxViewMut, check_degree,
 };
 
-use super::{
-    NTT4x30Avx,
-    arithmetic_avx::{BARRETT_MU, POW32, Q_VEC, reduce_b_to_canonical},
-};
+use super::arithmetic_avx::{BARRETT_MU, POW32, Q_VEC, reduce_b_to_canonical};
 
 const Q32X8: [u32; 8] = [
     Primes30::Q[0],

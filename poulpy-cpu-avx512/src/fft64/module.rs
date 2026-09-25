@@ -1,3 +1,6 @@
+use super::super::Ring;
+use super::FFT64Avx512;
+
 use std::ptr::NonNull;
 
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
@@ -19,7 +22,6 @@ use poulpy_cpu_ref::reference::{
 use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
 
 use crate::{
-    FFT64Avx512,
     fft64::{
         convolution::{
             i64_convolution_by_const_1coeff_avx512, i64_convolution_by_const_2coeffs_avx512, i64_extract_1blk_contiguous_avx512,
@@ -35,7 +37,7 @@ use crate::{
             reim4_convolution_1coeff_avx512, reim4_convolution_2coeffs_avx512, reim4_convolution_apply_accumulate_avx512,
             reim4_convolution_apply_avx512, reim4_convolution_avx512, reim4_convolution_by_real_const_1coeff_avx512,
             reim4_convolution_by_real_const_2coeffs_avx512, reim4_convolution_pairwise_apply_avx512,
-            reim4_extract_1blk_from_reim_contiguous_avx512, reim4_save_1blk_to_reim_avx512,
+            reim4_extract_1blk_from_reim_contiguous_avx512, reim4_real_convolution_1coeff_avx512, reim4_save_1blk_to_reim_avx512,
             reim4_save_1blk_to_reim_contiguous_avx512, reim4_save_2blk_to_reim_avx512, reim4_vec_mat1col_product_avx512,
             reim4_vec_mat2cols_2ndcol_product_avx512, reim4_vec_mat2cols_product_avx512,
         },
@@ -75,7 +77,7 @@ use crate::{
 /// when the module is dropped, which reconstructs the `Box` from the raw pointer and drops it.
 #[repr(C)]
 pub struct FFT64Avx512Handle {
-    ring_plans: FFT64PlanSet<f64>,
+    ring_plans: FFT64PlanSet<f64, Ring>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
@@ -100,7 +102,6 @@ impl Backend for FFT64Avx512 {
     const MIN_DEGREE: usize = 16;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
@@ -109,6 +110,8 @@ impl Backend for FFT64Avx512 {
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64Avx512Handle;
     type Location = poulpy_hal::layouts::Host;
+    type Ring = Ring;
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -226,8 +229,8 @@ unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
 }
 
 unsafe impl FFTHandleProvider<f64> for FFT64Avx512Handle {
-    type Ring = poulpy_hal::layouts::Standard;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+    type Ring = Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Ring> {
         self.ring_plans.for_ring(n)
     }
 }
@@ -643,6 +646,18 @@ impl Reim4BlkMatVec for FFT64Avx512 {
 }
 
 impl Reim4Convolution for FFT64Avx512 {
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        unsafe { reim4_real_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        let (lo, hi) = dst.split_at_mut(8);
+        Self::reim4_real_convolution_1coeff(k, lo.try_into().unwrap(), a, a_size, b, b_size);
+        Self::reim4_real_convolution_1coeff(k + 1, hi.try_into().unwrap(), a, a_size, b, b_size);
+    }
+
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { reim4_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }

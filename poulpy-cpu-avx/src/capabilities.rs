@@ -9,9 +9,13 @@ pub fn capabilities() -> Vec<BackendCapability> {
     let rayon = cfg!(feature = "enable-rayon");
     vec![
         entry("FFT64Avx", "enable-avx", supported, serial),
+        entry("FFT64CIAvx", "enable-avx", supported, serial),
         entry("NTT4x30Avx", "enable-avx", supported, serial),
+        entry("NTT4x30CIAvx", "enable-avx", supported, serial),
         entry("FFT64AvxRayon", "enable-rayon", supported, rayon),
+        entry("FFT64CIAvxRayon", "enable-rayon", supported, rayon),
         entry("NTT4x30AvxRayon", "enable-rayon", supported, rayon),
+        entry("NTT4x30CIAvxRayon", "enable-rayon", supported, rayon),
     ]
 }
 

@@ -1,7 +1,9 @@
-//! Vector-matrix product NEON kernels for [`NTT4x30Neon`](crate::NTT4x30Neon).
+//! Vector-matrix product NEON kernels for [`NTT4x30Neon`](super::NTT4x30Neon).
 //!
 //! Uses a 4-plane prime-major prepared-matrix layout so the apply path streams
 //! one prime plane at a time and reuses extracted input rows across output columns.
+
+use super::NTT4x30Neon;
 
 use std::mem::size_of;
 
@@ -19,8 +21,7 @@ use poulpy_hal::{
     },
 };
 
-use super::super::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
-use crate::NTT4x30Neon;
+use crate::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
 
 #[derive(Clone, Copy)]
 struct SendU64Ptr(*mut u64);
