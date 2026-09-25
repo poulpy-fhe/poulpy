@@ -118,6 +118,11 @@ To implement your own backend (SIMD or accelerator):
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
+CPU backends share their common registrations through `impl_cpu_core_defaults!`
+and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
+transforms, and encapsulated ModUp remain explicit backend choices. Backends
+that override other families can register the individual operation macros.
+
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while
 derived defaults reuse selected backend operations. Validate the resulting

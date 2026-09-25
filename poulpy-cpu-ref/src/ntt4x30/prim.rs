@@ -19,7 +19,7 @@ use crate::reference::ntt4x30::{
     types::Q_SHIFTED,
 };
 
-use crate::NTT4x30Ref;
+use super::NTT4x30Ref;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // NTT execution

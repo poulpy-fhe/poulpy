@@ -30,12 +30,13 @@
 //! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 
+mod encoding;
 mod module;
-mod reim;
+pub(crate) mod reim;
 mod znx;
 
 pub use crate::reference::fft64::module::FFTModuleHandle;
-pub use reim::FFT64ReimTable;
+pub use encoding::FFT64ReimTable;
 
 /// Reference (portable) CPU backend using f64 FFT.
 ///
