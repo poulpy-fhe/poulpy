@@ -403,6 +403,13 @@ by `i` require a standard module. Real linear transformations reject nonzero
 imaginary diagonals. Prepared plaintexts, ciphertexts, and evaluation keys must
 be used with their producing ring and backend.
 
+`CIRingBridge::bootstrap` refreshes one CI ciphertext through an independent standard
+secret at degree `2N`. An S2C-first context without EvalRound+ evaluates EvalMod
+once. `CIRingBridge::bootstrap_pair` explicitly packs two inputs and evaluates both
+nonlinear branches. Ring conversion stays internal; both return CI ciphertexts
+with the input scale and slot metadata. See [bootstrapping](../docs/bootstrapping.md#conjugate-invariant-ciphertexts)
+for key and context setup.
+
 ## Where to look next
 
 - [Implementing CKKS operations](docs/ckks-contracts.md) for reference ownership, overrides, scratch, and parity.

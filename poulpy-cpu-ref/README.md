@@ -159,6 +159,8 @@ implementations of the same ring.
 Transforms, polynomial products, and automorphisms use this basis. Sparse
 operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so rotation and `X^p - 1` operations reject it.
+CKKS provides `CIRingBridge` for conversion through a standard module of
+degree `2n`, with explicit switching keys.
 
 ## Binary-FHE integration
 

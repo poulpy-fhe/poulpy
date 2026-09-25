@@ -119,7 +119,9 @@ mod alloc;
 mod approximation;
 pub mod bootstrapping;
 pub mod bootstrapping_keys;
+mod ci_ring_bridge;
 pub mod ciphertext;
+pub use ci_ring_bridge::CIRingBridge;
 pub mod complex_diagonals;
 pub mod dft;
 mod encoding_buffer;
@@ -133,10 +135,15 @@ pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
+pub use bootstrapping::CIBootstrappingContext;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
 };
+pub use bootstrapping_keys::CIBootstrappingKeySet;
+pub use bootstrapping_keys::CIBootstrappingKeys;
+pub use bootstrapping_keys::CIBootstrappingKeysLayout;
+pub use bootstrapping_keys::CIBootstrappingKeysPrepared;
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };

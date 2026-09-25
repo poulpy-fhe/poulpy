@@ -410,6 +410,27 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         Ok(())
     }
 
+    fn finish_output<F>(
+        &self,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+    ) {
+        let scale_drop = ctx.output_scale_drop(ct_in.log_delta());
+        if !ctx.retain_output_scale {
+            let log_delta = match ctx.pipeline() {
+                BootstrappingPipeline::S2CFirst => ct_out.log_delta() - scale_drop,
+                BootstrappingPipeline::C2SFirst => ct_in.log_delta(),
+            };
+            ct_out.set_log_delta(log_delta);
+        }
+        // S2C-first removes the message-ratio scale with a metadata relabel.
+        ct_out.set_meta(CKKSMeta {
+            log_delta: ct_in.log_delta() + if ctx.retain_output_scale { scale_drop } else { 0 },
+            ..ct_in.meta()
+        });
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_eval_mod_halves<F, K, C, R1, R2>(
         &self,
@@ -554,13 +575,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             }
             Result::Ok(())
         })?;
-        // Keep the C2S guard bits through EvalMod, then relabel at the output width.
-        ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
-        ct_out.set_meta(CKKSMeta {
-            log_sparsity: ct_in.log_sparsity(),
-            log_delta: ct_in.log_delta(),
-            slots: ct_in.slots(),
-        });
+        self.finish_output(ct_out, ct_in, ctx);
         Ok(())
     }
 
@@ -588,11 +603,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
 
         scratch.scope(|scratch_inner| {
             let (mut ct_coeffs, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta());
-            // A `Split` decode matrix is numerically identical to the standard
-            // matrix after the two halves are recombined. Preserve the split
-            // path's `2 * ct_in`, then intentionally use the format-agnostic
-            // evaluator directly.
-            self.ckks_double_into(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
+            self.ckks_copy(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             self.ckks_dft_evaluate_assign(
                 &mut ct_coeffs,
                 ctx.slots_to_coeffs(),
@@ -765,8 +776,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             }
             Result::Ok(())
         })?;
-        ct_out.set_log_delta(ct_in.log_delta());
-        ct_out.set_slots(ct_in.slots());
+        self.finish_output(ct_out, ct_in, ctx);
         Ok(())
     }
 
@@ -809,12 +819,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
             self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
             self.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
-            ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
-            ct_out.set_meta(CKKSMeta {
-                log_sparsity: ct_in.log_sparsity(),
-                log_delta: ct_in.log_delta(),
-                slots: ct_in.slots(),
-            });
+            self.finish_output(ct_out, ct_in, ctx);
             Result::Ok(())
         })
     }

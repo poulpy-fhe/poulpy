@@ -337,6 +337,7 @@ impl BootstrappingPlan {
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
 pub struct BootstrappingContext<BE: Backend, F> {
+    pub(crate) retain_output_scale: bool,
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
@@ -362,6 +363,30 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    pub(crate) fn output_scale_drop(&self, input_log_delta: usize) -> usize {
+        match self.pipeline() {
+            BootstrappingPipeline::C2SFirst => self.eval_mod().plan.f_mod_log_delta.saturating_sub(input_log_delta),
+            BootstrappingPipeline::S2CFirst => self.c2s_guard_bits(),
+        }
+    }
+
+    pub(crate) fn output_consumed_bits(&self, input_log_delta: usize) -> usize {
+        let main = self.coeffs_to_slots().consumed_bits() + self.eval_mod().plan.consumed_bits();
+        let post = self
+            .coeffs_to_slots_bypass()
+            .map_or(main, |bypass| main.max(bypass.consumed_bits()));
+        let s2c = match self.pipeline() {
+            BootstrappingPipeline::C2SFirst => self.slots_to_coeffs().consumed_bits(),
+            BootstrappingPipeline::S2CFirst => 0,
+        };
+        post + s2c
+            + if self.retain_output_scale {
+                0
+            } else {
+                self.output_scale_drop(input_log_delta)
+            }
+    }
+
     pub(crate) fn functional_message_modulus(&self) -> Option<usize> {
         self.functional_message_modulus
     }
@@ -406,11 +431,12 @@ impl<BE: Backend, F> BootstrappingContext<BE, F>
 where
     F: CKKSEncodingScalar,
 {
-    /// Compiles `plan` directly into backend-resident matrices and EvalMod.
+    /// Compiles `plan` into backend-resident matrices and EvalMod.
     ///
     /// Each stage carries its own coefficient metadata (`DFTPlan::meta` /
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
-    /// [`BootstrappingPlan::new`].
+    /// [`BootstrappingPlan::new`]. For S2C-first, the compiled initial transform
+    /// includes the input factor of two from the real/imaginary split.
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,
@@ -425,8 +451,12 @@ where
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch)?;
 
-        let s2c_lt: DFTMatrix<BE, Decode, Split> =
-            module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
+        let mut s2c_plan = plan.slots_to_coeffs.clone();
+        if plan.pipeline == BootstrappingPipeline::S2CFirst {
+            let scaling = 2.0 * s2c_plan.scaling().unwrap_or(1.0);
+            s2c_plan = s2c_plan.with_scaling(scaling)?;
+        }
+        let s2c_lt: DFTMatrix<BE, Decode, Split> = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &s2c_plan, scratch)?;
         let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch)?;
 
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
@@ -441,6 +471,7 @@ where
 
         Ok(Self {
             c2s_guard_bits: plan.c2s_guard_bits,
+            retain_output_scale: false,
             functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,
             coeffs_to_slots_bypass,
@@ -449,6 +480,45 @@ where
             pipeline: plan.pipeline,
             sparse_secret_hamming_weight: plan.sparse_secret_hamming_weight(),
         })
+    }
+}
+
+/// Compiled bootstrap retaining its output scale through the CI return trace.
+pub struct CIBootstrappingContext<BE: Backend, F> {
+    pub(crate) standard: BootstrappingContext<BE, F>,
+}
+
+impl<BE: Backend, F: CKKSEncodingScalar> CIBootstrappingContext<BE, F> {
+    /// Compiles full-slot transforms under the degree-doubled standard module.
+    pub fn compile(
+        module: &Module<BE>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        use crate::CKKSModuleInfos;
+        ensure!(
+            !module.ckks_is_conjugate_invariant(),
+            "CI bootstrap compilation requires a standard module"
+        );
+        let log_slots = module.n().ilog2() as usize - 1;
+        ensure!(
+            plan.coeffs_to_slots().log_slots() == log_slots
+                && plan.slots_to_coeffs().log_slots() == log_slots
+                && plan.coeffs_to_slots_bypass().is_none_or(|dft| dft.log_slots() == log_slots),
+            "CI bootstrapping requires full-slot standard transforms"
+        );
+        ensure!(
+            plan.functional_message_modulus.is_none(),
+            "CI bootstrapping requires an identity recipe"
+        );
+        let mut standard = BootstrappingContext::compile(module, base2k, plan, scratch)?;
+        standard.retain_output_scale = true;
+        Ok(Self { standard })
     }
 }
 

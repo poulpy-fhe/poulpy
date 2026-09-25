@@ -90,6 +90,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Add `CIRingBridge` between a CI backend and a standard backend of twice the degree, with internal ring conversion and dedicated switching keys. `bootstrap` refreshes one real ciphertext; `bootstrap_pair` explicitly packs two. S2C-first without EvalRound+ uses one EvalMod for a single input. Both preserve CI provenance, scale, and slot metadata; prepared keys and transforms retain their backend types.
+- Compile S2C-first normalization into the initial transform. CI bootstrap allocations reserve one trace bit, and return keys cover the retained output scale. Outputs recover the input scale after extraction; paired CI inputs use one inbound key switch.
+- Add CI bootstrapping presets for `2^15` and `2^16` real slots at scale `2^35`, with 19-bit minimum measured precision, covering single and paired evaluation and both ring switching keys.
+
 - **Breaking:** `CKKSCiphertext<D, W, R>` and `CKKSPlaintext<D, W, R>` carry their ring as a type parameter; a module accepts only operands of its backend's `Ring`, so mixing rings is a compile error. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. DFT preparation returns `Result`; host polynomial encoding takes the ring as a type parameter.
 
 - Add conjugate invariant encoding and leveled operations with `N` real slots, compact and sparse plaintexts, cyclic rotations, real polynomial evaluation, and real linear transformations. `CKKSModuleInfos` exposes the module's slot capacity and rotation-key identifiers.
