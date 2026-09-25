@@ -300,9 +300,8 @@ where
 
             self.vec_znx_copy(&mut res.data, 0, &other.data, 0);
         }
-        self.fill_glwe_mask_from_seed(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
-
         res.set_base2k(other.base2k());
+        self.fill_glwe_mask_from_seed(res, other.seed);
     }
 }
 

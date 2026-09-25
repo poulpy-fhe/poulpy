@@ -1,12 +1,14 @@
+use poulpy_core::layouts::LWEInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
-    GLWEKeyswitch, GLWEMaskFill,
+    GLWEKeyswitch,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::GGLWEPreparedFactory,
     },
     test_suite::keys::fill_by_digit,
 };
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -36,7 +38,7 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>,
+        + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe = GLWELayout {
@@ -67,7 +69,7 @@ where
     let mut ct_out = module.glwe_alloc_from_infos(glwe_out);
     let mut key_coeffs = module.gglwe_alloc_from_infos(&key_infos);
 
-    module.fill_glwe_mask_from_source(cp.base2k as usize, &mut ct_in, 0, cp.rank as usize + 1, &mut source);
+    module.vec_znx_fill_uniform_source_all(cp.base2k as usize, ct_in.k().as_usize(), ct_in.data_mut(), &mut source);
     fill_by_digit(&module, &mut key_coeffs, 1, &mut source);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(

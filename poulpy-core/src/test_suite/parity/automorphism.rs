@@ -1,5 +1,6 @@
 //! Automorphism parity: the key-switch digit loop composed with a Galois map.
 
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned},
@@ -9,7 +10,7 @@ use poulpy_hal::{
 
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
-    GLWEAutomorphism, GLWEMaskFill,
+    GLWEAutomorphism,
     api::TransferInto,
     layouts::{
         BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
@@ -30,7 +31,7 @@ fn ref_key<BR>(
 ) -> BackendGLWEAutomorphismKey<BR>
 where
     BR: ParityBackend,
-    Module<BR>: GLWEMaskFill<BR>,
+    Module<BR>: VecZnxFillUniformSourceAll<BR>,
 {
     let mut key = module_ref.glwe_automorphism_key_alloc_from_infos(infos);
     fill_by_digit(module_ref, &mut key, 1, source);
@@ -48,7 +49,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEAutomorphism<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BR>: GLWEAutomorphism<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
     Module<BT>: GLWEAutomorphism<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,

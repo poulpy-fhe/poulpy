@@ -1,3 +1,4 @@
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing,
@@ -12,8 +13,8 @@ use std::f64::consts::SQRT_2;
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub,
-    GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
+    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
+    GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
         Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
@@ -587,7 +588,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -602,7 +603,7 @@ where
             rank: rank.into(),
         };
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        module.fill_glwe_mask_from_source(base2k, &mut a, 0, rank + 1, &mut source);
+        module.vec_znx_fill_uniform_source_all(base2k, a.k().as_usize(), a.data_mut(), &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
             let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
@@ -610,7 +611,7 @@ where
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
-            module.fill_glwe_mask_from_source(base2k, &mut pt_compact, 0, 1, &mut source);
+            module.vec_znx_fill_uniform_source_all(base2k, pt_compact.k().as_usize(), pt_compact.data_mut(), &mut source);
             let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),

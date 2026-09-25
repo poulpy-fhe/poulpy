@@ -26,14 +26,8 @@ use crate::{
 ///
 /// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEMaskFillReference<BE: Backend> {
-    fn fill_glwe_mask_from_source_reference<R>(
-        &self,
-        base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        rank: usize,
-        source_xa: &mut Source,
-    ) where
+    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+    where
         R: GLWEToBackendMut<BE>;
 }
 
@@ -41,24 +35,13 @@ impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_glwe_mask_from_source_reference<R>(
-        &self,
-        base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        rank: usize,
-        source_xa: &mut Source,
-    ) where
+    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+    where
         R: GLWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
-        assert!(
-            res_col + rank <= res.data.cols(),
-            "fill_glwe_mask_from_source: res_col ({res_col}) + rank ({rank}) > GLWE data cols ({})",
-            res.data.cols()
-        );
-        let k = res.k().as_usize();
-        for col in res_col..res_col + rank {
+        let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
+        for col in 1..res.data.cols() {
             self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
         }
     }
@@ -160,11 +143,9 @@ where
             self.glwe_encrypt_sk_tmp_bytes_reference(res)
         );
 
-        let base2k = res.base2k().into();
-        let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
         }
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
@@ -203,11 +184,9 @@ where
             self.glwe_encrypt_sk_tmp_bytes_reference(res)
         );
 
-        let base2k = res.base2k().into();
-        let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
         }
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
     }

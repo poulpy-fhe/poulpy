@@ -4,16 +4,14 @@ use super::{
     keys::{fixture_gglwe, key_layout},
 };
 use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, oep::CKKSEncapsulatedModUpImpl, test_suite::CKKSTestParams};
-use poulpy_core::{
-    GLWEMaskFill,
-    layouts::{GGLWEPreparedFactory, GLWELayout, LWEInfos, prepared::GGLWEPreparedToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEPreparedFactory, GLWELayout, LWEInfos, prepared::GGLWEPreparedToBackendRef};
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::layouts::{Backend, Module};
 
 fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GGLWEPreparedFactory<B> + VecZnxFillUniformSourceAll<B>,
 {
     let b = params.base2k;
     let small = 3 * b + 1;
@@ -102,8 +100,8 @@ pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, refere
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GGLWEPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
+    Module<BT>: GGLWEPreparedFactory<BT> + VecZnxFillUniformSourceAll<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(run(params, reference), run(params, tested), "encapsulated ModUp differs");

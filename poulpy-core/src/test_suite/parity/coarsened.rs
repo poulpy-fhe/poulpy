@@ -13,6 +13,7 @@
 
 use super::poisoned_scratch;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -23,7 +24,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAutomorphism, GLWEMaskFill, GLWETensoring, GLWETrace,
+    GLWEAutomorphism, GLWETensoring, GLWETrace,
     error::{CoreError, Result},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout,
@@ -97,7 +98,7 @@ fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>
 /// in for, for the plain, `add_assign` and `assign` forms.
 pub fn test_glwe_automorphism_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEAutomorphism<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -184,7 +185,7 @@ where
             rank: Rank(rank as u32),
         };
         let mut ct_in = module.glwe_alloc_from_infos(&ct_infos);
-        module.fill_glwe_mask_from_source(base2k, &mut ct_in, 0, rank + 1, &mut source);
+        module.vec_znx_fill_uniform_source_all(base2k, ct_in.k().as_usize(), ct_in.data_mut(), &mut source);
 
         let mut have = module.glwe_alloc_from_infos(&ct_infos);
         let mut want = module.glwe_alloc_from_infos(&ct_infos);
@@ -250,7 +251,7 @@ where
 /// maximum over the keys the loop actually visits.
 pub fn test_glwe_trace_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETrace<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWETrace<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -319,7 +320,7 @@ where
         rank: Rank(rank as u32),
     };
     let mut have = module.glwe_alloc_from_infos(&ct_infos);
-    module.fill_glwe_mask_from_source(base2k, &mut have, 0, rank + 1, &mut source);
+    module.vec_znx_fill_uniform_source_all(base2k, have.k().as_usize(), have.data_mut(), &mut source);
     let mut want = module.glwe_alloc_from_infos(&ct_infos);
     want.data.raw_mut().copy_from_slice(have.data.raw());
 
@@ -333,7 +334,7 @@ where
 /// tensor key natively stored at that `dsize`.
 pub fn test_glwe_tensor_relinearize_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -384,8 +385,7 @@ where
             rank: Rank(rank as u32),
         };
         let mut a = module.glwe_tensor_alloc_from_infos(&ct_infos);
-        let cols: usize = a.data.cols();
-        module.fill_glwe_mask_from_source(base2k, &mut a, 0, cols, &mut source);
+        module.vec_znx_fill_uniform_source_all(base2k, a.k().as_usize(), a.data_mut(), &mut source);
 
         let mut have = module.glwe_alloc_from_infos(&ct_infos);
         let mut want = module.glwe_alloc_from_infos(&ct_infos);

@@ -10,13 +10,14 @@ use poulpy_ckks::api::{
     CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
-    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, LWEFillMask,
     layouts::{
         GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWETensorKeyPreparedFactory, LWESecretSampling,
     },
 };
 use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, Module, ScratchOwned},
@@ -271,7 +272,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSourceAll<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
@@ -389,7 +390,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSourceAll<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>
@@ -456,7 +457,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + VecZnxFillUniformSourceAll<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>

@@ -129,7 +129,7 @@ where
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_seed(base2k, &mut full_ct, 1, rank, seed);
+                    self.fill_glwe_mask_from_seed(&mut full_ct, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,

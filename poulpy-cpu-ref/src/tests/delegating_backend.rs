@@ -1,5 +1,4 @@
 use poulpy_core::{
-    GLWEMaskFill,
     api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
@@ -11,6 +10,7 @@ use poulpy_core::{
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{
@@ -365,7 +365,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
     for row in 0..layout.dnum.as_usize() {
         for col in 0..layout.rank.as_usize() + 1 {
             let mut entry = GGSWAtViewMut::<FFT64Ref>::at_view_mut(&mut input, row, col);
-            reference.fill_glwe_mask_from_source(17, &mut entry, 0, layout.rank.as_usize() + 1, &mut source);
+            reference.vec_znx_fill_uniform_source_all(17, entry.k().as_usize(), &mut entry.data_mut(), &mut source);
         }
     }
     let mut actual = module.ggsw_alloc_from_infos(&layout);
@@ -399,8 +399,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let module = Module::<DelegatingFFT64Ref>::new(256);
     let reference = Module::<FFT64Ref>::new(256);
     let mut input = sample_glwe();
-    let cols = input.rank().as_usize() + 1;
-    reference.fill_glwe_mask_from_source(17, &mut input, 0, cols, &mut Source::new([61; 32]));
+    reference.vec_znx_fill_uniform_source_all(17, input.k().as_usize(), input.data_mut(), &mut Source::new([61; 32]));
     let saved_input = input.clone();
     let key_layout = GLWEAutomorphismKeyLayout {
         n: input.n(),

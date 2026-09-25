@@ -1,5 +1,6 @@
 use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
     layouts::{Module, ReaderFrom, ScratchOwned, ZnxView},
@@ -12,9 +13,9 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE,
-    GLWEMaskFill, GLWENoise, GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE,
-    LWEMatrixDecrypt, LWEToGLWESwitchingKeyEncryptSk,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
+    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
+    LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
         GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
@@ -96,7 +97,7 @@ where
         + GLWENormalize<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWENoise<BE>
-        + GLWEMaskFill<BE>,
+        + VecZnxFillUniformSourceAll<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
@@ -158,7 +159,7 @@ where
             let mut data: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();
             ct_in.data().decode_vec_float(ct_in.base2k().into(), 0, &mut data);
 
-            module.fill_glwe_mask_from_source(bases[1], &mut ct_out, 0, rank + 1, &mut source_xa);
+            module.vec_znx_fill_uniform_source_all(bases[1], ct_out.k().as_usize(), ct_out.data_mut(), &mut source_xa);
             module.glwe_normalize(&mut ct_out, &ct_in, &mut scratch.borrow());
 
             let mut data_conv: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();

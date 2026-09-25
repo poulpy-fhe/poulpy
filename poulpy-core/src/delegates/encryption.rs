@@ -45,17 +45,17 @@ macro_rules! impl_encryption_delegate {
 
 impl_encryption_delegate!(
     GLWEMaskFill<BE>,
-    fn fill_glwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, source_xa: &mut Source)
+    fn fill_glwe_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_mask_from_source(self, base2k, res, res_col, rank, source_xa)
+        BE::fill_glwe_mask_from_source(self, res, source_xa)
     },
-    fn fill_glwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    fn fill_glwe_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_mask_from_seed(self, base2k, res, res_col, rank, seed_xa)
+        BE::fill_glwe_mask_from_seed(self, res, seed_xa)
     }
 );
 

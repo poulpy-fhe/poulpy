@@ -1,13 +1,13 @@
 //! Shared coefficient fixtures; each backend prepares its own representation.
 use super::helpers::with_scratch;
 use poulpy_core::{
-    GLWEMaskFill,
     layouts::{
         GGLWE, GGLWELayout, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, SetGaloisElement,
     },
     test_suite::keys::fill_by_digit,
 };
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use poulpy_hal::{
     layouts::{Backend, Module},
     source::Source,
@@ -32,7 +32,7 @@ pub(crate) fn fixture_gglwe<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> GGLWE<B::OwnedBuf, i64>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<B>: VecZnxFillUniformSourceAll<B>,
 {
     let mut out = module.gglwe_alloc_from_infos(layout);
     fill_by_digit(module, &mut out, 1, &mut Source::new([seed; 32]));
@@ -42,7 +42,7 @@ where
 pub(crate) fn prepared_tensor_key<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
 where
     B: Backend<ZnxWord = i64>,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWETensorKeyPreparedFactory<B> + VecZnxFillUniformSourceAll<B>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.alloc_tensor_key_prepared_from_infos(layout);
@@ -60,7 +60,7 @@ pub(crate) fn prepared_automorphism_key<B>(
 ) -> GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>
 where
     B: Backend<ZnxWord = i64>,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + VecZnxFillUniformSourceAll<B>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(layout);

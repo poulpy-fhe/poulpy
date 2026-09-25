@@ -118,7 +118,7 @@ where
         let dsize: usize = res.dsize().into();
         let base2k: usize = res.base2k().into();
         let rank_in: usize = res.rank_in().into();
-        let rank_out = res.rank_out().as_usize();
+
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         let tmp_pt_k = tmp_pt.k().as_usize();
 
@@ -146,7 +146,7 @@ where
                 );
                 self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
                 let mut res_view = res.at_view_mut(row_i, col_i);
-                self.fill_glwe_mask_from_source(base2k, &mut res_view, 1, rank_out, source_xa);
+                self.fill_glwe_mask_from_source(&mut res_view, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
                     &mut res_view.data,

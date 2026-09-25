@@ -23,27 +23,15 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait EncryptionImpl: Backend {
-    fn fill_glwe_mask_from_source<R>(
-        module: &Module<Self>,
-        base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        rank: usize,
-        source_xa: &mut Source,
-    ) where
+    fn fill_glwe_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
+    where
         R: GLWEToBackendMut<Self>;
 
-    fn fill_glwe_mask_from_seed<R>(
-        module: &Module<Self>,
-        base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        rank: usize,
-        seed_xa: [u8; 32],
-    ) where
+    fn fill_glwe_mask_from_seed<R>(module: &Module<Self>, res: &mut R, seed_xa: [u8; 32])
+    where
         R: GLWEToBackendMut<Self>,
     {
-        super::derived::encryption::fill_glwe_mask_from_seed_derived(module, base2k, res, res_col, rank, seed_xa)
+        super::derived::encryption::fill_glwe_mask_from_seed_derived(module, res, seed_xa)
     }
 
     fn fill_lwe_mask_from_source<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
@@ -669,14 +657,11 @@ macro_rules! impl_encryption_reference_full {
 
     fn fill_glwe_mask_from_source<R>(
         module: &::poulpy_hal::layouts::Module<$be>,
-        base2k: usize,
         res: &mut R,
-        res_col: usize,
-        rank: usize,
         source_xa: &mut ::poulpy_hal::source::Source,
     ) where
         R: $crate::layouts::GLWEToBackendMut<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillReference<$be>>::fill_glwe_mask_from_source_reference::<R>(module, base2k, res, res_col, rank, source_xa)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillReference<$be>>::fill_glwe_mask_from_source_reference::<R>(module, res, source_xa)
         }
 
     fn glwe_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

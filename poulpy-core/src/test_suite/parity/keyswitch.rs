@@ -19,7 +19,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGLWEKeyswitch, GLWEKeyswitch, GLWEMaskFill,
+    GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
@@ -183,7 +183,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
     Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -261,7 +261,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
     Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -323,7 +323,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + VecZnxFillUniformSourceAll<BR>,
     Module<BT>: GGLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,

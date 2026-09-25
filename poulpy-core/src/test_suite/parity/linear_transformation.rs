@@ -1,5 +1,6 @@
 //! Canonical cross-backend parity for every linear-transformation phase.
 
+use poulpy_hal::api::VecZnxFillUniformSourceAll;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -10,7 +11,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWELinearTransformations, GLWEMaskFill,
+    GLWELinearTransformations,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendRef,
@@ -90,7 +91,10 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR> + GLWEMaskFill<BR>,
+    Module<BR>: GLWELinearTransformations<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + CnvPVecAlloc<BR>
+        + VecZnxFillUniformSourceAll<BR>,
     Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
 {
     assert_eq!(r.n(), t.n());
