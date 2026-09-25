@@ -38,10 +38,11 @@ use crate::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
         ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
     oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    source::Source,
 };
 
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
@@ -415,6 +416,26 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
     let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
     vec_znx_mul_xp_minus_one_derived::<BE>(module, p, &mut tmp, 0, &vec_znx_backend_ref_from_mut::<BE>(res), res_col);
     BE::vec_znx_copy(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Every column of `res`, in increasing order, filled by `vec_znx_fill_uniform`
+/// with the next seed of `source`: the draws of the per-column api op, column
+/// by column.
+#[doc(hidden)]
+pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
+    module: &Module<BE>,
+    base2k: usize,
+    k: usize,
+    res: &mut R,
+    source: &mut Source,
+) where
+    BE: HalVecZnxImpl,
+    R: VecZnxToBackendMut<BE>,
+{
+    let mut res = res.to_backend_mut();
+    for col in 0..res.cols() {
+        BE::vec_znx_fill_uniform(module, base2k, k, &mut res, col, source.new_seed());
+    }
 }
 
 /// `res[res_col][res_limb] += a[a_col]`: an `add_assign` on the one-limb

@@ -1,6 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::layouts::{Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef};
+use crate::layouts::{
+    Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+};
+use crate::source::Source;
 
 /// Module construction extension point.
 ///
@@ -366,6 +369,15 @@ pub unsafe trait HalVecZnxImpl: Backend {
         res_col: usize,
         seed: [u8; 32],
     );
+
+    /// Every column of `res` filled in increasing order, each with the next
+    /// seed of `source`. Default body: `vec_znx_fill_uniform_source_all_derived`.
+    fn vec_znx_fill_uniform_source_all<R>(module: &Module<Self>, base2k: usize, k: usize, res: &mut R, source: &mut Source)
+    where
+        R: VecZnxToBackendMut<Self>,
+    {
+        crate::oep::vec_znx_fill_uniform_source_all_derived::<Self, R>(module, base2k, k, res, source)
+    }
 }
 
 /// Big-coefficient `VecZnxBig` extension point.

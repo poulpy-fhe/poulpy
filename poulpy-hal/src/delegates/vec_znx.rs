@@ -1,15 +1,16 @@
 use crate::{
     api::{
         ScalarZnxAutomorphism, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign,
-        VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
-        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
-        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxLsh,
+        VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
+        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd,
+        VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
+        VecZnxZero,
     },
     layouts::{
         Backend, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        VecZnxToBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -438,5 +439,15 @@ impl_vec_znx_delegate!(
         source: &mut Source,
     ) {
         B::vec_znx_fill_uniform(self, base2k, k, res, res_col, source.new_seed());
+    }
+);
+
+impl_vec_znx_delegate!(
+    VecZnxFillUniformSourceAll<B>,
+    fn vec_znx_fill_uniform_source_all<R>(&self, base2k: usize, k: usize, res: &mut R, source: &mut Source)
+    where
+        R: VecZnxToBackendMut<B>,
+    {
+        B::vec_znx_fill_uniform_source_all(self, base2k, k, res, source);
     }
 );

@@ -1,7 +1,7 @@
 use poulpy_hal::{
     AlignedBuf,
-    api::VecZnxFillUniformSource,
-    layouts::{Backend, MatZnxAtBackendMut, Module, vec_znx_backend_mut},
+    api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
+    layouts::{Backend, MatZnxAtBackendMut, Module},
     source::Source,
     test_suite::serialization::test_reader_writer_interface,
 };
@@ -32,7 +32,7 @@ const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 * BASE2K.0 + N_GLWE.0.i
 pub fn test_serialization<BE>(module: &Module<BE>)
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: VecZnxFillUniformSource<BE>,
+    Module<BE>: VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -47,9 +47,7 @@ where
         .chain(lwe.iter_mut().map(|x| &mut x.mask))
         .chain(lwe_c.iter_mut().map(|x| &mut x.data))
     {
-        for col in 0..v.cols() {
-            module.vec_znx_fill_uniform_source(50, v.size() * 50, &mut vec_znx_backend_mut::<BE>(v), col, &mut source);
-        }
+        module.vec_znx_fill_uniform_source_all(50, v.size() * 50, v, &mut source);
     }
 
     let mut gglwe: [GGLWE<AlignedBuf, i64>; 2] =
