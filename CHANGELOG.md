@@ -54,6 +54,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- Compressed GGSW encryption no longer requires the unused host-only noise-analysis contract.
+
 - Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation while retaining their rotation keys.
 
 - **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.

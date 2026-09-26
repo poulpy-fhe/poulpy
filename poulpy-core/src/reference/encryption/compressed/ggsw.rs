@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GGSWNoise, ScratchArenaTakeCore,
+    EncryptionInfos, ScratchArenaTakeCore,
     encryption::{GGSWEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GGSWCompressedSeedMut, GGSWInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, compressed::GGSWCompressedToBackendMut,
@@ -44,7 +44,6 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GGSWEncryptSk<BE>
-        + GGSWNoise<BE>
         + GLWEMaskFill<BE>
         + VecZnxCopy<BE>
         + VecZnxAddScalarAssign<BE>
