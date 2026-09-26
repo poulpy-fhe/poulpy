@@ -8,6 +8,7 @@
 //! The apply kernels read both operands sequentially and tile four output
 //! limbs per pass over a zero-padded `a` window via
 //! [`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`].
+use poulpy_hal::layouts::Module;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
@@ -467,13 +468,14 @@ pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &
 /// staged group flush — the result is congruent to, but not bit-identical with,
 /// a sequence of [`ntt4x30_cnv_apply_dft_add`] calls.
 pub fn ntt4x30_cnv_apply_dft_sum<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     terms: &[crate::layouts::CnvDftAccTerm<'_, BE>],
     tmp: &mut [u8],
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -645,14 +647,15 @@ pub fn ntt4x30_cnv_prepare_left_tmp_bytes(n: usize) -> usize {
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
 pub fn ntt4x30_cnv_prepare_left<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u8],
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
         + NttFromZnx64
-        + NttDFTExecute<NttTable<Primes30>>
+        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
         + NttPackLeft1BlkX2
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -734,12 +737,17 @@ pub fn ntt4x30_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
 /// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
 /// limb order). Limbs of `res` beyond `a.size()` are zeroed.
 pub fn ntt4x30_cnv_prepare_right<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    Module<BE>: NttModuleHandle,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+        + NttFromZnx64
+        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttCFromB
+        + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
@@ -809,15 +817,16 @@ pub fn ntt4x30_cnv_prepare_self_tmp_bytes(n: usize) -> usize {
 
 /// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
 pub fn ntt4x30_cnv_prepare_self<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u8],
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
         + NttFromZnx64
-        + NttDFTExecute<NttTable<Primes30>>
+        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
         + NttCFromB
         + NttPackLeft1BlkX2
         + 'static,

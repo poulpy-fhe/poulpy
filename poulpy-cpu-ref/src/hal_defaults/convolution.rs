@@ -11,7 +11,7 @@ use crate::reference::{
             convolution_prepare_right, convolution_prepare_self,
         },
         module::FFTModuleHandle,
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+        reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     ntt4x30::{
@@ -85,8 +85,12 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
-        Self:
-            Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Self: Backend<DftWord = f64, ZnxWord = i64>
+            + ReimArith
+            + Reim4BlkMatVec
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -97,7 +101,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
+        convolution_prepare_left::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -114,8 +118,12 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
-        Self:
-            Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Self: Backend<DftWord = f64, ZnxWord = i64>
+            + ReimArith
+            + Reim4BlkMatVec
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -126,11 +134,11 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
+        convolution_prepare_right::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
         a_size: usize,
@@ -139,7 +147,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(_module.n()) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(module.n()) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -256,7 +264,7 @@ where
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
         a_size: usize,
@@ -265,7 +273,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(_module.n()) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(module.n()) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -308,8 +316,12 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
-        Self:
-            Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Self: Backend<DftWord = f64, ZnxWord = i64>
+            + ReimArith
+            + Reim4BlkMatVec
+            + ReimFFTExecute<ReimFFTTable<f64>, f64>
+            + ReimFFTExecute<ReimIFFTTable<f64>, f64>
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -321,7 +333,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self::<Self>(module.get_fft_table_for(n), left, right, a, &mut tmp_ref);
+        convolution_prepare_self::<Self>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);
     }
 }
 
@@ -373,7 +385,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttPackLeft1BlkX2
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -402,7 +414,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -653,7 +665,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + NttPackLeft1BlkX2
             + 'static,

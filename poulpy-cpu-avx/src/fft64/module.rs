@@ -224,6 +224,7 @@ unsafe impl FFT64HandleFactory for FFT64AvxHandle {
 }
 
 unsafe impl FFTHandleProvider<f64> for FFT64AvxHandle {
+    type Ring = poulpy_hal::layouts::Standard;
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
         self.ring_plans.for_ring(n)
     }

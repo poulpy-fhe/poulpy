@@ -46,6 +46,7 @@
 //! The reference implementation is intended as a correctness oracle.
 //! For performance, the AVX2 backend in `poulpy-cpu-avx` will implement
 //! the same algorithm using SIMD intrinsics that match the spqlios source.
+use crate::ring::{CpuRing, RingData, Standard};
 
 use std::marker::PhantomData;
 
@@ -96,7 +97,7 @@ pub struct NttReducMeta {
 /// Precomputed twiddle-factor table for the forward Q120 NTT.
 ///
 /// Construct with [`NttTable::new`].
-pub struct NttTable<P: PrimeSetCrt4> {
+pub struct NttTable<P: PrimeSetCrt4, R: CpuRing = Standard> {
     /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
@@ -113,13 +114,14 @@ pub struct NttTable<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
+    pub ci: R::Data<[crate::reference::conjugate_invariant::ConjugateInvariantNtt; 4]>,
     _phantom: PhantomData<P>,
 }
 
 /// Precomputed twiddle-factor table for the inverse Q120 NTT.
 ///
 /// Construct with [`NttTableInv::new`].
-pub struct NttTableInv<P: PrimeSetCrt4> {
+pub struct NttTableInv<P: PrimeSetCrt4, R: CpuRing = Standard> {
     /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
@@ -132,6 +134,7 @@ pub struct NttTableInv<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
+    pub ci: R::Data<[crate::reference::conjugate_invariant::ConjugateInvariantNtt; 4]>,
     _phantom: PhantomData<P>,
 }
 
@@ -215,13 +218,13 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
     (t1 << 32) | t
 }
 
-impl<P: PrimeSetCrt4> NttTable<P> {
+impl<P: PrimeSetCrt4, R: CpuRing> NttTable<P, R> {
     /// Builds the forward NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            n.is_power_of_two() && n <= (1 << (P::MAX_LOG_N - u32::from(R::IS_CI))),
             "NTT size must be a power of two ≤ 2^{}, got {n}",
             P::MAX_LOG_N
         );
@@ -247,6 +250,17 @@ impl<P: PrimeSetCrt4> NttTable<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                ci: R::Data::new(|| {
+                    std::array::from_fn(|k| {
+                        crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                            n,
+                            P::Q[k] as u64,
+                            P::OMEGA[k] as u64,
+                            P::MAX_LOG_N,
+                            false,
+                        )
+                    })
+                }),
                 _phantom: PhantomData,
             };
         }
@@ -353,18 +367,29 @@ impl<P: PrimeSetCrt4> NttTable<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            ci: R::Data::new(|| {
+                std::array::from_fn(|k| {
+                    crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                        n,
+                        P::Q[k] as u64,
+                        P::OMEGA[k] as u64,
+                        P::MAX_LOG_N,
+                        false,
+                    )
+                })
+            }),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<P: PrimeSetCrt4> NttTableInv<P> {
+impl<P: PrimeSetCrt4, R: CpuRing> NttTableInv<P, R> {
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            n.is_power_of_two() && n <= (1 << (P::MAX_LOG_N - u32::from(R::IS_CI))),
             "iNTT size must be a power of two ≤ 2^{}, got {n}",
             P::MAX_LOG_N
         );
@@ -389,6 +414,17 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                ci: R::Data::new(|| {
+                    std::array::from_fn(|k| {
+                        crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                            n,
+                            P::Q[k] as u64,
+                            P::OMEGA[k] as u64,
+                            P::MAX_LOG_N,
+                            true,
+                        )
+                    })
+                }),
                 _phantom: PhantomData,
             };
         }
@@ -505,6 +541,17 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            ci: R::Data::new(|| {
+                std::array::from_fn(|k| {
+                    crate::reference::conjugate_invariant::ConjugateInvariantNtt::new(
+                        n,
+                        P::Q[k] as u64,
+                        P::OMEGA[k] as u64,
+                        P::MAX_LOG_N,
+                        true,
+                    )
+                })
+            }),
             _phantom: PhantomData,
         }
     }
@@ -555,7 +602,7 @@ pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
 ///
 /// # Panics
 /// Panics if `data.len() < 4 * table.n`.
-pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P, impl CpuRing>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -563,6 +610,11 @@ pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 
     assert!(data.len() >= 4 * n);
 
+    if let Some(ci) = table.ci.get() {
+        for k in 0..4 {
+            ci[k].apply(&mut data[k..4 * n], 4, P::Q[k] as u64);
+        }
+    }
     let mut po_off = 0usize; // current offset into table.powomega
     let mut meta_idx = 0usize;
 
@@ -614,7 +666,7 @@ pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 ///
 /// # Panics
 /// Panics if `data.len() < 4 * table.n`.
-pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P, impl CpuRing>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -679,6 +731,11 @@ pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
                 let po = table.powomega[po_off + 4 * i + k];
                 data[4 * i + k] = split_precompmul(x, po, h, mask);
             }
+        }
+    }
+    if let Some(ci) = table.ci.get() {
+        for k in 0..4 {
+            ci[k].apply(&mut data[k..4 * n], 4, P::Q[k] as u64);
         }
     }
 }

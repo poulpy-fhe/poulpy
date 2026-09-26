@@ -140,6 +140,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend.
 
+- Add dedicated `FFT64CIRef` and `NTT4x30CIRef` backend variants, each in its own module, forwarding ring-independent kernels to the standard backend through the exported `forward_*!` macros. Ring selection is static, CI and standard prepared data have distinct types, and standard modules carry no CI transform tables. The CI `n`-coefficient basis has ambient order `4n`.
 - AVX and AVX-512 CI each use native execution when available and SDE for bounded HAL/core contracts otherwise. Compilation is separate from the five-minute test execution budget, with per-test timings and caches refreshed after source changes. AVX uses AVX2/FMA-only code generation and Haswell emulation.
 
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.
