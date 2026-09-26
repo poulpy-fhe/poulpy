@@ -3,7 +3,7 @@ use anyhow::{Result, ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, split_degree};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, ZnxWord};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -16,9 +16,9 @@ pub use crate::api::{Basis, Parity};
 pub use poulpy_core::layouts::{PowerBasis, PowerBasisHelper};
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
-pub trait PowerBasisInsert<D: Data, W: ZnxWord> {
+pub trait PowerBasisInsert<D: Data, W: ZnxWord, R: Ring> {
     /// Inserts a caller-provided pre-computed ciphertext power.
-    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W>) -> Result<()>;
+    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()>;
 }
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
@@ -60,8 +60,8 @@ pub trait PowerBasisGen<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<D: Data, W: ZnxWord> PowerBasisInsert<D, W> for PowerBasis<CKKSCiphertext<D, W>> {
-    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W>) -> Result<()> {
+impl<D: Data, W: ZnxWord, R: Ring> PowerBasisInsert<D, W, R> for PowerBasis<CKKSCiphertext<D, W, R>> {
+    fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()> {
         ensure!(
             n >= 2,
             "PowerBasis::insert: power must be at least 2; power 1 is set at construction"

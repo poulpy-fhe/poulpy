@@ -49,7 +49,7 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend {
         base2k: Base2K,
         complex: bool,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<ShipCoeffEncodings<Self::OwnedBuf, Self::ZnxWord>>
+    ) -> Result<ShipCoeffEncodings<Self::OwnedBuf, Self::ZnxWord, Self::Ring>>
     where
         F: ShipScalar,
         Self: CKKSEncodingImpl<F>,

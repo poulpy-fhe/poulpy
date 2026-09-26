@@ -9,7 +9,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
@@ -26,7 +26,7 @@ pub struct PolynomialApproximation<P> {
     pub coeff_log_delta: usize,
 }
 
-impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
+impl<R: poulpy_hal::layouts::Ring> PolynomialApproximation<crate::polynomial::HostCoeffs<R>> {
     /// Prepares `poly` and its interval map on the host.
     pub fn from_polynomial<F, M>(
         poly: &Polynomial<F>,
@@ -38,17 +38,16 @@ impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
         M: Into<CoeffsMeta>,
-        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let coeff_meta = coeff_meta.into();
         let bsgs = poly
-            .encode_bsgs_with(module, base2k, coeff_meta, strategy)
+            .encode_bsgs_with::<R>(module, base2k, coeff_meta, strategy)
             .map_err(|e| anyhow!("polynomial approximation: {e}"))?;
         let (scale, offset) = poly.change_of_basis();
         let affine = if scale == F::one() && offset == F::zero() {
             None
         } else {
-            let mut pt = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k);
+            let mut pt = crate::polynomial::alloc_coefficients::<R>(module, 2, base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(&[offset, scale])
                 .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;
@@ -133,7 +132,7 @@ mod tests {
     use super::*;
     use crate::Quad;
 
-    fn prepare(a: f64, b: f64) -> PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
+    fn prepare(a: f64, b: f64) -> PolynomialApproximation<crate::layouts::CKKSPlaintextOwned<HostBytesBackend>> {
         let module = Module::<HostBytesBackend>::new(256);
         let poly = Polynomial::chebyshev_interpolate(4, a, b, |x| x * x).unwrap();
         PolynomialApproximation::from_polynomial(

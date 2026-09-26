@@ -111,7 +111,7 @@ where
                         prepared_automorphism_key(module, &key, p, (p as u8).wrapping_add(53)),
                     );
                 }
-                let prepared = with_scratch::<B, _>(shared, |scratch| module.ckks_prepare_dft_matrix(&dft, scratch));
+                let prepared = with_scratch::<B, _>(shared, |scratch| module.ckks_prepare_dft_matrix(&dft, scratch)).unwrap();
                 let mut raw = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<B, _>(shared, |scratch| {
                     module.ckks_dft_evaluate_assign(&mut raw, &dft, &keys, scratch)

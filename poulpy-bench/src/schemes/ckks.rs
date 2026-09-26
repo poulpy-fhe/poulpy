@@ -178,6 +178,7 @@ pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i
 
     let mut conjugate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     conjugate_key.set_p(CONJUGATE);
+    let conjugate_key = conjugate_key;
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_conjugate_tmp_bytes(&ct_a, &conjugate_key));
 

@@ -10,27 +10,32 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef,
     GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Ring, ZnxWord};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
 
 use super::CKKSScalar;
 
 /// CKKS plaintext in the ZNX (torus) domain.
-pub struct CKKSPlaintext<D: Data, W: ZnxWord> {
+pub struct CKKSPlaintext<D: Data, W: ZnxWord, R: Ring> {
     /// Raw GLWE plaintext limb storage.
     pub(crate) inner: GLWEPlaintext<D, W>,
     /// Semantic CKKS metadata associated with `inner`.
     pub(crate) meta: CKKSMeta,
+    _ring: std::marker::PhantomData<R>,
 }
 
-impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+        Self {
+            inner,
+            meta: meta.for_ring::<R>(),
+            _ring: std::marker::PhantomData,
+        }
     }
 
-    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, i64>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<AlignedBuf, W>
+    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, W, R>`].
+    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<AlignedBuf, W, R>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -60,12 +65,12 @@ impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
                 requested_limbs: self.max_size(),
             }
         );
-        self.meta = meta;
+        self.meta = meta.for_ring::<R>();
         Ok(())
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
     GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
@@ -74,7 +79,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
     GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
@@ -86,17 +91,17 @@ where
 }
 
 /// Backend-owned CKKS plaintext: the backend's buffer type and its coefficient word.
-pub type CKKSPlaintextOwned<BE> = CKKSPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type CKKSPlaintextOwned<BE> = CKKSPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>;
 
 poulpy_core::view_wrapper!(
     /// Scratch-backed mutable CKKS plaintext view.
     ///
     /// This nominal wrapper contains an ordinary
-    /// `CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord>`; both its polynomial storage and CKKS
+    /// `CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>`; both its polynomial storage and CKKS
     /// metadata therefore have exactly the same representation as other CKKS
     /// plaintexts.
     CKKSPlaintextViewMut,
-    CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord>
+    CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>
 );
 poulpy_core::impl_glwe_infos!(CKKSPlaintextViewMut);
 crate::impl_ckks_infos!(inner_meta CKKSPlaintextViewMut);
@@ -131,7 +136,7 @@ impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE>
     fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<D: Data, W: ZnxWord> Deref for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> Deref for CKKSPlaintext<D, W, R> {
     type Target = GLWEPlaintext<D, W>;
 
     fn deref(&self) -> &Self::Target {
@@ -139,13 +144,13 @@ impl<D: Data, W: ZnxWord> Deref for CKKSPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> DerefMut for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSPlaintext<D, W, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSPlaintext<D, W, R> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -163,21 +168,21 @@ impl<D: Data, W: ZnxWord> LWEInfos for CKKSPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> poulpy_core::layouts::IntPolyInfos for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> poulpy_core::layouts::IntPolyInfos for CKKSPlaintext<D, W, R> {
     fn encoded_k(&self) -> TorusPrecision {
         self.inner.encoded_k()
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSPlaintext<D, W, R> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetCKKSInfos for CKKSPlaintext<D, W, R> {
     fn set_meta(&mut self, meta: CKKSMeta) {
-        self.meta = meta;
+        self.meta = meta.for_ring::<R>();
     }
 
     fn set_k(&mut self, k: TorusPrecision) {
@@ -185,13 +190,13 @@ impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetK for CKKSPlaintext<D, W, R> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBSGSMeta for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetBSGSMeta for CKKSPlaintext<D, W, R> {
     fn set_bsgs_log_budget(&mut self, log_budget: usize) {
         SetCKKSInfos::set_log_budget(self, log_budget);
     }
@@ -200,25 +205,25 @@ impl<D: Data, W: ZnxWord> SetBSGSMeta for CKKSPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> SetBase2k for CKKSPlaintext<D, W, R> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for CKKSPlaintext<D, W> {
+impl<D: HostDataRef, W: ZnxWord, R: Ring> fmt::Display for CKKSPlaintext<D, W, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<D: Data, W: ZnxWord> CKKSInfos for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSPlaintext<D, W, R> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
-impl<D: Data, W: ZnxWord> BSGSMeta for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> BSGSMeta for CKKSPlaintext<D, W, R> {
     fn bsgs_log_budget(&self) -> usize {
         CKKSInfos::log_budget(self)
     }
@@ -252,7 +257,7 @@ fn coefficient_gap<F>(coeffs: &[F], n: usize) -> Result<usize> {
 /// the plaintext via `encode_vec_i*_strided` — the quantized integer buffer is only
 /// `coeffs.len()` long, so the sparse path never materializes a length-`N` buffer.
 /// `gap == 1` is the dense path (`coeffs.len() == N`).
-fn encode_host_floats_strided<F, D>(pt: &mut CKKSPlaintext<D, i64>, coeffs: &[F], gap: usize) -> Result<()>
+fn encode_host_floats_strided<F, D, R: Ring>(pt: &mut CKKSPlaintext<D, i64, R>, coeffs: &[F], gap: usize) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataMut + HostDataRef,
@@ -298,7 +303,7 @@ where
 /// Decodes the gap-strided coefficients of `pt` into `coeffs` (length `N/gap`),
 /// inverse of [`encode_host_floats_strided`]. Only `coeffs.len()` coefficients are
 /// reconstructed.
-fn decode_host_floats_strided<F, D>(pt: &CKKSPlaintext<D, i64>, coeffs: &mut [F], gap: usize) -> Result<()>
+fn decode_host_floats_strided<F, D, R: Ring>(pt: &CKKSPlaintext<D, i64, R>, coeffs: &mut [F], gap: usize) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataRef,
@@ -329,7 +334,7 @@ where
     Ok(())
 }
 
-impl<F: CKKSScalar, D: HostDataMut + HostDataRef> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64> {
+impl<F: CKKSScalar, D: HostDataMut + HostDataRef, R: Ring> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64, R> {
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()> {
         let gap = coefficient_gap(coeffs, self.n().as_usize())?;
         encode_host_floats_strided(self, coeffs, gap)

@@ -73,7 +73,7 @@ fn gen_sk_with_host<BE>(
     GLWESecretPrepared<BE::OwnedBuf, BE>,
 )
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
@@ -103,7 +103,7 @@ fn cmul((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
 /// recombination conventions before any homomorphic code runs.
 pub fn test_ship_host_replica<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
 {
@@ -261,7 +261,7 @@ where
 /// all-zero group yields (an encryption of) zero.
 pub fn test_ship_mux_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE>
         + GGLWEProductReference<BE>
         + VecZnxDftApply<BE>
@@ -413,7 +413,7 @@ fn ship_bootstrap_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     complex: bool,
 ) where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -538,7 +538,7 @@ fn ship_bootstrap_case<BE, F, E>(
 /// End-to-end SHIP half bootstrap over real cleartexts.
 pub fn test_ship_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -557,7 +557,7 @@ where
 /// into complex slots through the shared mux keys and the `omega_2` masks.
 pub fn test_ship_bootstrap_complex<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>

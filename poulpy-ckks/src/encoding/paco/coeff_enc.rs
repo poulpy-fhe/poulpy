@@ -193,7 +193,7 @@ where
 /// non-representable coefficients, or a failed encoding.
 pub fn paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D, BE::ZnxWord>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
     plan: &PaCoPlan,
     base2k: Base2K,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
@@ -316,8 +316,8 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(
 /// base2k limbs and builds the four packed β_t slot vectors. Poulpy decrypts
 /// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1` — no sign
 /// adjustment is needed.
-pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
-    ct: &CKKSCiphertext<D, i64>,
+pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef, R: poulpy_hal::layouts::Ring>(
+    ct: &CKKSCiphertext<D, i64, R>,
     p: &PaCoPlan,
 ) -> Result<(Vec<i64>, Vec<i64>)> {
     ensure!(

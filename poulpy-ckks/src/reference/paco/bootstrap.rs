@@ -179,6 +179,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let plan = context.plan();
+
     ckks_ensure!(
         keys.parameters() == PaCoKeyParameters::from_plan(plan),
         "PaCo key parameters {:?} do not match context plan {:?}",

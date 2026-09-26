@@ -11,6 +11,7 @@ use poulpy_core::{
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
+
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -44,7 +45,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         &self,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 

@@ -24,7 +24,7 @@ use poulpy_hal::{
     test_suite::upload_vec_znx,
 };
 
-fn upload<B: Backend<ZnxWord = i64>>(module: &Module<B>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<B> {
+fn upload<B: Backend<ZnxWord = i64>>(module: &Module<B>, pt: &crate::polynomial::HostCoeffs<B::Ring>) -> CKKSPlaintextOwned<B> {
     let mut out = module.ckks_plaintext_alloc_from_infos(pt);
     *out.data_mut() = upload_vec_znx::<B>(pt.data());
     out
@@ -75,7 +75,7 @@ where
             ],
         );
         let encoded = poly
-            .encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+            .encode_bsgs_with::<B::Ring>(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
             .unwrap();
         let encoded = encoded.map_baby_steps_ref(|pt| upload(module, pt));
         let input = fixture_ciphertext(module, &layout, 127);
@@ -117,7 +117,7 @@ where
         let complex = ComplexBSGSPolynomial {
             re: encoded,
             im: poly
-                .encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+                .encode_bsgs_with::<B::Ring>(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                 .unwrap()
                 .map_baby_steps_ref(|pt| upload(module, pt)),
         };
@@ -152,7 +152,7 @@ where
             };
             let poly = Polynomial::new_with_parity(basis, coeffs.into_iter().map(|v| F::from_f64(v).unwrap()).collect(), parity);
             let encoded = poly
-                .encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+                .encode_bsgs_folded_with::<B::Ring>(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                 .unwrap()
                 .map_baby_steps_ref(|pt| upload(module, pt));
             let mut out = fixture_ciphertext(module, &layout, 139);
@@ -164,7 +164,7 @@ where
             let complex = ComplexBSGSPolynomial {
                 re: encoded,
                 im: poly
-                    .encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+                    .encode_bsgs_folded_with::<B::Ring>(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                     .unwrap()
                     .map_baby_steps_ref(|pt| upload(module, pt)),
             };
@@ -180,7 +180,7 @@ where
             // input transform can allocate or mutate any ciphertext.
             let incompatible = ComplexBSGSPolynomial {
                 re: poly
-                    .encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+                    .encode_bsgs_with::<B::Ring>(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                     .unwrap()
                     .map_baby_steps_ref(|pt| upload(module, pt)),
                 im: complex.im,

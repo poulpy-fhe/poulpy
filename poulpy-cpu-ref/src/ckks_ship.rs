@@ -35,7 +35,7 @@ pub fn ship_coeff_encodings_staged<BE, F, Src>(
     base2k: Base2K,
     complex: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
+) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord, BE::Ring>>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BE::OwnedBuf: HostDataRef,
@@ -87,6 +87,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 ::poulpy_ckks::layouts::ShipCoeffEncodings<
                     <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
                     <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    <$be as ::poulpy_hal::layouts::Backend>::Ring,
                 >,
             >
             where

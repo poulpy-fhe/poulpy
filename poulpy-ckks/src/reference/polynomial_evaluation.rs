@@ -42,18 +42,18 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes())
 }
 
-struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord> {
+struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord, R: poulpy_hal::layouts::Ring> {
     degree: usize,
-    value: CKKSCiphertext<D, W>,
+    value: CKKSCiphertext<D, W, R>,
 }
 
-impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord>
+impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord, BE::Ring>
 where
     BE: Backend,
     D: poulpy_hal::layouts::Data,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    type Value = CKKSCiphertext<D, BE::ZnxWord>;
+    type Value = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
 
     fn degree(&self) -> usize {
         self.degree
@@ -73,9 +73,11 @@ where
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
 /// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
 /// has no single existing API equivalent.
-struct CKKSBSGSOps;
+struct CKKSBSGSOps<'a, H> {
+    key: &'a H,
+}
 
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
+impl<BE: Backend, V, P, A, R, K: GetTensorKey<BE>> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps<'_, K>
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSMulOps<BE>
@@ -304,14 +306,14 @@ where
         module: &Module<BE>,
         dst: &mut V,
         prepared: &Self::Prepared,
-        tsk: &H,
+        _tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()>
     where
         H: GetTensorKey<BE>,
     {
         module
-            .ckks_mul_prepared_assign(dst, prepared, tsk, scratch)
+            .ckks_mul_prepared_assign(dst, prepared, self.key, scratch)
             .map_err(::anyhow::Error::from)
     }
 
@@ -436,7 +438,7 @@ where
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSOps;
+        let precision = CKKSBSGSOps { key: tsk };
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
@@ -531,7 +533,7 @@ where
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSOps;
+        let precision = CKKSBSGSOps { key: tsk };
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);

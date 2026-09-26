@@ -39,7 +39,7 @@ pub unsafe trait DFTImpl:
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> DFTMatrixPrepared<Self, Dir, Fmt>
+    ) -> Result<DFTMatrixPrepared<Self, Dir, Fmt>>
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
@@ -186,7 +186,7 @@ macro_rules! impl_ckks_dft_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> $crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>
+            ) -> $crate::CKKSResult<$crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>>
             where
                 P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + ::poulpy_core::layouts::IntPolyInfos

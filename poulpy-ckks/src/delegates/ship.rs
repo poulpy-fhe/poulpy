@@ -77,7 +77,7 @@ where
         base2k: Base2K,
         complex: bool,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
+    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord, BE::Ring>>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {

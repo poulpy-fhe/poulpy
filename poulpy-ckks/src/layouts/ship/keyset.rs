@@ -110,8 +110,8 @@ pub struct HMuxRotKeyPrepared<D: Data, BE: Backend> {
 /// complex bootstrap; the mux keys are shared between both halves).
 pub struct ShipIndexKeys<D: Data, W: ZnxWord> {
     pub(crate) mux_keys: Vec<Vec<HMuxRotKey<D, W>>>,
-    pub(crate) masks: Vec<CKKSCiphertext<D, W>>,
-    pub(crate) masks2: Vec<CKKSCiphertext<D, W>>,
+    pub(crate) masks: Vec<CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>>,
+    pub(crate) masks2: Vec<CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>>,
 }
 
 /// Prepared form of [`ShipIndexKeys`]: the masks become left convolution
@@ -231,7 +231,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     ) -> Result<ShipKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D, W>: GLWEToBackendRef<BE>,
+        CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>: GLWEToBackendRef<BE>,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -243,6 +243,13 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             + CnvPVecAlloc<BE>
             + CnvPVecBytesOf,
     {
+        validate_material(
+            &self.parameters,
+            &self.index_keys,
+            &self.dense_to_sparse,
+            &self.tensor_key,
+            &self.conjugation_key,
+        )?;
         let base2k = self.parameters.base2k;
         let kk = self.parameters.plan.raised_k(base2k);
         let mask_size = kk.div_ceil(base2k);
@@ -265,21 +272,22 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             scratch.available()
         );
 
-        let prepare_masks =
-            |masks: &[CKKSCiphertext<D, W>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
-                masks
-                    .iter()
-                    .map(|ct| {
-                        let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
-                        module.cnv_prepare_left(
-                            &mut prep.to_backend_mut(),
-                            GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
-                            scratch,
-                        );
-                        prep
-                    })
-                    .collect()
-            };
+        let prepare_masks = |masks: &[CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>],
+                             scratch: &mut ScratchArena<'_, BE>|
+         -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
+            masks
+                .iter()
+                .map(|ct| {
+                    let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
+                    module.cnv_prepare_left(
+                        &mut prep.to_backend_mut(),
+                        GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
+                        scratch,
+                    );
+                    prep
+                })
+                .collect()
+        };
 
         let mut index_keys = Vec::with_capacity(self.index_keys.len());
         for ik in &self.index_keys {
@@ -440,7 +448,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: HostStaged + Backend<OwnedBuf = D>,
+        BE: HostStaged + Backend<OwnedBuf = D, Ring = poulpy_hal::layouts::Standard>,
         D: HostDataRef + HostDataMut,
         F: ShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
@@ -493,6 +501,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         sk_dense_host.transfer_into(&mut sk_dense);
         let mut sk_dense_prepared = module.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
         module.glwe_secret_prepare(&mut sk_dense_prepared, &sk_dense);
+        let sk_dense_prepared = sk_dense_prepared;
 
         let mut index_keys = Vec::with_capacity(h);
         for (slot, &(j, s_j)) in spec.support().iter().enumerate() {

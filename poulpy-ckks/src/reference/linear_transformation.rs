@@ -37,15 +37,15 @@ use poulpy_core::GLWEBytesOf;
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the
 /// single `LinearTransformation<P>` container without overlapping impls.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
-    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &poulpy_core::LinearTransformationBabySteps<BE>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -56,7 +56,7 @@ where
 }
 
 /// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
-impl<D: Data, W: ZnxWord> LtDiagonalScale for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring> LtDiagonalScale for CKKSPlaintext<D, W, R> {
     fn lt_log_scale(&self) -> usize {
         self.log_delta()
     }
@@ -123,19 +123,24 @@ where
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Stash the plaintext scale exponent while filling the diagonals so eval
-        // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
-        // must share one scale/width (the crate's compilers always produce
-        // uniform diagonals; the unprepared eval path rejects heterogeneous
-        // hand-built inputs via `ensure_uniform_diagonal_scale` — this
-        // infallible prepare stashes the first diagonal's scale for all).
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
+            for step in &lt.giant_steps {
+                for diagonal in &step.diagonals {
+                    ckks_ensure!(
+                        diagonal.plaintext.log_delta() == first_pt.log_delta()
+                            && diagonal.plaintext.encoded_k() == first_pt.encoded_k(),
+                        "linear transformation diagonals must share scale and width"
+                    );
+                }
+            }
             prepared.set_log_scale(first_pt.log_delta());
         }
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        Ok(())
     }
 
     fn ckks_prepare_linear_transformation_baby_steps<Src, H>(

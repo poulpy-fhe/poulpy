@@ -136,7 +136,7 @@ pub trait PaCoKeys<BE: Backend> {
 /// invalidated afterwards.
 pub struct PaCoKeySet<D: Data, W: ZnxWord> {
     parameters: PaCoKeyParameters,
-    bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
+    bootstrapping_keys: [CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>; 4],
     rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
     tensor_key: GLWETensorKey<D, W>,
     encapsulation_key: Option<GLWESwitchingKey<D, W>>,
@@ -148,7 +148,7 @@ pub struct PaCoKeySet<D: Data, W: ZnxWord> {
 /// all preprocessed gadget keys, keeping key ownership in one bundle.
 pub struct PaCoKeysPrepared<D: Data, BE: Backend> {
     parameters: PaCoKeyParameters,
-    bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
+    bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord, BE::Ring>; 4],
     rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     tensor_key: GLWETensorKeyPrepared<D, BE>,
     encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
@@ -157,7 +157,7 @@ pub struct PaCoKeysPrepared<D: Data, BE: Backend> {
 /// Owned components returned by [`PaCoKeySet::into_parts`].
 pub type PaCoKeySetParts<D, W> = (
     PaCoKeyParameters,
-    [CKKSCiphertext<D, W>; 4],
+    [CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>; 4],
     HashMap<i64, GLWEAutomorphismKey<D, W>>,
     GLWETensorKey<D, W>,
     Option<GLWESwitchingKey<D, W>>,
@@ -166,7 +166,7 @@ pub type PaCoKeySetParts<D, W> = (
 /// Owned components returned by [`PaCoKeysPrepared::into_parts`].
 pub type PaCoKeysPreparedParts<D, BE> = (
     PaCoKeyParameters,
-    [CKKSCiphertext<D, <BE as Backend>::ZnxWord>; 4],
+    [CKKSCiphertext<D, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>; 4],
     HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     GLWETensorKeyPrepared<D, BE>,
     Option<GLWESwitchingKeyPrepared<D, BE>>,
@@ -182,7 +182,7 @@ trait ActiveCiphertextStorage {
     fn active_size(&self) -> usize;
 }
 
-impl<D: Data, W: ZnxWord> ActiveCiphertextStorage for CKKSCiphertext<D, W> {
+impl<D: Data, W: ZnxWord, R: poulpy_hal::layouts::Ring> ActiveCiphertextStorage for CKKSCiphertext<D, W, R> {
     fn active_size(&self) -> usize {
         self.data().size()
     }
@@ -202,7 +202,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// compatibility, and optional encapsulation-key degrees.
     pub fn new(
         plan: &PaCoPlan,
-        bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
+        bootstrapping_keys: [CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>; 4],
         rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
         tensor_key: GLWETensorKey<D, W>,
         encapsulation_key: Option<GLWESwitchingKey<D, W>>,
@@ -236,7 +236,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// revalidated against `plan` immediately before backend preprocessing,
     /// and insufficient scratch is reported as an error rather than reaching
     /// the lower-level preparation assertions.
-    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = poulpy_hal::layouts::Standard>>(
         &self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -244,7 +244,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     ) -> Result<PaCoKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D, W>: Clone,
+        CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>: Clone,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
@@ -297,7 +297,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// This is the preferred eager-preparation path when the unprepared set is
     /// no longer needed. It applies the same full validation and scratch
     /// preflight as [`Self::prepare`].
-    pub fn into_prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
+    pub fn into_prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = poulpy_hal::layouts::Standard>>(
         self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -407,7 +407,7 @@ where
 
 impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// Returns the four unprepared bootstrapping ciphertexts.
-    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, W>; 4] {
+    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, W, poulpy_hal::layouts::Standard>; 4] {
         &self.bootstrapping_keys
     }
 
@@ -446,7 +446,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     /// checks as [`PaCoKeySet::new`].
     pub fn new(
         plan: &PaCoPlan,
-        bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
+        bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord, BE::Ring>; 4],
         rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
         tensor_key: GLWETensorKeyPrepared<D, BE>,
         encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
@@ -475,7 +475,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     }
 
     /// Returns the four backend-resident bootstrapping ciphertexts.
-    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, BE::ZnxWord>; 4] {
+    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, BE::ZnxWord, BE::Ring>; 4] {
         &self.bootstrapping_keys
     }
 
@@ -508,12 +508,12 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
 
 impl<D: Data, BE: Backend> PaCoKeys<BE> for PaCoKeysPrepared<D, BE>
 where
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + CKKSCtBounds,
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    type BootstrappingKey = CKKSCiphertext<D, BE::ZnxWord>;
+    type BootstrappingKey = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
@@ -559,8 +559,6 @@ where
         .context("invalid PaCo evaluation plan for key material")?;
 
     let n = plan.n();
-    // The cyclotomic order is fully determined by the plan degree (`2N`); it
-    // used to be a caller-supplied argument that only this value could satisfy.
     let cyclotomic_order = n
         .checked_mul(2)
         .context("PaCo cyclotomic order overflows usize")
@@ -692,7 +690,7 @@ mod tests {
 
     use crate::layouts::CKKSModuleAlloc;
 
-    struct MisreportedCiphertext(CKKSCiphertext<AlignedBuf, i64>);
+    struct MisreportedCiphertext(CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard>);
 
     impl LWEInfos for MisreportedCiphertext {
         fn n(&self) -> Degree {
@@ -720,7 +718,9 @@ mod tests {
 
     impl GLWEToBackendRef<HostBytesBackend> for MisreportedCiphertext {
         fn to_backend_ref(&self) -> GLWE<<HostBytesBackend as Backend>::BufRef<'_>, i64> {
-            <CKKSCiphertext<AlignedBuf, i64> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
+            <CKKSCiphertext<AlignedBuf, i64, poulpy_hal::layouts::Standard> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(
+                &self.0,
+            )
         }
     }
 
