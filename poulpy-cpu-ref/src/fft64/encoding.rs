@@ -1,4 +1,7 @@
-use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
+use crate::reference::fft64::{
+    module::FFT64Plan,
+    reim::{ReimFFTTable, ReimIFFTTable},
+};
 use bytemuck::Zeroable;
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
@@ -9,12 +12,12 @@ use std::fmt::Debug;
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
 /// in the CPU CKKS encoding implementation.
-pub struct FFT64ReimTable<F: Float + FloatConst + Debug + Zeroable + Send + Sync> {
+pub struct FFT64ReimTable<F: Float + FloatConst + Debug + Zeroable> {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFT<F> for FFT64ReimTable<F> {
+impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64ReimTable<F> {
     fn m(&self) -> usize {
         self.fft.m()
     }
@@ -28,12 +31,26 @@ impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFT<F> fo
     }
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
+impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
     fn new(m: usize) -> Self {
         Self {
             fft: ReimFFTTable::new(m),
             ifft: ReimIFFTTable::new(m),
         }
+    }
+}
+
+impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64Plan<F> {
+    fn m(&self) -> usize {
+        self.fft().m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        self.fft().execute(data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        self.ifft().execute(data);
     }
 }
 
