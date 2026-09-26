@@ -288,6 +288,91 @@ where
     Ok(())
 }
 
+/// Workspace for preparing the largest factor through the selected Core operation.
+pub fn ckks_prepare_dft_matrix_tmp_bytes<BE, Dir, Fmt, P>(
+    module: &Module<BE>,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+) -> usize
+where
+    BE: Backend,
+    P: poulpy_core::layouts::LWEInfos,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+{
+    dft.factor_operands()
+        .iter()
+        .flat_map(|factor| &factor.giant_steps)
+        .flat_map(|giant| &giant.diagonals)
+        .map(|diagonal| module.ckks_prepare_linear_transformation_rhs_tmp_bytes(&diagonal.plaintext))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Workspace for the reference DFT chain and all format compositions.
+/// Uses the streamed-RHS bound for both prepared and unprepared factors.
+pub fn ckks_dft_tmp_bytes<BE, Dir, Fmt, P, Dst, Src, K>(
+    module: &Module<BE>,
+    dst: &Dst,
+    src: &Src,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    P: poulpy_core::layouts::GLWEInfos,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+    K: poulpy_core::layouts::GGLWEInfos,
+    Module<BE>: poulpy_core::GLWELinearTransformations<BE>
+        + poulpy_core::GLWEBytesOf<BE>
+        + crate::api::CKKSCopyOps<BE>
+        + crate::api::CKKSConjugateOps<BE>
+        + crate::api::CKKSRotateOps<BE>
+        + crate::api::CKKSAddOps<BE>
+        + crate::api::CKKSSubOps<BE>
+        + crate::api::CKKSImagOps<BE>,
+{
+    use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps};
+    use poulpy_core::{
+        GLWEBytesOf, GLWELinearTransformations,
+        layouts::{GLWELayout, LWEInfos},
+    };
+    let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: ct.max_k(),
+            rank: ct.rank(),
+        },
+        meta: ct.meta(),
+    };
+    let layouts = [envelope(dst), envelope(src)];
+    let mut bytes = module.ckks_copy_tmp_bytes(dst, src);
+    for ct in &layouts {
+        bytes = bytes
+            .max(module.ckks_copy_tmp_bytes(ct, ct))
+            .max(module.ckks_conjugate_tmp_bytes(ct, key))
+            .max(module.ckks_rotate_tmp_bytes(ct, key))
+            .max(module.ckks_add_tmp_bytes(ct.max_size()))
+            .max(module.ckks_sub_tmp_bytes(ct.max_size()))
+            .max(module.ckks_mul_i_tmp_bytes(ct.max_size()))
+            .max(module.ckks_div_i_tmp_bytes(ct.max_size()))
+            .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key));
+        for pt in dft
+            .factor_operands()
+            .iter()
+            .flat_map(|factor| &factor.giant_steps)
+            .flat_map(|giant| &giant.diagonals)
+            .map(|diagonal| &diagonal.plaintext)
+        {
+            let factor_work = module
+                .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
+                .max(module.ckks_copy_tmp_bytes(ct, ct));
+            bytes = bytes.max(module.glwe_bytes_of_from_infos(ct) + factor_work);
+        }
+    }
+    bytes
+}
+
 #[cfg(test)]
 mod validation_tests {
     use crate::layouts::{DFTOutputFormat, DFTType};

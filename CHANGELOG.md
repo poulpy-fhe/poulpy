@@ -94,6 +94,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, and DFT parity uses exact advertised scratch.
+
 - `oep::defaults` exposes callable DFT format compositions for conditional overrides, retaining selected constituent dispatch.
 
 - DFT matrices expose read-only factor operands and checked construction/replacement, preserving direction, format and diagonal layout contracts.

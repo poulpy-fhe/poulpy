@@ -94,11 +94,38 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKe
 use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::ScratchArena;
 use std::cell::Cell;
+const DFT_EXTRA_SCRATCH: usize = 1 << 25;
 thread_local! {
     static DFT_CALLS: Cell<usize> = const { Cell::new(0) };
     static REPACK_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
+    fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+        module: &Module<Self>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::LWEInfos
+    {
+        poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
+    }
+
+    fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+        module: &Module<Self>,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: poulpy_core::layouts::GGLWEInfos
+    {
+        poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key) + DFT_EXTRA_SCRATCH
+    }
+
     fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -122,7 +149,9 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>
     {
-        let _ = (module, ct, dft, keys, scratch);
+        let _ = (module, ct, dft, keys);
+        let (mut workspace, _) = scratch.borrow().take_region(DFT_EXTRA_SCRATCH);
+        <Self as poulpy_hal::layouts::Backend>::copy_host_to_view(&mut workspace, &vec![0x3C; DFT_EXTRA_SCRATCH]);
         DFT_CALLS.set(DFT_CALLS.get() + 1);
         Err(anyhow::anyhow!("DFT override probe").into())
     }
@@ -155,7 +184,6 @@ impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphism
 
 #[test]
 fn conditional_dft_fallback_reenters_selected_evaluation() {
-    use poulpy_ckks::api::CKKSCopyOps;
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
@@ -170,11 +198,58 @@ fn conditional_dft_fallback_reenters_selected_evaluation() {
     ).unwrap();
     let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
-    let mut scratch = ScratchOwned::<OverrideBackend>::alloc(module.ckks_copy_tmp_bytes(&dst, &src));
+    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+        n: 64usize.into(), base2k: 16usize.into(), k_aux: 16usize.into(),
+        rank: 1usize.into(), dnum: 4usize.into(), dsize: 1usize.into(),
+    };
+    let bytes = module.ckks_dft_tmp_bytes(&dst, &src, &matrix, &key);
+    assert!(bytes >= DFT_EXTRA_SCRATCH);
+    let mut scratch = ScratchOwned::<OverrideBackend>::alloc(bytes);
     DFT_CALLS.set(0);
     REPACK_CALLS.set(0);
     let error = module.ckks_slots_to_coeffs_repack(&mut dst, &src, &matrix, &NoAutomorphismKey, &mut scratch.borrow()).unwrap_err();
     assert!(error.to_string().contains("DFT override probe"));
     assert_eq!(REPACK_CALLS.get(), 1);
     assert_eq!(DFT_CALLS.get(), 1);
+}
+
+
+impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncodingTransform<F> for OverrideBackend {
+    type Fft = crate::FFT64ReimTable<F>;
+}
+crate::impl_ckks_encoding!(OverrideBackend);
+poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!(OverrideBackend);
+unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::dft::DftScalar>
+    poulpy_ckks::oep::DFTMatrixImpl<F> for OverrideBackend {
+    fn ckks_new_dft_matrix_impl<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+        module: &Module<Self>, base2k: poulpy_core::layouts::Base2K, plan: &DFTPlan, scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<DFTMatrix<Self, Dir, Fmt>> {
+        poulpy_ckks::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, Self, F>(module, base2k, plan, scratch)
+    }
+}
+
+#[test]
+fn bootstrap_sizing_includes_selected_dft_workspace() {
+    use poulpy_ckks::api::CKKSBootstrappingOps;
+    use poulpy_ckks::layouts::{BootstrappingContext, BootstrappingPlan, BootstrappingPipeline, BootstrappingTechniques, BootstrappingKeysLayout};
+    use poulpy_ckks::layouts::eval_mod::EvalModPlan;
+    use poulpy_ckks::polynomial::SplitStrategy;
+    let module = Module::<OverrideBackend>::new(64);
+    let meta = CoeffsMeta::from_delta_budget(12, 2);
+    let eval_mod = EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, meta, 16);
+    let plan = BootstrappingPlan::new(
+        BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(),
+        plan(poulpy_ckks::layouts::DFTType::Encode, DFTOutputFormat::SplitRealAndImag), eval_mod,
+        plan(poulpy_ckks::layouts::DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
+    ).unwrap();
+    let context = BootstrappingContext::<OverrideBackend, f64>::compile(
+        &module, 16usize.into(), &plan, &mut ScratchOwned::<OverrideBackend>::alloc(1 << 20).borrow(),
+    ).unwrap();
+    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+        n: 64usize.into(), base2k: 16usize.into(), k_aux: 16usize.into(), rank: 1usize.into(), dnum: 16usize.into(), dsize: 1usize.into(),
+    };
+    let keys = BootstrappingKeysLayout { automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout { n: key.n, base2k: key.base2k, k_aux: key.k_aux, rank: key.rank, dnum: key.dnum, dsize: key.dsize }, tensor_key: key, encapsulation: None };
+    let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());
+    assert!(module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys) >= DFT_EXTRA_SCRATCH);
 }

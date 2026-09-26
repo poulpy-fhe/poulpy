@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
-    api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
+    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
     layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSEncodingImpl, DFTImpl, DFTMatrixImpl},
     test_suite::CKKSTestParams,
@@ -42,24 +42,11 @@ fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
 where
     B: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     let b = params.base2k;
     let k = 8 * b + 7;
     let key = key_layout(module.n(), b, k, 1, 1, 1);
-    let pt = CKKSLayout {
-        glwe_layout: GLWELayout {
-            n: module.n().into(),
-            base2k: b.into(),
-            k: 20usize.into(),
-            rank: 0usize.into(),
-        },
-        meta: CKKSMeta {
-            log_delta: 8,
-            log_sparsity: 0,
-            slots: SlotsKind::Complex,
-        },
-    };
     let mut results = Vec::new();
     let log_max_slots = module.n().ilog2() as usize - 1;
     for log_slots in [log_max_slots, log_max_slots - 2] {
@@ -76,7 +63,6 @@ where
                 slots: SlotsKind::Complex,
             },
         };
-        let shared = module.ckks_all_ops_with_atk_tmp_bytes(&layout, &key, &key, &pt);
         let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
         macro_rules! prepare {
             ($dir:ty, $fmt:ty, $kind:expr, $format:expr) => {{
@@ -111,16 +97,19 @@ where
                         prepared_automorphism_key(module, &key, p, (p as u8).wrapping_add(53)),
                     );
                 }
-                let prepared = with_scratch::<B, _>(shared, |scratch| module.ckks_prepare_dft_matrix(&dft, scratch));
+                let prepared = with_scratch::<B, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&dft), |scratch| {
+                    module.ckks_prepare_dft_matrix(&dft, scratch)
+                });
                 let mut raw = fixture_ciphertext(module, &layout, 61);
-                with_scratch::<B, _>(shared, |scratch| {
+                with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                     module.ckks_dft_evaluate_assign(&mut raw, &dft, &keys, scratch)
                 })
                 .unwrap();
                 let mut resident = fixture_ciphertext(module, &layout, 61);
-                with_scratch::<B, _>(shared, |scratch| {
-                    module.ckks_dft_evaluate_assign(&mut resident, &prepared, &keys, scratch)
-                })
+                with_scratch::<B, _>(
+                    module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key),
+                    |scratch| module.ckks_dft_evaluate_assign(&mut resident, &prepared, &keys, scratch),
+                )
                 .unwrap();
                 assert_eq!(
                     snapshot::<B, _>(&raw),
@@ -135,11 +124,15 @@ where
             ($dir:ty, $kind:expr, $method:ident) => {{
                 let (dft, prepared, keys) = prepare!($dir, Standard, $kind, DFTOutputFormat::Standard);
                 let mut out = fixture_ciphertext(module, &layout, 67);
-                with_scratch::<B, _>(shared, |scratch| module.$method(&mut out, &dft, &keys, scratch)).unwrap();
-                let mut resident = fixture_ciphertext(module, &layout, 67);
-                with_scratch::<B, _>(shared, |scratch| {
-                    module.$method(&mut resident, &prepared, &keys, scratch)
+                with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
+                    module.$method(&mut out, &dft, &keys, scratch)
                 })
+                .unwrap();
+                let mut resident = fixture_ciphertext(module, &layout, 67);
+                with_scratch::<B, _>(
+                    module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key),
+                    |scratch| module.$method(&mut resident, &prepared, &keys, scratch),
+                )
                 .unwrap();
                 assert_eq!(snapshot::<B, _>(&out), snapshot::<B, _>(&resident));
                 results.push(snapshot::<B, _>(&out));
@@ -153,13 +146,13 @@ where
             let before = snapshot::<B, _>(&src);
             let mut re = fixture_ciphertext(module, &layout, 73);
             let mut im = fixture_ciphertext(module, &layout, 79);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                 module.ckks_coeffs_to_slots_split(&mut re, &mut im, &src, &dft, &keys, scratch)
             })
             .unwrap();
             let mut resident_re = fixture_ciphertext(module, &layout, 73);
             let mut resident_im = fixture_ciphertext(module, &layout, 79);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key), |scratch| {
                 module.ckks_coeffs_to_slots_split(&mut resident_re, &mut resident_im, &src, &prepared, &keys, scratch)
             })
             .unwrap();
@@ -181,12 +174,12 @@ where
             let re = fixture_ciphertext(module, &real_layout, 83);
             let im = fixture_ciphertext(module, &real_layout, 89);
             let mut out = fixture_ciphertext(module, &layout, 97);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                 module.ckks_slots_to_coeffs_split(&mut out, &re, &im, &dft, &keys, scratch)
             })
             .unwrap();
             let mut resident = fixture_ciphertext(module, &layout, 97);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key), |scratch| {
                 module.ckks_slots_to_coeffs_split(&mut resident, &re, &im, &prepared, &keys, scratch)
             })
             .unwrap();
@@ -205,12 +198,12 @@ where
             let (dft, prepared, keys) = prepare!(Encode, Repack, DFTType::Encode, DFTOutputFormat::RepackImagAsReal);
             let src = fixture_ciphertext(module, &layout, 101);
             let mut out = fixture_ciphertext(module, &layout, 103);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                 module.ckks_coeffs_to_slots_repack(&mut out, &src, &dft, &keys, scratch)
             })
             .unwrap();
             let mut resident = fixture_ciphertext(module, &layout, 103);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key), |scratch| {
                 module.ckks_coeffs_to_slots_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
@@ -231,12 +224,12 @@ where
             };
             let src = fixture_ciphertext(module, &repacked, 107);
             let mut out = fixture_ciphertext(module, &layout, 109);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                 module.ckks_slots_to_coeffs_repack(&mut out, &src, &dft, &keys, scratch)
             })
             .unwrap();
             let mut resident = fixture_ciphertext(module, &layout, 109);
-            with_scratch::<B, _>(shared, |scratch| {
+            with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key), |scratch| {
                 module.ckks_slots_to_coeffs_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
@@ -278,8 +271,8 @@ where
     BR: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(

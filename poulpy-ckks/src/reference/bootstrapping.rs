@@ -94,7 +94,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -149,6 +149,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             ))
             .max(eval_mod_tmp);
 
+        nested = nested
+            .max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, ctx.coeffs_to_slots(), &keys_layout.automorphism_key))
+            .max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, ctx.slots_to_coeffs(), &keys_layout.automorphism_key));
+        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
+            nested = nested.max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, bypass, &keys_layout.automorphism_key));
+        }
+
         if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
             carved += in_ct_bytes;
         }
@@ -179,7 +186,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,

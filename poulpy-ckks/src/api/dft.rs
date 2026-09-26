@@ -29,11 +29,30 @@ use crate::{
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
 ///
-/// Evaluation and preparation use the shared
-/// [`CKKSAllOpsTmpBytes::ckks_all_ops_with_atk_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_with_atk_tmp_bytes)
-/// budget for the widest ciphertext, factor plaintext, and key layouts in the
-/// transform. Backend overrides must honor that same budget.
+/// Size preparation with [`Self::ckks_prepare_dft_matrix_tmp_bytes`] and evaluation
+/// (including format wrappers) with [`Self::ckks_dft_tmp_bytes`].
 pub trait CKKSDFTOps<BE: Backend> {
+    /// Selected workspace for preparing every factor of this matrix.
+    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(&self, dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>) -> usize
+    where
+        P: poulpy_core::layouts::LWEInfos;
+
+    /// Selected workspace for raw DFT evaluation and its format wrappers.
+    /// `dst` and `src` must bound all destination and source allocations; `key`
+    /// must bound every rotation/conjugation key used by the transform.
+    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: poulpy_core::layouts::GGLWEInfos;
+
     /// Prepares an unprepared [`DFTMatrix`] into its resident
     /// convolution-domain form [`DFTMatrixPrepared`] (see
     /// [`crate::reference::dft::ckks_prepare_dft_matrix`]): each factor's plaintext

@@ -35,6 +35,28 @@ pub unsafe trait DFTImpl:
     + super::CKKSImagImpl
     + super::CKKSRotateImpl
 {
+    /// Workspace for the selected matrix preparation implementation.
+    fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+        module: &Module<Self>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::LWEInfos;
+
+    /// Workspace shared by the selected raw evaluation and format wrappers.
+    fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+        module: &Module<Self>,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: poulpy_core::layouts::GGLWEInfos;
+
     fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -182,6 +204,31 @@ pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
 macro_rules! impl_ckks_dft_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::DFTImpl for $be {
+            fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
+            ) -> usize
+            where
+                P: poulpy_core::layouts::LWEInfos,
+            {
+                $crate::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
+            }
+
+            fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &Dst,
+                src: &Src,
+                dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
+                key: &K,
+            ) -> usize
+            where
+                P: poulpy_core::layouts::GLWEInfos,
+                Dst: $crate::CKKSCtBounds,
+                Src: $crate::CKKSCtBounds,
+                K: poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key)
+            }
             fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,

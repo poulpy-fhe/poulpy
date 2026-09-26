@@ -71,11 +71,11 @@ different size from the reference. EvalMod's query dispatches through
 `CKKSEvalModImpl::ckks_eval_mod_tmp_bytes_impl`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.
 
-DFT and polynomial evaluation retain the shared `CKKSAllOpsTmpBytes` workflow
-bounds. They do not expose separate per-method scratch APIs. Reference and
-derived bodies must account for the selected constituent operations within
-those bounds. PaCo and SHIP coefficient-encoding hooks report their own
-workspace requirements.
+DFT preparation uses `ckks_prepare_dft_matrix_tmp_bytes`; raw evaluation and
+format wrappers use `ckks_dft_tmp_bytes`. Bootstrap sizing includes the selected
+DFT queries. Their reference budgets include selected Core and CKKS operations.
+Polynomial evaluation retains the shared `CKKSAllOpsTmpBytes` bounds. PaCo and
+SHIP coefficient-encoding hooks report their own workspace requirements.
 
 The paired harness gives each implementation its own advertised scratch
 capacity, poisons it, and checks surrounding guards through explicit transfers.
