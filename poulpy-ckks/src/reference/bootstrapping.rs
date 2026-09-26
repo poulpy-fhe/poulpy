@@ -7,10 +7,7 @@ use poulpy_core::{
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
-use poulpy_hal::{
-    execution::{TaskExecutor, worker_scratch_bytes},
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use std::ops::Deref;
 
 use crate::{
@@ -128,12 +125,16 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
         };
 
-        let eval_mod_tmp = self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
-        let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-            2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
-        } else {
-            eval_mod_tmp
-        };
+        let eval_mod_tmp = self
+            .ckks_eval_mod_pair_tmp_bytes(
+                &boot_layout,
+                &boot_layout,
+                &boot_layout,
+                &boot_layout,
+                ctx.eval_mod(),
+                &keys_layout.tensor_key,
+            )
+            .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
         let mut nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
                 &boot_layout,
@@ -436,27 +437,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     {
-        if !<BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-            self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-            self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-            return Ok(());
-        }
-
-        let task_bytes = self
-            .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key())
-            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()));
-        let task_bytes = worker_scratch_bytes::<BE>(task_bytes);
-        let (arenas, _) = scratch.borrow().split(2, task_bytes);
-        let mut arenas = arenas.into_iter();
-        let mut scratch_real = arenas.next().unwrap();
-        let mut scratch_imag = arenas.next().unwrap();
-        let (real, imag) = <BE::TaskExecutor as TaskExecutor>::join(
-            || self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_real),
-            || self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_imag),
-        );
-        real?;
-        imag?;
-        Ok(())
+        self.ckks_eval_mod_pair(res_real, res_imag, r0, i0, ctx.eval_mod(), keys.tensor_key(), scratch)
     }
 
     fn ckks_bootstrap_s2c_first<F, K>(

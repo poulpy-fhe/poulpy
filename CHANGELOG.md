@@ -94,6 +94,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Paired EvalMod has independently selected execution and scratch queries, callable serial/parallel fallbacks, and S2C bootstrap dispatch. Shared parity checks both outputs against single-input evaluation.
+
 - **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, and DFT parity uses exact advertised scratch.
 
 - `oep::defaults` exposes callable DFT format compositions for conditional overrides, retaining selected constituent dispatch.

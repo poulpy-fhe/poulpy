@@ -121,3 +121,10 @@ registrations, runtime selection, and commands belong in the
 Conditional DFT overrides can call the corresponding composition in
 `oep::defaults`. The fallback bypasses the format wrapper while retaining
 selected DFT evaluation and arithmetic operations.
+
+`ckks_eval_mod_pair` evaluates disjoint inputs and outputs with shared parameters
+and a key provider. Its selected query covers both branches. The callable
+`oep::defaults` fallback uses the selected single-input operations, sequentially
+or in two aligned task arenas. Errors may leave either output changed. S2C
+bootstrapping selects the pair operation for its two independent halves; the
+real-only path and C2S storage-reuse steps retain single-input evaluation.
