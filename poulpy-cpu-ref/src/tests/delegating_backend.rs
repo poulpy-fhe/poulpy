@@ -1,3 +1,5 @@
+mod external_product;
+
 use poulpy_core::{
     GLWEMaskFill,
     api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},

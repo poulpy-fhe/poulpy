@@ -89,8 +89,12 @@ opaque buffers.
 The shared gadget-product and GLWE external-product algorithms need partial
 views of DFT limbs. They require `Backend::DFT_LIMBS_CONTIGUOUS = true`. A backend
 with another layout must provide its own `GGLWEProductDigitsStridedImpl` and
-`GLWEExternalProductImpl` implementations. The incompatible shared bodies
-are rejected at compile time.
+`GLWEExternalProductImpl::glwe_external_product_dft` with its matching
+`glwe_external_product_internal_tmp_bytes` query. The public reference external
+product calls these selected methods after any radix conversion, so it can be
+retained for another DFT layout. `GLWEExternalProductDftReference` exposes the
+contiguous-limb fallback without dispatching back to the override. Incompatible
+reference digit loops are rejected at compile time.
 
 ## Testing a replacement
 

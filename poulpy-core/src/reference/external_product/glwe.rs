@@ -48,7 +48,7 @@ fn glwe_external_product_dft_fill<BE, M>(
     const {
         assert!(
             BE::DFT_LIMBS_CONTIGUOUS,
-            "the reference external product requires contiguous DFT limbs; implement GLWEExternalProductImpl for other layouts"
+            "the reference external product requires contiguous DFT limbs; override GLWEExternalProductImpl::glwe_external_product_dft for other layouts"
         );
     }
     let cols: usize = (ggsw.rank() + 1).into();
@@ -100,7 +100,27 @@ fn glwe_external_product_dft_fill<BE, M>(
     }
 }
 
-impl<BE: Backend> GLWEExternalProductInternal<BE> for Module<BE>
+/// Callable contiguous-limb DFT external-product algorithm and its workspace query.
+pub trait GLWEExternalProductDftReference<BE: Backend> {
+    /// Workspace for the contiguous-limb algorithm, including input normalization.
+    fn glwe_external_product_internal_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos;
+
+    /// Fills the DFT output using the portable contiguous-limb digit loop.
+    fn glwe_external_product_dft_reference<'r, A>(
+        &self,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE>,
+        a: &A,
+        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWEExternalProductDftReference<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxDftBytesOf
@@ -116,7 +136,7 @@ where
         + VecZnxNormalize<BE>
         + GLWENormalize<BE>,
 {
-    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    fn glwe_external_product_internal_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -141,7 +161,7 @@ where
                 .max(self.glwe_normalize_tmp_bytes())
     }
 
-    fn glwe_external_product_dft<'r, A>(
+    fn glwe_external_product_dft_reference<'r, A>(
         &self,
         res_dft: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
@@ -221,7 +241,7 @@ where
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes()
-            .max(module.glwe_external_product_dft_fill_tmp_bytes_reference(&a_conv_infos, ggsw_infos));
+            .max(module.glwe_external_product_internal_tmp_bytes(res_infos, &a_conv_infos, ggsw_infos));
         lvl_2_0 + lvl_2_1
     } else {
         module.glwe_external_product_internal_tmp_bytes(res_infos, a_infos, ggsw_infos)
@@ -287,7 +307,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
                 rank: a.rank(),
             });
             module.glwe_normalize(&mut a_conv, a, &mut scratch_2.borrow());
-            glwe_external_product_dft_fill(module, &mut res_dft, a_conv.to_backend_ref(), ggsw, &mut scratch_2);
+            module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
         });
     } else {
         module.glwe_external_product_dft(&mut res_dft, a, ggsw, &mut scratch.borrow());
@@ -371,7 +391,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
                 rank: res.rank(),
             });
             module.glwe_normalize(&mut res_conv, res, &mut scratch_2.borrow());
-            glwe_external_product_dft_fill(module, &mut res_dft, res_conv.to_backend_ref(), ggsw, &mut scratch_2);
+            module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
         });
     } else {
         module.glwe_external_product_dft(&mut res_dft, res, ggsw, &mut scratch.borrow());

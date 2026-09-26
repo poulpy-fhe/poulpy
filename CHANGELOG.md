@@ -54,6 +54,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `GLWEExternalProductImpl` selects the DFT-domain execution and scratch query used by `GLWEExternalProductInternal`. Public reference external products use this dispatch for matching and mixed radices. The contiguous-limb reference remains independently callable; custom DFT layouts can override it.
+
 - Compressed GGSW encryption no longer requires the unused host-only noise-analysis contract.
 
 - Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation while retaining their rotation keys.
