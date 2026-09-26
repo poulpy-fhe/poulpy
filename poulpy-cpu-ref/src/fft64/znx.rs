@@ -1,4 +1,4 @@
-//! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`FFT64Ref`](crate::FFT64Ref).
+//! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`FFT64Ref`](super::FFT64Ref).
 //!
 //! Implements the `Znx*` traits from `crate::reference::znx`, covering
 //! coefficient-wise addition, subtraction, negation, power-of-two multiplication,
@@ -11,6 +11,8 @@
 //!
 //! Every implementation delegates directly to the corresponding `_ref` function
 //! and is marked `#[inline(always)]` to eliminate call overhead.
+
+use super::FFT64Ref;
 
 use crate::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
@@ -25,8 +27,6 @@ use crate::reference::znx::{
     znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref, znx_rotate, znx_sub_assign_ref,
     znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
 };
-
-use super::FFT64Ref;
 
 impl ZnxAdd for FFT64Ref {
     #[inline(always)]
@@ -216,7 +216,7 @@ impl ZnxNormalizeDigit for FFT64Ref {
 mod normalization_tests {
     #[test]
     fn test_normalization_kernels_bounded_inputs() {
-        crate::test_suite::normalization::test_normalization_kernels::<crate::FFT64Ref>();
-        crate::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Ref>();
+        crate::test_suite::normalization::test_normalization_kernels::<super::FFT64Ref>();
+        crate::test_suite::normalization::test_normalization_kernels::<super::super::super::NTT4x30Ref>();
     }
 }

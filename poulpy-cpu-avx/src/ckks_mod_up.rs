@@ -1,8 +1,9 @@
+use super::NTT4x30Avx;
+#[cfg(feature = "enable-rayon")]
+use super::NTT4x30AvxRayon;
+
 use std::mem::size_of;
 
-use crate::NTT4x30Avx;
-#[cfg(feature = "enable-rayon")]
-use crate::NTT4x30AvxRayon;
 use poulpy_ckks::{
     CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
     api::CKKSPow2Ops,
@@ -67,7 +68,7 @@ impl ModUpBackend for NTT4x30Avx {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
             module,
             res,
             a,
@@ -92,7 +93,7 @@ impl ModUpBackend for NTT4x30AvxRayon {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::ntt4x30::vmp_apply_digits_strided_known_zero_prefix(
+        super::ntt4x30::vmp_apply_digits_strided_known_zero_prefix(
             module,
             res,
             a,

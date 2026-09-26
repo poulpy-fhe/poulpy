@@ -1,8 +1,10 @@
-//! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`NTT4x30Ref`](crate::NTT4x30Ref).
+//! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`NTT4x30Ref`](super::NTT4x30Ref).
 //!
 //! Implements the `Znx*` traits from `crate::reference::znx`. All implementations
 //! delegate to the same `_ref` functions as `poulpy-cpu-ref` — these operate on plain
 //! `&[i64]` slices, which are backend-independent.
+
+use super::NTT4x30Ref;
 
 use crate::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
@@ -17,8 +19,6 @@ use crate::reference::znx::{
     znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref, znx_rotate, znx_sub_assign_ref,
     znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
 };
-
-use crate::NTT4x30Ref;
 
 impl ZnxAdd for NTT4x30Ref {
     #[inline(always)]
