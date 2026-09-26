@@ -1812,7 +1812,8 @@ where
     Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
-        if res.base2k() == a.base2k() && res.k() >= a.k() {
+        // A non-canonical `a` wider than `res` is normalized, not truncated.
+        if res.base2k() == a.base2k() && res.k() >= a.k() && res.max_size() >= a.max_size() {
             0
         } else {
             self.vec_znx_normalize_tmp_bytes()
@@ -1824,11 +1825,15 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        let canonical = {
+        // Raw limbs only when nothing is lost: carries of a non-canonical `a`
+        // can sit in limbs past `res`'s allocation.
+        let raw = {
             let (res_ref, a_ref) = (res.to_backend_ref(), a.to_backend_ref());
-            !(res_ref.base2k() == a_ref.base2k() && res_ref.k() >= a_ref.k()) || a_ref.is_canonical()
+            res_ref.base2k() == a_ref.base2k()
+                && res_ref.k() >= a_ref.k()
+                && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
         };
-        res.set_canonical(canonical);
+        res.set_canonical(!raw || a.is_canonical());
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
@@ -1837,7 +1842,7 @@ where
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-        if res.base2k() == a.base2k() && res.k() >= a.k() {
+        if raw {
             for i in 0..min_rank {
                 self.vec_znx_copy(&mut res.data, i, &a.data, i);
             }

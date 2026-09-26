@@ -102,8 +102,9 @@ where
     }
 
     let mut shifted = module.ckks_ciphertext_alloc_from_infos(input);
-    module.glwe_rotate(-branch.shift, &mut shifted, input);
-    shifted.set_meta_checked(input.meta())?;
+    // Copy first: it normalizes a non-canonical `input` the rotate would truncate.
+    module.ckks_copy(&mut shifted, input, scratch)?;
+    module.glwe_rotate_assign(-branch.shift, &mut shifted, scratch);
     paco_bootstrap_branch_validated_into::<BE, F, K, _>(module, output, &shifted, context, keys, branch.output_meta, scratch)?;
     module.glwe_rotate_assign(branch.shift, output, scratch);
     Ok(())

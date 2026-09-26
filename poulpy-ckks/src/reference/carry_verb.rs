@@ -136,11 +136,12 @@ macro_rules! ckks_carry_verb_reference {
 
                     // Align both operands to the common torus level: operand `x` is
                     // shifted by `x.log_budget − min_budget + offset`. When both
-                    // shifts are zero the plain verb applies directly.
+                    // shifts are zero and `dst` holds both operands' limbs, the
+                    // plain verb applies directly.
                     let min_budget = a.log_budget().min(b.log_budget());
                     let shift_a = a.log_budget() - min_budget + offset;
                     let shift_b = b.log_budget() - min_budget + offset;
-                    if shift_a == 0 && shift_b == 0 {
+                    if shift_a == 0 && shift_b == 0 && $crate::ckks_holds_limbs(dst, a) && $crate::ckks_holds_limbs(dst, b) {
                         self.$glwe_into(dst, a, b);
                     } else {
                         self.glwe_lsh(dst, a, shift_a, scratch);
@@ -168,13 +169,15 @@ macro_rules! ckks_carry_verb_reference {
                 {
                     let dst_log_budget = dst.log_budget();
 
-                    if dst_log_budget < a.log_budget() {
-                        self.$glwe_lsh_verb(dst, a, a.log_budget() - dst_log_budget, scratch);
-                    } else if dst_log_budget > a.log_budget() {
+                    if dst_log_budget > a.log_budget() {
                         self.glwe_lsh_assign(dst, dst_log_budget - a.log_budget(), scratch);
+                    }
+                    let shift_a = a.log_budget().saturating_sub(dst_log_budget);
+                    // The shift-accumulate normalizes `a` over all its limbs.
+                    if shift_a == 0 && $crate::ckks_holds_limbs(dst, a) {
                         self.$glwe_assign(dst, a);
                     } else {
-                        self.$glwe_assign(dst, a);
+                        self.$glwe_lsh_verb(dst, a, shift_a, scratch);
                     }
 
                     dst.set_log_budget(dst_log_budget.min(a.log_budget()));

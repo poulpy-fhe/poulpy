@@ -1434,11 +1434,11 @@ mod bin_fhe_overrides;
 #[cfg(feature = "enable-ckks")]
 mod ckks_noncanonical_compact_dst {
     use crate::FFT64Ref;
-    use poulpy_ckks::api::{CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops};
+    use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
     use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
     use poulpy_ckks::{CKKSMeta, SetCKKSInfos};
-    use poulpy_core::GLWENormalize;
     use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
+    use poulpy_core::{GLWECopy, GLWENormalize};
     use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
     use poulpy_hal::layouts::{Module, ScratchOwned, ZnxView, ZnxViewMut};
 
@@ -1457,7 +1457,7 @@ mod ckks_noncanonical_compact_dst {
     }
 
     #[test]
-    fn unary_ops_keep_carries_past_k() {
+    fn lazy_ops_keep_carries_past_k() {
         let module = Module::<FFT64Ref>::new(64);
         let mut scratch = ScratchOwned::<FFT64Ref>::alloc(1 << 20);
         // k = 32 over 4 limbs: 3 units of limb 1 parked in limb 2.
@@ -1476,7 +1476,28 @@ mod ckks_noncanonical_compact_dst {
             &CKKSCiphertextOwned<FFT64Ref>,
             &mut ScratchOwned<FFT64Ref>,
         );
-        let ops: [(&str, Op, [i64; 2]); 5] = [
+        let ops: [(&str, Op, [i64; 2]); 10] = [
+            ("glwe_copy", |m, d, s, sc| m.glwe_copy(d, s, &mut sc.borrow()), [3, 0]),
+            (
+                "add_into",
+                |m, d, s, sc| m.ckks_add_into(d, s, &ct(m, 32), &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_into",
+                |m, d, s, sc| m.ckks_sub_into(d, &ct(m, 32), s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
+            (
+                "add_assign",
+                |m, d, s, sc| m.ckks_add_assign(d, s, &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_assign",
+                |m, d, s, sc| m.ckks_sub_assign(d, s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
             ("copy", |m, d, s, sc| m.ckks_copy(d, s, &mut sc.borrow()).unwrap(), [3, 0]),
             (
                 "double",
