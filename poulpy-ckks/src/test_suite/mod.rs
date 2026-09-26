@@ -238,6 +238,10 @@ macro_rules! ckks_backend_rank2_test_suite {
             }
 
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
+            run_test!(
+                encryption_degree_mismatch_error,
+                $crate::test_suite::encryption::test_encryption_degree_mismatch_error
+            );
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
             run_test!(add_ct_delta_a_gt_b, $crate::test_suite::add::test_add_ct_delta_a_gt_b);
@@ -365,6 +369,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::slots_kind::test_slots_kind_composition
             );
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
+            run_test!(
+                encryption_degree_mismatch_error,
+                $crate::test_suite::encryption::test_encryption_degree_mismatch_error
+            );
             run_test!(
                 decrypt_extract_same_meta,
                 $crate::test_suite::encryption::test_decrypt_extract_same_meta
