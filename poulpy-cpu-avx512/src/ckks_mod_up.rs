@@ -1,12 +1,13 @@
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+#[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
+use super::NTT3x42IfmaRayon;
+use super::NTT4x30Avx512;
+#[cfg(feature = "enable-rayon")]
+use super::NTT4x30Avx512Rayon;
+
 use std::mem::size_of;
 
-#[cfg(feature = "enable-ifma")]
-use crate::NTT3x42Ifma;
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-use crate::NTT3x42IfmaRayon;
-use crate::NTT4x30Avx512;
-#[cfg(feature = "enable-rayon")]
-use crate::NTT4x30Avx512Rayon;
 use poulpy_ckks::{
     CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
     api::CKKSPow2Ops,
@@ -71,7 +72,7 @@ impl ModUpBackend for NTT4x30Avx512 {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
             module,
             res,
             a,
@@ -96,7 +97,7 @@ impl ModUpBackend for NTT4x30Avx512Rayon {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::ntt4x30_avx512::vmp_apply_digits_strided_known_zero_prefix(
+        super::ntt4x30_avx512::vmp_apply_digits_strided_known_zero_prefix(
             module,
             res,
             a,
@@ -121,7 +122,7 @@ impl ModUpBackend for NTT3x42Ifma {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
+        let bytes = super::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
             a.cols(),
             a.size(),
             dsize,
@@ -130,7 +131,7 @@ impl ModUpBackend for NTT3x42Ifma {
             1,
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor>(
             res,
             a,
             dsize,
@@ -154,7 +155,7 @@ impl ModUpBackend for NTT3x42IfmaRayon {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::ntt3x42_ifma::vmp_apply_digits_strided_known_zero_prefix(
+        super::ntt3x42_ifma::vmp_apply_digits_strided_known_zero_prefix(
             module,
             res,
             a,
