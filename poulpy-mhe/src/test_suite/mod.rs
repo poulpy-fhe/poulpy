@@ -3,6 +3,7 @@
 
 pub mod evaluation_key;
 pub(crate) mod fixtures;
+pub mod keyswitch;
 pub mod layouts;
 pub mod pat;
 pub mod public_key;
@@ -121,6 +122,11 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid aggregation: Galois elements differ")]
             fn glwe_automorphism_key_p_mismatch() {
                 $crate::test_suite::evaluation_key::test_glwe_automorphism_key_p_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch(&Module::<$backend>::new(256));
             }
         }
     };
