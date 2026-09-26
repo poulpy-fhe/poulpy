@@ -1075,12 +1075,12 @@ unsafe fn conv_accumulate_terms_group(
 }
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_sum_ifma<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'a, NTT3x42Ifma>],
+    terms: &[CnvDftAccTerm<'_, NTT3x42Ifma>],
     tmp: &mut [u8],
 ) {
     let n = res.n();

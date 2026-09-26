@@ -82,16 +82,14 @@ unsafe impl HalConvolutionImpl for NTT4x30Ref {
         <Self as NTT4x30ConvolutionDefault>::cnv_apply_dft_sum_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
     }
 
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
         scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) where
-        Self: 'a,
-    {
+    ) {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault>::cnv_apply_dft_sum_default(
             module,

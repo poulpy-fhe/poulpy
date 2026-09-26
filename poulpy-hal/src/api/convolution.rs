@@ -282,15 +282,14 @@ pub trait Convolution<BE: Backend> {
     /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
     /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived, test_convolution_sparse
     /// ```
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'a, BE>],
+        terms: &[CnvDftAccTerm<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        BE: 'a;
+    );
 
     /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft) requires for those sizes.
     ///

@@ -576,16 +576,16 @@ where
         ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_size, a_size, b_size)
     }
 
-    fn cnv_apply_dft_sum_default<'a, R>(
+    fn cnv_apply_dft_sum_default<R>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + 'a,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
