@@ -96,7 +96,7 @@ impl<'a, BE: Backend + 'a> Deref for GGLWECompressedBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGLWECompressedBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGLWECompressedBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -105,13 +105,13 @@ impl<'a, BE: Backend + 'a> DerefMut for GGLWECompressedBackendMut<'a, BE> {
 impl_gglwe_infos_for_inner!(GGLWECompressedBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
 impl_gglwe_infos_for_inner!(GGLWECompressedBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
-impl<'a, BE: Backend + 'a> GGLWECompressedSeedMut for GGLWECompressedBackendMut<'a, BE> {
+impl<BE: Backend> GGLWECompressedSeedMut for GGLWECompressedBackendMut<'_, BE> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.inner.seed
     }
 }
 
-impl<'a, BE: Backend + 'a> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendRef<'a, BE> {
+impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
             k_aux: self.inner.k_aux,
@@ -124,7 +124,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedToBackendRef<BE> for GGLWECompressedBa
     }
 }
 
-impl<'a, BE: Backend + 'a> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<'a, BE> {
+impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
             k_aux: self.inner.k_aux,
@@ -137,7 +137,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedToBackendRef<BE> for GGLWECompressedBa
     }
 }
 
-impl<'a, BE: Backend + 'a> GGLWECompressedToBackendMut<BE> for GGLWECompressedBackendMut<'a, BE> {
+impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressedBackendMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
             k_aux: self.inner.k_aux,
@@ -394,7 +394,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedB
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
             k_aux: self.k_aux(),
@@ -407,7 +407,7 @@ impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
             k_aux: self.k_aux(),
@@ -437,7 +437,7 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedB
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
             k_aux: self.k_aux(),

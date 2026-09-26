@@ -7,12 +7,25 @@ use poulpy_hal::{
 };
 
 pub use crate::api::GLWEDecrypt;
-use crate::layouts::{
-    GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBase2k,
-    prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
+use crate::{
+    ScratchArenaTakeCore,
+    api::{GLWEBytesOf, GLWENormalize},
+    layouts::{
+        GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBase2k,
+        prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
+    },
 };
 
 pub fn glwe_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+where
+    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GLWENormalize<BE> + GLWEBytesOf<BE>,
+    A: GLWEInfos,
+{
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(infos))
+        + glwe_decrypt_body_tmp_bytes::<M, _>(module, infos).max(module.glwe_normalize_tmp_bytes())
+}
+
+pub(crate) fn glwe_decrypt_body_tmp_bytes<M, A>(module: &M, infos: &A) -> usize
 where
     M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: GLWEInfos,
@@ -43,16 +56,30 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>,
     R: GLWEToBackendRef<BE> + GLWEInfos,
     P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
-    let res_backend = res.to_backend_ref();
+    assert!(
+        scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
+        "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
+        scratch.available(),
+        glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
+    );
+    let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
+    let res = if res.is_canonical() {
+        res.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut res_tmp, res, &mut scratch.borrow());
+        res_tmp.to_backend_ref()
+    };
     let mut pt_backend = pt.to_backend_mut();
     let sk_backend = sk.to_backend_ref();
 
-    glwe_decrypt_backend_inner(module, &res_backend, &mut pt_backend, &sk_backend, scratch);
+    glwe_decrypt_backend_inner(module, &res, &mut pt_backend, &sk_backend, &mut scratch);
 }
 
 pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
@@ -80,10 +107,10 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         assert_eq!(pt.n(), sk.n());
     }
     assert!(
-        scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
+        scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),
         "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
         scratch.available(),
-        glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
+        glwe_decrypt_body_tmp_bytes::<M, _>(module, res)
     );
 
     let cols: usize = (res.rank() + 1).into();

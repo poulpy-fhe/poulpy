@@ -410,6 +410,10 @@ where
     fn to_backend_mut(&mut self) -> GLWE<<BE as Backend>::BufMut<'_>, <BE as Backend>::ZnxWord> {
         self.bits.to_backend_mut()
     }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.bits.set_canonical(canonical)
+    }
 }
 
 #[doc(hidden)]
@@ -461,18 +465,22 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
             + GLWEKeyswitch<BE>,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
+        let mut a = GLWEToBackendRef::<BE>::to_backend_ref(self);
+        // The keyswitch reads a lazy sum as is, which its margin tolerates.
+        a.set_canonical(true);
+        let a = &a;
         if let Some(ks_glwe) = ks_glwe {
             let mut res_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_alloc(ks_glwe.base2k(), ks_glwe.k(), ks_glwe.rank_out());
             let mut scratch_1 = scratch.borrow();
             {
                 let mut scratch_op = scratch_1.borrow();
-                module.glwe_keyswitch(&mut res_tmp, self, ks_glwe, &mut scratch_op);
+                module.glwe_keyswitch(&mut res_tmp, &a, ks_glwe, &mut scratch_op);
             }
             let mut scratch_op = scratch_1.borrow();
             module.lwe_from_glwe(res, &res_tmp, T::bit_index(bit) << log_gap, ks_lwe, &mut scratch_op);
         } else {
-            module.lwe_from_glwe(res, self, T::bit_index(bit) << log_gap, ks_lwe, scratch);
+            module.lwe_from_glwe(res, &a, T::bit_index(bit) << log_gap, ks_lwe, scratch);
         }
     }
 

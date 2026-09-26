@@ -1,7 +1,4 @@
-use poulpy_hal::{
-    api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -92,18 +89,24 @@ where
         self.glwe_public_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
     }
 
-    fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        self.glwe_prepare_tmp_bytes(infos)
+    }
+
+    fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GLWEPreparedToBackendMut<B> + GetDistributionMut,
         O: GLWEToBackendRef<B> + GetDistribution + GLWEInfos,
     {
-        self.glwe_prepare(res, other);
+        self.glwe_prepare(res, other, scratch);
         *res.dist_mut() = *other.dist();
     }
 }
 
-impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where Self: VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B>
-{}
+impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where Self: GLWEPreparedFactory<B> {}
 
 // module-only API: allocation, sizing, and preparation are provided by
 // `GLWEPublicKeyPreparedFactory` on `Module`.

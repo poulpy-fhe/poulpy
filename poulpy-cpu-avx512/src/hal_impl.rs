@@ -1245,16 +1245,14 @@ mod ifma_impl {
             crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res_size, a_size, b_size)
         }
 
-        fn cnv_apply_dft_sum<'a>(
+        fn cnv_apply_dft_sum(
             module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
-            terms: &[CnvDftAccTerm<'a, Self>],
+            terms: &[CnvDftAccTerm<'_, Self>],
             scratch: &mut ScratchArena<'_, Self>,
-        ) where
-            Self: 'a,
-        {
+        ) {
             let a_size = terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
             let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res.size(), a_size, b_size);

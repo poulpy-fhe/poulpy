@@ -78,13 +78,13 @@ impl<'a, BE: Backend + 'a> Deref for GLWECompressedViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GLWECompressedViewMut<'a, BE> {
+impl<BE: Backend> DerefMut for GLWECompressedViewMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewRef<'a, BE> {
+impl<BE: Backend> LWEInfos for GLWECompressedViewRef<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -102,7 +102,7 @@ impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewMut<'a, BE> {
+impl<BE: Backend> LWEInfos for GLWECompressedViewMut<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -120,13 +120,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GLWECompressedViewRef<'a, BE> {
+impl<BE: Backend> GLWEInfos for GLWECompressedViewRef<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GLWECompressedViewMut<'a, BE> {
+impl<BE: Backend> GLWEInfos for GLWECompressedViewMut<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
@@ -302,6 +302,7 @@ where
         }
         res.set_base2k(other.base2k());
         self.fill_glwe_mask_from_seed(res, other.seed);
+        res.set_canonical(true);
     }
 }
 
@@ -330,7 +331,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressed<BE::OwnedBuf
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedViewRef<'a, BE> {
+impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
             seed: self.inner.seed,
@@ -342,7 +343,7 @@ impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedView
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedViewMut<'a, BE> {
+impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
             seed: self.inner.seed,

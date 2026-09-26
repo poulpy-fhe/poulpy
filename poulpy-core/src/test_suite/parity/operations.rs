@@ -15,7 +15,7 @@ use crate::{
     GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
     layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
-    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
 };
 
 /// Layouts swept by the keyless operation tests.
@@ -119,10 +119,13 @@ fn compare<BR, BT, FR, FT>(
 
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
-            assert_eq!(
-                res_ref, have,
+            assert_glwe_eq!(
+                res_ref,
+                have,
                 "{label}: a_k={:?} res_k={:?} rank={:?}",
-                a_infos.k, res_infos.k, res_infos.rank
+                a_infos.k,
+                res_infos.k,
+                res_infos.rank
             );
         }
     }
@@ -412,6 +415,7 @@ pub fn test_glwe_tensor_parity<BR, BT>(
         test_glwe_tensor_parity_case(
             &a_infos,
             &[0, base2k - 1, base2k, a_infos.k.0 as usize],
+            true,
             module_ref,
             module_test,
             &mut source,
@@ -424,7 +428,8 @@ pub fn test_glwe_tensor_parity<BR, BT>(
 /// and compares canonical coefficients and metadata against the selected backend.
 ///
 /// Backend registrations can use focused cases at expensive ring degrees while
-/// retaining the full parameter sweep at smaller degrees.
+/// retaining the full parameter sweep at smaller degrees, which alone also runs
+/// unnormalized operands.
 pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
     layout: &GLWELayout,
     offsets: &[usize],
@@ -440,12 +445,13 @@ pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
     assert!(!offsets.is_empty(), "tensor parity requires at least one offset");
-    test_glwe_tensor_parity_case(layout, offsets, module_ref, module_test, &mut Source::new([29u8; 32]));
+    test_glwe_tensor_parity_case(layout, offsets, false, module_ref, module_test, &mut Source::new([29u8; 32]));
 }
 
 fn test_glwe_tensor_parity_case<BR, BT>(
     a_infos: &GLWELayout,
     offsets: &[usize],
+    with_twins: bool,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
     source: &mut Source,
@@ -476,7 +482,16 @@ fn test_glwe_tensor_parity_case<BR, BT>(
 
     let mut out_ref = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
     let mut out_test = module_test.glwe_tensor_alloc_from_infos(&res_infos);
-    for &cnv_offset in offsets {
+    // Operands are normalized before the convolution, so one offset covers the twins.
+    let twins = with_twins.then(|| {
+        let mut twin_a = module_test.glwe_alloc_from_infos(a_infos);
+        let mut twin_b = module_test.glwe_alloc_from_infos(a_infos);
+        unnormalized_twin::<BR, BT>(&a_ref, &mut twin_a);
+        unnormalized_twin::<BR, BT>(&b_ref, &mut twin_b);
+        (twin_a, twin_b)
+    });
+    for (i, &cnv_offset) in offsets.iter().enumerate() {
+        let twins = twins.as_ref().filter(|_| i == 0);
         let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_apply_tmp_bytes(&out_ref, &a_ref, &b_ref));
         let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test));
         module_ref.glwe_tensor_apply(cnv_offset, &mut out_ref, &a_ref, &b_ref, &mut scratch_ref.borrow());
@@ -488,6 +503,16 @@ fn test_glwe_tensor_parity_case<BR, BT>(
             "glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
             a_infos.k, a_infos.rank
         );
+        if let Some((twin_a, twin_b)) = twins {
+            let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test));
+            module_test.glwe_tensor_apply(cnv_offset, &mut out_test, twin_a, twin_b, &mut scratch_test.borrow());
+            out_test.transfer_into(&mut have);
+            assert_eq!(
+                out_ref, have,
+                "glwe_tensor_apply, unnormalized operands: k={:?} rank={:?} offset={cnv_offset}",
+                a_infos.k, a_infos.rank
+            );
+        }
 
         let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_square_apply_tmp_bytes(&out_ref, &a_ref));
         let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test));
@@ -500,6 +525,16 @@ fn test_glwe_tensor_parity_case<BR, BT>(
             "glwe_tensor_square_apply: k={:?} rank={:?} offset={cnv_offset}",
             a_infos.k, a_infos.rank
         );
+        if let Some((twin_a, _)) = twins {
+            let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test));
+            module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, twin_a, &mut scratch_test.borrow());
+            out_test.transfer_into(&mut have);
+            assert_eq!(
+                out_ref, have,
+                "glwe_tensor_square_apply, unnormalized operand: k={:?} rank={:?} offset={cnv_offset}",
+                a_infos.k, a_infos.rank
+            );
+        }
     }
 }
 
@@ -826,9 +861,35 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
                     }
                     let mut have = module_ref.glwe_alloc_from_infos(&infos);
                     out_test.transfer_into(&mut have);
-                    assert_eq!(
-                        out_ref, have,
+                    assert_glwe_eq!(
+                        out_ref,
+                        have,
                         "multiplication variant={variant} rank={rank} k={k} offset={offset}"
+                    );
+
+                    let mut twin = module_test.glwe_alloc_from_infos(&infos);
+                    unnormalized_twin::<BR, BT>(&a_ref, &mut twin);
+                    let mut st = poisoned_scratch::<BT>(if variant < 2 {
+                        module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, &plain_test)
+                    } else {
+                        module_test.glwe_mul_const_tmp_bytes(&out_test, &a_test, &plain_test)
+                    });
+                    let last = module_test.n() - 1;
+                    match variant {
+                        0 => module_test.glwe_mul_plain(offset, &mut out_test, &twin, &plain_test, &mut st.borrow()),
+                        1 => module_test.glwe_mul_plain_assign(offset, &mut twin, &plain_test, &mut st.borrow()),
+                        2 => module_test.glwe_mul_const(offset, &mut out_test, &twin, &plain_test, last, &mut st.borrow()),
+                        _ => module_test.glwe_mul_const_assign(offset, &mut twin, &plain_test, last, &mut st.borrow()),
+                    }
+                    if variant % 2 == 1 {
+                        twin.transfer_into(&mut have);
+                    } else {
+                        out_test.transfer_into(&mut have);
+                    }
+                    assert_glwe_eq!(
+                        out_ref,
+                        have,
+                        "multiplication variant={variant}, unnormalized operand: rank={rank} k={k} offset={offset}"
                     );
                 }
             }

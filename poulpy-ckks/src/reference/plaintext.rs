@@ -42,6 +42,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         match shift {
@@ -71,6 +72,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
@@ -103,6 +105,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
@@ -127,6 +130,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         match shift {

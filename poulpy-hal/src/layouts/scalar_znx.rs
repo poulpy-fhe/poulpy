@@ -201,7 +201,7 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         ScalarZnx {
             data: B::view_ref(&self.data),
@@ -211,7 +211,7 @@ impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>,
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         scalar_znx_backend_ref_from_mut::<B>(self)
     }
@@ -232,7 +232,7 @@ impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
         scalar_znx_backend_mut_from_mut::<B>(self)
     }

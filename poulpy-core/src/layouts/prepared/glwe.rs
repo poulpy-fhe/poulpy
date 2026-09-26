@@ -2,10 +2,13 @@ use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module, VecZnxDft},
+    layouts::{Backend, Data, Module, ScratchArena, VecZnxDft},
 };
 
-use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
+use crate::{
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore,
+    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
+};
 
 /// DFT-domain (prepared) variant of [`GLWE`](crate::layouts::GLWE).
 ///
@@ -49,7 +52,7 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEPrepared<D, B> {
 /// Trait for allocating and preparing DFT-domain GLWE ciphertexts.
 pub trait GLWEPreparedFactory<B: Backend>
 where
-    Self: GetDegree + VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B>,
+    Self: GetDegree + VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B> + GLWENormalize<B> + GLWEBytesOf<B>,
 {
     /// Allocates a new prepared GLWE with the given parameters.
     fn glwe_prepared_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPrepared<B::OwnedBuf, B> {
@@ -78,13 +81,26 @@ where
         self.glwe_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
     }
 
-    fn glwe_prepare<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        B::scratch_aligned(self.glwe_bytes_of_from_infos(infos)) + self.glwe_normalize_tmp_bytes()
+    }
+
+    fn glwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GLWEPreparedToBackendMut<B>,
         O: GLWEToBackendRef<B> + GLWEInfos,
     {
+        let (mut other_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(other);
+        let other = if other.is_canonical() {
+            other.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut other_tmp, other, &mut scratch.borrow());
+            other_tmp.to_backend_ref()
+        };
         let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
 
         assert_eq!(res.n(), self.ring_degree());
         assert_eq!(other.n(), self.ring_degree());
@@ -98,7 +114,10 @@ where
     }
 }
 
-impl<B: Backend> GLWEPreparedFactory<B> for Module<B> where Self: VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B> {}
+impl<B: Backend> GLWEPreparedFactory<B> for Module<B> where
+    Self: VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B> + GLWENormalize<B>
+{
+}
 
 // module-only API: allocation/size helpers are provided by `GLWEPreparedFactory` on `Module`.
 

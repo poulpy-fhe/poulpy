@@ -970,16 +970,14 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
             * super::convolution::cnv_apply_dft_sum_avx_tmp_bytes(res_size)
     }
 
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: 'a,
-    {
+    ) {
         let per_worker = super::convolution::cnv_apply_dft_sum_avx_tmp_bytes(res.size());
         let bytes = poulpy_cpu_rayon::workers_within(
             <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,

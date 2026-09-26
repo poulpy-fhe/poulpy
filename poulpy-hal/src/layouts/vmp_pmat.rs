@@ -282,7 +282,7 @@ impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'b>, B::DftWord, B> {
+impl<B: Backend> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'_>, B::DftWord, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref(&self.data),
@@ -297,7 +297,7 @@ pub trait VmpPMatReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref_mut(&self.data),
@@ -322,7 +322,7 @@ impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'_>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }
@@ -333,7 +333,7 @@ pub trait VmpPMatReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }

@@ -148,6 +148,8 @@ pub fn cswap_reference<BE, A, B>(
         {
             let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
             module.glwe_sub(&mut tmp_c, res_b, res_a);
+            // The difference feeds the external product unnormalized, as the FFT margin allows.
+            tmp_c.set_canonical(true);
             let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(module.n(), cols, output_size);
             let mut tmp_res_big = tmp_res_big;
             module.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
@@ -160,6 +162,8 @@ pub fn cswap_reference<BE, A, B>(
 
         let mut res_big_tmp = res_big_tmp;
         let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        res_a.set_canonical(true);
+        res_b.set_canonical(true);
         let mut res_a_backend = res_a.to_backend_mut();
 
         for j in 0..cols {
@@ -232,6 +236,8 @@ pub fn cswap_reference<BE, A, B>(
         {
             let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
             module.glwe_sub(&mut tmp_c, &tmp_b, &tmp_a);
+            // The difference feeds the external product unnormalized, as the FFT margin allows.
+            tmp_c.set_canonical(true);
             let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(module.n(), cols, output_size);
             let mut tmp_res_big = tmp_res_big;
             module.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
@@ -244,6 +250,8 @@ pub fn cswap_reference<BE, A, B>(
 
         let mut res_big_tmp = res_big_tmp;
         let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        res_a.set_canonical(true);
+        res_b.set_canonical(true);
         let mut res_a_backend = res_a.to_backend_mut();
 
         for j in 0..cols {

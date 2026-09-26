@@ -9,6 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     layouts::{
@@ -147,8 +148,7 @@ where
     pt_want.encode_vec_i64(&data, pt_k.into());
 
     assert!(
-        module
-            .glwe_noise(&res, &pt_want, &sk_prep, &mut scratch.borrow())
+        glwe_noise_checked(module, &res, &pt_want, &sk_prep, &mut scratch.borrow())
             .std()
             .log2()
             <= ((k_ct - out_base2k) as f64)

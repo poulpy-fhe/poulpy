@@ -125,6 +125,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -138,6 +139,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -151,27 +153,34 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_mut(),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
         }
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }

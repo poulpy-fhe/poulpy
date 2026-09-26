@@ -123,6 +123,7 @@ where
     acc.set_log_budget(res_log_budget);
     acc.set_log_delta(res_log_delta);
     let res_big_ref = res_big.to_backend_ref();
+    acc.set_canonical(true);
     {
         let mut acc_mut = acc.to_backend_mut();
         for col in 0..2 {

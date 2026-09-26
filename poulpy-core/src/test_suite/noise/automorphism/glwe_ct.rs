@@ -8,6 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
+use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
@@ -147,8 +148,7 @@ where
             module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_out.data), 0, &mut scratch.borrow());
 
             assert!(
-                module
-                    .glwe_noise(&ct_out, &pt_out, &sk_prepared, &mut scratch.borrow())
+                glwe_noise_checked(module, &ct_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
                     <= max_noise + 1.0
@@ -273,8 +273,7 @@ where
             module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut scratch.borrow());
 
             assert!(
-                module
-                    .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
+                glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
                     <= max_noise + 1.0

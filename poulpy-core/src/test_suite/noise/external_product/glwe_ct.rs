@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
+use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
@@ -170,8 +171,7 @@ where
                 var_key_err_mask,
             ) + 1.0;
 
-            let noise = module
-                .glwe_noise(&glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
+            let noise = glwe_noise_checked(module, &glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
             println!(
@@ -315,8 +315,7 @@ where
                 var_key_err_mask,
             ) + 1.0;
 
-            let noise = module
-                .glwe_noise(&glwe_out, &pt_want, &sk_prepared, &mut scratch.borrow())
+            let noise = glwe_noise_checked(module, &glwe_out, &pt_want, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
             println!(

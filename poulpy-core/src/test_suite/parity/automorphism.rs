@@ -17,7 +17,7 @@ use crate::{
     },
     test_suite::{
         keys::fill_by_digit,
-        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
     },
 };
 
@@ -115,7 +115,19 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                         check!(@call module_test, res_test, a_test, key_test, scratch_test, $method, $assign);
                         let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                         res_test.transfer_into(&mut have);
-                        assert_eq!(res_ref, have, "{}: rank={rank} dsize={dsize} p={p}", stringify!($method));
+                        assert_glwe_eq!(res_ref, have, "{}: rank={rank} dsize={dsize} p={p}", stringify!($method));
+
+                        let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_automorphism_tmp_bytes(&res_infos, input_infos, &key_infos));
+                        let mut twin_a = module_test.glwe_alloc_from_infos(&a_infos);
+                        if $assign {
+                            unnormalized_twin::<BR, BT>(&initial, &mut res_test);
+                        } else {
+                            initial.transfer_into(&mut res_test);
+                            unnormalized_twin::<BR, BT>(&a_ref, &mut twin_a);
+                        }
+                        check!(@call module_test, res_test, twin_a, key_test, scratch_test, $method, $assign);
+                        res_test.transfer_into(&mut have);
+                        assert_glwe_eq!(res_ref, have, "{}, unnormalized operand: rank={rank} dsize={dsize} p={p}", stringify!($method));
                     }};
                     (@call $module:ident, $res:ident, $a:ident, $key:ident, $scratch:ident, $method:ident, false) => {
                         $module.$method(&mut $res, &$a, &$key.to_backend_ref(), &mut $scratch.borrow());

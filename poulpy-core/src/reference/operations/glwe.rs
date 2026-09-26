@@ -15,9 +15,21 @@ use poulpy_hal::{
 };
 
 use crate::{
+    ScratchArenaTakeCore,
+    api::{GLWEBytesOf, GLWENormalize},
     layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
     reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
+
+fn keeps_canonical_digits<BE, R, A>(res: &R, a: &A) -> bool
+where
+    BE: Backend,
+    R: GLWEToBackendRef<BE>,
+    A: GLWEToBackendRef<BE>,
+{
+    let (res, a) = (res.to_backend_ref(), a.to_backend_ref());
+    a.is_canonical() && res.base2k() == a.base2k() && res.k() >= a.k()
+}
 
 fn normalize_glwe_assign<BE, M, R>(module: &M, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
 where
@@ -72,7 +84,7 @@ pub trait GLWEMulConstReference<BE: Backend> {
 impl<BE: Backend> GLWEMulConstReference<BE> for Module<BE>
 where
     Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
-    Self: VecZnxCopy<BE>,
+    Self: VecZnxCopy<BE> + GLWENormalize<BE>,
 {
     fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -91,7 +103,7 @@ where
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
 
-        lvl_0 + lvl_1
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a)) + (lvl_0 + lvl_1).max(self.glwe_normalize_tmp_bytes())
     }
 
     fn glwe_mul_const_reference<R, A, B>(
@@ -116,12 +128,19 @@ where
             scratch.available(),
             self.glwe_mul_const_tmp_bytes_reference(res, a, b)
         );
+        let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
+        let a = if a.is_canonical() {
+            a.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+            a_tmp.to_backend_ref()
+        };
+        res.set_canonical(true);
 
         let cols: usize = res.rank().as_usize() + 1;
         let a_base2k: usize = a.base2k().as_usize();
         let res_base2k: usize = res.base2k().as_usize();
         let res_k = res.k().as_usize();
-        let a_backend = a.to_backend_ref();
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
@@ -137,7 +156,7 @@ where
                     cnv_offset_hi,
                     &mut res_big_backend,
                     0,
-                    &a_backend.data,
+                    &a.data,
                     i,
                     &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&b_backend.data),
                     0,
@@ -173,13 +192,16 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let scratch = scratch.borrow();
+        let mut scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
             "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
             scratch.available(),
             self.glwe_mul_const_tmp_bytes_reference(res, res, b)
         );
+        if !res.is_canonical() {
+            self.glwe_normalize_assign(res, &mut scratch);
+        }
 
         let cols: usize = res.rank().as_usize() + 1;
         let res_base2k: usize = res.base2k().as_usize();
@@ -234,7 +256,8 @@ where
         + VecZnxBigNormalize<BE>
         + Convolution<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>,
+        + VecZnxCopy<BE>
+        + GLWENormalize<BE>,
 {
     fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -273,7 +296,7 @@ where
         let lvl_2_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_2: usize = lvl_2_res_tmp + lvl_2_res_dft + lvl_2_cnv_apply.max(lvl_2_norm);
 
-        lvl_0 + lvl_1.max(lvl_2)
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a)) + (lvl_0 + lvl_1.max(lvl_2)).max(self.glwe_normalize_tmp_bytes())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -291,6 +314,14 @@ where
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_reference(res, a, b)
         );
+        let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
+        let a = if a.is_canonical() {
+            a.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+            a_tmp.to_backend_ref()
+        };
+        res.set_canonical(true);
 
         let a_k = a.k().as_usize();
         // `b` is the plaintext: an integer polynomial consumed at its declared
@@ -310,10 +341,9 @@ where
         // reads it through the sparse right slot of the convolution.
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(b.n().as_usize(), 1, b.size(), PrepareHint::OneShot);
 
-        let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a.data, scratch));
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
@@ -363,13 +393,16 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
-        let scratch = scratch.borrow();
+        let mut scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, res, a),
             "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_reference(res, res, a)
         );
+        if !res.is_canonical() {
+            self.glwe_normalize_assign(res, &mut scratch);
+        }
 
         let res_k = res.k().as_usize();
         // `a` is the plaintext: an integer polynomial consumed at its declared
@@ -520,7 +553,8 @@ where
         + VecZnxNegate<BE>
         + GGLWEProductReference<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>,
 {
     fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -557,7 +591,8 @@ where
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
 
-        lvl_0 + lvl_diag_cache + lvl_1.max(lvl_2)
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
+            + (lvl_0 + lvl_diag_cache + lvl_1.max(lvl_2)).max(self.glwe_normalize_tmp_bytes())
     }
 
     fn glwe_tensor_apply_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
@@ -602,7 +637,9 @@ where
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
 
-        lvl_0 + lvl_1.max(lvl_2)
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(b))
+            + (lvl_0 + lvl_1.max(lvl_2)).max(self.glwe_normalize_tmp_bytes())
     }
 
     fn glwe_tensor_relinearize_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
@@ -744,6 +781,7 @@ where
             }
         }
 
+        res.set_canonical(true);
         for i in 0..(res.rank() + 1).into() {
             let res_big_ref = res_big.to_backend_ref();
             let mut scratch_iter = scratch_3.borrow();
@@ -774,6 +812,14 @@ where
             scratch.available(),
             self.glwe_tensor_square_apply_tmp_bytes_reference(res, a)
         );
+        let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
+        let a = if a.is_canonical() {
+            a.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+            a_tmp.to_backend_ref()
+        };
+        res.set_canonical(true);
 
         // The operand's effective torus width is its GLWE `k`.
         let a_k: usize = a.k().as_usize();
@@ -787,10 +833,8 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
 
-        let a_backend = a.to_backend_ref();
-
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a_backend.data, &mut prep_scratch);
+        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
@@ -833,6 +877,21 @@ where
             scratch.available(),
             self.glwe_tensor_apply_tmp_bytes_reference(res, a, b)
         );
+        let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
+        let a = if a.is_canonical() {
+            a.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+            a_tmp.to_backend_ref()
+        };
+        let (mut b_tmp, mut scratch) = scratch.take_glwe_scratch(b);
+        let b = if b.is_canonical() {
+            b.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut b_tmp, b, &mut scratch.borrow());
+            b_tmp.to_backend_ref()
+        };
+        res.set_canonical(true);
 
         // The operands' effective torus widths are their GLWE `k`.
         let a_k: usize = a.k().as_usize();
@@ -849,12 +908,9 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, b_size, PrepareHint::Reuse);
 
-        let a_backend = a.to_backend_ref();
-        let b_backend = b.to_backend_ref();
-
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_left(&mut a_prep, &a_backend.data, &mut prep_scratch);
-        self.cnv_prepare_right(&mut b_prep, &b_backend.data, &mut prep_scratch);
+        self.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
+        self.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch);
 
         glwe_tensor_apply_loop(
             self,
@@ -1191,7 +1247,9 @@ where
         + VecZnxBigBytesOf
         + Convolution<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
 {
@@ -1218,7 +1276,7 @@ where
         + lvl_2_pairwise.max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2: usize = lvl_2a.max(lvl_2b).max(module.vec_znx_normalize_tmp_bytes());
 
-    lvl_0 + lvl_1.max(lvl_2)
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a)) + (lvl_0 + lvl_1.max(lvl_2)).max(module.glwe_normalize_tmp_bytes())
 }
 
 /// Tensor product reusing a caller-prepared right operand `b_prep`.
@@ -1251,7 +1309,9 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         + VecZnxCopy<BE>
         + VecZnxNegate<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendRef<BE>,
@@ -1271,15 +1331,21 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         scratch.available(),
         glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
     );
+    let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    res.set_canonical(true);
 
     let cols: usize = res.rank().as_usize() + 1;
 
     let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module.n(), cols, a_size, PrepareHint::Reuse);
 
-    let a_backend = a.to_backend_ref();
-
     let mut prep_scratch = scratch.borrow();
-    module.cnv_prepare_left(&mut a_prep, &a_backend.data, &mut prep_scratch);
+    module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
 
     glwe_tensor_apply_loop(
         module,
@@ -1297,11 +1363,13 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
 ///
 /// `b_k` masks the bottom limb of `b`. The prepared operand can then be
-/// reused across several [`glwe_tensor_apply_prepared_right`] calls.
+/// reused across several [`glwe_tensor_apply_prepared_right`] calls. A `b`
+/// whose canonical flag is clear is normalized first, so `scratch` must also
+/// hold a GLWE shaped like `b` and `glwe_normalize_tmp_bytes`.
 pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: Convolution<BE>,
+    M: Convolution<BE> + GLWENormalize<BE>,
     B: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendMut<BE>,
 {
@@ -1315,8 +1383,14 @@ where
         b_k.div_ceil(b_base2k),
         b.size()
     );
-    let b_backend = b.to_backend_ref();
-    module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, scratch);
+    let (mut b_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(b);
+    let b = if b.is_canonical() {
+        b.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut b_tmp, b, &mut scratch.borrow());
+        b_tmp.to_backend_ref()
+    };
+    module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b.data, &mut scratch);
 }
 
 pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
@@ -1383,6 +1457,7 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         let b = &b.to_backend_ref();
@@ -1430,6 +1505,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
         assert_eq!(res.n(), self.n() as u32);
@@ -1467,6 +1543,7 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
         let b = b.to_backend_ref();
@@ -1513,6 +1590,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
         assert_eq!(res.n(), self.n() as u32);
@@ -1547,6 +1625,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(keeps_canonical_digits::<BE, _, _>(res, a));
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
@@ -1589,6 +1668,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        res.set_canonical(true);
         let mut res = res.to_backend_mut();
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1626,6 +1706,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(keeps_canonical_digits::<BE, _, _>(res, a));
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
@@ -1687,6 +1768,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
 
@@ -1703,6 +1785,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1729,7 +1812,8 @@ where
     Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
-        if res.base2k() == a.base2k() && res.k() >= a.k() {
+        // A non-canonical `a` wider than `res` is normalized, not truncated.
+        if res.base2k() == a.base2k() && res.k() >= a.k() && res.max_size() >= a.max_size() {
             0
         } else {
             self.vec_znx_normalize_tmp_bytes()
@@ -1741,6 +1825,15 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        // Raw limbs only when nothing is lost: carries of a non-canonical `a`
+        // can sit in limbs past `res`'s allocation.
+        let raw = {
+            let (res_ref, a_ref) = (res.to_backend_ref(), a.to_backend_ref());
+            res_ref.base2k() == a_ref.base2k()
+                && res_ref.k() >= a_ref.k()
+                && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
+        };
+        res.set_canonical(!raw || a.is_canonical());
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
@@ -1749,7 +1842,7 @@ where
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-        if res.base2k() == a.base2k() && res.k() >= a.k() {
+        if raw {
             for i in 0..min_rank {
                 self.vec_znx_copy(&mut res.data, i, &a.data, i);
             }
@@ -1843,6 +1936,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         assert!(
             scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
@@ -1853,7 +1947,7 @@ where
         let base2k: usize = res.base2k().into();
         let res_k: usize = res.k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
-        if res_k == res.size() * base2k {
+        if res_k == res.data.size() * base2k {
             for i in 0..cols {
                 let mut scratch_iter = scratch.borrow();
                 self.vec_znx_rsh_assign(base2k, k, &mut res.data, i, &mut scratch_iter);
@@ -1863,8 +1957,9 @@ where
         // The in-place kernel only shifts at the full buffer width. A
         // destination whose `k` sits below its allocation goes through a
         // temporary: one normalization at `res_k` with offset `-k`, then a
-        // copy back, so the result is canonical at the `k` it reports.
-        // `glwe_shift_tmp_bytes` already reserves that temporary.
+        // copy back that zeroes the limbs past it, so the result is canonical
+        // at the `k` it reports. `glwe_shift_tmp_bytes` already reserves that
+        // temporary.
         let n: usize = self.n();
         for i in 0..cols {
             let (mut tmp, mut scratch_iter) = scratch.borrow().take_vec_znx_scratch(n, 1, res.size());
@@ -1887,6 +1982,8 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        let was_canonical: bool = res.is_canonical();
+        res.set_canonical(true);
         let res = &mut res.to_backend_mut();
 
         assert!(
@@ -1902,12 +1999,10 @@ where
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_assign(base2k, k, &mut res.data, i, &mut scratch_iter);
         }
-        // The fused kernel writes the full buffer width. When `k` sits below
-        // the allocation, round the column once more at `res_k` so it is
-        // canonical at the `k` it reports. The first pass shifts zeros in at
-        // the bottom, so this is one rounding, not two.
+        // The fused kernel works at the full buffer width: round again at `res_k`
+        // for pad bits, or for digits a flag-clear input may hold past `k`.
         let res_k: usize = res.k().as_usize();
-        if res_k != res.size() * base2k {
+        if res_k != res.size() * base2k || (!was_canonical && res_k != res.data.size() * base2k) {
             for i in 0..cols {
                 let mut scratch_iter = scratch.borrow();
                 self.vec_znx_normalize_assign(base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
@@ -1920,6 +2015,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
@@ -1960,6 +2056,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
@@ -1986,6 +2083,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
@@ -2036,6 +2134,7 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
+        res.set_canonical(true);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
@@ -2072,6 +2171,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
+        res.set_canonical(true);
         let mut res = res.to_backend_mut();
 
         assert!(

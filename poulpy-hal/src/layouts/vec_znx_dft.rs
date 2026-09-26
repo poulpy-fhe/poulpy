@@ -160,7 +160,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
+impl<B: Backend> VecZnxDftBackendMut<'_, B> {
     /// Reborrows this buffer as a mutable view with a temporary compute size.
     ///
     /// The returned view addresses the same allocation, but HAL
@@ -393,7 +393,7 @@ impl<B: Backend> VecZnxDftToBackendRef<B> for VecZnxDft<B::OwnedBuf, B::DftWord,
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxDftToBackendRef<B> for &VecZnxDft<B::BufRef<'b>, B::DftWord, B> {
+impl<B: Backend> VecZnxDftToBackendRef<B> for &VecZnxDft<B::BufRef<'_>, B::DftWord, B> {
     fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
         VecZnxDft {
             data: B::view_ref(&self.data),
@@ -408,7 +408,7 @@ pub trait VecZnxDftReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VecZnxDftReborrowBackendRef<B> for VecZnxDft<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VecZnxDftReborrowBackendRef<B> for VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
         vec_znx_dft_backend_ref_from_mut::<B>(self)
     }
@@ -429,7 +429,7 @@ impl<B: Backend> VecZnxDftToBackendMut<B> for VecZnxDft<B::OwnedBuf, B::DftWord,
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxDftToBackendMut<B> for &mut VecZnxDft<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VecZnxDftToBackendMut<B> for &mut VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
         vec_znx_dft_backend_mut_from_mut::<B>(self)
     }
@@ -440,7 +440,7 @@ pub trait VecZnxDftReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VecZnxDftReborrowBackendMut<B> for VecZnxDft<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> VecZnxDftReborrowBackendMut<B> for VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
         vec_znx_dft_backend_mut_from_mut::<B>(self)
     }

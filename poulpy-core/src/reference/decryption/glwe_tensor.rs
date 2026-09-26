@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::{
     ScratchArenaTakeCore,
-    decryption::{glwe_decrypt_backend_inner, glwe_decrypt_tmp_bytes_reference},
+    decryption::{glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
     layouts::{
         GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
         prepared::{
@@ -32,7 +32,7 @@ where
 
     let rank: usize = infos.rank().into();
     let lvl_0: usize = module.glwe_secret_prepared_bytes_of((crate::layouts::pairs(rank) + rank).into());
-    let lvl_1: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, infos);
+    let lvl_1: usize = glwe_decrypt_body_tmp_bytes::<M, _>(module, infos);
 
     lvl_0 + lvl_1
 }

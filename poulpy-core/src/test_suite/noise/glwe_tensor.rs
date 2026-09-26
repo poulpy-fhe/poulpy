@@ -11,6 +11,7 @@ use rand::Rng;
 use std::f64::consts::SQRT_2;
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub,
     GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
@@ -270,7 +271,7 @@ where
             );
 
             module.glwe_tensor_relinearize(&mut res_relin, &res_tensor, &tsk_prep, &mut scratch.borrow());
-            module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign(
@@ -418,8 +419,8 @@ where
             module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
 
             // Decrypt one side to ensure the square path remains functionally valid.
-            module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
-            module.glwe_decrypt(&res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
@@ -548,7 +549,7 @@ where
         for res_offset in 0..scale {
             module.glwe_mul_plain(scale + res_offset, &mut res, &a, &pt_b, &mut scratch_cnv.borrow());
 
-            module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
@@ -769,7 +770,7 @@ where
         for res_offset in 0..scale {
             module.glwe_mul_const(scale + res_offset, &mut res, &a, &pt_b, b_coeff, &mut scratch.borrow());
 
-            module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,

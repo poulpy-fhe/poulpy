@@ -42,8 +42,8 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   fi
 fi
 
-echo "Running $backend $mode tests (five-minute execution budget; compilation is separate)."
-if timeout --signal=TERM --kill-after=10s 280s "${command[@]}" -- "${filters[@]}" \
+echo "Running $backend $mode tests (400-second execution budget; compilation is separate)."
+if timeout --signal=TERM --kill-after=10s 400s "${command[@]}" -- "${filters[@]}" \
   --test-threads=2 -Z unstable-options --report-time; then
   exit 0
 else

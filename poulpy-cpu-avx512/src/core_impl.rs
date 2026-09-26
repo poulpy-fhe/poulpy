@@ -6,13 +6,13 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
-    impl_automorphism_reference_full, impl_conversion_reference_full, impl_decryption_reference_full,
-    impl_encryption_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
-    impl_gglwe_product_digits_strided_reference, impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full,
-    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_derived_full,
-    impl_glwe_tensoring_reference, impl_glwe_trace_derived_full, impl_linear_transformation_reference_full,
-    impl_lwe_keyswitch_reference_full,
-    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, impl_automorphism_reference_full, impl_conversion_reference_full,
+    impl_decryption_reference_full, impl_encryption_reference_full, impl_gglwe_external_product_derived_full,
+    impl_gglwe_keyswitch_derived_full, impl_gglwe_product_digits_strided_reference, impl_ggsw_external_product_derived_full,
+    impl_ggsw_keyswitch_derived_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
+    impl_glwe_packing_derived_full, impl_glwe_tensoring_reference, impl_glwe_trace_derived_full,
+    impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
+    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     oep::GLWETensoringImpl,
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
@@ -204,7 +204,8 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -220,7 +221,10 @@ where
     let prepare = module
         .cnv_prepare_left_tmp_bytes(a_size, a_size)
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
-    prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, b_size))
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+        + BE::scratch_aligned(module.glwe_bytes_of_from_infos(b))
+        + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, b_size)))
+            .max(module.glwe_normalize_tmp_bytes())
 }
 
 fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
@@ -232,7 +236,8 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
 {
@@ -243,7 +248,9 @@ where
     let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
         + module.bytes_of_cnv_pvec_right(n, 2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
-    prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size))
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+        + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size)))
+            .max(module.glwe_normalize_tmp_bytes())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -360,13 +367,29 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxCopy<BE>
         + VecZnxSubAssign<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let n = assert_degrees(module, [res.n(), a.n(), b.n()]);
     assert!(scratch.available() >= rank_one_tensor_apply_tmp_bytes(module, res, a, b));
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(a);
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    let (mut b_tmp, mut scratch) = scratch.take_glwe_scratch(b);
+    let b = if b.is_canonical() {
+        b.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut b_tmp, b, &mut scratch.borrow());
+        b_tmp.to_backend_ref()
+    };
+    res.set_canonical(true);
     let base2k = a.base2k().as_usize();
     assert_eq!(b.base2k().as_usize(), base2k);
     let a_size = a.k().as_usize().div_ceil(base2k);
@@ -377,8 +400,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_left(&mut a_prep, a.to_backend_ref().data(), &mut prep_scratch);
-        module.cnv_prepare_right(&mut b_prep, b.to_backend_ref().data(), &mut prep_scratch);
+        module.cnv_prepare_left(&mut a_prep, a.data(), &mut prep_scratch);
+        module.cnv_prepare_right(&mut b_prep, b.data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -412,12 +435,21 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxCopy<BE>
         + VecZnxSubAssign<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let n = assert_degrees(module, [res.n(), a.n(), a.n()]);
     assert!(scratch.available() >= rank_one_tensor_square_tmp_bytes(module, res, a));
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(a);
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    res.set_canonical(true);
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     assert!(a_size <= a.size());
@@ -425,7 +457,7 @@ fn rank_one_tensor_square<BE, R, A>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.to_backend_ref().data(), &mut prep_scratch);
+        module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,

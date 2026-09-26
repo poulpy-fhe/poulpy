@@ -9,7 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_offset_unary, ckks_unary_exact};
 
 /// Multiplication and division by `i` using core monomial rotations.
 ///
@@ -30,6 +30,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
+        let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
         let log_budget = checked_log_budget_sub("mul_i", src.log_budget(), offset)?;
         let k = (self.n() / 2) as i64;
@@ -38,7 +39,7 @@ pub trait CKKSImagReference<BE: Backend> {
         dst.set_log_budget(log_budget);
         // Multiplying by `i` maps the reals onto the imaginary axis.
         dst.set_slots(SlotsKind::Complex);
-        if offset == 0 {
+        if exact {
             self.glwe_rotate(k, dst, src);
         } else {
             self.glwe_lsh(dst, src, offset, scratch);
@@ -71,6 +72,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
+        let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
         let log_budget = checked_log_budget_sub("div_i", src.log_budget(), offset)?;
         let k = -((self.n() / 2) as i64);
@@ -79,7 +81,7 @@ pub trait CKKSImagReference<BE: Backend> {
         dst.set_log_budget(log_budget);
         // Dividing by `i` maps the reals onto the imaginary axis.
         dst.set_slots(SlotsKind::Complex);
-        if offset == 0 {
+        if exact {
             self.glwe_rotate(k, dst, src);
         } else {
             self.glwe_lsh(dst, src, offset, scratch);

@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEShift,
-    layouts::{GLWE, GLWELayout, ModuleCoreAlloc},
+    layouts::{GLWE, GLWELayout, ModuleCoreAlloc, SetK},
     test_suite::noise::glwe_tensor::assert_canonical,
 };
 
@@ -109,5 +109,26 @@ where
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
         module.glwe_lsh_sub(&mut res, &src, k, &mut scratch.borrow());
+    }
+
+    // A limb-aligned `k` one limb below the allocation, over digits in every
+    // limb: the in-place shifts must still clear the limbs past `k`.
+    let wide = GLWELayout {
+        k: (3 * base2k).into(),
+        ..layout
+    };
+    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(3));
+    for &k in &[1usize, base2k] {
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);
+        fill(&mut res.data);
+        res.set_k((2 * base2k).into());
+        module.glwe_rsh(k, &mut res, &mut scratch.borrow());
+        assert_canonical(&res.data, base2k, 2 * base2k);
+
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);
+        fill(&mut res.data);
+        res.set_k((2 * base2k).into());
+        module.glwe_lsh_assign(&mut res, k, &mut scratch.borrow());
+        assert_canonical(&res.data, base2k, 2 * base2k);
     }
 }

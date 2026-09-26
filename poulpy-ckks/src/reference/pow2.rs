@@ -1,11 +1,11 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
-use poulpy_core::{GLWECopy, GLWEShift, layouts::GLWEInfos};
+use poulpy_core::{GLWEAdd, GLWECopy, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
+use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_unary_exact};
 
 pub trait CKKSPow2Reference<BE: Backend> {
     fn ckks_mul_pow2_tmp_bytes_reference(&self, res_size: usize) -> usize
@@ -47,6 +47,21 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Ok(())
     }
 
+    fn ckks_double_into_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Self: GLWEAdd<BE> + GLWEShift<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+    {
+        if !ckks_unary_exact(dst, src) {
+            return self.ckks_mul_pow2_into_reference(dst, src, 1, scratch);
+        }
+        self.glwe_add_into(dst, src, src);
+        dst.set_meta(src.meta());
+        dst.set_log_budget(src.log_budget());
+        Ok(())
+    }
+
     fn ckks_div_pow2_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
@@ -70,10 +85,12 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
-        // charged to the budget move under `log_delta`, leaving `k` unchanged
-        // (`set_log_delta` preserves the budget by shifting `k` back up).
-        dst.set_log_budget(checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?);
-        dst.set_log_delta(dst.log_delta() + bits);
+        // charged to the budget move under `log_delta`, leaving `k`, and so the
+        // canonical flag, unchanged.
+        checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
+        let mut meta = dst.meta();
+        meta.log_delta += bits;
+        dst.set_meta(meta);
         Ok(())
     }
 }

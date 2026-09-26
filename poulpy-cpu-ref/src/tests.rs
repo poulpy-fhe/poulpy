@@ -1428,3 +1428,98 @@ mod ckks_overrides;
 
 #[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe_overrides;
+
+// A lazy op into a compact destination must not drop the carries a
+// non-canonical source holds past its `k`.
+#[cfg(feature = "enable-ckks")]
+mod ckks_noncanonical_compact_dst {
+    use crate::FFT64Ref;
+    use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
+    use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
+    use poulpy_ckks::{CKKSMeta, SetCKKSInfos};
+    use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
+    use poulpy_core::{GLWECopy, GLWENormalize};
+    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
+    use poulpy_hal::layouts::{Module, ScratchOwned, ZnxView, ZnxViewMut};
+
+    fn ct(module: &Module<FFT64Ref>, k: u32) -> CKKSCiphertextOwned<FFT64Ref> {
+        let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+            n: 64u32.into(),
+            base2k: 16u32.into(),
+            k: k.into(),
+            rank: 1u32.into(),
+        });
+        ct.set_meta(CKKSMeta {
+            log_delta: 16,
+            ..Default::default()
+        });
+        ct
+    }
+
+    #[test]
+    fn lazy_ops_keep_carries_past_k() {
+        let module = Module::<FFT64Ref>::new(64);
+        let mut scratch = ScratchOwned::<FFT64Ref>::alloc(1 << 20);
+        // k = 32 over 4 limbs: 3 units of limb 1 parked in limb 2.
+        let mut src = ct(&module, 64);
+        src.set_log_budget(16);
+        src.data_mut().at_mut(1, 2)[0] = 3 << 16;
+        GLWEToBackendMut::<FFT64Ref>::set_canonical(&mut src, false);
+
+        let limbs = |dst: &mut CKKSCiphertextOwned<FFT64Ref>, scratch: &mut ScratchOwned<FFT64Ref>| {
+            module.glwe_normalize_assign(dst, &mut scratch.borrow());
+            [dst.data().at(1, 1)[0], dst.data().at(1, 1)[32]]
+        };
+        type Op = fn(
+            &Module<FFT64Ref>,
+            &mut CKKSCiphertextOwned<FFT64Ref>,
+            &CKKSCiphertextOwned<FFT64Ref>,
+            &mut ScratchOwned<FFT64Ref>,
+        );
+        let ops: [(&str, Op, [i64; 2]); 10] = [
+            ("glwe_copy", |m, d, s, sc| m.glwe_copy(d, s, &mut sc.borrow()), [3, 0]),
+            (
+                "add_into",
+                |m, d, s, sc| m.ckks_add_into(d, s, &ct(m, 32), &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_into",
+                |m, d, s, sc| m.ckks_sub_into(d, &ct(m, 32), s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
+            (
+                "add_assign",
+                |m, d, s, sc| m.ckks_add_assign(d, s, &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_assign",
+                |m, d, s, sc| m.ckks_sub_assign(d, s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
+            ("copy", |m, d, s, sc| m.ckks_copy(d, s, &mut sc.borrow()).unwrap(), [3, 0]),
+            (
+                "double",
+                |m, d, s, sc| m.ckks_double_into(d, s, &mut sc.borrow()).unwrap(),
+                [6, 0],
+            ),
+            ("neg", |m, d, s, sc| m.ckks_neg_into(d, s, &mut sc.borrow()).unwrap(), [-3, 0]),
+            (
+                "mul_i",
+                |m, d, s, sc| m.ckks_mul_i_into(d, s, &mut sc.borrow()).unwrap(),
+                [0, 3],
+            ),
+            (
+                "div_i",
+                |m, d, s, sc| m.ckks_div_i_into(d, s, &mut sc.borrow()).unwrap(),
+                [0, -3],
+            ),
+        ];
+        for (name, op, want) in ops {
+            let mut dst = ct(&module, 32);
+            op(&module, &mut dst, &src, &mut scratch);
+            assert_eq!(limbs(&mut dst, &mut scratch), want, "{name}");
+        }
+    }
+}

@@ -2,8 +2,8 @@ use crate::{CKKSResult as Result, ckks_bail, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWENormalize, GLWETensoring,
-    layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    GLWETensoring,
+    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -11,15 +11,11 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSCopyOps,
     api::{CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps},
-    layouts::{
-        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
-        ciphertext::UnnormalizedCKKSCiphertextRefMut,
-    },
-    oep::CKKSAddImpl,
+    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
 };
 use poulpy_core::GLWEBytesOf;
 
-/// Guards `n` un-normalized accumulations against worst-case `i64` overflow.
+/// Guards `n` lazy accumulations against worst-case `i64` overflow.
 ///
 /// Signed limb digits lie in `[−2^(base2k−1), 2^(base2k−1))`.  In the worst
 /// case (all summands aligned in sign) the digit magnitude after `n` additions
@@ -41,7 +37,7 @@ fn ensure_accumulation_fits<C: LWEInfos + ?Sized>(op: &'static str, dst: &C, n: 
 }
 
 /// Shared body of the fused multiply-then-accumulate composites
-/// (`ckks_mul_{add,sub}_*_into[_unnormalized]`): carve a `dst`-shaped temporary
+/// (`ckks_mul_{add,sub}_*_into`): carve a `dst`-shaped temporary
 /// inside a scratch scope, run the variant's multiply into it, then fold it
 /// into `dst` with the variant's carry verb.
 fn mul_then_combine<BE, Dst, MulF, CombineF>(
@@ -97,7 +93,7 @@ where
 
 // --- CKKSMulAddOps ---
 
-impl<BE: Backend + CKKSAddImpl> CKKSMulAddOps<BE> for Module<BE>
+impl<BE: Backend> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
 {
@@ -192,47 +188,6 @@ where
             scratch,
             |tmp, s| self.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
             |dst, tmp, s| self.ckks_add_assign(dst, tmp, s),
-        )
-    }
-
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-    {
-        mul_then_combine(
-            dst,
-            scratch,
-            |tmp, s| self.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
-            |dst, tmp, s| self.ckks_add_assign_unnormalized(dst, tmp, s),
-        )
-    }
-
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &A,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-    {
-        mul_then_combine(
-            dst,
-            scratch,
-            |tmp, s| self.ckks_mul_pt_vec_into(tmp, a, pt, s),
-            |dst, tmp, s| self.ckks_add_assign_unnormalized(dst, tmp, s),
         )
     }
 }
@@ -445,7 +400,7 @@ fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
     Ok(())
 }
 
-fn accumulate_unnormalized<BE, D, F>(
+fn accumulate<BE, D, F>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<D, BE::ZnxWord>,
     n: usize,
@@ -455,30 +410,26 @@ fn accumulate_unnormalized<BE, D, F>(
 where
     BE: Backend,
     D: Data,
-    BE: CKKSAddImpl,
-    Module<BE>: GLWENormalize<BE>,
+    Module<BE>: CKKSAddOps<BE>,
     CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
-        module.glwe_normalize_assign(dst, scratch);
         return Ok(());
     }
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-        let mut acc = UnnormalizedCKKSCiphertextRefMut::new(dst);
         for i in 1..n {
             mul_term_into_tmp(&mut tmp, i, &mut scratch_local)?;
-            BE::ckks_add_assign_unnormalized_ref_impl(module, &mut acc, &tmp, &mut scratch_local)?;
+            module.ckks_add_assign(dst, &tmp, &mut scratch_local)?;
         }
-        acc.normalize(module, &mut scratch_local);
         Ok(())
     })
 }
 
-impl<BE: Backend + CKKSAddImpl> CKKSDotProductOps<BE> for Module<BE>
+impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWETensoring<BE>,
 {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
@@ -492,7 +443,7 @@ where
         // only with `res` (which may legitimately be narrower).
         let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, a, b, tsk);
         if n <= 1 {
-            return mul_scratch.max(self.glwe_normalize_tmp_bytes());
+            return mul_scratch;
         }
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
         let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
@@ -552,7 +503,7 @@ where
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;
         self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
-        accumulate_unnormalized(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
+        accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
@@ -571,7 +522,7 @@ where
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_pt_vec", dst, n)?;
         self.ckks_mul_pt_vec_into(dst, a[0], b[0], scratch)?;
-        accumulate_unnormalized(self, dst, n, scratch, |tmp, i, s| {
+        accumulate(self, dst, n, scratch, |tmp, i, s| {
             self.ckks_mul_pt_vec_into(tmp, a[i], b[i], s)
         })
     }
@@ -594,7 +545,7 @@ where
         let n: usize = a.len();
         ensure_accumulation_fits("ckks_dot_product_pt_const", dst, n)?;
         self.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
-        accumulate_unnormalized(self, dst, n, scratch, |tmp, i, s| {
+        accumulate(self, dst, n, scratch, |tmp, i, s| {
             self.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)
         })
     }

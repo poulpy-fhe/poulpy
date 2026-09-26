@@ -753,15 +753,15 @@ where
 /// bound, and the remaining terms fold in with `cnv_apply_dft_add`. An empty
 /// `terms` slice zeroes the destination column.
 #[doc(hidden)]
-pub fn cnv_apply_dft_sum_derived<'a, BE>(
+pub fn cnv_apply_dft_sum_derived<BE>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'a, BE>],
+    terms: &[CnvDftAccTerm<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl + 'a,
+    BE: HalConvolutionImpl,
 {
     if terms.is_empty() {
         BE::vec_znx_dft_zero(module, res, res_col);

@@ -1,13 +1,8 @@
 use crate::CKKSResult as Result;
 
-use poulpy_core::layouts::GLWE;
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    layouts::{CKKSCiphertext, UnnormalizedCKKSCiphertext, ciphertext::UnnormalizedCKKSCiphertextRefMut},
-    oep::carry_verb::ckks_carry_verb_oep,
-};
+use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, oep::carry_verb::ckks_carry_verb_oep};
 
 ckks_carry_verb_oep! {
     verb: add,

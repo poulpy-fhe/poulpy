@@ -95,6 +95,8 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
         &a_backend.mask,
         0,
     );
+    // LWE limbs carry no flag and are canonical.
+    glwe_in.set_canonical(true);
 
     let (mut glwe_out, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),

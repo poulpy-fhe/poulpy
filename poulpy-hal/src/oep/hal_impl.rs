@@ -1091,16 +1091,14 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
     /// bound) and folds the remaining terms with `cnv_apply_dft_add`.
     /// Backends should override it with a fused kernel that keeps the lazy
     /// accumulators live across terms.
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        terms: &[crate::layouts::CnvDftAccTerm<'a, Self>],
+        terms: &[crate::layouts::CnvDftAccTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: 'a,
-    {
+    ) {
         crate::oep::cnv_apply_dft_sum_derived::<Self>(module, cnv_offset, res, res_col, terms, scratch)
     }
 

@@ -117,7 +117,11 @@ where
                 BE::len_bytes(p.data.data())
             );
             let source = m.glwe_alloc_from_infos(&plain);
-            m.glwe_prepare(&mut prepared, &source);
+            m.glwe_prepare(
+                &mut prepared,
+                &source,
+                &mut poisoned_scratch::<BE>(m.glwe_prepare_tmp_bytes(&plain)).borrow(),
+            );
             let mut prepared = check!(
                 glwe_public_key_prepared_alloc,
                 glwe_public_key_prepared_alloc_from_infos,
@@ -129,7 +133,11 @@ where
                 BE::len_bytes(p.key.data.data())
             );
             let source = m.glwe_public_key_alloc_from_infos(&plain);
-            m.glwe_public_key_prepare(&mut prepared, &source);
+            m.glwe_public_key_prepare(
+                &mut prepared,
+                &source,
+                &mut poisoned_scratch::<BE>(m.glwe_public_key_prepare_tmp_bytes(&plain)).borrow(),
+            );
             let mut prepared = check!(
                 glwe_secret_prepared_alloc,
                 glwe_secret_prepared_alloc_from_infos,

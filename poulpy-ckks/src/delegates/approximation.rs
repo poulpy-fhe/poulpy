@@ -86,11 +86,11 @@ where
             scratch.scope(|scratch_local| {
                 let (mut normalized, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
                 if let Some(exponent) = approximation.scale_pow2 {
-                    self.ckks_copy(&mut normalized, input, &mut scratch_local)?;
-                    if exponent < 0 {
+                    if exponent > 0 {
+                        self.ckks_mul_pow2_into(&mut normalized, input, exponent as usize, &mut scratch_local)?;
+                    } else {
+                        self.ckks_copy(&mut normalized, input, &mut scratch_local)?;
                         self.ckks_div_pow2_assign(&mut normalized, exponent.unsigned_abs() as usize)?;
-                    } else if exponent > 0 {
-                        self.ckks_mul_pow2_assign(&mut normalized, exponent as usize, &mut scratch_local)?;
                     }
                     self.ckks_add_pt_const_assign(&mut normalized, 0, affine, 0, &mut scratch_local)?;
                 } else {

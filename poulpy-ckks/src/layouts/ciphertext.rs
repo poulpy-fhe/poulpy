@@ -6,69 +6,44 @@
 use poulpy_hal::AlignedBuf;
 use std::{
     fmt,
-    marker::PhantomData,
     mem::align_of,
     ops::{Deref, DerefMut},
 };
 
 use anyhow::Result;
+use poulpy_core::ScratchArenaTakeCore;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
     SetBSGSMeta, SetK, TorusPrecision,
 };
-use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxWord};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
 
 use super::{CKKSEncodingBuffer, CKKSEncodingBufferViewMut, CKKSPlaintextViewMut};
 
-mod sealed {
-    pub trait Sealed {}
-}
-
-/// Marker for CKKS ciphertexts normalized and canonical at their declared precision.
-pub struct Normalized;
-
-/// Marker for CKKS ciphertexts that may be unnormalized or non-canonical.
-pub struct Unnormalized;
-
-impl sealed::Sealed for Normalized {}
-impl sealed::Sealed for Unnormalized {}
-
-/// Sealed CKKS ciphertext normalization state.
-pub trait CKKSNormalizationState: sealed::Sealed {}
-
-impl CKKSNormalizationState for Normalized {}
-impl CKKSNormalizationState for Unnormalized {}
-
 /// CKKS ciphertext storage plus semantic precision metadata.
 ///
 /// `inner` contains the raw GLWE torus digits while `meta` describes the
 /// semantic decimal scaling and remaining homomorphic capacity of the value.
-pub struct CKKSCiphertext<D: Data, W: ZnxWord, S: CKKSNormalizationState = Normalized> {
+pub struct CKKSCiphertext<D: Data, W: ZnxWord> {
     /// Raw GLWE ciphertext storage.
     pub(crate) inner: GLWE<D, W>,
     /// Semantic CKKS metadata associated with `inner`.
     pub(crate) meta: CKKSMeta,
-    _state: PhantomData<S>,
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W> {
     pub(crate) fn from_inner(inner: GLWE<D, W>, meta: CKKSMeta) -> Self {
-        Self {
-            inner,
-            meta,
-            _state: PhantomData,
-        }
+        Self { inner, meta }
     }
 
     /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<AlignedBuf, i64>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<AlignedBuf, W, S>
+    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSCiphertext::<AlignedBuf, W, S>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSCiphertext::<AlignedBuf, W>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
     }
 
     /// Formats this backend-owned ciphertext through the existing host [`fmt::Display`] implementation.
@@ -118,7 +93,7 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> CKKSCiphertext<D, W, S> {
 
 // Without this, `ct.clone()` silently resolves through `Deref` to
 // `GLWE::clone` and drops the CKKS metadata.
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> Clone for CKKSCiphertext<D, W, S>
+impl<D: Data, W: ZnxWord> Clone for CKKSCiphertext<D, W>
 where
     GLWE<D, W>: Clone,
 {
@@ -126,12 +101,11 @@ where
         Self {
             inner: self.inner.clone(),
             meta: self.meta,
-            _state: PhantomData,
         }
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> Deref for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> Deref for CKKSCiphertext<D, W> {
     type Target = GLWE<D, W>;
 
     fn deref(&self) -> &Self::Target {
@@ -139,13 +113,13 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> Deref for CKKSCiphertext<D,
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> DerefMut for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> DerefMut for CKKSCiphertext<D, W> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> LWEInfos for CKKSCiphertext<D, W> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -163,19 +137,19 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> GLWEInfos for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> GLWEInfos for CKKSCiphertext<D, W> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> CKKSInfos for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> CKKSInfos for CKKSCiphertext<D, W> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> SetCKKSInfos for CKKSCiphertext<D, W> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
@@ -185,13 +159,13 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> SetCKKSInfos for CKKSCipher
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> SetK for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> SetK for CKKSCiphertext<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> BSGSMeta for CKKSCiphertext<D, W> {
     fn bsgs_log_budget(&self) -> usize {
         CKKSInfos::log_budget(self)
     }
@@ -200,7 +174,7 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> SetBSGSMeta for CKKSCiphertext<D, W> {
     fn set_bsgs_log_budget(&mut self, log_budget: usize) {
         SetCKKSInfos::set_log_budget(self, log_budget);
     }
@@ -209,19 +183,13 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphert
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: CKKSNormalizationState> fmt::Display for CKKSCiphertext<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for CKKSCiphertext<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-// Backend conversion is deliberately implemented for the `Normalized` state
-// ONLY: every DFT-domain op (keyswitching, convolution, automorphisms) is
-// generic over these traits, so keeping them off `Unnormalized` is what makes
-// passing an unnormalized ciphertext to such an op a compile error (see the
-// crate-level docs). The unnormalized write path goes through the crate-private
-// [`UnnormalizedCKKSCiphertextWriteView`] instead.
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSCiphertext<D, BE::ZnxWord, Normalized>
+impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSCiphertext<D, BE::ZnxWord>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
@@ -230,12 +198,16 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSCiphertext<D, BE::ZnxWord, Normalized>
+impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSCiphertext<D, BE::ZnxWord>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner)
+    }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.inner.set_canonical(canonical)
     }
 }
 
@@ -255,7 +227,7 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> LWEInfos for CKKSCiphertextViewRef<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -273,19 +245,19 @@ impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> GLWEInfos for CKKSCiphertextViewRef<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'a, BE> {
+impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()
     }
@@ -322,7 +294,7 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> DerefMut for CKKSCiphertextViewMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -330,15 +302,19 @@ impl<'a, BE: Backend + 'a> DerefMut for CKKSCiphertextViewMut<'a, BE> {
 
 crate::impl_ckks_infos!(self_meta CKKSCiphertextViewMut);
 
-impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'a, BE> {
+impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.inner.to_backend_mut()
+    }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        GLWEToBackendMut::<BE>::set_canonical(&mut self.inner, canonical)
     }
 }
 
@@ -406,30 +382,6 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
     {
         self.take_ckks_ciphertext_scratch(ct, ct.meta())
     }
-
-    fn take_unnormalized_ckks_ciphertext_scratch<I>(
-        self,
-        infos: &I,
-        meta: CKKSMeta,
-    ) -> (UnnormalizedCKKSCiphertext<BE::BufMut<'a>, BE::ZnxWord>, Self)
-    where
-        BE: 'a,
-        I: GLWEInfos,
-    {
-        let (inner, scratch) = self.take_glwe_scratch(infos);
-        (UnnormalizedCKKSCiphertext::from_inner(inner.into_inner(), meta), scratch)
-    }
-
-    fn take_unnormalized_ckks_ciphertext_like_scratch<C>(
-        self,
-        ct: &C,
-    ) -> (UnnormalizedCKKSCiphertext<BE::BufMut<'a>, BE::ZnxWord>, Self)
-    where
-        BE: 'a,
-        C: GLWEInfos + CKKSInfos,
-    {
-        self.take_unnormalized_ckks_ciphertext_scratch(ct, ct.meta())
-    }
 }
 
 impl<'a, BE> ScratchArenaTakeCKKS<'a, BE> for ScratchArena<'a, BE>
@@ -448,170 +400,5 @@ where
             CKKSEncodingBufferViewMut::from_inner(CKKSEncodingBuffer::from_data(data, len)),
             scratch,
         )
-    }
-}
-
-/// A CKKS ciphertext produced by an unnormalized linear operation.
-///
-/// Unnormalized ciphertexts have un-propagated carries: limb digits may hold
-/// more than `base2k` bits. Any primitive that switches to the DFT domain —
-/// keyswitching, convolution (`ckks_mul`), or automorphisms (`ckks_rotate`,
-/// `ckks_conjugate`) — assumes each limb fits within `base2k` bits; passing
-/// an unnormalized ciphertext to one will silently produce an incorrectly
-/// decryptable result. CKKS-level APIs use the normalization state parameter to
-/// route explicit unnormalized accumulation through the matching operations.
-///
-/// The only way to recover a [`CKKSCiphertext`] from an
-/// `UnnormalizedCKKSCiphertext` is to call [`Self::normalize`], which applies
-/// the missing `glwe_normalize_assign` step and consumes `self`.
-///
-/// Unlike [`CKKSCiphertext`], this type does **not** implement
-/// `GLWEToBackendRef`/`GLWEToBackendMut`, so passing it to a DFT-domain op is
-/// a compile error:
-///
-/// ```compile_fail
-/// use poulpy_ckks::layouts::UnnormalizedCKKSCiphertext;
-/// use poulpy_core::layouts::{GLWE, GLWEToBackendRef};
-/// use poulpy_hal::layouts::{Backend, Data};
-///
-/// fn dft_domain_op<BE: Backend, T: GLWEToBackendRef<BE>>(_: &T) {}
-///
-/// fn reject<BE: Backend, D: Data>(ct: &UnnormalizedCKKSCiphertext<D, i64>)
-/// where
-///     GLWE<D, i64>: GLWEToBackendRef<BE>,
-/// {
-///     dft_domain_op::<BE, _>(ct); // ERROR: trait not implemented for Unnormalized
-/// }
-/// ```
-pub type UnnormalizedCKKSCiphertext<D, W> = CKKSCiphertext<D, W, Unnormalized>;
-
-impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, Unnormalized> {
-    /// Wraps `ct` in the unnormalized typestate.
-    pub fn new(ct: CKKSCiphertext<D, W>) -> Self {
-        Self::from_inner(ct.inner, ct.meta)
-    }
-
-    /// Normalizes the ciphertext and returns the result as a [`CKKSCiphertext`].
-    ///
-    /// Propagates carries and rounds at the declared precision, making the result
-    /// safe to pass to DFT-domain primitives.
-    pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> CKKSCiphertext<D, W>
-    where
-        BE: Backend<ZnxWord = W>,
-        M: GLWENormalize<BE>,
-        GLWE<D, W>: GLWEToBackendMut<BE>,
-    {
-        let mut normalized = CKKSCiphertext::<D, W>::from_inner(self.inner, self.meta);
-        module.glwe_normalize_assign(&mut normalized, scratch);
-        normalized
-    }
-
-    /// Crate-private backend write access for the unnormalized op defaults.
-    ///
-    /// `UnnormalizedCKKSCiphertext` deliberately does not implement
-    /// `GLWEToBackendRef`/`GLWEToBackendMut` (that seal is what makes passing it
-    /// to a DFT-domain op a compile error); the `_unnormalized` add/sub defaults
-    /// obtain access through this view instead.
-    pub(crate) fn write_view(&mut self) -> UnnormalizedCKKSCiphertextWriteView<'_, D, W> {
-        UnnormalizedCKKSCiphertextWriteView { inner: self }
-    }
-}
-
-/// Crate-private view granting backend access to an [`UnnormalizedCKKSCiphertext`].
-///
-/// Constructed only by [`CKKSCiphertext::<D, Unnormalized>::write_view`] inside
-/// the `_unnormalized` op forwarders; never exposed publicly, so the seal on the
-/// unnormalized type-state holds for all public op surfaces.
-pub(crate) struct UnnormalizedCKKSCiphertextWriteView<'a, D: Data, W: ZnxWord> {
-    inner: &'a mut CKKSCiphertext<D, W, Unnormalized>,
-}
-
-impl<'a, D: Data, W: ZnxWord> LWEInfos for UnnormalizedCKKSCiphertextWriteView<'a, D, W> {
-    fn base2k(&self) -> Base2K {
-        self.inner.base2k()
-    }
-
-    fn n(&self) -> Degree {
-        self.inner.n()
-    }
-
-    fn max_size(&self) -> usize {
-        self.inner.max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.inner.k()
-    }
-}
-
-impl<'a, D: Data, W: ZnxWord> GLWEInfos for UnnormalizedCKKSCiphertextWriteView<'a, D, W> {
-    fn rank(&self) -> Rank {
-        self.inner.rank()
-    }
-}
-
-impl<'a, D: Data, W: ZnxWord> CKKSInfos for UnnormalizedCKKSCiphertextWriteView<'a, D, W> {
-    fn meta(&self) -> CKKSMeta {
-        self.inner.meta()
-    }
-}
-
-impl<'a, D: Data, W: ZnxWord> SetCKKSInfos for UnnormalizedCKKSCiphertextWriteView<'a, D, W> {
-    fn set_meta(&mut self, meta: CKKSMeta) {
-        self.inner.set_meta(meta);
-    }
-
-    fn set_k(&mut self, k: TorusPrecision) {
-        SetCKKSInfos::set_k(self.inner, k);
-    }
-}
-
-impl<'a, BE: Backend<ZnxWord = W>, D: Data, W: ZnxWord> GLWEToBackendRef<BE> for UnnormalizedCKKSCiphertextWriteView<'a, D, W>
-where
-    GLWE<D, W>: GLWEToBackendRef<BE>,
-{
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        GLWEToBackendRef::to_backend_ref(&self.inner.inner)
-    }
-}
-
-impl<'a, BE: Backend<ZnxWord = W>, D: Data, W: ZnxWord> GLWEToBackendMut<BE> for UnnormalizedCKKSCiphertextWriteView<'a, D, W>
-where
-    GLWE<D, W>: GLWEToBackendMut<BE>,
-{
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        GLWEToBackendMut::to_backend_mut(&mut self.inner.inner)
-    }
-}
-
-/// Crate-internal unnormalized reborrow of a [`CKKSCiphertext`], used by the
-/// composite accumulators (dot products) to run repeated carry-verb steps on a
-/// caller-owned normalized ciphertext without paying a normalization per step.
-///
-/// The type is `pub` only because it appears in OEP method signatures
-/// ([`CKKSAddImpl::ckks_add_assign_unnormalized_ref_impl`](crate::oep::CKKSAddImpl::ckks_add_assign_unnormalized_ref_impl)
-/// and the sub mirror); it is deliberately **unconstructible outside this
-/// crate** (crate-private constructor and field). A public constructor — or an
-/// api-layer counterpart for the OEP methods that consume it — would let
-/// callers accumulate carries into a `Normalized`-typed ciphertext and release
-/// it un-normalized, silently voiding the compile-time normalization guard the
-/// crate documents. The internal users restore the invariant by calling
-/// `normalize` (crate-private) before the borrow ends.
-pub struct UnnormalizedCKKSCiphertextRefMut<'a, D: Data, W: ZnxWord> {
-    pub(crate) inner: &'a mut CKKSCiphertext<D, W>,
-}
-
-impl<'a, D: Data, W: ZnxWord> UnnormalizedCKKSCiphertextRefMut<'a, D, W> {
-    pub(crate) fn new(inner: &'a mut CKKSCiphertext<D, W>) -> Self {
-        Self { inner }
-    }
-
-    pub(crate) fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>)
-    where
-        BE: Backend<ZnxWord = W>,
-        M: GLWENormalize<BE>,
-        CKKSCiphertext<D, W>: GLWEToBackendMut<BE>,
-    {
-        module.glwe_normalize_assign(self.inner, scratch);
     }
 }

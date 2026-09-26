@@ -98,7 +98,8 @@ where
         + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
         + poulpy_hal::api::VecZnxZero<BE>
         + poulpy_hal::api::VecZnxBigColWeightedSum<BE>
-        + poulpy_hal::api::VecZnxCopy<BE>,
+        + poulpy_hal::api::VecZnxCopy<BE>
+        + crate::api::GLWENormalize<BE>,
 {
     fn glwe_decrypt_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

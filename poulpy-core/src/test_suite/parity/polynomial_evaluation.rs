@@ -35,6 +35,9 @@ impl<BE: Backend> GLWEToBackendMut<BE> for Value<BE> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         <BackendGLWE<BE> as GLWEToBackendMut<BE>>::to_backend_mut(&mut self.data)
     }
+    fn set_canonical(&mut self, canonical: bool) {
+        <BackendGLWE<BE> as GLWEToBackendMut<BE>>::set_canonical(&mut self.data, canonical)
+    }
 }
 impl<BE: Backend> LWEInfos for Value<BE> {
     fn n(&self) -> Degree {

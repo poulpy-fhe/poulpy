@@ -113,7 +113,8 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + VecZnxNormalize<BE>,
+        + VecZnxNormalize<BE>
+        + GLWENormalize<BE>,
 {
     fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -134,7 +135,10 @@ where
         let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(output_size, in_size, in_size, cols, cols, b_infos.size());
         let lvl_3: usize =
             self.bytes_of_vec_znx_big(self.n(), cols, output_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
-        (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a_infos))
+            + (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2)
+                .max(lvl_3)
+                .max(self.glwe_normalize_tmp_bytes())
     }
 
     fn glwe_external_product_dft<'r, A>(
@@ -146,8 +150,14 @@ where
     ) where
         A: GLWEToBackendRef<BE>,
     {
-        let a = a.to_backend_ref();
-        glwe_external_product_dft_fill(self, res_dft, a, ggsw, scratch);
+        let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
+        let a = if a.is_canonical() {
+            a.to_backend_ref()
+        } else {
+            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+            a_tmp.to_backend_ref()
+        };
+        glwe_external_product_dft_fill(self, res_dft, a, ggsw, &mut scratch);
     }
 }
 
@@ -235,7 +245,13 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftApply<BE>
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAdd<BE>
+        + VecZnxIdftApplyTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -267,11 +283,11 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
             let (mut a_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: a.n(),
                 base2k: ggsw.base2k(),
-                k: (a.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
+                k: a.k(),
                 rank: a.rank(),
             });
             module.glwe_normalize(&mut a_conv, a, &mut scratch_2.borrow());
-            module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
+            glwe_external_product_dft_fill(module, &mut res_dft, a_conv.to_backend_ref(), ggsw, &mut scratch_2);
         });
     } else {
         module.glwe_external_product_dft(&mut res_dft, a, ggsw, &mut scratch.borrow());
@@ -283,6 +299,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
         module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
     }
     let res_big_ref = res_big.to_backend_ref();
+    res.set_canonical(true);
     let mut res_ref = res.to_backend_mut();
     for j in 0..cols {
         module.vec_znx_big_normalize(
@@ -314,7 +331,13 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftApply<BE>
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAdd<BE>
+        + VecZnxIdftApplyTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     assert_eq!(ggsw.rank(), res.rank());
@@ -331,6 +354,9 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
     let res_k = res.k().as_usize();
     let ggsw_base2k: usize = ggsw.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
+    if !res.is_canonical() && res_base2k == ggsw_base2k {
+        module.glwe_normalize_assign(res, scratch);
+    }
     let (mut res_dft, scratch_1) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(module.n(), (res.rank() + 1).into(), output_size);
@@ -341,11 +367,11 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
             let (mut res_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: res.n(),
                 base2k: ggsw.base2k(),
-                k: (res.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
+                k: res.k(),
                 rank: res.rank(),
             });
             module.glwe_normalize(&mut res_conv, res, &mut scratch_2.borrow());
-            module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
+            glwe_external_product_dft_fill(module, &mut res_dft, res_conv.to_backend_ref(), ggsw, &mut scratch_2);
         });
     } else {
         module.glwe_external_product_dft(&mut res_dft, res, ggsw, &mut scratch.borrow());
@@ -357,6 +383,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
         module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
     }
     let res_big_ref = res_big.to_backend_ref();
+    res.set_canonical(true);
     let mut res_ref = res.to_backend_mut();
     for j in 0..cols {
         module.vec_znx_big_normalize(

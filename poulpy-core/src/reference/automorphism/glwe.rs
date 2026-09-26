@@ -59,16 +59,13 @@ where
     // Layout: res_dft | a_conv | max(normalize, ks_internal, res_big + compute).
     let cols: usize = res_infos.rank().as_usize() + 1;
     let mask_cols: usize = a_infos.rank().as_usize();
-    let mut a_conv_infos: GLWELayout = GLWELayout {
+    let a_conv_infos: GLWELayout = GLWELayout {
         n: a_infos.n(),
         base2k: key_infos.base2k(),
         k: a_infos.k(),
         rank: a_infos.rank(),
     };
-    // The product window is read at the input precision; the conv buffer is then
-    // widened to its whole allocation, exactly as the bodies do.
     let output_size: usize = gglwe_product_output_size::<BE, _, _, _>(res_infos, &a_conv_infos, key_infos);
-    a_conv_infos.k = a_conv_infos.max_k();
     let a_dft_size: usize = a_conv_infos.size();
 
     let lvl_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
@@ -183,7 +180,6 @@ pub fn glwe_automorphism_add_reference<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
-    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize(&mut a_conv, a, &mut scratch_2);
@@ -205,6 +201,7 @@ pub fn glwe_automorphism_add_reference<BE, M, R, A>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(
@@ -258,7 +255,6 @@ pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
-    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize(&mut res_conv, res, &mut scratch_2);
@@ -279,6 +275,7 @@ pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(
@@ -334,7 +331,6 @@ pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
-    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize(&mut a_conv, a, &mut scratch_2);
@@ -355,6 +351,7 @@ pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(
@@ -410,7 +407,6 @@ pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
-    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize(&mut a_conv, a, &mut scratch_2);
@@ -431,6 +427,7 @@ pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(
@@ -484,7 +481,6 @@ pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
-    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize(&mut res_conv, res, &mut scratch_2);
@@ -504,6 +500,7 @@ pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(
@@ -557,7 +554,6 @@ pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
-    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize(&mut res_conv, res, &mut scratch_2);
@@ -577,6 +573,7 @@ pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
         }
 
         let res_big_ref = res_big.to_backend_ref();
+        res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
         for i in 0..cols {
             module.vec_znx_big_normalize(

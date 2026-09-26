@@ -27,7 +27,7 @@ use crate::{
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::GGLWEProductReference,
-    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin},
 };
 
 /// Checks a backend's interleaved-digit product against the Core definition.
@@ -193,57 +193,76 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     let k_in = 4 * base2k + 1;
     let mut source = Source::new([7u8; 32]);
 
-    for &rank_in in &shapes.ranks {
-        for &rank_out in &shapes.ranks {
-            for dsize in shapes.dsizes(k_in, base2k) {
-                let a_infos = GLWELayout {
-                    n: Degree(n),
-                    base2k: Base2K(base2k as u32),
-                    k: TorusPrecision(k_in as u32),
-                    rank: Rank(rank_in as u32),
-                };
-                let res_infos = GLWELayout {
-                    n: Degree(n),
-                    base2k: Base2K(base2k as u32),
-                    k: TorusPrecision((k_in + base2k * dsize) as u32),
-                    rank: Rank(rank_out as u32),
-                };
-                let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
+    for a_base2k in [base2k, base2k - 1] {
+        for &rank_in in &shapes.ranks {
+            for &rank_out in &shapes.ranks {
+                for dsize in shapes.dsizes(k_in, base2k) {
+                    let a_infos = GLWELayout {
+                        n: Degree(n),
+                        base2k: Base2K(a_base2k as u32),
+                        k: TorusPrecision(k_in as u32),
+                        rank: Rank(rank_in as u32),
+                    };
+                    let res_infos = GLWELayout {
+                        n: Degree(n),
+                        base2k: Base2K(base2k as u32),
+                        k: TorusPrecision((k_in + base2k * dsize) as u32),
+                        rank: Rank(rank_out as u32),
+                    };
+                    let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
 
-                let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-                let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+                    let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
+                    let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
 
-                let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
-                a_ref.transfer_into(&mut a_test);
-                let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
-                key_ref_coeffs.transfer_into(&mut key_test_coeffs);
+                    let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
+                    a_ref.transfer_into(&mut a_test);
+                    let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
+                    key_ref_coeffs.transfer_into(&mut key_test_coeffs);
 
-                let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
-                let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
-                res_ref.transfer_into(&mut res_test);
+                    let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+                    let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+                    res_ref.transfer_into(&mut res_test);
 
-                let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
-                let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
+                    let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
+                    let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
 
-                let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
-                module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
-                let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
-                module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+                    let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
+                    module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
+                    let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
+                    module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
 
-                let mut scratch_ref =
-                    poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
-                let mut scratch_test =
-                    poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
+                    let mut scratch_ref =
+                        poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
+                    let mut scratch_test =
+                        poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos));
 
-                module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
-                module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
+                    module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
+                    module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
 
-                let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
-                res_test.transfer_into(&mut have);
-                assert_eq!(
-                    res_ref, have,
-                    "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in}"
-                );
+                    let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                    res_test.transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        res_ref,
+                        have,
+                        "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in} a_base2k={a_base2k}"
+                    );
+
+                    unnormalized_twin::<BR, BT>(&a_ref, &mut a_test);
+                    module_test.glwe_keyswitch(
+                        &mut res_test,
+                        &a_test,
+                        &key_test.to_backend_ref(),
+                        &mut poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos))
+                            .borrow(),
+                    );
+                    res_test.transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        res_ref,
+                        have,
+                        "glwe_keyswitch, unnormalized operand: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in} \
+                     a_base2k={a_base2k}"
+                    );
+                }
             }
         }
     }
@@ -271,42 +290,65 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
     let k = 4 * base2k + 1;
     let mut source = Source::new([11u8; 32]);
 
-    for &rank in &shapes.ranks {
-        for dsize in shapes.dsizes(k, base2k) {
-            let res_infos = GLWELayout {
-                n: Degree(n),
-                base2k: Base2K(base2k as u32),
-                k: TorusPrecision(k as u32),
-                rank: Rank(rank as u32),
-            };
-            let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
+    for res_base2k in [base2k, base2k - 1] {
+        for &rank in &shapes.ranks {
+            for dsize in shapes.dsizes(k, base2k) {
+                let res_infos = GLWELayout {
+                    n: Degree(n),
+                    base2k: Base2K(res_base2k as u32),
+                    k: TorusPrecision(k as u32),
+                    rank: Rank(rank as u32),
+                };
+                let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
 
-            let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
-            let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+                let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+                let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
 
-            let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
-            res_ref.transfer_into(&mut res_test);
-            let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
-            key_ref_coeffs.transfer_into(&mut key_test_coeffs);
+                let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+                res_ref.transfer_into(&mut res_test);
+                let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
+                key_ref_coeffs.transfer_into(&mut key_test_coeffs);
 
-            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
-            let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
+                let mut scratch_ref = poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos));
+                let mut scratch_test = poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos));
 
-            let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
-            module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
-            let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
-            module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+                let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
+                module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
+                let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
+                module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
 
-            let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
-            let mut scratch_test =
-                poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
+                let mut scratch_ref =
+                    poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
+                let mut scratch_test =
+                    poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
 
-            module_ref.glwe_keyswitch_assign(&mut res_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
-            module_test.glwe_keyswitch_assign(&mut res_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
+                let mut twin_test = module_test.glwe_alloc_from_infos(&res_infos);
+                unnormalized_twin::<BR, BT>(&res_ref, &mut twin_test);
 
-            let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
-            res_test.transfer_into(&mut have);
-            assert_eq!(res_ref, have, "glwe_keyswitch_assign: rank={rank} dsize={dsize} k={k}");
+                module_ref.glwe_keyswitch_assign(&mut res_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
+                module_test.glwe_keyswitch_assign(&mut res_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
+
+                let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                res_test.transfer_into(&mut have);
+                assert_glwe_eq!(
+                    res_ref,
+                    have,
+                    "glwe_keyswitch_assign: rank={rank} dsize={dsize} k={k} res_base2k={res_base2k}"
+                );
+
+                module_test.glwe_keyswitch_assign(
+                    &mut twin_test,
+                    &key_test.to_backend_ref(),
+                    &mut poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos))
+                        .borrow(),
+                );
+                twin_test.transfer_into(&mut have);
+                assert_glwe_eq!(
+                    res_ref,
+                    have,
+                    "glwe_keyswitch_assign, unnormalized operand: rank={rank} dsize={dsize} k={k} res_base2k={res_base2k}"
+                );
+            }
         }
     }
 }

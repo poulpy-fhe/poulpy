@@ -2,12 +2,12 @@
 //! Backends with matching random streams can be compared directly. Otherwise,
 //! the caller supplies a sampling adapter using [`super::controlled_sampling`];
 //! seed equality alone does not imply identical samples across backends.
-use super::{ParityBackend, ParityShapes, poisoned_scratch};
+use super::{ParityBackend, ParityShapes, poisoned_scratch, unnormalized_twin};
 use crate::{
     Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
-    oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, SamplingImpl},
+    oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
 };
 use poulpy_hal::{api::VecZnxFillUniformSource, layouts::*, oep::*, source::Source, test_suite::TestParams};
 
@@ -16,6 +16,7 @@ pub trait EncryptionParityBackend:
     ParityBackend
     + EncryptionImpl
     + DecryptionImpl
+    + GLWENormalizeImpl
     + SamplingImpl
     + ConversionImpl
     + HalModuleImpl
@@ -31,6 +32,7 @@ impl<B> EncryptionParityBackend for B where
     B: ParityBackend
         + EncryptionImpl
         + DecryptionImpl
+        + GLWENormalizeImpl
         + SamplingImpl
         + ConversionImpl
         + HalModuleImpl
@@ -150,6 +152,20 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut poisoned_scratch::<B>(module.glwe_decrypt_tmp_bytes(&infos)).arena(),
         );
         results.push(snapshot_glwe::<B, _>("decrypt", &have));
+        let mut twin = module.glwe_alloc_from_infos(&infos);
+        unnormalized_twin::<B, B>(&out, &mut twin);
+        let mut have_twin = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        module.glwe_decrypt(
+            &twin,
+            &mut have_twin,
+            &skp,
+            &mut poisoned_scratch::<B>(module.glwe_decrypt_tmp_bytes(&infos)).arena(),
+        );
+        assert_eq!(
+            snapshot_glwe::<B, _>("decrypt", &have_twin).bytes,
+            results.last().unwrap().bytes,
+            "glwe_decrypt, unnormalized operand"
+        );
         poison_glwe::<B, _>(&mut out);
         module.glwe_encrypt_zero_sk(
             &mut out,
@@ -176,7 +192,11 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
         assert_eq!(pk.dist(), sk.dist());
         let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
-        module.glwe_public_key_prepare(&mut pkp, &pk);
+        module.glwe_public_key_prepare(
+            &mut pkp,
+            &pk,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
+        );
         assert_eq!(pkp.dist(), pk.dist());
         poison_glwe::<B, _>(&mut out);
         module.glwe_encrypt_pk(

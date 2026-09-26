@@ -112,6 +112,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
                     for i in 0..cols_out {
                         module.vec_znx_automorphism(p, &mut tmp_glwe.data, i, &a_ct_backend.data, i);
                     }
+                    tmp_glwe.set_canonical(a_ct_backend.is_canonical());
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;

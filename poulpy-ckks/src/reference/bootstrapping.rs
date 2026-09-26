@@ -26,7 +26,6 @@ use crate::{
     },
     oep::CKKSEncapsulatedModUpImpl,
 };
-use crate::{ckks_set_k_normalized, ckks_set_log_delta_normalized};
 use poulpy_core::{GLWEBytesOf, GLWENormalize};
 
 fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
@@ -411,15 +410,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
         Ok(())
     }
 
-    fn remove_c2s_guard_bits<R>(&self, ct: &mut R, bits: usize, scratch: &mut ScratchArena<'_, BE>)
-    where
-        Module<BE>: GLWENormalize<BE>,
-        R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    {
-        let log_delta = ct.log_delta() - bits;
-        ckks_set_log_delta_normalized(self.0, ct, log_delta, scratch);
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_eval_mod_halves<F, K, C, R1, R2>(
         &self,
@@ -564,8 +554,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             }
             Result::Ok(())
         })?;
-        // Keep the C2S guard bits through EvalMod, then normalize at the output width.
-        self.remove_c2s_guard_bits(ct_out, ctx.c2s_guard_bits(), scratch);
+        // Keep the C2S guard bits through EvalMod, then relabel at the output width.
+        ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
         ct_out.set_meta(CKKSMeta {
             log_sparsity: ct_in.log_sparsity(),
             log_delta: ct_in.log_delta(),
@@ -598,12 +588,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
 
         scratch.scope(|scratch_inner| {
             let (mut ct_coeffs, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta());
-            self.ckks_copy(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             // A `Split` decode matrix is numerically identical to the standard
             // matrix after the two halves are recombined. Preserve the split
-            // path's normalization, which reconstructed `2 * ct_in`, then
-            // intentionally use the format-agnostic evaluator directly.
-            self.ckks_mul_pow2_assign(&mut ct_coeffs, 1, &mut scratch_inner)?;
+            // path's `2 * ct_in`, then intentionally use the format-agnostic
+            // evaluator directly.
+            self.ckks_double_into(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
             self.ckks_dft_evaluate_assign(
                 &mut ct_coeffs,
                 ctx.slots_to_coeffs(),
@@ -776,7 +765,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             }
             Result::Ok(())
         })?;
-        ckks_set_log_delta_normalized(self.0, ct_out, ct_in.log_delta(), scratch);
+        ct_out.set_log_delta(ct_in.log_delta());
         ct_out.set_slots(ct_in.slots());
         Ok(())
     }
@@ -820,7 +809,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
             self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
             self.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
-            self.remove_c2s_guard_bits(ct_out, ctx.c2s_guard_bits(), &mut scratch_local);
+            ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
@@ -926,15 +915,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             if ct_in.slots().is_real() {
                 let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
                 self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
-                self.remove_c2s_guard_bits(&mut ct_raised, ctx.c2s_guard_bits(), &mut scratch_local);
+                ct_raised.set_log_delta(ct_raised.log_delta() - ctx.c2s_guard_bits());
                 return eval_lut_batch(self, ct_outs, &ct_raised, ctx, luts, keys, shared, &mut scratch_local);
             }
 
             let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
-            self.remove_c2s_guard_bits(&mut r0, ctx.c2s_guard_bits(), &mut scratch_local);
-            self.remove_c2s_guard_bits(&mut i0, ctx.c2s_guard_bits(), &mut scratch_local);
+            r0.set_log_delta(r0.log_delta() - ctx.c2s_guard_bits());
+            i0.set_log_delta(i0.log_delta() - ctx.c2s_guard_bits());
 
             eval_lut_batch(self, ct_outs, &r0, ctx, luts, keys, shared, &mut scratch_local)?;
 
@@ -987,7 +976,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
                 "functional bootstrap produced k={}, below required {expected_k}",
                 ct_out.k().as_usize()
             );
-            ckks_set_k_normalized(self.0, ct_out, expected_k.into(), scratch);
+            ct_out.set_k(expected_k.into());
         }
         Ok(())
     }
@@ -1114,7 +1103,8 @@ where
         + CKKSPolynomialEvaluationOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>,
+        + CKKSAffineOps<BE>
+        + GLWENormalize<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -1175,7 +1165,8 @@ where
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>,
+        + CKKSAffineOps<BE>
+        + GLWENormalize<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,

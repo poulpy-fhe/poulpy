@@ -30,6 +30,15 @@ pub unsafe trait CKKSPow2Impl: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
+    fn ckks_double_into_impl<Dst, Src>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
     fn ckks_div_pow2_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
     fn ckks_div_pow2_into_impl<Dst, Src>(
         module: &Module<Self>,
@@ -79,6 +88,19 @@ macro_rules! impl_ckks_pow2_reference {
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_assign_reference(module, dst, bits, scratch)
+            }
+
+            fn ckks_double_into_impl<Dst, Src>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                src: &Src,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
+            {
+                $crate::reference::pow2::CKKSPow2Reference::ckks_double_into_reference(module, dst, src, scratch)
             }
 
             fn ckks_div_pow2_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {

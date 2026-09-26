@@ -226,7 +226,7 @@ impl<BE: Backend> LWESecretToBackendRef<BE> for LWESecret<BE::OwnedBuf, BE::ZnxW
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWESecretBackendRef<'_, BE> {
         LWESecret {
             dist: self.dist,
@@ -235,7 +235,7 @@ impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &mut LWESecret<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendRef<BE> for &mut LWESecret<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWESecretBackendRef<'_, BE> {
         LWESecret {
             dist: self.dist,
@@ -257,7 +257,7 @@ impl<BE: Backend> LWESecretToBackendMut<BE> for LWESecret<BE::OwnedBuf, BE::ZnxW
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendMut<BE> for &mut LWESecret<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendMut<BE> for &mut LWESecret<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWESecretBackendMut<'_, BE> {
         let n = self.data.n();
         let cols = self.data.cols();

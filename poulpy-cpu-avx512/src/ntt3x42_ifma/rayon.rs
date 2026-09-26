@@ -1345,16 +1345,14 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
             * super::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'a, Self>],
+        terms: &[CnvDftAccTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: 'a,
-    {
+    ) {
         let base_terms: Vec<_> = terms
             .iter()
             .map(|term| CnvDftAccTerm {

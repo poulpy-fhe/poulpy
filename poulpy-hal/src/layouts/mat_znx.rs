@@ -442,13 +442,13 @@ impl<B: Backend> MatZnxToBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendRef<B> for &MatZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendRef<B> for &MatZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
         mat_znx_backend_ref_from_ref::<B>(self)
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendRef<B> for &mut MatZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendRef<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
         mat_znx_backend_ref_from_mut::<B>(self)
     }
@@ -489,7 +489,7 @@ impl<B: Backend> MatZnxToBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendMut<B> for &mut MatZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendMut<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B> {
         mat_znx_backend_mut_from_mut::<B>(self)
     }

@@ -279,6 +279,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -292,9 +293,12 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_mut(),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 /// Reborrows a mutable-view-backed plaintext as a shared backend view.
@@ -307,6 +311,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendRef<BE>>::reborrow_backend_ref(&self.data),
         }
     }
@@ -322,6 +327,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
     }
@@ -337,6 +343,8 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMu
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {

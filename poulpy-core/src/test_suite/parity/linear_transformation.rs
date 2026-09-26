@@ -21,7 +21,7 @@ use crate::{
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     test_suite::{
         keys::fill_by_digit,
-        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
+        parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
     },
 };
 
@@ -176,6 +176,23 @@ where
                 );
                 assert_eq!(lhs_r.baby_steps().collect::<Vec<_>>(), lhs_t.baby_steps().collect::<Vec<_>>());
                 assert_eq!((lhs_r.size(), lhs_r.cols()), (lhs_t.size(), lhs_t.cols()));
+
+                let mut twin_t = t.glwe_alloc_from_infos(&ct);
+                unnormalized_twin::<BR, BT>(&input_r, &mut twin_t);
+                let mut lhs_twin = LinearTransformationBabySteps::alloc(t, &baby_steps, &ct);
+                t.glwe_prepare_linear_transformation_baby_steps(
+                    &mut lhs_twin,
+                    &twin_t,
+                    &keys_t,
+                    &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
+                );
+                for (have, want) in lhs_twin.values.values().zip(lhs_t.values.values()) {
+                    assert!(
+                        BT::to_host_bytes(poulpy_hal::layouts::DataView::data(have))
+                            == BT::to_host_bytes(poulpy_hal::layouts::DataView::data(want)),
+                        "baby steps, unnormalized input rank={rank}"
+                    );
+                }
 
                 if dsize == 1 && pt_k == base + 1 {
                     // A single identity diagonal has an exact mathematical
@@ -385,8 +402,9 @@ where
                         );
                         let mut have = r.glwe_alloc_from_infos(&out);
                         out_t.transfer_into(&mut have);
-                        assert_eq!(
-                            out_r, have,
+                        assert_glwe_eq!(
+                            out_r,
+                            have,
                             "resident linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
                         );
                         let mut streamed_r = ref_glwe(r, &out, &mut source);
@@ -415,12 +433,14 @@ where
                             .borrow(),
                         );
                         streamed_t.transfer_into(&mut have);
-                        assert_eq!(
-                            streamed_r, have,
+                        assert_glwe_eq!(
+                            streamed_r,
+                            have,
                             "streamed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
                         );
-                        assert_eq!(
-                            out_r, streamed_r,
+                        assert_glwe_eq!(
+                            out_r,
+                            streamed_r,
                             "resident/streamed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
                         );
                     }

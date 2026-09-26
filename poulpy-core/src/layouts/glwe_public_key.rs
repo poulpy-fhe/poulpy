@@ -145,4 +145,8 @@ where
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.key.to_backend_mut()
     }
+
+    fn set_canonical(&mut self, canonical: bool) {
+        self.key.canonical = canonical
+    }
 }

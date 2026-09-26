@@ -302,6 +302,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
+            canonical: true,
         }
     }
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<B::OwnedBuf, B::ZnxWord> {
@@ -320,6 +321,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
+            canonical: true,
         }
     }
 

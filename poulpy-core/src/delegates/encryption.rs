@@ -33,6 +33,15 @@ macro_rules! impl_encryption_delegate {
             $($body)+
         }
     };
+    (normalize $trait:ty, $($body:item),+ $(,)?) => {
+        impl<BE> $trait for Module<BE>
+        where
+            BE: Backend + EncryptionImpl,
+            Module<BE>: crate::GLWENormalize<BE>,
+        {
+            $($body)+
+        }
+    };
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
@@ -193,7 +202,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GLWEPublicKeyGenerate<BE>,
+    normalize GLWEPublicKeyGenerate<BE>,
     fn glwe_public_key_generate_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
