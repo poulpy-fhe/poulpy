@@ -84,3 +84,97 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
     let dense = DFTPlan::new(DFTType::Encode, vec![(5, 1)], DFTOutputFormat::RepackImagAsReal, CoeffsMeta::from_delta_budget(12, 2)).unwrap();
     assert!(DFTMatrix::<FFT64Ref, Encode, Repack, _>::try_from_factor_operands(&module, dense, factors()).is_err());
 }
+
+
+use super::OverrideBackend;
+use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
+use poulpy_ckks::api::LtDiagonalScale;
+use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
+use poulpy_core::reference::linear_transformation::DiagonalProd;
+use poulpy_hal::layouts::ScratchArena;
+use std::cell::Cell;
+thread_local! {
+    static DFT_CALLS: Cell<usize> = const { Cell::new(0) };
+    static REPACK_CALLS: Cell<usize> = const { Cell::new(0) };
+}
+unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
+    fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
+        module: &Module<Self>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> DFTMatrixPrepared<Self, Dir, Fmt>
+    where
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>
+    {
+        poulpy_ckks::reference::dft::ckks_prepare_dft_matrix(module, dft, scratch)
+    }
+
+    fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
+        module: &Module<Self>,
+        ct: &mut Dst,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>
+    {
+        let _ = (module, ct, dft, keys, scratch);
+        DFT_CALLS.set(DFT_CALLS.get() + 1);
+        Err(anyhow::anyhow!("DFT override probe").into())
+    }
+
+    fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
+        module: &Module<Self>,
+        op_out: &mut Dst,
+        ct_in: &Src,
+        dft: &DFTMatrix<Self, Decode, Repack, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>,
+    {
+        REPACK_CALLS.set(REPACK_CALLS.get() + 1);
+        poulpy_ckks::oep::defaults::ckks_slots_to_coeffs_repack(module, op_out, ct_in, dft, keys, scratch)
+    }
+}
+
+struct NoAutomorphismKey;
+impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphismKey {
+    fn lookup_automorphism_key(&self, _: i64, _: poulpy_core::layouts::TorusPrecision) -> poulpy_core::Result<poulpy_core::layouts::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        panic!("DFT dispatch probe must not request keys")
+    }
+}
+
+#[test]
+fn conditional_dft_fallback_reenters_selected_evaluation() {
+    use poulpy_ckks::api::CKKSCopyOps;
+    use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
+    let module = Module::<OverrideBackend>::new(64);
+    let meta = CoeffsMeta::from_delta_budget(12, 2);
+    let mut pt = module.ckks_pt_vec_alloc(16usize.into(), meta.k);
+    pt.set_meta(meta.meta);
+    let matrix = DFTMatrix::<OverrideBackend, Decode, Repack, _>::try_from_factor_operands(
+        &module,
+        DFTPlan::new(poulpy_ckks::layouts::DFTType::Decode, vec![(2, 1)], DFTOutputFormat::RepackImagAsReal, meta).unwrap(),
+        vec![LinearTransformation { baby_steps: vec![0], giant_steps: vec![LinearTransformationGiantStep {
+            rot: 0, diagonals: vec![LinearTransformationDiagonal { baby: 0, plaintext: pt }],
+        }] }],
+    ).unwrap();
+    let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
+    let mut scratch = ScratchOwned::<OverrideBackend>::alloc(module.ckks_copy_tmp_bytes(&dst, &src));
+    DFT_CALLS.set(0);
+    REPACK_CALLS.set(0);
+    let error = module.ckks_slots_to_coeffs_repack(&mut dst, &src, &matrix, &NoAutomorphismKey, &mut scratch.borrow()).unwrap_err();
+    assert!(error.to_string().contains("DFT override probe"));
+    assert_eq!(REPACK_CALLS.get(), 1);
+    assert_eq!(DFT_CALLS.get(), 1);
+}

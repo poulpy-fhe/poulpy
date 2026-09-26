@@ -117,3 +117,7 @@ also tests complete pipelines. Passing these cases establishes evidence for the
 covered parameters, not a proof for every possible circuit or layout. Concrete
 registrations, runtime selection, and commands belong in the
 [repository README](../../README.md) and backend test modules.
+
+Conditional DFT overrides can call the corresponding composition in
+`oep::defaults`. The fallback bypasses the format wrapper while retaining
+selected DFT evaluation and arithmetic operations.

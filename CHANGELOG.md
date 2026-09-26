@@ -92,6 +92,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- `oep::defaults` exposes callable DFT format compositions for conditional overrides, retaining selected constituent dispatch.
+
 - DFT matrices expose read-only factor operands and checked construction/replacement, preserving direction, format and diagonal layout contracts.
 
 - **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.

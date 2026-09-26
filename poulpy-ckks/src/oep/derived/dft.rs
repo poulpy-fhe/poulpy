@@ -8,11 +8,8 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKe
 use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
-/// (IDFT) matrix in place. `dft.literal.kind` must be
-/// [`DFTType::Encode`](crate::layouts::DFTType::Encode) and the
-/// format [`crate::layouts::DFTOutputFormat::Standard`] (the real/imag-splitting formats are a later
-/// increment).
-pub(crate) fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
+/// (IDFT) matrix in place, retaining selected raw DFT dispatch.
+pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -30,9 +27,8 @@ where
 }
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
-/// (DFT) matrix in place. `dft.literal.kind` must be
-/// [`DFTType::Decode`](crate::layouts::DFTType::Decode).
-pub(crate) fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
+/// (DFT) matrix in place, retaining selected raw DFT dispatch.
+pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -59,7 +55,7 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
+pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
@@ -105,7 +101,7 @@ where
 ///
 /// Combines `ct_real + i·ct_imag`, then evaluates the Decode matrix. Writes the
 /// result into `op_out`.
-pub(crate) fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
+pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_real: &Src,
@@ -136,7 +132,7 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
+pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
@@ -192,7 +188,7 @@ where
 /// `[Re | Im]` real packing into the complex form, so this is just an in-place
 /// evaluation. The live slot count halves, so `op_out.log_sparsity` is incremented
 /// by one.
-pub(crate) fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
+pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_in: &Src,

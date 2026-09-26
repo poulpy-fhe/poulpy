@@ -1,8 +1,8 @@
 //! Backend contracts for homomorphic DFT evaluation and matrix generation.
 //!
 //! Primitive preparation/evaluation use callable algorithms in
-//! [`crate::reference::dft`]. Format wrappers are private derived defaults that
-//! re-enter the selected generic DFT and CKKS arithmetic operations.
+//! [`crate::reference::dft`]. Format wrappers re-enter the selected generic DFT and CKKS arithmetic operations.
+//! Conditional overrides can call them through [`crate::oep::defaults`].
 
 #![allow(clippy::too_many_arguments)]
 
