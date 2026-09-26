@@ -46,12 +46,13 @@ seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, `impl_mhe_public_key_reference!` or
-`impl_mhe_evaluation_key_reference!` alone when replacing another one. The reference traits stay callable from an override.
+`impl_mhe_evaluation_key_reference!` alone when replacing another one. The
+reference traits stay callable from an override.
 
 ## Workspace
 
 Size scratch with the queries: `pat_normalize_tmp_bytes`,
 `pat_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes`,
 `glwe_public_key_finalize_tmp_bytes`, and the share, normalize and finalize
-queries of `GLWESwitchingKeyShare` and `GLWEAutomorphismKeyShare`. A replacement that needs more workspace
-replaces the matching query.
+queries of `GLWESwitchingKeyShare` and `GLWEAutomorphismKeyShare`. A
+replacement that needs more workspace replaces the matching query.

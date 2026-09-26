@@ -5,7 +5,7 @@
 use poulpy_core::{
     EncryptionLayout, GGLWENoise,
     layouts::{
-        Degree, GLWEAutomorphismKey, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling,
+        Degree, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWESwitchingKey, GLWESwitchingKeyDegrees, ModuleCoreAlloc,
     },
 };
@@ -20,7 +20,7 @@ use poulpy_hal::{
 };
 
 use super::{
-    fixtures::{P, PARTIES, RANK, SEEDS, Secret, gglwe_layout, ideal_secret, party_secrets, secret_from_seed, secret_sum},
+    fixtures::{P, PARTIES, SEEDS, Secret, gglwe_layout, ideal_secret, party_secrets, secret_from_seed, secret_sum},
     pat::assert_gglwe_noise,
 };
 use crate::{
@@ -56,6 +56,7 @@ where
     for (i, ((sk_in, _), (sk_out, _))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
+        dst.set_canonical(false);
         module.glwe_switching_key_share(
             dst,
             sk_in,
@@ -118,6 +119,7 @@ where
     for (i, (sk, _)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
+        dst.set_canonical(false);
         module.glwe_automorphism_key_share(dst, P, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
         assert!(dst.is_canonical());
         if i > 0 {
@@ -152,6 +154,19 @@ where
     module.glwe_switching_key_share_aggregate_assign(&mut a, &b);
 }
 
+/// Aggregating switching key shares of different output degrees panics.
+pub fn test_glwe_switching_key_out_degree_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyShare<BE>,
+{
+    let layout = gglwe_layout(module);
+    let mut a = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
+    let mut b = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
+    b.output_degree = Degree(module.n() as u32);
+    module.glwe_switching_key_share_aggregate_assign(&mut a, &b);
+}
+
 /// Aggregating automorphism key shares of different Galois elements panics.
 pub fn test_glwe_automorphism_key_p_mismatch<BE>(module: &Module<BE>)
 where
@@ -166,7 +181,7 @@ where
 }
 
 /// `sigma_{p^-1}(sk)` prepared: the secret core's automorphism key encrypts under.
-pub(crate) fn automorphism_inv_prepared<BE>(
+fn automorphism_inv_prepared<BE>(
     module: &Module<BE>,
     sk: &GLWESecret<AlignedBuf, i64>,
     p: i64,
@@ -179,11 +194,11 @@ where
     {
         let src = ScalarZnxAsVecZnxBackendRef::<BE>::as_vec_znx_backend(sk.data());
         let mut dst = ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(sigma.data_mut());
-        for col in 0..RANK.as_usize() {
+        for col in 0..sk.rank().as_usize() {
             module.vec_znx_automorphism(module.galois_element_inv(p), &mut dst, col, &src, col);
         }
     }
-    let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+    let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(sk.rank());
     module.glwe_secret_prepare(&mut prepared, &sigma);
     prepared
 }

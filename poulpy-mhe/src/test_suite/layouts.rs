@@ -290,6 +290,8 @@ where
     flagged.read_from(&mut bytes.as_slice()).unwrap();
     assert!(flagged.is_canonical());
 
+    pats[1].input_degree = Degree(0);
+    pats[1].output_degree = Degree(0);
     test_reader_writer_interface(pats);
 }
 
@@ -362,5 +364,6 @@ where
     flagged.read_from(&mut bytes.as_slice()).unwrap();
     assert!(flagged.is_canonical());
 
+    pats[1].p = 0;
     test_reader_writer_interface(pats);
 }

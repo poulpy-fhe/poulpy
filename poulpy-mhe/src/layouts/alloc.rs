@@ -107,7 +107,10 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         infos: &A,
     ) -> GLWEAutomorphismKeyPatCompressedOwned<BE> {
-        self.glwe_automorphism_key_pat_compressed_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        GLWEAutomorphismKeyPatCompressed {
+            key: self.gglwe_pat_compressed_alloc_from_infos(infos),
+            p: 0,
+        }
     }
 
     fn glwe_automorphism_key_pat_compressed_alloc(

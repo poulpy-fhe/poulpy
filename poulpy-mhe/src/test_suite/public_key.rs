@@ -61,6 +61,7 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
+        dst.set_canonical(false);
         module.glwe_public_key_share(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
         assert!(dst.is_canonical());
         if i > 0 {
