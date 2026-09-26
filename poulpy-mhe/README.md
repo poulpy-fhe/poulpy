@@ -30,3 +30,5 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 - `GLWESwitchingKeyShare`, `GLWEAutomorphismKeyShare`: collective switching and
   automorphism keys, finalized into core `GLWESwitchingKey` and
   `GLWEAutomorphismKey` of the ideal secrets.
+- `GLWEKeyswitchShare`, `GLWEPublicKeyswitchShare`: collective key switching
+  of a ciphertext to the ideal output secret or to a public key.
