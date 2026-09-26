@@ -150,6 +150,7 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Ref {
     }
 }
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Ref);
+poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_automorphism_reference_full!(DelegatingFFT64Ref);
 
 // Inherit derived rotate and sizing, and override only the derived assign hook.

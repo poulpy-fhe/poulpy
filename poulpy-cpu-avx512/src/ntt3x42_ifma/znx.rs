@@ -85,6 +85,11 @@ impl ZnxAutomorphism for NTT3x42Ifma {
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_automorphism_avx512(p, res, a) }
     }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        poulpy_cpu_ref::reference::znx::standard::znx_automorphism_ref(p, res, a)
+    }
 }
 
 impl ZnxAutomorphismRotate for NTT3x42Ifma {

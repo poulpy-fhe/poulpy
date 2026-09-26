@@ -191,7 +191,17 @@ impl ZnxMulPowerOfTwoAssign for NTT3x42IfmaRayon {
             .for_each(|res| <NTT3x42Ifma as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
     }
 }
-forward_znx!(ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
+impl ZnxAutomorphism for NTT3x42IfmaRayon {
+    #[inline(always)]
+    fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
+        <NTT3x42Ifma as ZnxAutomorphism>::znx_automorphism(p, res, a)
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        <NTT3x42Ifma as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
+    }
+}
 forward_znx!(ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
 parallel_assign!(ZnxCopy, znx_copy);
 parallel_assign!(ZnxNegate, znx_negate);
@@ -299,6 +309,10 @@ unsafe impl HalModuleImpl for NTT3x42IfmaRayon {
         let module = ManuallyDrop::new(super::module::module_new(n));
         unsafe { Module::from_raw_parts(module.as_mut_ptr(), n) }
     }
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT3x42IfmaRayon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl HalVecZnxImpl for NTT3x42IfmaRayon {

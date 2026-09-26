@@ -13,7 +13,7 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait AutomorphismImpl: Backend + crate::oep::ConversionImpl {
+pub unsafe trait AutomorphismImpl: Backend + crate::oep::GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,

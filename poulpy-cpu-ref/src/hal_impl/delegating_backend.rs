@@ -1,6 +1,9 @@
 use poulpy_hal::{
     layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalVmpImpl,
+    },
 };
 
 use crate::{
@@ -95,6 +98,11 @@ macro_rules! impl_fft64_delegating_backend {
             #[inline(always)]
             fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
                 <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, res, a)
+            }
+
+            #[inline(always)]
+            fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+                <FFT64Ref as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
             }
         }
         impl ZnxAutomorphismRotate for $be {
@@ -277,7 +285,21 @@ macro_rules! impl_fft64_delegating_backend {
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(DelegatingFFT64Ref);
+#[cfg(test)]
+unsafe impl HalVecZnxMonomialImpl for DelegatingFFT64Ref {
+    crate::hal_impl_vec_znx_monomial!();
+}
+#[cfg(test)]
+impl crate::reference::fft64::ring_arith::Fft64RingArith for DelegatingFFT64Ref {
+    crate::fft64_ring_arith_standard!();
+}
 impl_fft64_delegating_backend!(ControlledSamplingFFT64Ref);
+unsafe impl HalVecZnxMonomialImpl for ControlledSamplingFFT64Ref {
+    crate::hal_impl_vec_znx_monomial!();
+}
+impl crate::reference::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64Ref {
+    crate::fft64_ring_arith_standard!();
+}
 
 #[test]
 fn test_normalization_kernels_delegating_fft64_ref() {
@@ -285,11 +307,45 @@ fn test_normalization_kernels_delegating_fft64_ref() {
 }
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_glwe_trace_derived_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_conversion_reference_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_glwe_packing_derived_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_glwe_rotate_reference_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Ref);
+poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(ControlledSamplingFFT64Ref);
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Ref);
 #[cfg(test)]
+unsafe impl HalVecZnxMonomialImpl for DifferentSamplingFFT64Ref {
+    crate::hal_impl_vec_znx_monomial!();
+}
+#[cfg(test)]
+impl crate::reference::fft64::ring_arith::Fft64RingArith for DifferentSamplingFFT64Ref {
+    crate::fft64_ring_arith_standard!();
+}
+#[cfg(test)]
 poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_glwe_trace_derived_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_glwe_packing_derived_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_glwe_rotate_reference_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_ggsw_rotate_derived_full!(DifferentSamplingFFT64Ref);
+#[cfg(test)]
+poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(DifferentSamplingFFT64Ref);
 
 #[cfg(all(test, feature = "enable-bin-fhe"))]
 impl_fft64_delegating_backend!(BinFheOverrideFFT64);
+#[cfg(all(test, feature = "enable-bin-fhe"))]
+unsafe impl HalVecZnxMonomialImpl for BinFheOverrideFFT64 {
+    crate::hal_impl_vec_znx_monomial!();
+}
+#[cfg(all(test, feature = "enable-bin-fhe"))]
+impl crate::reference::fft64::ring_arith::Fft64RingArith for BinFheOverrideFFT64 {
+    crate::fft64_ring_arith_standard!();
+}

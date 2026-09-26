@@ -15,6 +15,7 @@
 //! All implementations use the default `_ref` implementations.
 
 use super::FFT64Ref;
+use poulpy_hal::layouts::Ring;
 
 use crate::reference::fft64::{
     convolution::I64Ops,
@@ -22,22 +23,30 @@ use crate::reference::fft64::{
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
 
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Ref {
+impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Ref<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_ref(table.m(), table.omg(), data);
     }
 }
 
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Ref {
+impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Ref<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_ref(table.m(), table.omg(), data);
     }
 }
 
-impl ReimArith for FFT64Ref {}
+impl<R: Ring> ReimArith for FFT64Ref<R> {}
 
-impl Reim4BlkMatVec for FFT64Ref {}
+impl<R: Ring> Reim4BlkMatVec for FFT64Ref<R> {}
 
-impl Reim4Convolution for FFT64Ref {}
+impl<R: Ring> Reim4Convolution for FFT64Ref<R> {}
 
-impl I64Ops for FFT64Ref {}
+impl<R: Ring> I64Ops for FFT64Ref<R> {}
+
+impl crate::reference::fft64::ring_arith::Fft64RingArith for FFT64Ref<poulpy_hal::layouts::Standard> {
+    crate::fft64_ring_arith_standard!();
+}
+
+impl crate::reference::fft64::ring_arith::Fft64RingArith for FFT64Ref<poulpy_hal::layouts::ConjugateInvariant> {
+    crate::fft64_ring_arith_ci!();
+}

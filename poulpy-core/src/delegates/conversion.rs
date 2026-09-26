@@ -132,7 +132,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GGSWFromGGLWE<BE>,
-    [BE: Backend + ConversionImpl],
+    [BE: Backend + crate::oep::GGSWConversionImpl],
     fn ggsw_from_gglwe_tmp_bytes<R, A, T>(&self, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -159,7 +159,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GGSWExpandRows<BE>,
-    [BE: Backend + ConversionImpl],
+    [BE: Backend + crate::oep::GGSWConversionImpl],
     fn ggsw_expand_rows_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,

@@ -116,6 +116,18 @@ pub trait ReimArith {
         reim_mul_assign_ref(res, a)
     }
 
+    fn reim_real_mul(res: &mut [f64], a: &[f64], b: &[f64]) {
+        reim_real_mul_ref(res, a, b)
+    }
+
+    fn reim_real_mul_assign(res: &mut [f64], a: &[f64]) {
+        reim_real_mul_assign_ref(res, a)
+    }
+
+    fn reim_real_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {
+        reim_real_addmul_ref(res, a, b)
+    }
+
     fn reim_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {
         reim_addmul_ref(res, a, b)
     }

@@ -38,32 +38,38 @@ pub struct ReimIFFTTable<R: Float + FloatConst + Debug + Zeroable> {
 
 impl<R: Float + FloatConst + Debug + Zeroable> ReimIFFTTable<R> {
     pub fn new(m: usize) -> Self {
+        Self::new_with_phase(m, R::exp2(R::from(-2).unwrap()))
+    }
+
+    pub(crate) fn new_cyclic(m: usize) -> Self {
+        Self::new_with_phase(m, R::zero())
+    }
+
+    fn new_with_phase(m: usize, phase: R) -> Self {
         assert!(m & (m - 1) == 0, "m must be a power of two but is {m}");
         let mut omg: AlignedVec<R> = alloc_aligned::<R>(2 * m);
-
-        let quarter: R = R::exp2(R::from(-2).unwrap());
 
         if m <= 16 {
             match m {
                 1 => {}
                 2 => {
-                    fill_ifft2_omegas::<R>(quarter, &mut omg, 0);
+                    fill_ifft2_omegas::<R>(phase, &mut omg, 0);
                 }
                 4 => {
-                    fill_ifft4_omegas(quarter, &mut omg, 0);
+                    fill_ifft4_omegas(phase, &mut omg, 0);
                 }
                 8 => {
-                    fill_ifft8_omegas(quarter, &mut omg, 0);
+                    fill_ifft8_omegas(phase, &mut omg, 0);
                 }
                 16 => {
-                    fill_ifft16_omegas(quarter, &mut omg, 0);
+                    fill_ifft16_omegas(phase, &mut omg, 0);
                 }
                 _ => {}
             }
         } else if m <= 2048 {
-            fill_ifft_bfs_16_omegas(m, quarter, &mut omg, 0);
+            fill_ifft_bfs_16_omegas(m, phase, &mut omg, 0);
         } else {
-            fill_ifft_rec_16_omegas(m, quarter, &mut omg, 0);
+            fill_ifft_rec_16_omegas(m, phase, &mut omg, 0);
         }
 
         Self { m, omg }

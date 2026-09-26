@@ -35,6 +35,14 @@ where
     (slice, arena)
 }
 
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64Avx {
+    poulpy_cpu_ref::fft64_ring_arith_standard!();
+}
+
 unsafe impl HalVecZnxImpl for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
@@ -74,6 +82,10 @@ unsafe impl HalVecZnxDftImpl for FFT64Avx {
     ) {
         super::fft64::fft64_vec_znx_dft_automorphism_avx::<Self>(plan, res, res_col, a, a_col);
     }
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Avx {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl HalVecZnxImpl for NTT4x30Avx {
@@ -633,7 +645,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx {
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+        poulpy_cpu_ref::reference::ntt4x30::standard::build_ntt4x30_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(

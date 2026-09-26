@@ -22,7 +22,9 @@ pub fn fft64_vec_znx_dft_automorphism_avx<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + poulpy_cpu_ref::reference::fft64::reim::ReimArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64>
+        + poulpy_cpu_ref::reference::fft64::reim::ReimArith
+        + poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

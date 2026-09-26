@@ -12,9 +12,7 @@ use crate::layouts::{
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the documented conversion
 /// semantics for the backend.
-pub unsafe trait ConversionImpl:
-    Backend + crate::oep::GLWECopyImpl + crate::oep::GLWEKeyswitchImpl + crate::oep::GLWERotateImpl
-{
+pub unsafe trait ConversionImpl: Backend + crate::oep::GLWEKeyswitchImpl + crate::oep::GLWERotateImpl {
     fn lwe_sample_extract<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<Self> + LWEInfos,
@@ -61,6 +59,45 @@ pub unsafe trait ConversionImpl:
         crate::oep::derived::conversion::lwe_from_glwe_derived::<Self, _, _, _>(module, res, a, a_idx, key, scratch)
     }
 
+    fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<Self>, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe<R, A>(module: &Module<Self>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: LWEToBackendMut<Self> + LWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
+
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_matrix<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: LWEMatrixToBackendMut<Self> + LWEMatrixInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
+}
+
+/// Backend-provided GGSW conversions (ring independent).
+///
+/// # Safety
+/// Same contract as [`ConversionImpl`].
+pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
+    fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, tsk_infos: &A) -> usize
+    where
+        R: GGSWInfos,
+        A: GGLWEInfos;
+
+    fn ggsw_expand_row<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGSWToBackendMut<Self> + GGSWInfos;
+
     fn ggsw_from_gglwe_tmp_bytes<R, A, T>(module: &Module<Self>, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -84,39 +121,6 @@ pub unsafe trait ConversionImpl:
     {
         crate::oep::derived::conversion::ggsw_from_gglwe_derived::<Self, _, _, _>(module, res, a, tsk, scratch)
     }
-
-    fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<Self>, lwe_infos: &R, a_infos: &A) -> usize
-    where
-        R: LWEInfos,
-        A: GLWEInfos;
-
-    fn glwe_expand_lwe<R, A>(module: &Module<Self>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: LWEToBackendMut<Self> + LWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
-
-    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
-    where
-        R: LWEMatrixInfos,
-        A: GLWEInfos;
-
-    fn glwe_expand_lwe_matrix<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: LWEMatrixToBackendMut<Self> + LWEMatrixInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
-
-    fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos;
-
-    fn ggsw_expand_row<R>(
-        module: &Module<Self>,
-        res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
 }
 
 /// Selects the portable HAL algorithms for this backend operation family.
@@ -206,7 +210,15 @@ macro_rules! impl_conversion_reference_full {
             {
                 $crate::reference::conversion::glwe_expand_lwe_matrix_reference::<$be, _, _, _>(module, res, a, scratch)
             }
+        }
+    };
+}
 
+/// Selects the portable GGSW conversion algorithms.
+#[macro_export]
+macro_rules! impl_ggsw_conversion_reference_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGSWConversionImpl for $be {
             fn ggsw_expand_rows_tmp_bytes<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
@@ -234,4 +246,4 @@ macro_rules! impl_conversion_reference_full {
 }
 
 // Reference helpers remain available through OEP for source compatibility.
-pub use crate::reference::conversion::ConversionReference;
+pub use crate::reference::conversion::{ConversionReference, GGSWConversionReference};

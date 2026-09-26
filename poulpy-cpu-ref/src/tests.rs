@@ -16,6 +16,13 @@ mod delegating_backend;
 mod derived_scratch;
 
 #[test]
+fn conjugate_invariant_max_base2k_has_no_model() {
+    assert_eq!(Module::<crate::FFT64CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<crate::NTT4x30CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 13, 1, 128, true), Some(55));
+}
+
+#[test]
 fn bootstrapping_presets_keep_fixture_radices() {
     use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
     use poulpy_core::layouts::LWEInfos;

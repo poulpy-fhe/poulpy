@@ -24,7 +24,7 @@ pub struct BackendCapability {
 
 /// The portable backends, available everywhere.
 pub fn reference_backends() -> Vec<BackendCapability> {
-    ["FFT64Ref", "NTT4x30Ref"]
+    ["FFT64Ref", "FFT64CIRef", "NTT4x30Ref", "NTT4x30CIRef"]
         .into_iter()
         .map(|backend| BackendCapability {
             backend,
