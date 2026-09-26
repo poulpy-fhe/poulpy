@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
+use crate::{api::CKKSModuleInfos, ckks_ensure};
 use poulpy_core::layouts::GetAutomorphismKey;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use crate::{
@@ -31,6 +32,10 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "conjugation requires the standard CKKS ring"
+        );
         let p: i64 = conj_rotate_galois_element(k, self.cyclotomic_order());
         let key = keys
             .get_automorphism_key(p, src.k())
@@ -47,6 +52,10 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "conjugation requires the standard CKKS ring"
+        );
         let key = keys
             .get_automorphism_key(-1, dst.k())
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {

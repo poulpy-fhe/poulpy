@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use crate::{api::CKKSModuleInfos, ckks_ensure};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -14,6 +15,10 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_mul_i_into_impl(self, dst, src, scratch)
     }
 
@@ -21,6 +26,10 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_mul_i_assign_impl(self, dst, scratch)
     }
 
@@ -33,6 +42,10 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_div_i_into_impl(self, dst, src, scratch)
     }
 
@@ -40,6 +53,10 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        ckks_ensure!(
+            !self.ckks_is_conjugate_invariant(),
+            "imaginary multiplication requires the standard CKKS ring"
+        );
         BE::ckks_div_i_assign_impl(self, dst, scratch)
     }
 }

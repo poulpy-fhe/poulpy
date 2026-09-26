@@ -64,6 +64,9 @@ use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::CyclotomicOrder;
+use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::galois_element;
 
 pub mod api;
 pub mod approximation;
@@ -93,8 +96,8 @@ pub mod layouts;
 pub mod prelude {
     pub use crate::api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps,
-        CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps,
-        CKKSSubOps,
+        CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
+        CKKSRotateOps, CKKSSubOps,
     };
     pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
@@ -144,6 +147,41 @@ pub trait CKKSCtBounds: GLWEInfos + CKKSInfos {}
 
 impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 
+/// Ring-dependent CKKS slot geometry and automorphism identifiers.
+pub trait CKKSModuleInfos {
+    /// Whether the module uses the conjugate invariant coefficient basis.
+    fn ckks_is_conjugate_invariant(&self) -> bool;
+
+    /// Maximum number of slots: `N` real slots or `N/2` complex slots.
+    fn ckks_max_slots(&self) -> usize;
+
+    /// Automorphism identifier used by CKKS rotations and their evaluation keys.
+    fn ckks_galois_element(&self, rotation: i64) -> i64;
+}
+
+impl<BE: Backend> CKKSModuleInfos for Module<BE> {
+    fn ckks_is_conjugate_invariant(&self) -> bool {
+        self.cyclotomic_order() == 4 * self.n() as i64
+    }
+
+    fn ckks_max_slots(&self) -> usize {
+        if self.ckks_is_conjugate_invariant() {
+            self.n()
+        } else {
+            self.n() / 2
+        }
+    }
+
+    fn ckks_galois_element(&self, rotation: i64) -> i64 {
+        let rotation = if self.ckks_is_conjugate_invariant() {
+            rotation.rem_euclid(self.n() as i64)
+        } else {
+            rotation
+        };
+        galois_element(rotation, self.cyclotomic_order())
+    }
+}
+
 /// Which subfield the encoded slots are known to live in.
 ///
 /// The reals are a subring of the complexes, so the two variants are ordered
@@ -186,16 +224,16 @@ pub struct CKKSMeta {
     /// Base 2 logarithm of the decimal precision.
     pub log_delta: usize,
     /// Sparse-packing factor: `log2` of the coefficient gap (equivalently, of the
-    /// slot replication). `0` is dense / full packing (`N/2` slots). For
-    /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
-    /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
-    /// coefficient gap of `2^s`.
+    /// slot replication). Dense packing has `N/2` complex slots in the standard
+    /// ring or `N` real slots in the conjugate invariant ring. With
+    /// `log_sparsity = s`, `M(X^{2^s})` carries `max_slots >> s` distinct slots,
+    /// each replicated `2^s` times.
     ///
     /// A plaintext may store its `M` compactly, at the degree
     /// `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()` is
     /// then below the ring degree and every consumer reads it through the ring
     /// embedding. `log_sparsity` keeps counting the gap under the ring
-    /// embedding, `log2` of the replication among the `N/2` ring slots,
+    /// embedding, `log2` of the replication among the ring slots,
     /// whatever degree the plaintext is stored at.
     pub log_sparsity: usize,
     /// Subfield the slots are known to live in. See [`SlotsKind`].

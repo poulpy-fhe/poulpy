@@ -17,7 +17,13 @@ pub(crate) mod ntt4x30;
 pub use ntt4x30::NTT4x30Neon;
 #[cfg(feature = "enable-rayon")]
 pub use ntt4x30::NTT4x30NeonRayon;
+#[cfg(feature = "enable-ckks")]
+#[path = "ckks_impl.rs"]
+mod ckks_impl;
 #[path = "core_impl.rs"]
 mod core_impl;
 #[path = "hal_impl.rs"]
 mod hal_impl;
+
+#[cfg(feature = "enable-ckks")]
+use crate::FFT64NeonReimTable;

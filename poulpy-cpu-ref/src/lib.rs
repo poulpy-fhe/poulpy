@@ -88,6 +88,22 @@ crate::conjugate_invariant_core_test_suite!(ci_core_fft64ref, crate::FFT64CIRef,
 #[cfg(all(test, feature = "enable-core"))]
 crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
 
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64ref,
+    crate::FFT64CIRef,
+    crate::FFT64Ref,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks", feature = "enable-core"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30ref,
+    crate::NTT4x30CIRef,
+    crate::NTT4x30Ref,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
 #[cfg(feature = "enable-ckks")]
 mod ckks_comparison;
 

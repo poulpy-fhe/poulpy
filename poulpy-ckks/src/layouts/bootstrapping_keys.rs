@@ -255,6 +255,11 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>,
     {
+        anyhow::ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(module),
+            "bootstrap key generation requires a standard module"
+        );
+        anyhow::ensure!(sk_dense.n().as_usize() == module.n(), "invalid bootstrap secret degree");
         let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight();
         anyhow::ensure!(
             sparse_secret_hamming_weight.is_some() == layout.encapsulation.is_some(),

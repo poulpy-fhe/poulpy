@@ -179,6 +179,10 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let plan = context.plan();
+    ckks_ensure!(
+        !<BE::Ring as poulpy_hal::layouts::Ring>::IS_CI,
+        "PaCo requires a standard-ring module"
+    );
 
     ckks_ensure!(
         keys.parameters() == PaCoKeyParameters::from_plan(plan),

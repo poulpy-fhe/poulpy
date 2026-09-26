@@ -58,6 +58,10 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_tmp_bytes(self, output, input, context, keys, false)
     }
 
@@ -72,6 +76,10 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_tmp_bytes(self, output, input, context, keys, true)
     }
 
@@ -84,6 +92,10 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         let required = BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())?;
         ckks_ensure!(
             scratch.available() >= required,
@@ -109,6 +121,10 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
@@ -124,6 +140,10 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
@@ -141,6 +161,10 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 
@@ -158,6 +182,10 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
+        crate::ckks_ensure!(
+            !crate::api::CKKSModuleInfos::ckks_is_conjugate_invariant(self),
+            "PACO requires a standard ring"
+        );
         paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 }

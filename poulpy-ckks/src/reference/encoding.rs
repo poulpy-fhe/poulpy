@@ -72,6 +72,33 @@ impl EncodingPermutation {
         })
     }
 
+    /// Encodes real CI slots in the independent half of the ambient coefficient buffer.
+    pub fn ci_slots_to_coeffs_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar + NumCast,
+        T: NegacyclicFFT<F>,
+    {
+        ensure!(values.len() == 2 * self.slots);
+        values[self.slots..].fill(F::zero());
+        self.slots_to_coeffs_assign(fft, values)
+    }
+
+    /// Expands independent CI coefficients before decoding real slots.
+    pub fn ci_coeffs_to_slots_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar,
+        T: NegacyclicFFT<F>,
+    {
+        ensure!(values.len() == 2 * self.slots);
+        values[self.slots] = F::zero();
+        for j in 1..self.slots {
+            values[2 * self.slots - j] = -values[j];
+        }
+        self.coeffs_to_slots_assign(fft, values)?;
+        values[self.slots..].fill(F::zero());
+        Ok(())
+    }
+
     pub fn slots_to_coeffs_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,

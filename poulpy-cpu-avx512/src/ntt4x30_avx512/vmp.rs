@@ -515,7 +515,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
 
 #[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code, reason = "CKKS does not run on CI backends yet")]
 pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,

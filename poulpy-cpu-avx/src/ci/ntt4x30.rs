@@ -28,3 +28,5 @@ pub use NTT4x30CIAvx as NTT4x30Avx;
 pub struct NTT4x30CIAvxRayon;
 #[cfg(feature = "enable-rayon")]
 pub use NTT4x30CIAvxRayon as NTT4x30AvxRayon;
+#[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
+pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;

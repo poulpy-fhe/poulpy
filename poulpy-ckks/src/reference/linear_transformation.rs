@@ -16,11 +16,13 @@ use poulpy_core::{
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
 };
+
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
     layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
+use crate::api::CKKSModuleInfos;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
@@ -216,9 +218,11 @@ where
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
-        // Diagonals are complex in general, so a transformed value leaves the
-        // reals unless the caller can prove otherwise.
-        dst.set_slots(SlotsKind::Complex);
+        dst.set_slots(if self.ckks_is_conjugate_invariant() {
+            SlotsKind::Real
+        } else {
+            SlotsKind::Complex
+        });
         Ok(())
     }
 
