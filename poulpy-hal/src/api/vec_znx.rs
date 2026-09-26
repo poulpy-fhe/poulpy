@@ -523,7 +523,7 @@ pub trait VecZnxRshAssign<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col,j] = X^p * a[a_col,j] in R_N; the other columns of res are untouched
-/// domain     res, a: dense VecZnx of degree N; windows are rejected
+/// domain     standard ring; res, a: dense VecZnx of degree N; windows are rejected
 /// ensures    res[res_col] = X^p * a[a_col] in Z[X]/(X^N + 1), limb by limb, p taken modulo 2N; limbs of res past a.size() are zero
 /// test       test_vec_znx_rotate
 /// ```
@@ -561,7 +561,7 @@ pub trait VecZnxRotateAssignTmpBytes {
 /// class      variant
 /// mutation   in-place
 /// definition a[a_col,j] = X^p * old(a)[a_col,j] in R_N; the other columns of a are untouched
-/// domain     a: a dense VecZnx of degree N
+/// domain     standard ring; a: a dense VecZnx of degree N
 /// requires   scratch >= vec_znx_rotate_assign_tmp_bytes()
 /// ensures    each limb of a[a_col] is X^p times its pre-call value in R_N; the other columns are untouched
 /// fallback   none; required
@@ -579,7 +579,7 @@ pub trait VecZnxRotateAssign<B: Backend> {
 /// op         vec_znx_automorphism(k, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col,j] = sum_{0 <= i < a.n()} a[a_col,j,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col,j] = sigma_k(a[a_col,j]) in R_N; the other columns of res are untouched
 /// domain     res, a: dense VecZnx of degree N; k odd
 /// ensures    each limb of res[res_col] is the image of a[a_col] under X -> X^k; limbs of res past a.size() are zero
 /// test       test_vec_znx_automorphism
@@ -617,7 +617,7 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
 /// op         vec_znx_automorphism_assign(k, res, res_col, scratch)
 /// class      variant
 /// mutation   in-place
-/// definition res[res_col,j] = sum_{0 <= i < res.n()} old(res)[res_col,j,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col,j] = sigma_k(old(res)[res_col,j]) in R_N; the other columns of res are untouched
 /// domain     res: a dense VecZnx of degree N; k odd
 /// requires   scratch >= vec_znx_automorphism_assign_tmp_bytes()
 /// ensures    each limb of res[res_col] is the image of its pre-call value under X -> X^k; the other columns are untouched
@@ -642,7 +642,7 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
 /// op         scalar_znx_automorphism(k, res, res_col, a, a_col)
 /// class      variant
 /// mutation   out-of-place
-/// definition res[res_col] = sum_{0 <= i < a.n()} a[a_col,0,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col] = sigma_k(a[a_col,0]) in R_N; the other columns of res are untouched
 /// domain     res, a: ScalarZnx of degree N; k odd
 /// ensures    res[res_col] is the image of a[a_col] under X -> X^k; the other columns are untouched
 /// test       test_scalar_znx_automorphism
@@ -666,7 +666,7 @@ pub trait ScalarZnxAutomorphism<B: Backend> {
 /// class      derived
 /// mutation   out-of-place
 /// definition res[res_col,j] = (X^p - 1) * a[a_col,j] in R_N; the other columns of res are untouched
-/// domain     res, a: dense VecZnx of degree N
+/// domain     standard ring; res, a: dense VecZnx of degree N
 /// ensures    res[res_col] = (X^p - 1) * a[a_col] in Z[X]/(X^N + 1), limb by limb; the digits are not renormalized
 /// fallback   default body: rotate into res, then subtract the unrotated operand in place
 /// override   allowed, scratch-free
@@ -706,7 +706,7 @@ pub trait VecZnxMulXpMinusOneAssignTmpBytes {
 /// class      derived
 /// mutation   in-place
 /// definition res[res_col,j] = (X^p - 1) * old(res)[res_col,j] in R_N; the other columns of res are untouched
-/// domain     res: a dense VecZnx of degree N
+/// domain     standard ring; res: a dense VecZnx of degree N
 /// requires   scratch >= vec_znx_mul_xp_minus_one_assign_tmp_bytes(res.size())
 /// ensures    each limb of res[res_col] is (X^p - 1) times its pre-call value in R_N; the other columns are untouched; the digits are not renormalized
 /// fallback   default body: the product into a res.size()-limb temporary, then copy back

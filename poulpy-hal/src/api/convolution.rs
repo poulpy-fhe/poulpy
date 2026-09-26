@@ -37,7 +37,7 @@ pub trait CnvPVecBytesOf {
     fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
-/// Bivariate convolution over `Z[X, Y] mod (X^N + 1)` where `Y = 2^{-K}`.
+/// Limb convolution over the module ring `R_N[Y]`, where `Y = 2^{-K}`.
 pub trait Convolution<BE: Backend> {
     /// Returns the scratch bytes [`cnv_prepare_left`](Convolution::cnv_prepare_left) requires for those sizes.
     ///

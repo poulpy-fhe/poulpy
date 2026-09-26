@@ -45,6 +45,7 @@ impl Backend for NTT4x30Neon {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;

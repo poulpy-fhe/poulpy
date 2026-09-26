@@ -357,7 +357,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// op         vec_znx_dft_automorphism_with_plan(plan, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; other columns of res are unchanged
+/// definition idft(res)[res_col,j] = sigma_plan.p(idft(a)[a_col,j]) in R_N; other columns of res are unchanged
 /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
 /// ensures    the planned substitution is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
 /// test       test_vec_znx_dft_automorphism
@@ -379,7 +379,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// op         vec_znx_dft_automorphism_add_with_plan(plan, res, res_col, a, a_col, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; result limbs from a.size() onward and other columns of res are unchanged
+    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sigma_plan.p(idft(a)[a_col,j]) in R_N; result limbs from a.size() onward and other columns of res are unchanged
     /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
     /// requires   scratch >= vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res.size(), a.size())
     /// ensures    the selected result column gains the planned substitution of the selected source column limb by limb
@@ -404,7 +404,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// op         vec_znx_dft_automorphism(p, res, res_col, a, a_col)
     /// class      derived
     /// mutation   out-of-place
-    /// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * p) in R_N; other columns of res are unchanged
+    /// definition idft(res)[res_col,j] = sigma_p(idft(a)[a_col,j]) in R_N; other columns of res are unchanged
     /// domain     res, a: VecZnxDft of degree N; p odd
     /// ensures    the substitution X -> X^p is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
     /// fallback   build the plan for p, apply it, then drop it

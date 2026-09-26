@@ -70,6 +70,7 @@ impl Backend for NTT3x42Ifma {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = Q126Scalar;
     type ZnxWord = i64;
     type BigWord = i128;
