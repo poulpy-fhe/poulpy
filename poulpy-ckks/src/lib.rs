@@ -399,6 +399,18 @@ where
     a.k().as_usize().saturating_sub(res.k().as_usize())
 }
 
+/// Whether a limb-wise unary op can write `src` into `dst` without normalizing:
+/// no offset, and `dst` holds every limb of a non-canonical `src` (its carries
+/// may sit beyond `src.k()`).
+pub(crate) fn ckks_unary_exact<BE, R, A>(res: &R, a: &A) -> bool
+where
+    BE: Backend,
+    R: GLWEToBackendRef<BE> + CKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSInfos,
+{
+    ckks_offset_unary(res, a) == 0 && (a.is_canonical() || res.to_backend_ref().max_size() >= a.to_backend_ref().max_size())
+}
+
 /// Shared unary-op preamble: stamps `src`'s metadata with the budget charged
 /// by `offset + extra_charge` and `extra_log_delta` bits moved under
 /// `log_delta`, then aligns `src` into `dst` (left shift by
@@ -458,7 +470,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSInfos,
 {
-    if ckks_offset_unary(dst, src) != 0 {
+    if !ckks_unary_exact(dst, src) {
         return ckks_shift_stamp_unary(module, op, dst, src, 0, 0, 0, scratch);
     }
     // The scratch queries size the copy for the destination as allocated, so it

@@ -5,7 +5,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary, ckks_unary_exact};
 
 pub trait CKKSNegReference<BE: Backend> {
     fn ckks_neg_tmp_bytes_reference(&self, res_size: usize) -> usize
@@ -22,7 +22,7 @@ pub trait CKKSNegReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
-        if offset != 0 {
+        if !ckks_unary_exact(dst, src) {
             // Validate before mutating: on error `dst` must remain untouched.
             let log_budget = checked_log_budget_sub("neg", src.log_budget(), offset)?;
             // Stamp before the shift: it normalizes at `dst.k()`.
