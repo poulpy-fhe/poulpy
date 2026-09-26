@@ -130,8 +130,9 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio,
     ///   then the output scale and modulus width are reduced to return to the input scale.
     /// - [`S2CFirst`](crate::layouts::BootstrappingPipeline::S2CFirst): `SlotsToCoeffs → ModUp →
-    ///   CoeffsToSlots → EvalMod`. The first transform uses scaling `1/2`; the
-    ///   output is relabeled at `ct_in.log_delta`.
+    ///   CoeffsToSlots → EvalMod`. Compilation combines the recipe's initial
+    ///   `1/2` scaling with the input factor of two. The output is relabeled
+    ///   at `ct_in.log_delta`.
     ///
     /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
