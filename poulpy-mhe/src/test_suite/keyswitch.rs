@@ -105,6 +105,11 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
+    // A public key more precise than the share exercises the share scratch query for real.
+    let pk_layout = GLWELayout {
+        k: TorusPrecision(K.0 + BASE2K.0),
+        ..layout
+    };
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let flood = flood_infos(layout);
     let parties_in = input_secrets(module);
@@ -113,13 +118,14 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_sk_tmp_bytes(&layout)
-            .max(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout, &layout))
             .max(module.glwe_public_keyswitch_finalize_tmp_bytes())
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
+    let mut share_scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout, &pk_layout));
 
-    let pk_out = collective_public_key(module, &parties_out, &layout);
+    let pk_out = collective_public_key(module, &parties_out, &pk_layout);
 
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
 
@@ -139,7 +145,7 @@ where
             &enc_infos,
             &mut source_xu,
             &mut source_xe,
-            &mut scratch.borrow(),
+            &mut share_scratch.borrow(),
         );
         assert!(dst.is_canonical());
         if i > 0 {

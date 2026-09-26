@@ -69,14 +69,12 @@ where
             sk.rank().as_usize() == rank,
             "invalid share: secret rank differs from the key's"
         );
+        assert!(sk.n() == res.n(), "invalid share: secret degree differs from the key's");
         assert!(
             pk.rank().as_usize() == rank,
             "invalid share: public key rank differs from the key's"
         );
-        assert!(
-            pk.size() >= res.size(),
-            "invalid share: public key less precise than the share"
-        );
+        assert!(pk.k() >= res.k(), "invalid share: public key less precise than the share");
         let (dnum, dsize): (usize, usize) = (res.dnum().into(), res.dsize().into());
         {
             let sk = sk.to_backend_ref();

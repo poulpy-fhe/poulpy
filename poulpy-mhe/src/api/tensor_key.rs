@@ -25,6 +25,8 @@ pub trait GLWETensorKeyShare<BE: Backend> {
     /// entry is an encryption of zero under `pk` with a component of `sk` added
     /// to its masks, so that the aggregate encrypts the pairwise products of
     /// the ideal secret's components.
+    /// `pk` must be at least as precise as the tensor key, build the collective
+    /// public key at the key's precision.
     #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_key_share<S, K, E>(
         &self,

@@ -179,10 +179,7 @@ where
         E1: EncryptionInfos,
         E2: EncryptionInfos,
     {
-        assert!(
-            pk_out.size() >= res.size(),
-            "invalid share: public key less precise than the share"
-        );
+        assert!(pk_out.k() >= res.k(), "invalid share: public key less precise than the share");
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut pt, sk_in, &mut scratch_1);
         let base2k = ct.base2k().as_usize();

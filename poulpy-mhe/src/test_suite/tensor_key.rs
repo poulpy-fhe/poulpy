@@ -5,8 +5,9 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWENoise,
     layouts::{
-        GLWELayout, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretLayout,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
+        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -45,62 +46,66 @@ where
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let layout = tensor_key_layout(module);
-    let pk_layout = public_key_layout(module, layout.k());
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
-    let parties = party_secrets(module);
-    let sk_ideal = ideal_secret(module, &parties);
-    let pk = collective_public_key(module, &parties, &pk_layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .glwe_tensor_key_share_tmp_bytes(&layout, &pk_layout)
-            .max(module.glwe_secret_tensor_prepare_tmp_bytes(RANK))
-            .max(module.pat_normalize_tmp_bytes())
-            .max(module.pat_finalize_tmp_bytes())
-            .max(module.gglwe_noise_tmp_bytes(&layout)),
-    );
-    let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
-    module.glwe_secret_tensor_prepare(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
-
-    let mut acc = module.gglwe_pat_alloc_from_infos(&layout);
-    let mut share = module.gglwe_pat_alloc_from_infos(&layout);
-    for (i, (sk, _)) in parties.iter().enumerate() {
-        let dst = if i == 0 { &mut acc } else { &mut share };
-        dst.set_canonical(false);
-        let mut source_xu = Source::new([20 + i as u8; 32]);
-        let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.glwe_tensor_key_share(
-            dst,
-            sk,
-            &pk,
-            &enc_infos,
-            &mut source_xu,
-            &mut source_xe,
-            &mut scratch.borrow(),
+    for (dnum, dsize) in [(DNUM, DSIZE), (Dnum(2), Dsize(2))] {
+        let layout = tensor_key_layout(module, dnum, dsize);
+        // A public key more precise than the share exercises the share scratch query for real.
+        let pk_layout = public_key_layout(module, TorusPrecision(layout.k().0 + BASE2K.0));
+        let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+        let parties = party_secrets(module);
+        let sk_ideal = ideal_secret(module, &parties);
+        let pk = collective_public_key(module, &parties, &pk_layout);
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .glwe_secret_tensor_prepare_tmp_bytes(RANK)
+                .max(module.pat_normalize_tmp_bytes())
+                .max(module.pat_finalize_tmp_bytes())
+                .max(module.gglwe_noise_tmp_bytes(&layout)),
         );
-        assert!(dst.is_canonical());
-        if i > 0 {
-            module.gglwe_pat_aggregate_assign(&mut acc, &share);
+        let mut share_scratch: ScratchOwned<BE> =
+            ScratchOwned::alloc(module.glwe_tensor_key_share_tmp_bytes(&layout, &pk_layout));
+        let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
+        module.glwe_secret_tensor_prepare(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
+
+        let mut acc = module.gglwe_pat_alloc_from_infos(&layout);
+        let mut share = module.gglwe_pat_alloc_from_infos(&layout);
+        for (i, (sk, _)) in parties.iter().enumerate() {
+            let dst = if i == 0 { &mut acc } else { &mut share };
+            dst.set_canonical(false);
+            let mut source_xu = Source::new([20 + i as u8; 32]);
+            let mut source_xe = Source::new([10 + i as u8; 32]);
+            module.glwe_tensor_key_share(
+                dst,
+                sk,
+                &pk,
+                &enc_infos,
+                &mut source_xu,
+                &mut source_xe,
+                &mut share_scratch.borrow(),
+            );
+            assert!(dst.is_canonical());
+            if i > 0 {
+                module.gglwe_pat_aggregate_assign(&mut acc, &share);
+            }
         }
+        assert!(!acc.is_canonical());
+
+        let mut lazy: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
+        module.gglwe_pat_finalize(&mut lazy, &acc, &mut scratch.borrow());
+        // Each party's pk encryption of zero adds (rank + 1) * n * 0.5 * PARTIES * sigma^2 + sigma^2.
+        let n = module.n() as f64;
+        let parties_f = PARTIES as f64;
+        let variance = (RANK.as_usize() as f64 + 1.0) * n * 0.5 * parties_f * parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE
+            + parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+        let bound = 0.5 * variance.log2() - layout.k().as_usize() as f64 + 0.5;
+        assert_gglwe_noise_within(module, &lazy, &pt_want.data().to_ref(), &sk_ideal, bound, &mut scratch);
+
+        module.gglwe_pat_normalize_assign(&mut acc, &mut scratch.borrow());
+        assert!(acc.is_canonical());
+        let mut eager: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
+        module.gglwe_pat_finalize(&mut eager, &acc, &mut scratch.borrow());
+        assert_eq!(lazy, eager);
+        acc.write_to(&mut Vec::new()).unwrap();
     }
-    assert!(!acc.is_canonical());
-
-    let mut lazy: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut lazy, &acc, &mut scratch.borrow());
-    // Each party's pk encryption of zero adds (rank + 1) * n * 0.5 * PARTIES * sigma^2 + sigma^2.
-    let n = module.n() as f64;
-    let parties_f = PARTIES as f64;
-    let variance = (RANK.as_usize() as f64 + 1.0) * n * 0.5 * parties_f * parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE
-        + parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-    let bound = 0.5 * variance.log2() - layout.k().as_usize() as f64 + 0.5;
-    assert_gglwe_noise_within(module, &lazy, &pt_want.data().to_ref(), &sk_ideal, bound, &mut scratch);
-
-    module.gglwe_pat_normalize_assign(&mut acc, &mut scratch.borrow());
-    assert!(acc.is_canonical());
-    let mut eager: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut eager, &acc, &mut scratch.borrow());
-    assert_eq!(lazy, eager);
-    acc.write_to(&mut Vec::new()).unwrap();
 }
 
 /// Sharing under a public key less precise than the share panics.
@@ -114,7 +119,7 @@ where
         + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let layout = tensor_key_layout(module);
+    let layout = tensor_key_layout(module, DNUM, DSIZE);
     let pk_layout = public_key_layout(module, TorusPrecision(layout.k().0 - BASE2K.0));
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
@@ -132,14 +137,48 @@ where
     );
 }
 
-fn tensor_key_layout<BE: Backend>(module: &Module<BE>) -> GLWETensorKeyLayout {
+/// Sharing with a secret whose degree differs from the key's panics.
+pub fn test_glwe_tensor_key_secret_degree<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE>
+        + GLWETensorKeyShare<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = tensor_key_layout(module, DNUM, DSIZE);
+    let pk_layout = public_key_layout(module, layout.k());
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+    let sk_layout = GLWESecretLayout {
+        n: (module.n() / 2).into(),
+        rank: RANK,
+    };
+    let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc_from_infos(&sk_layout);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([100u8; 32]));
+    let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
+    let mut res = module.gglwe_pat_alloc_from_infos(&layout);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_tensor_key_share_tmp_bytes(&layout, &pk_layout));
+    module.glwe_tensor_key_share(
+        &mut res,
+        &sk,
+        &pk,
+        &enc_infos,
+        &mut Source::new([20u8; 32]),
+        &mut Source::new([10u8; 32]),
+        &mut scratch.borrow(),
+    );
+}
+
+fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize) -> GLWETensorKeyLayout {
     GLWETensorKeyLayout {
         n: module.n().into(),
         base2k: BASE2K,
-        dnum: DNUM,
-        k_aux: TorusPrecision(DSIZE.0 * BASE2K.0 + module.log_n() as u32),
+        dnum,
+        k_aux: TorusPrecision(dsize.0 * BASE2K.0 + module.log_n() as u32),
         rank: RANK,
-        dsize: DSIZE,
+        dsize,
     }
 }
 

@@ -157,6 +157,12 @@ macro_rules! mhe_backend_test_suite {
             fn glwe_tensor_key_pk_precision() {
                 $crate::test_suite::tensor_key::test_glwe_tensor_key_pk_precision(&Module::<$backend>::new(64));
             }
+
+            #[test]
+            #[should_panic(expected = "invalid share: secret degree differs from the key's")]
+            fn glwe_tensor_key_secret_degree() {
+                $crate::test_suite::tensor_key::test_glwe_tensor_key_secret_degree(&Module::<$backend>::new(64));
+            }
         }
     };
 }
