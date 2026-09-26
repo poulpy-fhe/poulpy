@@ -12,7 +12,7 @@ use poulpy_hal::{
 };
 
 unsafe impl HalVecZnxImpl for FFT64Ref {
-    crate::hal_impl_vec_znx!();
+    crate::hal_impl_vec_znx!(fft64);
 }
 
 unsafe impl HalModuleImpl for FFT64Ref {

@@ -20,6 +20,7 @@
 //!
 //! All arithmetic uses [`Primes30`] (Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
 //! is future work.
+use crate::ring::{CpuRing, Standard};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
@@ -46,12 +47,12 @@ use crate::{
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Forward and inverse NTT tables for one ring degree.
-pub struct NttPlan<P: PrimeSetCrt4> {
-    ntt: NttTable<P>,
-    intt: NttTableInv<P>,
+pub struct NttPlan<P: PrimeSetCrt4, R: CpuRing = Standard> {
+    ntt: NttTable<P, R>,
+    intt: NttTableInv<P, R>,
 }
 
-impl<P: PrimeSetCrt4> NttPlan<P> {
+impl<P: PrimeSetCrt4, R: CpuRing> NttPlan<P, R> {
     pub fn new(n: usize) -> Self {
         Self {
             ntt: NttTable::new(n),
@@ -59,27 +60,32 @@ impl<P: PrimeSetCrt4> NttPlan<P> {
         }
     }
 
-    pub fn ntt(&self) -> &NttTable<P> {
+    pub fn is_conjugate_invariant(&self) -> bool {
+        R::IS_CI
+    }
+
+    pub fn ntt(&self) -> &NttTable<P, R> {
         &self.ntt
     }
 
-    pub fn intt(&self) -> &NttTableInv<P> {
+    pub fn intt(&self) -> &NttTableInv<P, R> {
         &self.intt
     }
 }
 
 /// Complete geometric family of NTT plans up to a maximum ring degree.
-pub struct NttPlanSet<P: PrimeSetCrt4> {
-    plans: Vec<NttPlan<P>>,
+pub struct NttPlanSet<P: PrimeSetCrt4, R: CpuRing = Standard> {
+    plans: Vec<NttPlan<P, R>>,
     max_n: usize,
 }
 
-impl<P: PrimeSetCrt4> NttPlanSet<P> {
+impl<P: PrimeSetCrt4, R: CpuRing> NttPlanSet<P, R> {
     pub fn new(max_n: usize) -> Self {
+        let max_log_n = P::MAX_LOG_N - u32::from(R::IS_CI);
         assert!(
-            max_n.is_power_of_two() && max_n <= (1 << P::MAX_LOG_N),
+            max_n.is_power_of_two() && max_n <= (1 << max_log_n),
             "maximum ring degree must be a power of two ≤ 2^{}, got {max_n}",
-            P::MAX_LOG_N
+            max_log_n
         );
         let plans = (0..=max_n.ilog2() as usize)
             .map(|log_n| NttPlan::new(1usize << log_n))
@@ -91,7 +97,7 @@ impl<P: PrimeSetCrt4> NttPlanSet<P> {
         self.max_n
     }
 
-    pub fn for_ring(&self, n: usize) -> &NttPlan<P> {
+    pub fn for_ring(&self, n: usize) -> &NttPlan<P, R> {
         assert!(
             n.is_power_of_two() && n <= self.max_n,
             "unsupported ring degree {n}; maximum is {}",
@@ -116,14 +122,15 @@ impl<P: PrimeSetCrt4> NttPlanSet<P> {
 ///   Generalisation path: add `type PrimeSet: PrimeSet` as an associated type here,
 ///   then parameterise NttTable/NttTableInv/BbcMeta accordingly. -->
 pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
+    type Ring: CpuRing;
     /// Combined NTT plan for an explicit ring degree.
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30>;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring>;
     /// Precomputed forward NTT twiddle table (Primes30, size `n`).
-    fn get_ntt_table_for(&self, n: usize) -> &NttTable<Primes30> {
+    fn get_ntt_table_for(&self, n: usize) -> &NttTable<Primes30, Self::Ring> {
         self.get_ntt_plan(n).ntt()
     }
     /// Precomputed inverse NTT twiddle table (Primes30, size `n`).
-    fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30> {
+    fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30, Self::Ring> {
         self.get_ntt_plan(n).intt()
     }
     /// Precomputed metadata for `q120b × q120c` lazy multiply–accumulate.
@@ -149,8 +156,9 @@ pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
 /// established by the module defaults (or a backend override).  There is no
 /// runtime check in release builds.
 pub unsafe trait NttHandleProvider {
+    type Ring: CpuRing;
     /// Returns the combined NTT plan for `n`.
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30>;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring>;
     /// Returns a reference to the `q120b × q120c` lazy multiply–accumulate metadata.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Returns a reference to the `q120b × q120b` lazy multiply–accumulate metadata.
@@ -179,7 +187,8 @@ where
     B: Backend<ZnxWord = i64>,
     B::Handle: NttHandleProvider,
 {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+    type Ring = <B::Handle as NttHandleProvider>::Ring;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring> {
         // SAFETY: `ptr()` returns a valid, non-null pointer to `B::Handle`
         // that was initialised by the module defaults and is kept alive by
         // the `Module`.
@@ -233,7 +242,7 @@ fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScala
 ///   then applies the forward NTT in-place via [`NttDFTExecute`].
 /// - Missing input limbs (out of range) are zeroed in `res`.
 pub fn ntt4x30_vec_znx_dft_apply<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -241,7 +250,12 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+    Module<BE>: NttModuleHandle,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttFromZnx64
+        + NttZero
+        + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
@@ -293,15 +307,16 @@ pub fn ntt4x30_vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
 ///
 /// `tmp` must hold at least `4 * n` `u64` values.
 pub fn ntt4x30_vec_znx_idft_apply<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
     tmp: &mut [u64],
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-        + NttDFTExecute<NttTableInv<Primes30>>
+        + NttDFTExecute<NttTableInv<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
         + NttToZnx128
         + NttCopy,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
@@ -334,13 +349,16 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
 /// Like [`ntt4x30_vec_znx_idft_apply`] but applies the inverse NTT
 /// **in place** to `a`, modifying it.  Requires no scratch space.
 pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
     a: &mut VecZnxDftBackendMut<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
+    Module<BE>: NttModuleHandle,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
+        + NttDFTExecute<NttTableInv<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttToZnx128,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply_tmpa");
@@ -369,10 +387,11 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
 pub fn ntt4x30_vec_znx_idft_apply_consume<'a, BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     mut a: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
@@ -419,7 +438,7 @@ fn reduce_q120b_crt(x: u64, q: u64, mu: u64, pow32_crt: u64, pow16_crt: u64, crt
 }
 
 #[allow(dead_code)]
-unsafe fn compact_all_blocks_scalar(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30>) {
+unsafe fn compact_all_blocks_scalar(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30, impl CpuRing>) {
     let q_u64: [u64; 4] = <Primes30 as crate::reference::ntt4x30::primes::PrimeSet>::Q.map(|qi| qi as u64);
     let mu: [u64; 4] = q_u64.map(|qi| (1u64 << 61) / qi);
     let crt: [u64; 4] = Primes30::CRT_CST.map(|c| c as u64);

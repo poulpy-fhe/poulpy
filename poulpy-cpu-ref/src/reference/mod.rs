@@ -5,6 +5,7 @@
 //! correctness oracle for backend testing via the
 //! [`poulpy_hal::test_suite`] module.
 
+pub mod conjugate_invariant;
 pub mod fft64;
 pub mod normalization;
 pub mod ntt4x30;

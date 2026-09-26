@@ -229,6 +229,63 @@ pub fn reim4_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
 }
 
 #[inline(always)]
+pub fn reim4_real_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
+    for k in 0..8 {
+        dst[k] += a[k] * b[k];
+    }
+}
+
+#[inline(always)]
+pub fn reim4_real_vec_mat1col_product_ref(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+    let mut acc = [0.0; 8];
+    for i in 0..nrows {
+        reim4_real_add_mul(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[8 * i..]));
+    }
+    dst[..8].copy_from_slice(&acc);
+}
+
+#[inline(always)]
+pub fn reim4_real_vec_mat2cols_product_ref(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+    let mut acc0 = [0.0; 8];
+    let mut acc1 = [0.0; 8];
+    for i in 0..nrows {
+        let u = as_arr(&u[8 * i..]);
+        reim4_real_add_mul(&mut acc0, u, as_arr(&v[16 * i..]));
+        reim4_real_add_mul(&mut acc1, u, as_arr(&v[16 * i + 8..]));
+    }
+    dst[..8].copy_from_slice(&acc0);
+    dst[8..16].copy_from_slice(&acc1);
+}
+
+#[inline(always)]
+pub fn reim4_real_vec_mat2cols_2ndcol_product_ref(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+    let mut acc = [0.0; 8];
+    for i in 0..nrows {
+        reim4_real_add_mul(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[16 * i + 8..]));
+    }
+    dst[..8].copy_from_slice(&acc);
+}
+
+#[inline(always)]
+pub fn reim4_real_convolution_1coeff_ref(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+    reim_zero_ref(dst);
+    if k >= a_size + b_size {
+        return;
+    }
+    let j_min = k.saturating_sub(a_size - 1);
+    let j_max = (k + 1).min(b_size);
+    for j in j_min..j_max {
+        reim4_real_add_mul(dst, as_arr(&a[8 * (k - j)..]), as_arr(&b[8 * j..]));
+    }
+}
+
+#[inline(always)]
+pub fn reim4_real_convolution_2coeffs_ref(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+    reim4_real_convolution_1coeff_ref(k, as_arr_mut(dst), a, a_size, b, b_size);
+    reim4_real_convolution_1coeff_ref(k + 1, as_arr_mut(&mut dst[8..]), a, a_size, b, b_size);
+}
+
+#[inline(always)]
 pub fn reim4_convolution_1coeff_ref(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
     reim_zero_ref(dst);
 

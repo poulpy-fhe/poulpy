@@ -11,6 +11,9 @@
 //! - The [`NttHandleProvider`] impl for [`NTT4x30RefHandle`], wiring the handle into
 //!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
 
+use super::super::Ring;
+use super::NTT4x30Ref;
+
 use std::ptr::NonNull;
 
 use poulpy_hal::{
@@ -25,8 +28,6 @@ use crate::reference::ntt4x30::{
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
 
-use super::NTT4x30Ref;
-
 /// Opaque handle for the [`NTT4x30Ref`](super::NTT4x30Ref) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
@@ -37,7 +38,7 @@ use super::NTT4x30Ref;
 /// `Module<NTT4x30Ref>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT4x30RefHandle {
-    ring_plans: NttPlanSet<Primes30>,
+    ring_plans: NttPlanSet<Primes30, Ring>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: crate::table_cache::ModuleTableCache,
@@ -61,7 +62,6 @@ impl Backend for NTT4x30Ref {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;
@@ -70,6 +70,8 @@ impl Backend for NTT4x30Ref {
     type BufMut<'a> = &'a mut [u8];
     type Handle = NTT4x30RefHandle;
     type Location = Host;
+    type Ring = Ring;
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -188,7 +190,8 @@ unsafe impl NttHandleFactory for NTT4x30RefHandle {
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised by the [`NttHandleFactory`] impl above.
 unsafe impl NttHandleProvider for NTT4x30RefHandle {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+    type Ring = Ring;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Ring> {
         self.ring_plans.for_ring(n)
     }
 
