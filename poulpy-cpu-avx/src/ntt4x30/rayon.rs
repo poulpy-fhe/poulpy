@@ -1,5 +1,10 @@
 //! Rayon-scheduled wrapper for the AVX2 NTT4x30 backend.
 
+use super::super::Ring;
+use super::NTT4x30Avx;
+#[cfg(feature = "enable-rayon")]
+use super::NTT4x30AvxRayon;
+
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -37,7 +42,6 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-use super::{NTT4x30Avx, NTT4x30AvxRayon};
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr, parallel_limb_tasks};
 
 poulpy_hal::impl_backend_from!(NTT4x30AvxRayon, NTT4x30Avx, RayonTaskExecutor);
@@ -287,15 +291,15 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30AvxRay
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30AvxRayon {
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        <NTT4x30Avx as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(table, data)
+impl NttDFTExecute<NttTable<Primes30, Ring>> for NTT4x30AvxRayon {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Ring>, data: &mut [u64]) {
+        <NTT4x30Avx as NttDFTExecute<NttTable<Primes30, Ring>>>::ntt_dft_execute(table, data)
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30AvxRayon {
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        <NTT4x30Avx as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(table, data)
+impl NttDFTExecute<NttTableInv<Primes30, Ring>> for NTT4x30AvxRayon {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Ring>, data: &mut [u64]) {
+        <NTT4x30Avx as NttDFTExecute<NttTableInv<Primes30, Ring>>>::ntt_dft_execute(table, data)
     }
 }
 
@@ -727,6 +731,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayon 
 
 #[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code, reason = "CKKS does not run on CI backends yet")]
 pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
     module: &Module<NTT4x30AvxRayon>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>,

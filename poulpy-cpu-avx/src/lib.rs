@@ -209,6 +209,45 @@ mod layout_compat;
 
 pub mod capabilities;
 
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avx, crate::FFT64CIAvx, crate::FFT64Avx);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avx, crate::NTT4x30CIAvx, crate::NTT4x30Avx);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avxrayon, crate::FFT64CIAvxRayon, crate::FFT64AvxRayon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avxrayon, crate::NTT4x30CIAvxRayon, crate::NTT4x30AvxRayon);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avx, crate::FFT64CIAvx, crate::FFT64Avx);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avx, crate::NTT4x30CIAvx, crate::NTT4x30Avx);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avxrayon, crate::FFT64CIAvxRayon, crate::FFT64AvxRayon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avxrayon, crate::NTT4x30CIAvxRayon, crate::NTT4x30AvxRayon);
+
+#[cfg(feature = "enable-avx")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-avx")]
+mod ci;
+#[cfg(feature = "enable-avx")]
+pub use ci::FFT64Avx as FFT64CIAvx;
+#[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::FFT64AvxRayon as FFT64CIAvxRayon;
+#[cfg(feature = "enable-avx")]
+pub use ci::NTT4x30Avx as NTT4x30CIAvx;
+#[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-rayon")]
+pub use ci::NTT4x30AvxRayon as NTT4x30CIAvxRayon;
+
 #[cfg(all(feature = "enable-avx", feature = "enable-bin-fhe"))]
 mod bin_fhe_impl;
 

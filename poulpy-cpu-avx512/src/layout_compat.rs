@@ -40,3 +40,41 @@ unsafe impl VecZnxBigLayoutCompatible<NTT4x30Ref> for NTT4x30Avx512 {}
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Avx512Rayon> for NTT4x30Ref {}
 #[cfg(feature = "enable-rayon")]
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Ref> for NTT4x30Avx512Rayon {}
+
+mod ci {
+    use poulpy_cpu_ref::{FFT64CIRef, NTT4x30CIRef};
+    use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};
+
+    use crate::FFT64CIAvx512;
+    use crate::NTT4x30CIAvx512;
+    #[cfg(feature = "enable-rayon")]
+    use crate::{FFT64CIAvx512Rayon, NTT4x30CIAvx512Rayon};
+
+    unsafe impl VecZnxDftLayoutCompatible<FFT64CIAvx512> for FFT64CIRef {}
+    unsafe impl VecZnxDftLayoutCompatible<FFT64CIRef> for FFT64CIAvx512 {}
+    unsafe impl VecZnxBigLayoutCompatible<FFT64CIAvx512> for FFT64CIRef {}
+    unsafe impl VecZnxBigLayoutCompatible<FFT64CIRef> for FFT64CIAvx512 {}
+    unsafe impl SvpPPolLayoutCompatible<FFT64CIAvx512> for FFT64CIRef {}
+    unsafe impl SvpPPolLayoutCompatible<FFT64CIRef> for FFT64CIAvx512 {}
+
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxDftLayoutCompatible<FFT64CIAvx512Rayon> for FFT64CIRef {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxDftLayoutCompatible<FFT64CIRef> for FFT64CIAvx512Rayon {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxBigLayoutCompatible<FFT64CIAvx512Rayon> for FFT64CIRef {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxBigLayoutCompatible<FFT64CIRef> for FFT64CIAvx512Rayon {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl SvpPPolLayoutCompatible<FFT64CIAvx512Rayon> for FFT64CIRef {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl SvpPPolLayoutCompatible<FFT64CIRef> for FFT64CIAvx512Rayon {}
+
+    unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIAvx512> for NTT4x30CIRef {}
+    unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIRef> for NTT4x30CIAvx512 {}
+
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIAvx512Rayon> for NTT4x30CIRef {}
+    #[cfg(feature = "enable-rayon")]
+    unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIRef> for NTT4x30CIAvx512Rayon {}
+}

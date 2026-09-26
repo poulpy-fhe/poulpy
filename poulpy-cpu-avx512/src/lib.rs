@@ -213,6 +213,76 @@ mod layout_compat;
 
 pub mod capabilities;
 
+#[cfg(all(test, feature = "enable-avx512f"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avx512, crate::FFT64CIAvx512, crate::FFT64Avx512);
+
+#[cfg(all(test, feature = "enable-avx512f"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avx512, crate::NTT4x30CIAvx512, crate::NTT4x30Avx512);
+
+#[cfg(all(test, feature = "enable-ifma"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt3x42ifma, crate::NTT3x42CIIfma, crate::NTT3x42Ifma);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avx512rayon, crate::FFT64CIAvx512Rayon, crate::FFT64Avx512Rayon);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avx512rayon, crate::NTT4x30CIAvx512Rayon, crate::NTT4x30Avx512Rayon);
+
+#[cfg(all(test, feature = "enable-rayon", feature = "enable-ifma"))]
+poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt3x42ifmarayon, crate::NTT3x42CIIfmaRayon, crate::NTT3x42IfmaRayon);
+
+#[cfg(all(test, feature = "enable-avx512f"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avx512, crate::FFT64CIAvx512, crate::FFT64Avx512);
+
+#[cfg(all(test, feature = "enable-avx512f"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avx512, crate::NTT4x30CIAvx512, crate::NTT4x30Avx512);
+
+#[cfg(all(test, feature = "enable-ifma"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt3x42ifma, crate::NTT3x42CIIfma, crate::NTT3x42Ifma);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avx512rayon,
+    crate::FFT64CIAvx512Rayon,
+    crate::FFT64Avx512Rayon
+);
+
+#[cfg(all(test, feature = "enable-rayon"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avx512rayon,
+    crate::NTT4x30CIAvx512Rayon,
+    crate::NTT4x30Avx512Rayon
+);
+
+#[cfg(all(test, feature = "enable-rayon", feature = "enable-ifma"))]
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt3x42ifmarayon,
+    crate::NTT3x42CIIfmaRayon,
+    crate::NTT3x42IfmaRayon
+);
+
+#[cfg(feature = "enable-avx512f")]
+use poulpy_cpu_ref::ring::Standard as Ring;
+#[cfg(feature = "enable-avx512f")]
+mod ci;
+#[cfg(feature = "enable-avx512f")]
+pub use ci::FFT64Avx512 as FFT64CIAvx512;
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::FFT64Avx512Rayon as FFT64CIAvx512Rayon;
+#[cfg(feature = "enable-ifma")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT3x42Ifma as NTT3x42CIIfma;
+#[cfg(feature = "enable-ifma")]
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT3x42IfmaRayon as NTT3x42CIIfmaRayon;
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT4x30Avx512 as NTT4x30CIAvx512;
+#[cfg(feature = "enable-rayon")]
+#[cfg(feature = "enable-avx512f")]
+pub use ci::NTT4x30Avx512Rayon as NTT4x30CIAvx512Rayon;
+
 #[cfg(all(feature = "enable-avx512f", feature = "enable-bin-fhe"))]
 mod bin_fhe_impl;
 

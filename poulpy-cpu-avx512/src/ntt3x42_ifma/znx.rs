@@ -4,6 +4,9 @@
 //! delegate to the AVX512-accelerated functions in `crate::znx_avx512` (same kernels used
 //! by `FFT64Avx512`). These operate on plain `&[i64]` slices and are backend-independent.
 
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
@@ -21,8 +24,6 @@ use crate::znx_avx512::{
     znx_normalize_middle_step_avx512, znx_normalize_middle_step_carry_only_avx512, znx_sub_assign_avx512, znx_sub_avx512,
     znx_sub_negate_assign_avx512, znx_switch_ring_avx512,
 };
-
-use super::NTT3x42Ifma;
 
 impl ZnxAdd for NTT3x42Ifma {
     #[inline(always)]

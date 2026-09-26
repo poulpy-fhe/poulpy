@@ -309,6 +309,7 @@ pub(crate) struct PrimeConsts512 {
 
 impl PrimeConsts512 {
     #[target_feature(enable = "avx512f")]
+    #[inline]
     pub(crate) unsafe fn new(prime_idx: usize) -> Self {
         let q_val = Q_IFMA[prime_idx];
         Self {

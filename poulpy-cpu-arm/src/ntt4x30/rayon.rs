@@ -1,5 +1,10 @@
 //! Rayon-scheduled wrapper for the NEON NTT4x30 backend.
 
+use super::super::Ring;
+use super::NTT4x30Neon;
+#[cfg(feature = "enable-rayon")]
+use super::NTT4x30NeonRayon;
+
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -41,7 +46,6 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-use super::{NTT4x30Neon, NTT4x30NeonRayon};
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr};
 
 poulpy_hal::impl_backend_from!(NTT4x30NeonRayon, NTT4x30Neon, RayonTaskExecutor);
@@ -266,15 +270,15 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRa
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30NeonRayon {
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        <NTT4x30Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(table, data)
+impl NttDFTExecute<NttTable<Primes30, Ring>> for NTT4x30NeonRayon {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Ring>, data: &mut [u64]) {
+        <NTT4x30Neon as NttDFTExecute<NttTable<Primes30, Ring>>>::ntt_dft_execute(table, data)
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30NeonRayon {
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(table, data)
+impl NttDFTExecute<NttTableInv<Primes30, Ring>> for NTT4x30NeonRayon {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Ring>, data: &mut [u64]) {
+        <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30, Ring>>>::ntt_dft_execute(table, data)
     }
 }
 
@@ -710,7 +714,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
             let limb = offset + j * step;
             if limb < a_size {
                 <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64(dst, a.at(a_col, limb));
-                <NTT4x30Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(table, dst);
+                <NTT4x30Neon as NttDFTExecute<NttTable<Primes30, Ring>>>::ntt_dft_execute(table, dst);
             } else {
                 <NTT4x30Neon as NttZero>::ntt_zero(dst);
             }
@@ -765,7 +769,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
             if j < min_size {
                 let src = cast_slice(&a_raw[n * (j * a_cols + a_col)..][..n]);
                 <NTT4x30Neon as NttCopy>::ntt_copy(tmp, src);
-                <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(table, tmp);
+                <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30, Ring>>>::ntt_dft_execute(table, tmp);
                 <NTT4x30Neon as NttToZnx128>::ntt_to_znx128(dst, n, tmp);
             } else {
                 dst.fill(0);
@@ -812,7 +816,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
             .for_each(|(res_group, a_group)| {
                 let dst = &mut res_group[n * res_col..][..n];
                 let src = cast_slice_mut(&mut a_group[n * a_col..][..n]);
-                <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(table, src);
+                <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30, Ring>>>::ntt_dft_execute(table, src);
                 <NTT4x30Neon as NttToZnx128>::ntt_to_znx128(dst, n, src);
             });
         res_zero

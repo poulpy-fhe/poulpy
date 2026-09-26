@@ -1,10 +1,11 @@
-use std::mem::size_of;
-
 use super::FFT64Avx;
 use super::NTT4x30Avx;
+
+use std::mem::size_of;
+
 use poulpy_cpu_ref::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
-    HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault,
+    HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault,
 };
 use poulpy_hal::{
     api::HostBufMut,
@@ -36,7 +37,7 @@ where
 }
 
 unsafe impl HalVecZnxImpl for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
@@ -633,7 +634,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx {
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+        <Self as NTT4x30VecZnxDftDefault>::vec_znx_dft_automorphism_plan_default(module, n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(

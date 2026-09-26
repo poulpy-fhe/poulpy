@@ -26,6 +26,9 @@
 //! lazy conditional subtraction (no division). Domain conversion also uses
 //! AVX2 kernels.
 
+use super::super::Ring;
+use super::NTT4x30Avx;
+
 use core::arch::x86_64::{
     __m256i, _mm256_add_epi64, _mm256_andnot_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_set1_epi64x,
     _mm256_storeu_si256, _mm256_sub_epi64, _mm256_xor_si256,
@@ -48,8 +51,6 @@ use super::arithmetic_avx::{
 
 use super::mat_vec_avx::{vec_mat1col_product_bbc_avx2, vec_mat1col_product_x2_bbc_avx2, vec_mat2cols_product_x2_bbc_avx2};
 use super::ntt::{intt_avx2, ntt_avx2};
-
-use super::NTT4x30Avx;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // AVX2 lazy arithmetic helpers
@@ -209,17 +210,17 @@ unsafe fn ntt_negate_assign_avx2(n: usize, res: &mut [u64]) {
 // NTT execution — AVX2 butterfly
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Avx {
+impl NttDFTExecute<NttTable<Primes30, Ring>> for NTT4x30Avx {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Ring>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe { ntt_avx2::<Primes30>(table, data) }
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Avx {
+impl NttDFTExecute<NttTableInv<Primes30, Ring>> for NTT4x30Avx {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Ring>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe { intt_avx2::<Primes30>(table, data) }
     }
@@ -366,8 +367,8 @@ impl NttMulBbc1ColX2 for NTT4x30Avx {
     fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe {
-            crate::ntt4x30::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[..16], a, b);
-            crate::ntt4x30::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[16..32], &a[32..], b);
+            super::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[..16], a, b);
+            super::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[16..32], &a[32..], b);
         }
     }
 }
@@ -384,7 +385,7 @@ impl NttExtract1BlkContiguous for NTT4x30Avx {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
-        unsafe { crate::ntt4x30::vmp::extract_1blk_from_contiguous_q120b_avx2(n, row_max, blk, dst, src) }
+        unsafe { super::vmp::extract_1blk_from_contiguous_q120b_avx2(n, row_max, blk, dst, src) }
     }
 }
 

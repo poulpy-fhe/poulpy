@@ -1,5 +1,7 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
+use super::FFT64Neon;
+
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
 use poulpy_cpu_ref::reference::fft64::{
@@ -7,75 +9,6 @@ use poulpy_cpu_ref::reference::fft64::{
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
-
-use super::FFT64Neon;
-
-/// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
-/// dispatching to NEON-accelerated kernels on AArch64 and the portable
-/// reference kernels otherwise.
-/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
-/// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in the CPU CKKS encoding implementation.
-pub struct FFT64NeonReimTable {
-    fft: ReimFFTTable<f64>,
-    ifft: ReimIFFTTable<f64>,
-}
-
-impl NegacyclicFFT<f64> for FFT64NeonReimTable {
-    fn m(&self) -> usize {
-        self.fft.m()
-    }
-
-    fn fft(&self, data: &mut [f64]) {
-        ReimFFTNeon::reim_dft_execute(&self.fft, data);
-    }
-
-    fn ifft(&self, data: &mut [f64]) {
-        ReimIFFTNeon::reim_dft_execute(&self.ifft, data);
-    }
-}
-
-impl NegacyclicFFTNew<f64> for FFT64NeonReimTable {
-    fn new(m: usize) -> Self {
-        Self {
-            fft: ReimFFTTable::new(m),
-            ifft: ReimIFFTTable::new(m),
-        }
-    }
-}
-
-pub struct ReimFFTNeon;
-
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTNeon {
-    #[inline(always)]
-    fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            crate::neon::fft::fft_neon(table.m(), table.omg(), data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            fft_ref(table.m(), table.omg(), data);
-        }
-    }
-}
-
-pub struct ReimIFFTNeon;
-
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
-    #[inline(always)]
-    fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            crate::neon::fft::ifft_neon(table.m(), table.omg(), data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            ifft_ref(table.m(), table.omg(), data);
-        }
-    }
-}
 
 #[cfg(target_arch = "aarch64")]
 impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
@@ -170,6 +103,21 @@ impl ReimArith for FFT64Neon {}
 #[cfg(target_arch = "aarch64")]
 impl Reim4BlkMatVec for FFT64Neon {
     #[inline(always)]
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 8>(nrows, dst, u, v, 0) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<2, 16>(nrows, dst, u, v, 0) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 16>(nrows, dst, u, v, 8) }
+    }
+
+    #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         crate::neon::reim4_arith::reim4_extract_1blk_contiguous_neon(m, rows, blk, dst, src);
     }
@@ -204,6 +152,18 @@ impl Reim4BlkMatVec for FFT64Neon {}
 
 #[cfg(target_arch = "aarch64")]
 impl Reim4Convolution for FFT64Neon {
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        unsafe { crate::neon::reim4_conv::reim4_real_convolution_1coeff_neon(k, dst, a, a_size, b, b_size) }
+    }
+
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        let (lo, hi) = dst.split_at_mut(8);
+        Self::reim4_real_convolution_1coeff(k, lo.try_into().unwrap(), a, a_size, b, b_size);
+        Self::reim4_real_convolution_1coeff(k + 1, hi.try_into().unwrap(), a, a_size, b, b_size);
+    }
+
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         crate::neon::reim4_conv::reim4_convolution_1coeff_neon(k, dst, a, a_size, b, b_size);
@@ -252,19 +212,5 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)
-    }
-}
-
-#[cfg(test)]
-mod contract_tests {
-    use super::*;
-    use poulpy_hal::api::NegacyclicFFTNew;
-
-    #[test]
-    fn raw_transform_matches_contract() {
-        for m in [16, 32, 64, 128, 256] {
-            let table = FFT64NeonReimTable::new(m);
-            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
-        }
     }
 }

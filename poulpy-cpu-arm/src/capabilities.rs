@@ -10,9 +10,13 @@ pub fn capabilities() -> Vec<BackendCapability> {
     let rayon = cfg!(feature = "enable-rayon");
     vec![
         entry("FFT64Neon", "enable-neon", supported, neon),
+        entry("FFT64CINeon", "enable-neon", supported, neon),
         entry("NTT4x30Neon", "enable-neon", supported, neon),
+        entry("NTT4x30CINeon", "enable-neon", supported, neon),
         entry("FFT64NeonRayon", "enable-rayon", supported, rayon),
+        entry("FFT64CINeonRayon", "enable-rayon", supported, rayon),
         entry("NTT4x30NeonRayon", "enable-rayon", supported, rayon),
+        entry("NTT4x30CINeonRayon", "enable-rayon", supported, rayon),
     ]
 }
 

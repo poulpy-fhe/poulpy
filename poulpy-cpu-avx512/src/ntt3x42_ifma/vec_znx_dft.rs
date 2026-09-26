@@ -1,7 +1,10 @@
-//! Packed NTT-domain SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
+//! Packed NTT-domain SIMD helpers for [`NTT3x42Ifma`](super::NTT3x42Ifma).
 
-use crate::NTT3x42Ifma;
-use crate::ntt3x42_ifma::{
+use super::super::Ring;
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+
+use super::{
     execution::{SendPtr, for_index_exec, for_index_with},
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
@@ -219,7 +222,7 @@ unsafe fn intt_then_compact_ifma(
     n_blocks: usize,
     src_ptr: *mut u64,
     dst_ptr: *mut i128,
-    table: &Ntt3x42IfmaTableInv<Primes42>,
+    table: &Ntt3x42IfmaTableInv<Primes42, Ring>,
 ) {
     unsafe {
         for k in 0..n_blocks {
@@ -229,7 +232,7 @@ unsafe fn intt_then_compact_ifma(
             // Step 1: inverse NTT in-place on `src`.
             {
                 let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 3 * n);
-                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(table, blk);
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Ring>>>::ntt3x42_ifma_dft_execute(table, blk);
             }
 
             // Step 2: Garner CRT-compact 3n u64s → n i128s, writing to `dst`.
@@ -545,10 +548,10 @@ pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>
 
 /// `VecZnxIdftApplyTmpA` packed fast path.
 pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
-    module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxBigBackendMut<'_, crate::NTT3x42Ifma>,
+    module: &Module<super::NTT3x42Ifma>,
+    res: &mut VecZnxBigBackendMut<'_, super::NTT3x42Ifma>,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &mut VecZnxDftBackendMut<'_, super::NTT3x42Ifma>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -664,7 +667,7 @@ pub(crate) fn vec_znx_idft_apply_limb(
     };
     assert_eq!(src.len(), 2 * n);
     unsafe { unpack_limb_3x42(n, scratch, src) };
-    <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(
+    <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Ring>>>::ntt3x42_ifma_dft_execute(
         handle(module).table_intt_for(n),
         scratch,
     );
@@ -701,7 +704,9 @@ pub(crate) fn vec_znx_idft_apply(
             if j < min_size {
                 let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
                 unsafe { unpack_limb_3x42(n, scratch, a_slice) };
-                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(table, scratch);
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Ring>>>::ntt3x42_ifma_dft_execute(
+                    table, scratch,
+                );
                 NTT3x42Ifma::ntt3x42_ifma_to_znx128(dst, n, scratch);
             } else {
                 dst.fill(0i128);

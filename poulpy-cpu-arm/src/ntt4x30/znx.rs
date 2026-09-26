@@ -1,5 +1,7 @@
 //! `Znx*` trait impls for [`NTT4x30Neon`](super::NTT4x30Neon).
 
+use super::NTT4x30Neon;
+
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
@@ -7,8 +9,6 @@ use poulpy_cpu_ref::reference::znx::{
     ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
     ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
 };
-
-use super::NTT4x30Neon;
 
 #[cfg(target_arch = "aarch64")]
 use crate::neon::{

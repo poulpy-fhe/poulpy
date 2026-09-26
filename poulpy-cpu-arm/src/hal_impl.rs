@@ -1,7 +1,9 @@
+use super::FFT64Neon;
+use super::NTT4x30Neon;
+
 #[allow(unused_imports)]
 use std::mem::size_of;
 
-use crate::{FFT64Neon, NTT4x30Neon};
 use poulpy_cpu_ref::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
@@ -37,7 +39,7 @@ where
 }
 
 unsafe impl HalVecZnxImpl for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!(fft64);
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
@@ -77,7 +79,7 @@ unsafe impl HalModuleImpl for NTT4x30Neon {
 #[cfg(target_arch = "aarch64")]
 unsafe impl HalVmpImpl for NTT4x30Neon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
+        super::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
     }
 
     fn vmp_prepare(
@@ -86,9 +88,9 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(res.n());
+        let bytes = super::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
+        super::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -100,7 +102,7 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         _b_cols_out: usize,
         _b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft(
@@ -111,9 +113,9 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_neon::<poulpy_hal::execution::SerialTaskExecutor>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_neon::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -132,7 +134,7 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         _b_cols_out: usize,
         _b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_add(
@@ -143,9 +145,9 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = super::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_add_neon::<poulpy_hal::execution::SerialTaskExecutor>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_add_neon::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -162,7 +164,7 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         first_row: usize,
         row_step: usize,
     ) {
-        crate::ntt4x30::vmp::vmp_extract_selected_rows_neon_pm(res, a, first_row, row_step)
+        super::ntt4x30::vmp::vmp_extract_selected_rows_neon_pm(res, a, first_row, row_step)
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {

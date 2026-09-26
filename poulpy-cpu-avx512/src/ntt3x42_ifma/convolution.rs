@@ -1,12 +1,15 @@
-//! Polynomial convolution AVX512 kernels for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
+//! Polynomial convolution AVX512 kernels for [`NTT3x42Ifma`](super::NTT3x42Ifma).
 //!
 //! Prepared operands use the packed 2-word group-major layout shared with
 //! `VecZnxDft` and `VmpPMat`.
 
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use std::mem::size_of;
 
-use crate::ntt3x42_ifma::{
+use super::{
     execution::SendPtr,
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
@@ -26,7 +29,6 @@ use super::{
     vmp::{pack_y, unpack_y},
 };
 
-use crate::NTT3x42Ifma;
 use core::arch::x86_64::{
     __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
     _mm512_or_si512, _mm512_permutexvar_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64,

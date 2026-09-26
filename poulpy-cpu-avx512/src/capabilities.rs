@@ -14,12 +14,24 @@ pub fn capabilities() -> Vec<BackendCapability> {
     let ifma_built = cfg!(feature = "enable-ifma");
     vec![
         entry("FFT64Avx512", "enable-avx512f", AVX512F, avx512f, f),
+        entry("FFT64CIAvx512", "enable-avx512f", AVX512F, avx512f, f),
         entry("NTT4x30Avx512", "enable-avx512f", AVX512F, avx512f, f),
+        entry("NTT4x30CIAvx512", "enable-avx512f", AVX512F, avx512f, f),
         entry("FFT64Avx512Rayon", "enable-rayon", AVX512F, avx512f, rayon),
+        entry("FFT64CIAvx512Rayon", "enable-rayon", AVX512F, avx512f, rayon),
         entry("NTT4x30Avx512Rayon", "enable-rayon", AVX512F, avx512f, rayon),
+        entry("NTT4x30CIAvx512Rayon", "enable-rayon", AVX512F, avx512f, rayon),
         entry("NTT3x42Ifma", "enable-ifma", IFMA, ifma, ifma_built),
+        entry("NTT3x42CIIfma", "enable-ifma", IFMA, ifma, ifma_built),
         entry(
             "NTT3x42IfmaRayon",
+            "enable-ifma,enable-rayon",
+            IFMA,
+            ifma,
+            ifma_built && rayon,
+        ),
+        entry(
+            "NTT3x42CIIfmaRayon",
             "enable-ifma,enable-rayon",
             IFMA,
             ifma,

@@ -1,10 +1,14 @@
-//! Primitive NTT-domain trait implementations for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
+//! Primitive NTT-domain trait implementations for [`NTT3x42Ifma`](super::NTT3x42Ifma).
 //!
 //! This module connects the IFMA backend type to the low-level reference IFMA traits:
 //! NTT execution, b/c domain conversion, BBC multiply-accumulate, and basic
 //! transform-domain arithmetic on the planar 3-prime prep representation.
 
-use crate::ntt3x42_ifma::{
+use super::super::Ring;
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+
+use super::{
     bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
@@ -25,8 +29,6 @@ use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttAdd, NttAddAssign, NttCopy, NttNegate, NttNegateAssign, NttSub, NttSubAssign, NttSubNegateAssign, NttZero,
 };
-
-use crate::NTT3x42Ifma;
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_add(res: &mut [u64], a: &[u64], b: &[u64]) {
@@ -266,17 +268,17 @@ unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
 // IFMA NTT execution
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42>> for NTT3x42Ifma {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Ring>> for NTT3x42Ifma {
     #[inline(always)]
-    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTable<Primes42>, data: &mut [u64]) {
+    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTable<Primes42, Ring>, data: &mut [u64]) {
         // Non-lazy: fully reduce for the public DFT contract.
         unsafe { ntt_avx512::<Primes42>(table, data, false) }
     }
 }
 
-impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>> for NTT3x42Ifma {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Ring>> for NTT3x42Ifma {
     #[inline(always)]
-    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42>, data: &mut [u64]) {
+    fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42, Ring>, data: &mut [u64]) {
         unsafe { intt_avx512::<Primes42>(table, data) }
     }
 }

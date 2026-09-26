@@ -1,5 +1,8 @@
 //! Scalar-vector product (SVP) operations for [`NTT3x42Ifma`].
 
+#[cfg(feature = "enable-ifma")]
+use super::NTT3x42Ifma;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{__m512i, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_storeu_si512};
 use poulpy_hal::layouts::PrimeSet;
@@ -12,8 +15,7 @@ use poulpy_hal::{
     },
 };
 
-use crate::NTT3x42Ifma;
-use crate::ntt3x42_ifma::{
+use super::{
     execution::{SendPtr, for_index_exec},
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
