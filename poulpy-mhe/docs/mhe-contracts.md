@@ -9,8 +9,9 @@ defaults in `oep::derived`.
 ## Public API organization
 
 `api::pat` holds the operations every PAT shape shares, `api::public_key` the
-collective public key protocol. Both are re-exported by `api` and the crate
-root. Every operation that takes caller scratch has a matching `_tmp_bytes`
+collective public key protocol and `api::evaluation_key` the collective
+switching and automorphism key protocols. All are re-exported by `api` and the
+crate root. Every operation that takes caller scratch has a matching `_tmp_bytes`
 query in the same trait.
 
 ## Operation map
@@ -21,6 +22,8 @@ query in the same trait.
 | `PatNormalize` | `PatNormalizeImpl` | `reference::PatNormalizeReference` |
 | `PatFinalize` | `PatFinalizeImpl` | `reference::PatFinalizeReference` |
 | `GLWEPublicKeyShare` | `GLWEPublicKeyShareImpl` | `reference::GLWEPublicKeyShareReference`; finalization is a derived default |
+| `GLWESwitchingKeyShare` | `GLWESwitchingKeyShareImpl` | `reference::GLWESwitchingKeyShareReference`; aggregation, normalization and finalization are derived defaults |
+| `GLWEAutomorphismKeyShare` | `GLWEAutomorphismKeyShareImpl` | `reference::GLWEAutomorphismKeyShareReference`; aggregation, normalization and finalization are derived defaults |
 
 ## Canonical flag
 
@@ -29,18 +32,26 @@ flag. Normalization and finalization restore canonical digits; `write_to`
 refuses a PAT whose flag is clear. Headroom for chains of additions follows
 the [radix failure estimates](../../docs/base2k-failure-probability.md).
 
+## Key metadata
+
+Switching key shares carry the input and output degrees, automorphism key
+shares the Galois element, as core's compressed keys do. Aggregation asserts
+that both shares carry the same metadata, and finalization copies it into the
+key.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
 seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
-`impl_mhe_pat_reference!` or `impl_mhe_public_key_reference!` alone when
-replacing the other one. The reference traits stay callable from an override.
+`impl_mhe_pat_reference!`, `impl_mhe_public_key_reference!` or
+`impl_mhe_evaluation_key_reference!` alone when replacing another one. The reference traits stay callable from an override.
 
 ## Workspace
 
 Size scratch with the queries: `pat_normalize_tmp_bytes`,
-`pat_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes` and
-`glwe_public_key_finalize_tmp_bytes`. A replacement that needs more workspace
+`pat_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes`,
+`glwe_public_key_finalize_tmp_bytes`, and the share, normalize and finalize
+queries of `GLWESwitchingKeyShare` and `GLWEAutomorphismKeyShare`. A replacement that needs more workspace
 replaces the matching query.
