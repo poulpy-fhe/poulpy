@@ -193,6 +193,7 @@ unsafe impl NttHandleFactory for NTT4x30AvxHandle {
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised in [`NTT4x30Avx::new_impl`].
 unsafe impl NttHandleProvider for NTT4x30AvxHandle {
+    type Ring = poulpy_hal::layouts::Standard;
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
         self.ring_plans.for_ring(n)
     }

@@ -166,6 +166,7 @@ unsafe impl NttHandleFactory for NTT4x30NeonHandle {
 /// # Safety
 /// The returned references are valid for the lifetime of `&self`.
 unsafe impl NttHandleProvider for NTT4x30NeonHandle {
+    type Ring = poulpy_hal::layouts::Standard;
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
         self.ring_plans.for_ring(n)
     }

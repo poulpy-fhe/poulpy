@@ -5,6 +5,9 @@
 //!
 //! This mirrors `poulpy_cpu_ref::fft64::reim` for the FFT64 backend.
 
+use super::NTT4x30Ref;
+use crate::ring::Standard;
+
 use crate::reference::ntt4x30::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
@@ -19,22 +22,20 @@ use crate::reference::ntt4x30::{
     types::Q_SHIFTED,
 };
 
-use super::NTT4x30Ref;
-
 // ──────────────────────────────────────────────────────────────────────────────
 // NTT execution
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Ref {
+impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Ref {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTable<Primes30, Standard>, data: &mut [u64]) {
         ntt_ref::<Primes30>(table, data);
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Ref {
+impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Ref {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Standard>, data: &mut [u64]) {
         intt_ref::<Primes30>(table, data);
     }
 }

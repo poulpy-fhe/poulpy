@@ -1,8 +1,8 @@
-use super::FFT64Ref;
-use super::NTT4x30Ref;
+//! HAL registrations for [`NTT4x30CIRef`](super::NTT4x30CIRef).
+
+use super::NTT4x30CIRef;
 
 use crate::hal_defaults::{
-    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
     NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
 };
@@ -11,47 +11,19 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-unsafe impl HalVecZnxImpl for FFT64Ref {
-    crate::hal_impl_vec_znx!(fft64);
-}
-
-unsafe impl HalModuleImpl for FFT64Ref {
-    crate::hal_impl_module!(FFT64ModuleDefault);
-}
-
-unsafe impl HalVmpImpl for FFT64Ref {
-    crate::hal_impl_vmp!(FFT64VmpDefault);
-}
-
-unsafe impl HalConvolutionImpl for FFT64Ref {
-    crate::hal_impl_convolution!(FFT64ConvolutionDefault);
-}
-
-unsafe impl HalVecZnxBigImpl for FFT64Ref {
-    crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
-}
-
-unsafe impl HalSvpImpl for FFT64Ref {
-    crate::hal_impl_svp!(FFT64SvpDefault);
-}
-
-unsafe impl HalVecZnxDftImpl for FFT64Ref {
-    crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
-}
-
-unsafe impl HalVecZnxImpl for NTT4x30Ref {
+unsafe impl HalVecZnxImpl for NTT4x30CIRef {
     crate::hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl for NTT4x30Ref {
+unsafe impl HalModuleImpl for NTT4x30CIRef {
     crate::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl for NTT4x30Ref {
+unsafe impl HalVmpImpl for NTT4x30CIRef {
     crate::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl for NTT4x30Ref {
+unsafe impl HalConvolutionImpl for NTT4x30CIRef {
     crate::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 
     fn cnv_apply_dft_sum_tmp_bytes(
@@ -84,14 +56,14 @@ unsafe impl HalConvolutionImpl for NTT4x30Ref {
     }
 }
 
-unsafe impl HalVecZnxBigImpl for NTT4x30Ref {
+unsafe impl HalVecZnxBigImpl for NTT4x30CIRef {
     crate::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl for NTT4x30Ref {
+unsafe impl HalSvpImpl for NTT4x30CIRef {
     crate::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl for NTT4x30Ref {
+unsafe impl HalVecZnxDftImpl for NTT4x30CIRef {
     crate::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }
