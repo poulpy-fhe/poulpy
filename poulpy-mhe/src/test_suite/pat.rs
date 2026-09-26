@@ -5,8 +5,8 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWENoise,
     layouts::{
-        GGLWE, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret,
-        GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWE, GGLWEInfos, GGLWEToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret,
+        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, TorusPrecision,
         compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut},
     },
 };
@@ -289,9 +289,10 @@ where
     res
 }
 
-fn assert_gglwe_noise<BE, S>(
+/// Every entry of `ct` decrypts to `pt_want` under `sk` within [`aggregate_noise_bound`].
+pub(crate) fn assert_gglwe_noise<BE, C, S>(
     module: &Module<BE>,
-    ct: &GGLWE<AlignedBuf, i64>,
+    ct: &C,
     pt_want: &GLWESecret<AlignedBuf, i64>,
     sk: &S,
     scratch: &mut ScratchOwned<BE>,
@@ -300,6 +301,7 @@ fn assert_gglwe_noise<BE, S>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: GGLWENoise<BE>,
+    C: GGLWEToBackendRef<BE> + GGLWEInfos,
     S: poulpy_core::layouts::GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {

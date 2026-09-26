@@ -67,12 +67,11 @@ where
     (0..PARTIES).map(|i| secret_from_seed(module, [100 + i as u8; 32])).collect()
 }
 
-/// The ideal secret: the coefficient-wise sum of the parties' secrets. It is
-/// not ternary; the tag only has to be valid, since decryption ignores it.
-pub(crate) fn ideal_secret<BE>(module: &Module<BE>, parties: &[Secret<BE>]) -> GLWESecretPrepared<AlignedBuf, BE>
+/// The coefficient-wise sum of the parties' secrets. It is not ternary; the
+/// tag only has to be valid, since decryption ignores it.
+pub(crate) fn secret_sum<BE>(module: &Module<BE>, parties: &[Secret<BE>]) -> GLWESecret<AlignedBuf, i64>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWESecretPreparedFactory<BE>,
 {
     let mut sum: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
     for (sk, _) in parties {
@@ -83,8 +82,17 @@ where
         }
     }
     *sum.dist_mut() = Distribution::TernaryProb(0.5);
+    sum
+}
+
+/// The ideal secret: [`secret_sum`] prepared.
+pub(crate) fn ideal_secret<BE>(module: &Module<BE>, parties: &[Secret<BE>]) -> GLWESecretPrepared<AlignedBuf, BE>
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWESecretPreparedFactory<BE>,
+{
     let mut sum_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
-    module.glwe_secret_prepare(&mut sum_prepared, &sum);
+    module.glwe_secret_prepare(&mut sum_prepared, &secret_sum(module, parties));
     sum_prepared
 }
 
