@@ -4,9 +4,10 @@
 //! same result.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, NoiseInfos,
+    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, NoiseInfos,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
+        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{
@@ -17,8 +18,11 @@ use poulpy_hal::{
     test_suite::vec_znx_backend_mut,
 };
 
-use super::fixtures::{BASE2K, K, PARTIES, RANK, Secret, ideal_secret, party_secrets, secret_from_seed};
-use crate::api::GLWEKeyswitchShare;
+use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, Secret, ideal_secret, party_secrets, secret_from_seed};
+use crate::{
+    api::{GLWEKeyswitchShare, GLWEPublicKeyShare, GLWEPublicKeyswitchShare, PatAggregate},
+    layouts::MHEModuleAlloc,
+};
 
 /// Smudging noise sigma of every party, well above the fresh noise.
 const SIGMA_FLOOD: f64 = 1024.0;
@@ -77,6 +81,101 @@ where
     module.glwe_normalize_assign(&mut acc, &mut scratch.borrow());
     let mut eager: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     module.glwe_keyswitch_finalize(&mut eager, &ct, &acc, &mut scratch.borrow());
+    assert_eq!(lazy, eager);
+    acc.write_to(&mut Vec::new()).unwrap();
+}
+
+pub fn test_glwe_public_keyswitch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: MHEModuleAlloc<BE>
+        + GLWEPublicKeyswitchShare<BE>
+        + GLWEPublicKeyShare<BE>
+        + PatAggregate<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEAdd<BE>
+        + GLWENormalize<BE>
+        + GLWENoise<BE>
+        + VecZnxFillUniformSource<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout(module);
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+    let flood = flood_infos(layout);
+    let parties_in = input_secrets(module);
+    let parties_out = party_secrets(module);
+    let sk_out = ideal_secret(module, &parties_out);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_encrypt_sk_tmp_bytes(&layout)
+            .max(module.glwe_public_key_share_tmp_bytes(&layout))
+            .max(module.glwe_public_key_finalize_tmp_bytes())
+            .max(module.glwe_public_key_prepare_tmp_bytes(&layout))
+            .max(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout))
+            .max(module.glwe_public_keyswitch_finalize_tmp_bytes())
+            .max(module.glwe_normalize_tmp_bytes())
+            .max(module.glwe_noise_tmp_bytes(&layout)),
+    );
+
+    let mut pk_acc = module.glwe_pat_compressed_alloc_from_infos(&layout);
+    let mut pk_share = module.glwe_pat_compressed_alloc_from_infos(&layout);
+    for (i, (_, sk)) in parties_out.iter().enumerate() {
+        let dst = if i == 0 { &mut pk_acc } else { &mut pk_share };
+        let mut source_xe = Source::new([40 + i as u8; 32]);
+        module.glwe_public_key_share(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        if i > 0 {
+            module.glwe_pat_compressed_aggregate_assign(&mut pk_acc, &pk_share);
+        }
+    }
+    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
+    module.glwe_public_key_finalize(&mut pk, &pk_acc, Distribution::TernaryProb(0.5), &mut scratch.borrow());
+    let mut pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&layout);
+    module.glwe_public_key_prepare(&mut pk_out, &pk, &mut scratch.borrow());
+
+    let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
+
+    let mut acc: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut share: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    for (i, (_, sk_in)) in parties_in.iter().enumerate() {
+        let dst = if i == 0 { &mut acc } else { &mut share };
+        dst.set_canonical(false);
+        let mut source_xu = Source::new([20 + i as u8; 32]);
+        let mut source_xe = Source::new([10 + i as u8; 32]);
+        module.glwe_public_keyswitch_share(
+            dst,
+            &ct,
+            sk_in,
+            &pk_out,
+            &flood,
+            &enc_infos,
+            &mut source_xu,
+            &mut source_xe,
+            &mut scratch.borrow(),
+        );
+        assert!(dst.is_canonical());
+        if i > 0 {
+            module.glwe_add_assign(&mut acc, &share);
+        }
+    }
+    assert!(!acc.is_canonical());
+
+    let mut lazy: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    module.glwe_public_keyswitch_finalize(&mut lazy, &ct, &acc, &mut scratch.borrow());
+    assert!(lazy.is_canonical());
+    // Each party's pk encryption adds (rank + 1) * n * 0.5 * PARTIES * sigma^2, as in the pk test.
+    let n = module.n() as f64;
+    let rank = RANK.as_usize() as f64;
+    let pk_noise = PARTIES as f64 * (rank + 1.0) * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+    assert_flooded_noise(module, &lazy, &pt, &sk_out, pk_noise, &mut scratch);
+
+    module.glwe_normalize_assign(&mut acc, &mut scratch.borrow());
+    let mut eager: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    module.glwe_public_keyswitch_finalize(&mut eager, &ct, &acc, &mut scratch.borrow());
     assert_eq!(lazy, eager);
     acc.write_to(&mut Vec::new()).unwrap();
 }

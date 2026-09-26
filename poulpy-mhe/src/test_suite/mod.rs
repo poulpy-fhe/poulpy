@@ -128,6 +128,11 @@ macro_rules! mhe_backend_test_suite {
             fn glwe_keyswitch() {
                 $crate::test_suite::keyswitch::test_glwe_keyswitch(&Module::<$backend>::new(256));
             }
+
+            #[test]
+            fn glwe_public_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch(&Module::<$backend>::new(256));
+            }
         }
     };
 }
