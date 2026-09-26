@@ -1,13 +1,13 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut},
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
     source::Source,
 };
 
-use crate::layouts::GLWESwitchingKeyPatCompressedOwned;
+use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
 
 /// Collective GLWE switching key: every party publishes a share under the
 /// common seed, the shares are aggregated, and any party finalizes the key
@@ -60,4 +60,55 @@ pub trait GLWESwitchingKeyShare<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut;
+}
+
+/// Collective GLWE automorphism key for one Galois element `p`: the finalized
+/// key maps `X -> X^p` under the ideal secret, the sum of the parties' secrets.
+pub trait GLWEAutomorphismKeyShare<BE: Backend> {
+    fn glwe_automorphism_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    /// Writes this party's share into `res`: the bodies of the automorphism key
+    /// encryption of `sk` for `p` whose masks are drawn from `seed`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_automorphism_key_share<S, E>(
+        &self,
+        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        p: i64,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S: GLWESecretToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos;
+
+    /// Adds share `a` into `res`, which starts as the first share. The Galois
+    /// elements must match.
+    fn glwe_automorphism_key_share_aggregate_assign(
+        &self,
+        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        a: &GLWEAutomorphismKeyPatCompressedOwned<BE>,
+    );
+
+    fn glwe_automorphism_key_share_normalize_tmp_bytes(&self) -> usize;
+
+    fn glwe_automorphism_key_share_normalize_assign(
+        &self,
+        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize;
+
+    /// Expands the aggregated shares into `res` and copies their Galois element.
+    fn glwe_automorphism_key_finalize<R>(
+        &self,
+        res: &mut R,
+        pat: &GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement;
 }

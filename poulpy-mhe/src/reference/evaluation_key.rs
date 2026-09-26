@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GLWESwitchingKeyCompressedEncryptSk, GetDistribution,
+    EncryptionInfos, GLWEAutomorphismKeyCompressedEncryptSk, GLWESwitchingKeyCompressedEncryptSk, GetDistribution,
     layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef},
 };
 use poulpy_hal::{
@@ -7,7 +7,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::GLWESwitchingKeyPatCompressedOwned;
+use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
 
 pub trait GLWESwitchingKeyShareReference<BE: Backend> {
     fn glwe_switching_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -56,6 +56,55 @@ where
         E: EncryptionInfos,
     {
         self.glwe_switching_key_compressed_encrypt_sk(res, sk_in, sk_out, seed, enc_infos, source_xe, scratch);
+        res.set_canonical(true);
+    }
+}
+
+pub trait GLWEAutomorphismKeyShareReference<BE: Backend> {
+    fn glwe_automorphism_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_automorphism_key_share_reference<S, E>(
+        &self,
+        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        p: i64,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S: GLWESecretToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos;
+}
+
+impl<BE: Backend> GLWEAutomorphismKeyShareReference<BE> for Module<BE>
+where
+    Self: GLWEAutomorphismKeyCompressedEncryptSk<BE>,
+{
+    fn glwe_automorphism_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(infos)
+    }
+
+    fn glwe_automorphism_key_share_reference<S, E>(
+        &self,
+        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        p: i64,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S: GLWESecretToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+    {
+        self.glwe_automorphism_key_compressed_encrypt_sk(res, p, sk, seed, enc_infos, source_xe, scratch);
         res.set_canonical(true);
     }
 }

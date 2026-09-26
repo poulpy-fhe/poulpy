@@ -101,9 +101,20 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn glwe_automorphism_key() {
+                $crate::test_suite::evaluation_key::test_glwe_automorphism_key(&Module::<$backend>::new(256));
+            }
+
+            #[test]
             #[should_panic(expected = "invalid aggregation: degrees differ")]
             fn glwe_switching_key_degree_mismatch() {
                 $crate::test_suite::evaluation_key::test_glwe_switching_key_degree_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: Galois elements differ")]
+            fn glwe_automorphism_key_p_mismatch() {
+                $crate::test_suite::evaluation_key::test_glwe_automorphism_key_p_mismatch(&Module::<$backend>::new(64));
             }
         }
     };
