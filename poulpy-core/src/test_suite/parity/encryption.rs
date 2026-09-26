@@ -221,9 +221,9 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.decompress_glwe(&mut out, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_sk", &out));
         results.push(source_snapshot("compressed_sources", &mut e, &mut a));
-        module.fill_glwe_mask_from_seed(base2k, &mut out, 1, rank, [83; 32]);
+        module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
         results.push(snapshot_glwe::<B, _>("mask_seed", &out));
-        module.fill_glwe_mask_from_source(base2k, &mut out, 1, rank, &mut a);
+        module.fill_glwe_mask_from_source(&mut out, &mut a);
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
         let mut lsk = module.lwe_secret_alloc((module.n() * rank).into());

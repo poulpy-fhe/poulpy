@@ -127,7 +127,6 @@ where
             let dsize: usize = res.dsize().into();
             let base2k: usize = res.base2k().into();
             let rank_in: usize = res.rank_in().into();
-            let rank_out: usize = res.rank_out().into();
 
             let mut source_xa = Source::new(seed);
 
@@ -161,7 +160,7 @@ where
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_seed(base2k, &mut full_ct, 1, rank_out, seed);
+                    self.fill_glwe_mask_from_seed(&mut full_ct, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,

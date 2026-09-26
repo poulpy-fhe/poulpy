@@ -1,12 +1,8 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom,
-        WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
-        mat_znx_backend_ref_from_mut,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom, WriterTo,
+    mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 use crate::layouts::{
@@ -231,12 +227,6 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWECompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWECompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWECompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

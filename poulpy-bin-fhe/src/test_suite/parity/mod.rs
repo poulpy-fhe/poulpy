@@ -17,10 +17,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{
-        Backend, CopyFromHost, CopyToHost, FillUniform, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned,
-        ZnxViewMut,
-    },
+    layouts::{Backend, CopyFromHost, CopyToHost, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned, ZnxViewMut},
     source::Source,
 };
 
@@ -75,6 +72,14 @@ pub(crate) fn snapshot_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(c
     }
 }
 
+/// Uniform digits in `[-2^(base2k-1), 2^(base2k-1))`, as the backend mask sampler draws them.
+pub(crate) fn fill_digits(digits: &mut [i64], base2k: usize, source: &mut Source) {
+    let pow2k: u64 = 1 << base2k;
+    for digit in digits {
+        *digit = source.next_u64n(pow2k, pow2k - 1) as i64 - (pow2k >> 1) as i64;
+    }
+}
+
 fn canonicalize(ct: &mut GLWE<impl HostDataMut, i64>) {
     let base = ct.base2k().as_usize();
     let live = ct.k().as_usize().div_ceil(base);
@@ -94,7 +99,11 @@ fn canonicalize(ct: &mut GLWE<impl HostDataMut, i64>) {
 pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GLWEInfos, seed: u8) -> GLWE<B::OwnedBuf, i64> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut input = host.glwe_alloc_from_infos(infos);
-    input.fill_uniform(infos.base2k().as_usize(), &mut Source::new([seed; 32]));
+    fill_digits(
+        input.data_mut().raw_mut(),
+        infos.base2k().as_usize(),
+        &mut Source::new([seed; 32]),
+    );
     canonicalize(&mut input);
     let mut output = module.glwe_alloc_from_infos(infos);
     input.transfer_into(&mut output);
@@ -104,10 +113,12 @@ pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GL
 pub(crate) fn fixture_ggsw<B: ParityBackend>(module: &Module<B>, infos: &impl GGSWInfos, seed: u8) -> GGSW<B::OwnedBuf, i64> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut input = host.ggsw_alloc_from_infos(infos);
-    input.fill_uniform(infos.base2k().as_usize(), &mut Source::new([seed; 32]));
+    let mut source = Source::new([seed; 32]);
     for row in 0..input.dnum().as_usize() {
         for col in 0..=input.rank().as_usize() {
-            canonicalize(&mut input.at_mut(row, col));
+            let mut glwe = input.at_mut(row, col);
+            fill_digits(glwe.data_mut().raw_mut(), infos.base2k().as_usize(), &mut source);
+            canonicalize(&mut glwe);
         }
     }
     let mut output = module.ggsw_alloc_from_infos(infos);

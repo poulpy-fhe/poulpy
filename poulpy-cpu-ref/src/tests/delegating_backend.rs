@@ -1,18 +1,21 @@
 use poulpy_core::{
+    GLWEMaskFill,
     api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE, GLWEAutomorphismKeyLayout,
-        GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank,
-        SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
+        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
     oep::{GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl},
     reference::operations::{GLWEAddReference, GLWERotateReference},
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{
-        Backend, FillUniform, Module, ScratchArena, ScratchOwned, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+        Backend, Module, ScratchArena, ScratchOwned, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+        vec_znx_backend_mut,
     },
     source::Source,
 };
@@ -90,6 +93,9 @@ poulpy_core::impl_glwe_copy_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_normalize_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Ref);
 poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Ref);
+poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Ref);
+poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Ref);
+crate::impl_sampling_host!(DelegatingFFT64Ref, fft64);
 // The pairwise suite must use a selected comparison backend's implementation
 // and its own scratch query, even when that backend delegates its arithmetic.
 unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Ref {
@@ -250,7 +256,15 @@ fn sample_glwe() -> GLWE<AlignedBuf, i64> {
     let module: Module<FFT64Ref> = Module::new(256);
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let mut source = Source::new([7u8; 32]);
-    ct.fill_uniform(40, &mut source);
+    for col in 0..layout.rank.as_usize() + 1 {
+        module.vec_znx_fill_uniform_source(
+            40,
+            ct.size() * 40,
+            &mut vec_znx_backend_mut::<FFT64Ref>(ct.data_mut()),
+            col,
+            &mut source,
+        );
+    }
     ct
 }
 
@@ -350,7 +364,13 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
         rank: Rank(2),
     };
     let mut input = reference.ggsw_alloc_from_infos(&layout);
-    input.fill_uniform(17, &mut Source::new([43; 32]));
+    let mut source = Source::new([43; 32]);
+    for row in 0..layout.dnum.as_usize() {
+        for col in 0..layout.rank.as_usize() + 1 {
+            let mut entry = GGSWAtViewMut::<FFT64Ref>::at_view_mut(&mut input, row, col);
+            reference.fill_glwe_from_source(&mut entry, &mut source);
+        }
+    }
     let mut actual = module.ggsw_alloc_from_infos(&layout);
     let mut expected = reference.ggsw_alloc_from_infos(&layout);
     let rows = layout.dnum.as_usize() * (layout.rank.as_usize() + 1);
@@ -382,7 +402,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let module = Module::<DelegatingFFT64Ref>::new(256);
     let reference = Module::<FFT64Ref>::new(256);
     let mut input = sample_glwe();
-    input.fill_uniform(17, &mut Source::new([61; 32]));
+    reference.fill_glwe_from_source(&mut input, &mut Source::new([61; 32]));
     let saved_input = input.clone();
     let key_layout = GLWEAutomorphismKeyLayout {
         n: input.n(),
@@ -396,7 +416,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let skip = rotations.len() - 1;
     let p = rotations[skip];
     let mut key = reference.glwe_automorphism_key_alloc_from_infos(&key_layout);
-    key.fill_uniform(17, &mut Source::new([89; 32]));
+    fill_by_digit(&reference, &mut key, 1, &mut Source::new([89; 32]));
     key.set_p(p);
     let saved_key = key.clone();
     let mut prepared_actual = module.glwe_automorphism_key_prepared_alloc_from_infos(&key);

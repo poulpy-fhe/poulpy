@@ -1,7 +1,6 @@
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{CopyFromHost, CopyToHost, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
-    source::Source,
+    layouts::{CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
 };
 
 use std::{fmt, marker::PhantomData};
@@ -212,12 +211,6 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> fmt::Display for BlindR
             write!(f, "key[{i}]: {key}")?;
         }
         writeln!(f, "{:?}", self.dist)
-    }
-}
-
-impl<D: HostDataMut, BRT: BlindRotationAlgo, W: ZnxWord> FillUniform for BlindRotationKey<D, BRT, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.keys.iter_mut().for_each(|key| key.fill_uniform(log_bound, source));
     }
 }
 

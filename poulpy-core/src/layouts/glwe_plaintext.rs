@@ -2,10 +2,9 @@ use poulpy_hal::AlignedBuf;
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
-    VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+    Backend, Data, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
+    VecZnxToBackendRef, ZnxWord,
 };
-use poulpy_hal::source::Source;
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
@@ -191,12 +190,6 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
             base2k: self.base2k,
             k: self.k,
         }
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEPlaintext<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

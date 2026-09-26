@@ -5,17 +5,18 @@ use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
-    layouts::{FillUniform, HostDataMut, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxToBackendMut},
+    layouts::{HostDataMut, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxToBackendMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
-    GLWEExternalProduct, GLWEExternalProductInternal,
+    GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGSWPreparedFactory,
+        Base2K, Degree, Dnum, Dsize, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::GGSWPreparedFactory,
     },
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
 };
@@ -77,7 +78,11 @@ pub fn test_glwe_external_product_parity<BR, BT>(
 
             let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
             let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
-            ggsw_ref_coeffs.fill_uniform(base2k, &mut source);
+            for row in 0..ggsw_infos.dnum.as_usize() {
+                for col in 0..rank + 1 {
+                    module_ref.fill_glwe_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
+                }
+            }
 
             let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
             a_ref.transfer_into(&mut a_test);

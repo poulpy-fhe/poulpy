@@ -7,14 +7,12 @@ use std::{
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
-        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ToOwnedDeep,
+        VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
-    source::Source,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::Rng;
 
 /// Geometry of a vector-shaped container plus an optional window onto it.
 ///
@@ -494,28 +492,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
             }
         }
         Ok(())
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        crate::layouts::assert_dense(self, "VecZnx::fill_uniform");
-        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
-        assert!(
-            log_bound <= W::BITS,
-            "log_bound {log_bound} exceeds the {}-bit coefficient word",
-            W::BITS
-        );
-        if log_bound == W::BITS {
-            source.fill_bytes(self.data.as_mut());
-            return;
-        }
-        let mask: u64 = (1u64 << log_bound) - 1;
-        let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
-            let r = source.next_u64() & mask;
-            *x = W::from_i64(((r << shift) as i64) >> shift);
-        }
     }
 }
 

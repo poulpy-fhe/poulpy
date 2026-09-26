@@ -80,13 +80,7 @@ where
             );
 
             let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-            self.fill_glwe_mask_from_seed(
-                res_backend.base2k().into(),
-                &mut full_ct,
-                1,
-                res_backend.rank().as_usize(),
-                seed_xa,
-            );
+            self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
             self.glwe_encrypt_sk_internal(
                 res_backend.base2k().into(),
                 &mut full_ct.data,

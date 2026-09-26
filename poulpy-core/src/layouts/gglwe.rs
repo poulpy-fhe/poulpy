@@ -1,10 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, ReaderFrom, WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
+    MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 
 use crate::{
@@ -536,12 +533,6 @@ impl<'b, BE: Backend + 'b> GGLWEAtViewMut<BE> for &mut GGLWE<BE::BufMut<'b>, BE:
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWE<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWE<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

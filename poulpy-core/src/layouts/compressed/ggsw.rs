@@ -1,11 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom,
-        WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
-        mat_znx_backend_ref_from_mut,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom, WriterTo,
+    mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 use crate::layouts::{
@@ -254,12 +250,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSWCompressed<D, W> {
             self.dsize,
             self.data
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGSWCompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 

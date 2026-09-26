@@ -1091,10 +1091,12 @@ fn test_vec_znx_normalize_canonical_precision() {
 fn test_vec_znx_normalize_cross_base2k() {
     use crate::{
         FFT64Ref,
-        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        api::VecZnxFillUniformSource,
+        layouts::{Module, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
         source::Source,
     };
     let n: usize = 8;
+    let module: Module<FFT64Ref> = Module::new(n as u64);
 
     let mut carry: Vec<i64> = vec![0i64; vec_znx_normalize_tmp_bytes(n) / size_of::<i64>()];
 
@@ -1152,10 +1154,22 @@ fn test_vec_znx_normalize_cross_base2k() {
 
                 let min_prec: u32 = (in_size * in_base2k).min(out_size * out_base2k) as u32;
                 let mut want: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, in_size);
-                want.fill_uniform(60, &mut source);
+                module.vec_znx_fill_uniform_source(
+                    60,
+                    in_size * 60,
+                    &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut want),
+                    0,
+                    &mut source,
+                );
 
                 let mut have: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, out_size);
-                have.fill_uniform(60, &mut source);
+                module.vec_znx_fill_uniform_source(
+                    60,
+                    out_size * 60,
+                    &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut have),
+                    0,
+                    &mut source,
+                );
                 vec_znx_normalize::<FFT64Ref>(
                     &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                     out_base2k,
@@ -1218,10 +1232,12 @@ fn test_vec_znx_normalize_cross_base2k() {
 fn test_vec_znx_normalize_inter_base2k() {
     use crate::{
         FFT64Ref,
-        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        api::VecZnxFillUniformSource,
+        layouts::{Module, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
         source::Source,
     };
     let n: usize = 8;
+    let module: Module<FFT64Ref> = Module::new(n as u64);
 
     let mut carry: Vec<i64> = vec![0i64; vec_znx_normalize_tmp_bytes(n) / size_of::<i64>()];
 
@@ -1261,11 +1277,23 @@ fn test_vec_znx_normalize_inter_base2k() {
 
             // Fills "want" with uniform values
             let mut want: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, size);
-            want.fill_uniform(60, &mut source);
+            module.vec_znx_fill_uniform_source(
+                60,
+                size * 60,
+                &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut want),
+                0,
+                &mut source,
+            );
 
             // Fills "have" with the shifted normalization of "want"
             let mut have: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, size);
-            have.fill_uniform(60, &mut source);
+            module.vec_znx_fill_uniform_source(
+                60,
+                size * 60,
+                &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut have),
+                0,
+                &mut source,
+            );
             vec_znx_normalize::<FFT64Ref>(
                 &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                 base2k,
@@ -1327,10 +1355,12 @@ fn test_vec_znx_normalize_inter_base2k() {
 fn test_vec_znx_normalize_limb_bounds() {
     use crate::{
         FFT64Ref,
-        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView},
+        api::VecZnxFillUniformSource,
+        layouts::{Module, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView},
         source::Source,
     };
     let n: usize = 8;
+    let module: Module<FFT64Ref> = Module::new(n as u64);
     let mut carry: Vec<i64> = vec![0i64; vec_znx_normalize_tmp_bytes(n) / size_of::<i64>()];
     let mut source: Source = Source::new([1u8; 32]);
     for in_base2k in 1..=51usize {
@@ -1339,7 +1369,13 @@ fn test_vec_znx_normalize_limb_bounds() {
                 for in_size in 1..=4usize {
                     for out_size in 1..=4usize {
                         let mut want: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, in_size);
-                        want.fill_uniform(62, &mut source);
+                        module.vec_znx_fill_uniform_source(
+                            62,
+                            in_size * 62,
+                            &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut want),
+                            0,
+                            &mut source,
+                        );
                         let mut have: VecZnx<AlignedBuf, i64> = alloc_host_vec_znx(n, 1, out_size);
                         vec_znx_normalize::<FFT64Ref>(
                             &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),

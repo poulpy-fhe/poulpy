@@ -1,6 +1,8 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing},
-    layouts::{FillUniform, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing,
+    },
+    layouts::{HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -10,8 +12,8 @@ use std::f64::consts::SQRT_2;
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
-    GLWETensorKeyEncryptSk, GLWETensoring,
+    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub,
+    GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
         Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
@@ -500,8 +502,21 @@ where
 
         let scale: usize = 2 * in_base2k;
 
-        pt_b.data_mut().fill_uniform(17, &mut source_xa);
-        pt_a.data_mut().fill_uniform(17, &mut source_xa);
+        let (b_size, a_size) = (pt_b.size(), pt_a.size());
+        module.vec_znx_fill_uniform_source(
+            17,
+            b_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_b.data_mut()),
+            0,
+            &mut source_xa,
+        );
+        module.vec_znx_fill_uniform_source(
+            17,
+            a_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            0,
+            &mut source_xa,
+        );
 
         let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
             module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
@@ -572,7 +587,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE>,
+    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -587,7 +602,7 @@ where
             rank: rank.into(),
         };
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        a.data_mut().fill_uniform(base2k, &mut source);
+        module.fill_glwe_from_source(&mut a, &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
             let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
@@ -595,7 +610,7 @@ where
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
-            pt_compact.data_mut().fill_uniform(base2k, &mut source);
+            module.fill_glwe_from_source(&mut pt_compact, &mut source);
             let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),
@@ -711,7 +726,14 @@ where
 
         let scale: usize = 2 * in_base2k;
 
-        pt_a.data_mut().fill_uniform(17, &mut source_xa);
+        let a_size = pt_a.size();
+        module.vec_znx_fill_uniform_source(
+            17,
+            a_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            0,
+            &mut source_xa,
+        );
 
         let mask = (1 << in_base2k) - 1;
         for j in 0..1 {

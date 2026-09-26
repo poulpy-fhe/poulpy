@@ -110,7 +110,7 @@ where
             self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
             for col_j in 0..rank + 1 {
                 let mut ct = res.at_view_mut(row_i, col_j);
-                self.fill_glwe_mask_from_source(base2k, &mut ct, 1, rank, source_xa);
+                self.fill_glwe_mask_from_source(&mut ct, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
                     &mut ct.data,

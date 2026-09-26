@@ -23,13 +23,10 @@ use poulpy_hal::{
 /// Reconstruct a mask using the backend's source-driven mask sampler.
 pub(crate) fn fill_glwe_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
     module: &Module<BE>,
-    base2k: usize,
     res: &mut R,
-    res_col: usize,
-    rank: usize,
     seed_xa: [u8; 32],
 ) {
-    BE::fill_glwe_mask_from_source(module, base2k, res, res_col, rank, &mut Source::new(seed_xa));
+    BE::fill_glwe_mask_from_source(module, res, &mut Source::new(seed_xa));
 }
 
 /// Reconstruct an LWE mask using the backend's source-driven mask sampler.

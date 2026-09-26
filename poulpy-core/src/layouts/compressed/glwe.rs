@@ -2,10 +2,9 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::VecZnxCopy,
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo, vec_znx_alloc_zeroed,
+        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+        vec_znx_alloc_zeroed,
     },
-    source::Source,
 };
 
 use crate::{
@@ -212,12 +211,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWECompressed<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWECompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
-    }
-}
-
 impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
     /// Allocates a new compressed GLWE by copying parameters from an existing info provider.
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
@@ -307,9 +300,8 @@ where
 
             self.vec_znx_copy(&mut res.data, 0, &other.data, 0);
         }
-        self.fill_glwe_mask_from_seed(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
-
         res.set_base2k(other.base2k());
+        self.fill_glwe_mask_from_seed(res, other.seed);
     }
 }
 

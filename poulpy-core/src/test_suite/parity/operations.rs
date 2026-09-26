@@ -11,10 +11,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWERotate,
-    GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GGSWRotate, GLWEAdd, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize,
+    GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
-    layouts::{Base2K, Degree, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe},
 };
 
@@ -746,7 +746,6 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    use poulpy_hal::layouts::FillUniform;
     let mut source = Source::new([59; 32]);
     for &rank in &shapes.ranks {
         for k in [params.base2k, 3 * params.base2k - 1] {
@@ -760,7 +759,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
             let mut a_test = module_test.glwe_alloc_from_infos(&infos);
             a_ref.transfer_into(&mut a_test);
             let mut plain_ref = module_ref.glwe_plaintext_alloc(infos.base2k, infos.k);
-            plain_ref.data_mut().fill_uniform(params.base2k, &mut source);
+            module_ref.fill_glwe_from_source(&mut plain_ref, &mut source);
             let mut plain_test = module_test.glwe_plaintext_alloc(infos.base2k, infos.k);
             plain_ref.transfer_into(&mut plain_test);
             for offset in [0, params.base2k - 1, params.base2k] {
@@ -852,7 +851,6 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    use poulpy_hal::layouts::FillUniform;
     let mut source = Source::new([61; 32]);
     for &rank in &shapes.ranks {
         let infos = crate::layouts::GGSWLayout {
@@ -864,7 +862,11 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
             rank: (rank as u32).into(),
         };
         let mut a_ref = module_ref.ggsw_alloc_from_infos(&infos);
-        a_ref.fill_uniform(params.base2k, &mut source);
+        for row in 0..infos.dnum.as_usize() {
+            for col in 0..rank + 1 {
+                module_ref.fill_glwe_from_source(&mut a_ref.at_view_mut(row, col), &mut source);
+            }
+        }
         let mut a_test = module_test.ggsw_alloc_from_infos(&infos);
         a_ref.transfer_into(&mut a_test);
         for k in [-5i64, 0, 1, module_ref.n() as i64, 2 * module_ref.n() as i64 + 1] {

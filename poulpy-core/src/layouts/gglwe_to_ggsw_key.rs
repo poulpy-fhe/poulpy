@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos,
@@ -212,14 +209,6 @@ impl GGLWEInfos for GGLWEToGGSWKeyLayout {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEToGGSWKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWEToGGSWKey<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.keys
-            .iter_mut()
-            .for_each(|key: &mut GGLWE<D, W>| key.fill_uniform(log_bound, source))
     }
 }
 

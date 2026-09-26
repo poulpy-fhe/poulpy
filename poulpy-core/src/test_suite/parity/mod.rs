@@ -46,13 +46,18 @@ pub use polynomial_evaluation::*;
 pub use preparation::*;
 pub use structure::*;
 
-use poulpy_hal::layouts::ZnxViewMut;
+use crate::oep::EncryptionImpl;
+use poulpy_hal::oep::HalVecZnxImpl;
 use poulpy_hal::{
-    layouts::{Backend, CopyFromHost, CopyToHost, FillUniform, HostDataMut, Module},
+    layouts::{Backend, CopyFromHost, CopyToHost, Module},
     source::Source,
 };
 
-use crate::layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, ModuleCoreAlloc};
+use crate::{
+    api::GLWEMaskFill,
+    layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, ModuleCoreAlloc},
+    test_suite::keys::fill_by_digit,
+};
 
 /// Restricts the sweep to what a backend can actually serve.
 ///
@@ -84,9 +89,9 @@ impl ParityShapes {
 }
 
 /// Coefficient word shared by every backend this suite compares.
-pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> {}
+pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl {}
 
-impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>> ParityBackend for BE {}
+impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl> ParityBackend for BE {}
 
 /// Builds precisely the advertised scratch capacity, poisoned before each operation.
 /// No other operation or backend's budget can conceal an underestimate.
@@ -106,25 +111,10 @@ pub(crate) fn poisoned_scratch<B: Backend>(bytes: usize) -> poulpy_hal::layouts:
 pub(crate) fn ref_glwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGLWE<BR>
 where
     BR: ParityBackend,
-    BR::OwnedBuf: HostDataMut,
     A: GLWEInfos,
 {
-    let base2k: usize = infos.base2k().into();
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
-    glwe.fill_uniform(base2k, source);
-    let k: usize = infos.k().as_usize();
-    let live: usize = k.div_ceil(base2k);
-    let pad: usize = (base2k - k % base2k) % base2k;
-    for col in 0..glwe.data.cols() {
-        if pad != 0 && live > 0 {
-            for digit in glwe.data.at_mut(col, live - 1) {
-                *digit &= !0i64 << pad;
-            }
-        }
-        for limb in live..glwe.data.size() {
-            glwe.data.at_mut(col, limb).fill(0);
-        }
-    }
+    module_ref.fill_glwe_from_source(&mut glwe, source);
     glwe
 }
 
@@ -132,11 +122,10 @@ where
 pub(crate) fn ref_gglwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGGLWE<BR>
 where
     BR: ParityBackend,
-    BR::OwnedBuf: HostDataMut,
     A: GGLWEInfos,
 {
     let mut gglwe = module_ref.gglwe_alloc_from_infos(infos);
-    gglwe.fill_uniform(infos.base2k().into(), source);
+    fill_by_digit(module_ref, &mut gglwe, 1, source);
     gglwe
 }
 

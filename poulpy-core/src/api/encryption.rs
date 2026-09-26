@@ -22,13 +22,18 @@ pub trait EncryptionInfos {
 }
 
 pub trait GLWEMaskFill<BE: Backend> {
-    /// Fill `rank` GLWE mask columns starting at `res_col` from `source_xa`.
-    fn fill_glwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, source_xa: &mut Source)
+    /// Fills the mask columns `1..=rank` of `res`, uniform at its radix and `k`, from `source_xa`.
+    fn fill_glwe_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 
-    /// Fill `rank` GLWE mask columns starting at `res_col` from a deterministic seed.
-    fn fill_glwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    /// Fills the mask of `res` as [`Self::fill_glwe_mask_from_source`] does from `Source::new(seed_xa)`.
+    fn fill_glwe_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: GLWEToBackendMut<BE>;
+
+    /// Fills every column of `res`, body included, uniform at its radix and `k`, from `source`.
+    fn fill_glwe_from_source<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 }

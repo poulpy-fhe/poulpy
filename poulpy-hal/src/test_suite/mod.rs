@@ -11,6 +11,7 @@ use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
     ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
+use crate::oep::HalVecZnxImpl;
 
 pub mod convolution;
 pub mod derived;
@@ -65,11 +66,11 @@ pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
 /// `MatZnx`) and keep all intermediate layouts backend-local.
 ///
 /// Pinned to `ZnxWord = i64`: the suites drive `encode_*`/`decode_*` and
-/// `FillUniform`, which are i64-only. A backend with a narrower coefficient
-/// word needs its own suites.
-pub trait TestBackend: Backend<ZnxWord = i64> {}
+/// `vec_znx_fill_uniform_source`, which are i64-only. A backend with a narrower
+/// coefficient word needs its own suites.
+pub trait TestBackend: Backend<ZnxWord = i64> + HalVecZnxImpl {}
 
-impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}
+impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl> TestBackend for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
