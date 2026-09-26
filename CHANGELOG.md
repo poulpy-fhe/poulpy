@@ -54,6 +54,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation while retaining their rotation keys.
+
 - **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.
 - Packing uses its reserved arena temporary instead of allocating a GLWE at every merge, and rejects mixed input layouts before mutation. Removed unused HAL scratch-query bounds from the automorphism reference.
 - Derived plaintext-minus-ciphertext subtraction negates the mask as well as the body. GGSW keyswitching respects a shorter destination row count; conversion and automorphism scratch sizing account for selected core overrides.

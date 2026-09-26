@@ -37,6 +37,39 @@ const ROTATE_EXTRA_SCRATCH: usize = 512;
 const TRACE_EXTRA_SCRATCH: usize = 4096;
 const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 
+#[test]
+fn downstream_baby_step_preparation_preserves_cache_shape() {
+    use poulpy_core::layouts::LinearTransformationBabySteps;
+    use poulpy_hal::api::Convolution;
+    use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView};
+    let module = Module::<FFT64Ref>::new(256);
+    let input = sample_glwe();
+    let mut normalized = module.glwe_alloc_from_infos(&input);
+    let mut scratch = ScratchOwned::<FFT64Ref>::alloc(module.glwe_normalize_tmp_bytes());
+    module.glwe_normalize(&mut normalized, &input, &mut scratch.borrow());
+    let mut cache = LinearTransformationBabySteps::alloc(&module, &[0, 1, 1], &normalized);
+    let mut expected = LinearTransformationBabySteps::alloc(&module, &[0], &normalized);
+    let mut scratch = ScratchOwned::<FFT64Ref>::alloc(module.cnv_prepare_left_tmp_bytes(cache.size(), normalized.size()));
+    module.cnv_prepare_left(
+        &mut expected.baby_step_mut(0).to_backend_mut(),
+        GLWEToBackendRef::<FFT64Ref>::to_backend_ref(&normalized).data(),
+        &mut scratch.borrow(),
+    );
+    for (_, operand) in cache.baby_steps_mut() {
+        module.cnv_prepare_left(
+            &mut operand.to_backend_mut(),
+            GLWEToBackendRef::<FFT64Ref>::to_backend_ref(&normalized).data(),
+            &mut scratch.borrow(),
+        );
+    }
+    assert_eq!(cache.baby_steps().collect::<Vec<_>>(), vec![0, 1]);
+    for rot in cache.baby_steps() {
+        assert_eq!(cache.baby_step(rot).data(), expected.baby_step(0).data());
+        assert_eq!(cache.baby_step(rot).cols(), 3);
+        assert_eq!(cache.baby_step(rot).size(), normalized.size());
+    }
+}
+
 // The backend can use reference helpers while overriding its public dispatch.
 unsafe impl GLWERotateImpl for DelegatingFFT64Ref {
     fn glwe_rotate_tmp_bytes(module: &Module<Self>) -> usize {
