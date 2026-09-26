@@ -1,9 +1,8 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEDecrypt, GLWEEncryptPk, GLWENormalize, GLWESub, GetDistribution,
+    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWEDecrypt, GLWEEncryptPk, GLWENormalize, GLWESub, GetDistribution,
     ScratchArenaTakeCore, VecZnxAddNormal,
     layouts::{
-        GLWEInfos, GLWELayout, GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, Rank,
+        GLWEInfos, GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     },
 };
 use poulpy_hal::{
@@ -71,9 +70,8 @@ where
         S2: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
-        let infos = plaintext_layout(ct);
-        let (mut pt_in, scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
-        let (mut pt_out, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(&infos);
+        let (mut pt_in, scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
+        let (mut pt_out, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut pt_in, sk_in, &mut scratch_2);
         self.glwe_decrypt(ct, &mut pt_out, sk_out, &mut scratch_2);
         self.glwe_sub(res, &pt_in, &pt_out);
@@ -141,7 +139,6 @@ impl<BE: Backend> GLWEPublicKeyswitchShareReference<BE> for Module<BE>
 where
     Self: GLWEDecrypt<BE>
         + GLWEEncryptPk<BE>
-        + GLWECopy<BE>
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
         + VecZnxAddNormal<BE>
@@ -179,10 +176,9 @@ where
         E1: EncryptionInfos,
         E2: EncryptionInfos,
     {
-        let infos = plaintext_layout(ct);
-        let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
+        let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut pt, sk_in, &mut scratch_1);
-        let base2k = infos.base2k.as_usize();
+        let base2k = ct.base2k().as_usize();
         self.vec_znx_sub_assign(pt.data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.vec_znx_add_normal(base2k, pt.data_mut(), 0, flood.noise_infos(), source_xe);
         self.glwe_normalize_assign(&mut pt, &mut scratch_1);
@@ -204,18 +200,13 @@ where
         C: GLWEToBackendRef<BE> + GLWEInfos,
         H: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        self.glwe_copy(res, share, scratch);
+        assert!(
+            ct.n() == res.n() && ct.base2k() == res.base2k(),
+            "invalid finalization: ciphertext and output layouts differ"
+        );
+        self.glwe_normalize(res, share, scratch);
         res.set_canonical(false);
         self.vec_znx_add_assign(res.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(res, scratch);
-    }
-}
-
-fn plaintext_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
-    GLWELayout {
-        n: infos.n(),
-        base2k: infos.base2k(),
-        k: infos.k(),
-        rank: Rank(0),
     }
 }

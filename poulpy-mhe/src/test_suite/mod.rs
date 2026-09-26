@@ -133,6 +133,12 @@ macro_rules! mhe_backend_test_suite {
             fn glwe_public_keyswitch() {
                 $crate::test_suite::keyswitch::test_glwe_public_keyswitch(&Module::<$backend>::new(256));
             }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext and output layouts differ")]
+            fn glwe_public_keyswitch_finalize_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
         }
     };
 }

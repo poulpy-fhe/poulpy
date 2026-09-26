@@ -6,8 +6,8 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, NoiseInfos,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
-        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
+        Base2K, GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{
@@ -178,6 +178,25 @@ where
     module.glwe_public_keyswitch_finalize(&mut eager, &ct, &acc, &mut scratch.borrow());
     assert_eq!(lazy, eager);
     acc.write_to(&mut Vec::new()).unwrap();
+}
+
+/// Finalizing into an output whose radix differs from the ciphertext's panics.
+pub fn test_glwe_public_keyswitch_finalize_layout_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWEPublicKeyswitchShare<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout(module);
+    let ct_layout = GLWELayout {
+        base2k: Base2K(BASE2K.0 + 1),
+        ..layout
+    };
+    let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&ct_layout);
+    let share: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_keyswitch_finalize_tmp_bytes());
+    module.glwe_public_keyswitch_finalize(&mut res, &ct, &share, &mut scratch.borrow());
 }
 
 fn glwe_layout<BE: poulpy_hal::layouts::Backend>(module: &Module<BE>) -> GLWELayout {

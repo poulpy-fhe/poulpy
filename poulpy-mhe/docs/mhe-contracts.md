@@ -48,7 +48,8 @@ Key switching shares are core `GLWE`s: aggregate them with core
 `glwe_add_assign` and normalize them with core `glwe_normalize_assign`, which
 track core's canonical flag. A share carries the party's smudging noise,
 drawn with the `flood` noise parameters, so that the aggregate reveals
-nothing about the parties' secrets beyond the switched ciphertext.
+nothing about the parties' secrets beyond the switched ciphertext, provided
+the `flood` sigma is large compared with the input ciphertext's noise.
 
 ## Replacing an operation
 
