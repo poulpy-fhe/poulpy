@@ -1,4 +1,4 @@
-//! Backend handle and module initialization for [`FFT64Ref`](crate::FFT64Ref).
+//! Backend handle and module initialization for [`FFT64Ref`](super::FFT64Ref).
 //!
 //! This module defines:
 //!
@@ -23,7 +23,7 @@ use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSe
 
 use super::FFT64Ref;
 
-/// Opaque handle for the [`FFT64Ref`](crate::FFT64Ref) backend.
+/// Opaque handle for the [`FFT64Ref`](super::FFT64Ref) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
