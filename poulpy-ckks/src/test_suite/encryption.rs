@@ -5,11 +5,17 @@ use super::helpers::{
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
     gen_sk, quantized_slots, test_vector_1,
 };
-use crate::{CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, api::CKKSDecryptOps, layouts::CKKSModuleAlloc};
+use super::parity::helpers::snapshot;
+use crate::{
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    api::{CKKSDecryptOps, CKKSEncryptOps},
+    layouts::CKKSModuleAlloc,
+};
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
+    source::Source,
 };
 
 use crate::SlotsKind;
@@ -112,6 +118,82 @@ where
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     assert_precision_for_log_delta("encrypt_decrypt re", &re_out, &re1, ct.log_delta(), params.n);
     assert_precision_for_log_delta("encrypt_decrypt im", &im_out, &im1, ct.log_delta(), params.n);
+}
+
+/// Encryption and decryption reject mismatched degrees without changing outputs or random sources.
+pub fn test_encryption_degree_mismatch_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let encoder = ReferenceEncoder::<E>::new(params.n / 2).unwrap();
+    let (re, im) = test_vector_1::<F>(params.n / 2);
+    let sk = gen_sk(&params, module, host_module, [0; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let mut pt = module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap();
+    let ct_before = snapshot::<BE, _>(&ct);
+    let pt_before = snapshot::<BE, _>(&pt);
+    let mut xe = Source::new([1; 32]);
+    let mut xa = Source::new([2; 32]);
+
+    for other_n in [params.n / 2, params.n * 2] {
+        let other_params = CKKSTestParams {
+            n: other_n,
+            hw: params.hw.min(other_n),
+            ..params
+        };
+        let other_module = Module::<BE>::new(other_n as u64);
+        let other_sk = gen_sk(&other_params, &other_module, host_module, [3; 32]);
+        for (call_module, key) in [(module, &other_sk), (&other_module, &sk), (&other_module, &other_sk)] {
+            let expected = |op| CKKSCompositionError::EncryptionDegreeMismatch {
+                op,
+                module_n: call_module.n(),
+                ct_n: params.n,
+                sk_n: key.n().as_usize(),
+            };
+            let err = call_module
+                .ckks_decrypt(&mut pt, &ct, key, &mut scratch.borrow())
+                .unwrap_err();
+            assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
+            assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+
+            let err = call_module
+                .ckks_encrypt_sk(
+                    &mut ct,
+                    &pt,
+                    key,
+                    &params.glwe_layout(),
+                    &mut xe,
+                    &mut xa,
+                    &mut scratch.borrow(),
+                )
+                .unwrap_err();
+            assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
+            assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+        }
+    }
+    assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
+    assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }
 
 pub fn test_decrypt_extract_same_meta<BE, F, E>(

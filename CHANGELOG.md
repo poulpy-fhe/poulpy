@@ -79,6 +79,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- `ckks_encrypt_sk` and `ckks_decrypt` return `EncryptionDegreeMismatch` when the ciphertext or prepared secret key degree differs from the module degree, before backend dispatch or output mutation.
 - **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.
 - EvalMod scratch sizing includes the final copy into the caller's destination, including copy overrides whose workspace grows with destination capacity.
 - **Breaking:** add/subtract-one operations have dedicated `ckks_add_one_tmp_bytes` / `ckks_sub_one_tmp_bytes` queries, following the selected plaintext-constant implementation by default. Shared polynomial and EvalMod budgets include these queries. Add/subtract reference wrappers and backend macros share one definition.
