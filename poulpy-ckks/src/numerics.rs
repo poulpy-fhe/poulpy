@@ -10,7 +10,7 @@ mod roots;
 ///
 /// Arithmetic uses round-to-nearest, ties-to-even with gradual underflow.
 /// Implementations must preserve the results of each separate multiply/add.
-/// See `docs/deterministic-encoding.md` for the transform contract.
+/// See `docs/backends.md` for the encoding contract.
 pub trait CKKSFloat: Float + FromPrimitive {
     /// Significand precision, including the implicit bit.
     const SIGNIFICAND_BITS: u32;

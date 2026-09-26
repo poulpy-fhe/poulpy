@@ -131,3 +131,15 @@ CPU backends. Production fallback paths use `poulpy-cpu-portable`.
 The oracle owns its FFT/NTT arithmetic and tables. Generic HAL/Core/CKKS
 compositions are shared across backends.
 See [oracle validation boundaries](../poulpy-cpu-oracle/README.md).
+
+## CKKS encoding
+
+CKKS encoding produces identical plaintext bytes on every backend at a given scalar precision (`f64` or `Quad`).
+A backend implementing `CKKSEncodingImpl` must:
+
+- run the portable REIM butterfly graph with each multiply, add and subtract rounded separately (no FMA, no reassociation);
+- use the correctly rounded roots of unity from `CKKSFloat::ckks_root_of_unity` as twiddles;
+- convert between scalars and integers with `CKKSFloat::ckks_quantize` and `ckks_dequantize`;
+- run in the default floating-point environment (round to nearest even, subnormals preserved).
+
+Layouts and scheduling are free. `poulpy-ckks/src/test_suite/determinism.txt` freezes the expected bytes, and the oracle checks the transform and the roots independently.

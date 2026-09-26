@@ -445,13 +445,16 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
     fn new(m: usize) -> Self {
         use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
         let log_order = (4 * m).trailing_zeros();
+        let order = F::from_u64(1 << log_order).unwrap();
         let root = move |turn: F| {
-            let shift = log_order as usize;
-            let k = turn
-                .ckks_quantize(shift)
-                .filter(|&k| F::ckks_dequantize(k, shift) == turn)
-                .expect("twiddle turn is a non-negative multiple of the root order");
-            F::ckks_root_of_unity(k as u64, log_order)
+            // Scaling a dyadic turn by the power-of-two order is exact.
+            let scaled = turn * order;
+            let k = scaled.to_u64().unwrap();
+            assert!(
+                F::from_u64(k).unwrap() == scaled,
+                "twiddle turn is a multiple of 2^-{log_order}"
+            );
+            F::ckks_root_of_unity(k, log_order)
         };
         Self {
             fft: ReimFFTTable::new_with_roots(m, root),

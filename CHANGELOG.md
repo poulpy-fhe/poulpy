@@ -45,7 +45,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - **Breaking, behaviour:** make CKKS preparation and encoding reproducible across backends at each scalar precision (`f64` and binary128 `Quad`) with canonical setup math, a fixed unfused FFT graph, and exact float/integer conversion.
   Encoded bytes can differ from earlier versions; rebuild cached bootstrap parameters.
   Custom encoding scalars must implement `numerics::CKKSFloat`.
-  The [numerical contract](docs/deterministic-encoding.md) specifies the finite-input domain and floating-point environment.
+  The encoding contract for backends is in [docs/backends.md](docs/backends.md#ckks-encoding).
 - Add a checked binary64-to-`i64` fast path that preserves exact power-of-two quantization and rejects non-finite values and overflow.
 - Add `CKKSFloat::ckks_root_of_unity`, which returns the correctly rounded `(cos, sin)` of `2πk / 2^log_order`.
   Orders up to `2^17` read checked-in binary64 and binary128 quadrant tables; larger orders evaluate the same definition on demand.
@@ -69,7 +69,6 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
   NEON uses the canonical portable encoding transform, and the oracle independently implements the same arithmetic graph.
   Ring FFTs retain their fused kernels.
 - Initialize encoding transform dimensions on demand and build encoding twiddles from the correctly rounded root tables through `ReimFFTTable::new_with_roots` and `ReimIFFTTable::new_with_roots`; ring tables keep their bytes.
-  Remaining overhead and controlled measurements are recorded in [the encoding performance notes](docs/deterministic-encoding.md#performance).
 - The oracle derives roots of unity independently with fixed-point integer arithmetic and checks every production root of order `2^17` in both precisions.
 - Enable `poulpy-cpu-oracle/enable-ckks` in every CI backend feature set so the oracle's CKKS integration, encoder, and conformance tests run alongside the production backend suites.
 - **Breaking:** rename `poulpy-cpu-ref` to `poulpy-cpu-portable`, `FFT64Ref` to `FFT64Portable`, and `NTT4x30Ref` to `NTT4x30Portable`. Update production fallback dependencies and backend imports throughout the workspace. Existing scalar kernels and behavior are preserved.
