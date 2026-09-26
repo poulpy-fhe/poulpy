@@ -10,8 +10,9 @@ defaults in `oep::derived`.
 
 `api::pat` holds the operations every PAT shape shares, `api::public_key` the
 collective public key protocol, `api::evaluation_key` the collective
-switching and automorphism key protocols and `api::keyswitch` the collective
-key switching protocols. All are re-exported by `api` and the crate root.
+switching and automorphism key protocols, `api::keyswitch` the collective key
+switching protocols and `api::tensor_key` the collective tensor key protocol.
+All are re-exported by `api` and the crate root.
 Every operation that takes caller scratch has a matching `_tmp_bytes` query in
 the same trait.
 
@@ -27,6 +28,7 @@ the same trait.
 | `GLWEAutomorphismKeyShare` | `GLWEAutomorphismKeyShareImpl` | `reference::GLWEAutomorphismKeyShareReference`; aggregation, normalization and finalization are derived defaults |
 | `GLWEKeyswitchShare` | `GLWEKeyswitchShareImpl` | `reference::GLWEKeyswitchShareReference` |
 | `GLWEPublicKeyswitchShare` | `GLWEPublicKeyswitchShareImpl` | `reference::GLWEPublicKeyswitchShareReference` |
+| `GLWETensorKeyShare` | `GLWETensorKeyShareImpl` | `reference::GLWETensorKeyShareReference`; aggregation, normalization and finalization are the `GGLWEPat` operations |
 
 ## Canonical flag
 
@@ -50,6 +52,17 @@ track core's canonical flag. A share carries the party's smudging noise,
 drawn with the `flood` noise parameters, so that the aggregate reveals
 nothing about the parties' secrets beyond the switched ciphertext, provided
 the `flood` sigma is large compared with the input ciphertext's noise.
+`GLWEPublicKeyswitchShare` needs a public key at least as precise as the
+share.
+
+## Tensor key shares
+
+A tensor key share is a `GGLWEPat` laid out as the tensor key: every entry is
+an encryption of zero under the collective public key with a component of the
+party's secret added to its masks. Aggregate, normalize and finalize the
+shares with the `GGLWEPat` operations of `PatAggregate`, `PatNormalize` and
+`PatFinalize`; the finalized key is a core `GLWETensorKey` of the ideal
+secret. The public key must be at least as precise as the share.
 
 ## Replacing an operation
 
@@ -58,8 +71,8 @@ seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, `impl_mhe_public_key_reference!`,
-`impl_mhe_evaluation_key_reference!` or `impl_mhe_keyswitch_reference!` alone
-when replacing another one. The
+`impl_mhe_evaluation_key_reference!`, `impl_mhe_keyswitch_reference!` or
+`impl_mhe_tensor_key_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
@@ -69,5 +82,5 @@ Size scratch with the queries: `pat_normalize_tmp_bytes`,
 `glwe_public_key_finalize_tmp_bytes`, and the share, normalize and finalize
 queries of `GLWESwitchingKeyShare` and `GLWEAutomorphismKeyShare`, and the
 share and finalize queries of `GLWEKeyswitchShare` and
-`GLWEPublicKeyswitchShare`. A replacement that needs more workspace replaces
-the matching query.
+`GLWEPublicKeyswitchShare`, and the share query of `GLWETensorKeyShare`. A
+replacement that needs more workspace replaces the matching query.

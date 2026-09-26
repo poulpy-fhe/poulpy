@@ -32,3 +32,5 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   `GLWEAutomorphismKey` of the ideal secrets.
 - `GLWEKeyswitchShare`, `GLWEPublicKeyswitchShare`: collective key switching
   of a ciphertext to the ideal output secret or to a public key.
+- `GLWETensorKeyShare`: the collective tensor (relinearization) key, from
+  `GGLWEPat` shares to a core `GLWETensorKey` of the ideal secret.
