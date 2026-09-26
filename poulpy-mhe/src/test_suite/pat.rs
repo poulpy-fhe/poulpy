@@ -13,7 +13,7 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, WriterTo, ZnxView, ZnxViewMut},
+    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchOwned, WriterTo, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -306,13 +306,34 @@ pub(crate) fn assert_gglwe_noise<BE, C, S>(
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let bound = aggregate_noise_bound(ct.k().as_usize());
+    assert_gglwe_noise_within(module, ct, &pt_want.data().to_ref(), sk, bound, scratch);
+}
+
+/// Every entry `(row, col)` of `ct` decrypts under `sk` to column `col` of
+/// `pt_want` with log2 noise at most `bound`.
+pub(crate) fn assert_gglwe_noise_within<BE, C, S>(
+    module: &Module<BE>,
+    ct: &C,
+    pt_want: &ScalarZnx<&[u8], i64>,
+    sk: &S,
+    bound: f64,
+    scratch: &mut ScratchOwned<BE>,
+) where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GGLWENoise<BE>,
+    C: GGLWEToBackendRef<BE> + GGLWEInfos,
+    S: poulpy_core::layouts::GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+{
     for row in 0..ct.dnum().as_usize() {
         for col in 0..ct.rank_in().as_usize() {
             let noise: f64 = module
-                .gglwe_noise(ct, row, col, &pt_want.data().to_ref(), sk, &mut scratch.borrow())
+                .gglwe_noise(ct, row, col, pt_want, sk, &mut scratch.borrow())
                 .std()
                 .log2();
-            assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound");
+            assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound {bound}");
         }
     }
 }

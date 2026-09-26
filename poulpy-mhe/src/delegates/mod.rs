@@ -3,3 +3,4 @@ mod evaluation_key;
 mod keyswitch;
 mod pat;
 mod public_key;
+mod tensor_key;

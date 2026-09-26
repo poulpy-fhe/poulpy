@@ -7,6 +7,7 @@ pub mod keyswitch;
 pub mod layouts;
 pub mod pat;
 pub mod public_key;
+pub mod tensor_key;
 
 /// Runs every `poulpy-mhe` test against `$backend`.
 #[macro_export]
@@ -144,6 +145,17 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid share: public key less precise than the share")]
             fn glwe_public_keyswitch_pk_precision() {
                 $crate::test_suite::keyswitch::test_glwe_public_keyswitch_pk_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_tensor_key() {
+                $crate::test_suite::tensor_key::test_glwe_tensor_key(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: public key less precise than the share")]
+            fn glwe_tensor_key_pk_precision() {
+                $crate::test_suite::tensor_key::test_glwe_tensor_key_pk_precision(&Module::<$backend>::new(64));
             }
         }
     };
