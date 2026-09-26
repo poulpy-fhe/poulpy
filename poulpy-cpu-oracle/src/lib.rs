@@ -50,3 +50,5 @@ pub use ntt4x30::{NTT4x30Oracle, NTT4x30OracleHandle};
 
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_encoding_fft;
+#[cfg(feature = "enable-ckks")]
+pub mod ckks_roots;

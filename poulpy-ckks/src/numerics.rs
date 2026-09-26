@@ -4,12 +4,17 @@ use num_traits::{Float, FromPrimitive};
 
 use crate::Quad;
 
+mod roots;
+
 /// Platform-independent setup math and exact power-of-two plaintext conversion.
 ///
 /// Arithmetic uses round-to-nearest, ties-to-even with gradual underflow.
 /// Implementations must preserve the results of each separate multiply/add.
 /// See `docs/deterministic-encoding.md` for the transform contract.
 pub trait CKKSFloat: Float + FromPrimitive {
+    /// Significand precision, including the implicit bit.
+    const SIGNIFICAND_BITS: u32;
+
     fn ckks_sin(self) -> Self;
     fn ckks_cos(self) -> Self;
     fn ckks_powf(self, exponent: Self) -> Self;
@@ -19,6 +24,17 @@ pub trait CKKSFloat: Float + FromPrimitive {
 
     fn ckks_sin_cos(self) -> (Self, Self) {
         (self.ckks_sin(), self.ckks_cos())
+    }
+
+    /// `(cos, sin)` of `2π·k / 2^log_order`, each correctly rounded.
+    fn ckks_root_of_unity(k: u64, log_order: u32) -> (Self, Self) {
+        roots::root_of_unity(k, log_order)
+    }
+
+    /// `cos(2π·i / 2^log_order)` for `0 ≤ i ≤ 2^(log_order - 2)`, correctly rounded.
+    #[doc(hidden)]
+    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
+        roots::generated_quadrant_cos(i, log_order)
     }
 
     fn ckks_powi(self, exponent: i32) -> Self {
@@ -52,6 +68,8 @@ pub trait CKKSFloat: Float + FromPrimitive {
 }
 
 impl CKKSFloat for f64 {
+    const SIGNIFICAND_BITS: u32 = 53;
+
     fn ckks_sin(self) -> Self {
         libm::sin(self)
     }
@@ -69,6 +87,15 @@ impl CKKSFloat for f64 {
     }
     fn ckks_sqrt(self) -> Self {
         libm::sqrt(self)
+    }
+    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
+        match roots::table_index(i, log_order) {
+            Some(index) => {
+                let bytes = &roots::COS_QUADRANT_F64[8 * index..8 * index + 8];
+                Self::from_bits(u64::from_le_bytes(bytes.try_into().unwrap()))
+            }
+            None => roots::generated_quadrant_cos(i, log_order),
+        }
     }
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {
@@ -90,6 +117,8 @@ impl CKKSFloat for f64 {
 }
 
 impl CKKSFloat for Quad {
+    const SIGNIFICAND_BITS: u32 = 113;
+
     fn ckks_sin(self) -> Self {
         Self(crate::scalar::backing::portable::sin(self.0))
     }
@@ -111,6 +140,15 @@ impl CKKSFloat for Quad {
     }
     fn ckks_sqrt(self) -> Self {
         Self(crate::scalar::backing::portable::sqrt(self.0))
+    }
+    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
+        match roots::table_index(i, log_order) {
+            Some(index) => {
+                let bytes = &roots::COS_QUADRANT_F128[16 * index..16 * index + 16];
+                Self::from_bits(u128::from_le_bytes(bytes.try_into().unwrap()))
+            }
+            None => roots::generated_quadrant_cos(i, log_order),
+        }
     }
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {

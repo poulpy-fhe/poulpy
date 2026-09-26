@@ -47,8 +47,11 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
   Custom encoding scalars must implement `numerics::CKKSFloat`.
   The [numerical contract](docs/deterministic-encoding.md) specifies the finite-input domain and floating-point environment.
 - Add a checked binary64-to-`i64` fast path that preserves exact power-of-two quantization and rejects non-finite values and overflow.
+- Add `CKKSFloat::ckks_root_of_unity`, which returns the correctly rounded `(cos, sin)` of `2πk / 2^log_order`.
+  Orders up to `2^17` read checked-in binary64 and binary128 quadrant tables; larger orders evaluate the same definition on demand.
+  Encoding twiddles and DFT matrix roots use these roots, and custom `CKKSFloat` implementations declare `SIGNIFICAND_BITS`.
 - Freeze encoding, DFT/EvalMod setup, and bootstrap ciphertext fixtures, including the imaginary EvalMod checkpoint after evaluation writes its output.
-  Independent FFT tests cover both precisions through degree 65,536; local AArch64 QEMU runs with glibc and musl verify the same fixtures as x86.
+  Independent FFT tests cover both precisions through degree 65,536; local AArch64 QEMU runs with musl verify the same fixtures as x86.
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 - `ckks_extract_pt_tmp_bytes`, the `carry_verb` tmp-bytes helpers, `ckks_add_many_tmp_bytes` and the `ckks_{copy,neg,mul_pow2,div_pow2,mul_i,div_i,mod_up}_tmp_bytes` families take the destination size, the same cascade as `poulpy-core`; `eval_baby_linear_combination_tmp_bytes` folds in `cnv_by_const_apply_add_tmp_bytes`.
 - **Breaking:** the OEP traits of `poulpy_ckks::oep` lose their backend type parameter, as the HAL and core ones did; `CKKSEncodingImpl<F>` and `DFTMatrixImpl<F>` keep their scalar parameter only. The `ckks_carry_verb_oep!` template declares `$Impl: Backend` and implements it for `BE`.
@@ -65,8 +68,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Use canonical encoding twiddles and preserve separate multiply/add rounding in AVX2 and AVX-512 SIMD encoding kernels.
   NEON uses the canonical portable encoding transform, and the oracle independently implements the same arithmetic graph.
   Ring FFTs retain their fused kernels.
-- Initialize encoding transform dimensions on demand and reuse binary128 trigonometric results during each table construction.
-  These changes reduce the deterministic encoder's setup cost without global caches or changed twiddle bytes; remaining overhead and controlled measurements are recorded in [the encoding performance notes](docs/deterministic-encoding.md#performance).
+- Initialize encoding transform dimensions on demand and build encoding twiddles from the correctly rounded root tables through `ReimFFTTable::new_with_roots` and `ReimIFFTTable::new_with_roots`; ring tables keep their bytes.
+  Remaining overhead and controlled measurements are recorded in [the encoding performance notes](docs/deterministic-encoding.md#performance).
+- The oracle derives roots of unity independently with fixed-point integer arithmetic and checks every production root of order `2^17` in both precisions.
 - Enable `poulpy-cpu-oracle/enable-ckks` in every CI backend feature set so the oracle's CKKS integration, encoder, and conformance tests run alongside the production backend suites.
 - **Breaking:** rename `poulpy-cpu-ref` to `poulpy-cpu-portable`, `FFT64Ref` to `FFT64Portable`, and `NTT4x30Ref` to `NTT4x30Portable`. Update production fallback dependencies and backend imports throughout the workspace. Existing scalar kernels and behavior are preserved.
 - Add the unpublished `poulpy-cpu-oracle` crate with `FFT64Oracle` and `NTT4x30Oracle`. The oracle implements only the required HAL primitives, with scalar transforms, direct products, independent CRT reconstruction, and arbitrary-precision integer normalization. Optional HAL operations and generic Core/CKKS compositions use their default implementations. Public-operation parity suites use the oracle through path-only development dependencies. Production fallbacks and raw-buffer compatibility tests use the portable backend.

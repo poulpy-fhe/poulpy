@@ -12,6 +12,7 @@ struct Butterfly<F> {
 /// Independent schedule of the canonical CKKS butterfly dependency graph.
 pub struct EncodingFFTTable<F> {
     m: usize,
+    log_order: u32,
     butterflies: Vec<Butterfly<F>>,
 }
 
@@ -30,12 +31,12 @@ fn reversed_fraction<F: CKKSEncodingScalar>(mut index: usize) -> F {
 
 impl<F: CKKSEncodingScalar> EncodingFFTTable<F> {
     fn push(&mut self, start: usize, half: usize, turn: F, rotated: bool) {
-        let angle = (F::one() + F::one()) * F::PI() * turn;
+        let (cos, sin) = crate::ckks_roots::root_of_unity(turn, self.log_order);
         self.butterflies.push(Butterfly {
             start,
             half,
-            cos: angle.ckks_cos(),
-            sin: angle.ckks_sin(),
+            cos,
+            sin,
             rotated,
         });
     }
@@ -87,6 +88,7 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
         assert!(m.is_power_of_two());
         let mut table = Self {
             m,
+            log_order: (4 * m).trailing_zeros().max(2),
             butterflies: Vec::new(),
         };
         table.schedule(0, m, F::from_f64(0.25).unwrap());

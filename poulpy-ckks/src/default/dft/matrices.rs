@@ -69,59 +69,16 @@ impl<F: Float> Cpx<F> {
     }
 }
 
-/// `roots[k] = exp(2πi·k / n)` for `k in 0..n`. `n = 4·slots`.
+/// `roots[k] = exp(2πi·k / n)`, correctly rounded, for `k in 0..n`. `n = 4·slots`.
 fn roots_of_unity<F: DftScalar>(n: usize) -> Vec<Cpx<F>> {
     debug_assert!(n >= 4 && n.is_power_of_two());
-    let two = F::from(2.0).unwrap();
-    let nf = F::from(n).unwrap();
-    let step = two * F::PI() / nf;
-
-    // `n == 4` has no complete octant; all of its roots are cardinal points.
-    if n == 4 {
-        return vec![
-            Cpx::new(F::one(), F::zero()),
-            Cpx::new(F::zero(), F::one()),
-            Cpx::new(-F::one(), F::zero()),
-            Cpx::new(F::zero(), -F::one()),
-        ];
-    }
-
-    // Evaluate only [0, π/4], then derive the other seven octants with
-    // exact sign changes and coordinate swaps. Unlike a recurrence, this adds
-    // no rounding drift and preserves unit modulus to the sin_cos accuracy.
-    let width = n >> 3;
-    let octant: Vec<Cpx<F>> = (0..=width)
+    let log_n = n.trailing_zeros();
+    (0..n as u64)
         .map(|k| {
-            let angle = step * F::from(k).unwrap();
-            let (sin, cos) = angle.ckks_sin_cos();
+            let (cos, sin) = F::ckks_root_of_unity(k, log_n);
             Cpx::new(cos, sin)
         })
-        .collect();
-    let mut roots = Vec::with_capacity(n);
-    for k in 0..n {
-        let sector = k / width;
-        let offset = k % width;
-        let direct = octant[offset];
-        let reflected = octant[width - offset];
-        roots.push(match sector {
-            0 => direct,
-            1 => Cpx::new(reflected.im, reflected.re),
-            2 => Cpx::new(-direct.im, direct.re),
-            3 => Cpx::new(-reflected.re, reflected.im),
-            4 => Cpx::new(-direct.re, -direct.im),
-            5 => Cpx::new(-reflected.im, -reflected.re),
-            6 => Cpx::new(direct.im, -direct.re),
-            7 => Cpx::new(reflected.re, -reflected.im),
-            _ => unreachable!(),
-        });
-    }
-
-    // Pin the axes to their exact representations, including positive zero.
-    roots[0] = Cpx::new(F::one(), F::zero());
-    roots[n >> 2] = Cpx::new(F::zero(), F::one());
-    roots[n >> 1] = Cpx::new(-F::one(), F::zero());
-    roots[3 * (n >> 2)] = Cpx::new(F::zero(), -F::one());
-    roots
+        .collect()
 }
 
 /// `pow5[i] = 5^i mod 4·slots`, for `i in 0..=2·slots`.

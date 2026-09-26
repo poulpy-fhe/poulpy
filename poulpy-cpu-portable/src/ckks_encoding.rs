@@ -444,27 +444,18 @@ impl<F: CKKSEncodingScalar> EncodingFFTTable<F> {
 impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
     fn new(m: usize) -> Self {
         use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
-        if size_of::<F>() <= size_of::<f64>() {
-            return Self {
-                fft: ReimFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
-                ifft: ReimIFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
-            };
-        }
-        // Reuse expensive wide-scalar evaluations across both twiddle layouts.
-        let cache = std::cell::RefCell::new(std::collections::HashMap::<Vec<u8>, (F, F)>::new());
-        let trig = |x: F| {
-            let mut cache = cache.borrow_mut();
-            let key = bytemuck::bytes_of(&x);
-            if let Some(&value) = cache.get(key) {
-                return value;
-            }
-            let value = (x.ckks_sin(), x.ckks_cos());
-            cache.insert(key.to_vec(), value);
-            value
+        let log_order = (4 * m).trailing_zeros();
+        let root = move |turn: F| {
+            let shift = log_order as usize;
+            let k = turn
+                .ckks_quantize(shift)
+                .filter(|&k| F::ckks_dequantize(k, shift) == turn)
+                .expect("twiddle turn is a non-negative multiple of the root order");
+            F::ckks_root_of_unity(k as u64, log_order)
         };
         Self {
-            fft: ReimFFTTable::new_with_trig(m, |x| trig(x).0, |x| trig(x).1),
-            ifft: ReimIFFTTable::new_with_trig(m, |x| trig(x).0, |x| trig(x).1),
+            fft: ReimFFTTable::new_with_roots(m, root),
+            ifft: ReimIFFTTable::new_with_roots(m, root),
         }
     }
 }
@@ -483,28 +474,6 @@ impl<F: CKKSEncodingScalar> NegacyclicFFT<F> for EncodingFFTTable<F> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn encoding_twiddle_cache_preserves_bits() {
-        use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
-        use poulpy_ckks::{Quad, numerics::CKKSFloat};
-        use poulpy_hal::api::NegacyclicFFTNew;
-
-        for log_slots in 0..=15 {
-            let slots = 1 << log_slots;
-            let cached = super::EncodingFFTTable::<Quad>::new(slots);
-            let fft = ReimFFTTable::new_with_trig(slots, Quad::ckks_sin, Quad::ckks_cos);
-            let ifft = ReimIFFTTable::new_with_trig(slots, Quad::ckks_sin, Quad::ckks_cos);
-            assert_eq!(
-                bytemuck::cast_slice::<Quad, u8>(cached.fft_twiddles()),
-                bytemuck::cast_slice::<Quad, u8>(fft.omg())
-            );
-            assert_eq!(
-                bytemuck::cast_slice::<Quad, u8>(cached.ifft_twiddles()),
-                bytemuck::cast_slice::<Quad, u8>(ifft.omg())
-            );
-        }
-    }
-
     use crate::{FFT64Portable, NTT4x30Portable};
     use poulpy_ckks::{
         CKKSMeta, SetCKKSInfos, SlotsKind,

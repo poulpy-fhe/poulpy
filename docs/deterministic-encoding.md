@@ -22,7 +22,8 @@ The oracle's ring transform retains its independent decomposition; production ri
   The floating-point environment must use this rounding mode with flushing of subnormals disabled.
 - Each FFT multiply, add, and subtract is a separate rounding operation.
   Fusing a multiply and an add, reassociating expressions, or changing the butterfly decomposition changes the result and is not permitted.
-- Setup uses `CKKSFloat` methods instead of platform transcendentals.
+- Roots of unity are correctly rounded; see [Roots of unity](#roots-of-unity).
+- Other setup constants use `CKKSFloat` methods instead of platform transcendentals.
   Binary64 uses pinned Rust `libm` with architecture dispatch disabled even when another dependency enables its `arch` feature.
   Binary128 uses the existing pure Rust Astro-float implementation at 192 working bits, followed by round-to-even conversion to 113 significand bits.
   This specifies a reproducible approximation; it does not claim correctly rounded transcendental functions for every argument.
@@ -50,11 +51,11 @@ For `m` complex slots:
 
 Decoding applies the forward transform followed by the inverse permutation.
 The canonical butterfly graph is the existing portable REIM graph, including its radix-4 decomposition, small transforms, and recursion above `m=2048`.
-Its twiddles use the same dyadic phase expressions and rounded `2*PI` as the portable tables, evaluated with canonical sine and cosine.
+The twiddle at turn `t`, an exact multiple of `1/(4m)`, is the correctly rounded root of unity `(cos 2πt, sin 2πt)`.
 Quarter-turn butterflies use the specified coordinate/sign operations, rather than fresh trigonometric evaluation at a shifted angle.
 
 `poulpy-cpu-oracle/src/ckks_encoding_fft.rs` independently constructs a sequence of butterflies for this graph.
-It neither imports production FFT kernels nor production twiddle tables.
+It imports neither production FFT kernels nor production twiddle tables, and derives its roots of unity independently.
 Forward execution walks the sequence; inverse execution walks it backwards.
 This is separate from the oracle's independent ring FFT, whose different decomposition remains useful for checking integer polynomial arithmetic.
 
@@ -62,17 +63,43 @@ Production portable encoding reuses the existing kernels with canonical tables.
 NEON encoding uses this implementation.
 AVX2 and AVX-512 encoding use their existing SIMD kernels with their FMA policy disabled at compile time.
 Ring FFTs continue to use their original tables and fused kernels.
-CPU encoding plans initialize each transform dimension on first use.
-For binary128, construction shares identical trigonometric results between forward and inverse twiddle layouts using a temporary cache keyed by the full scalar bytes.
-The cache is local to one construction and is then dropped; initialized tables remain owned by the module.
+CPU encoding plans initialize each transform dimension on first use; initialized tables remain owned by the module.
 
 A GPU implementation may use different memory layouts and scheduling, but must preserve the butterfly dependencies and rounding operations.
 Uploading canonical setup constants is also valid.
 Matching approximate decoded values or matching only the final integer rounding on a small corpus is insufficient.
 
+## Roots of unity
+
+`CKKSFloat::ckks_root_of_unity(k, log_order)` returns `(cos, sin)` of `2πk / 2^log_order`, each rounded to nearest, ties to even, from the exact value.
+This definition does not depend on any math library.
+
+`poulpy-ckks/src/numerics/cos_quadrant_f64.bin` and `cos_quadrant_f128.bin` hold the little-endian bits of `cos(2πi / 2^17)` for `i` in `0..=2^15` (256 KiB and 512 KiB).
+Every other root of order at most `2^17` is a table entry up to an exact sign change or coordinate swap: `cos` is even, `cos(π - θ) = -cos θ`, and `sin θ = cos(θ - π/2)`.
+Correct rounding commutes with these symmetries, so the derived coordinates are themselves correctly rounded.
+Cardinal points are exact, with positive zeros.
+
+Larger orders are first reduced to lowest terms.
+Roots that remain beyond the tables are evaluated with Astro-float: `π`, `cos`, and `sin` at a working precision of at least 320 bits, using the sine of the complement beyond `π/4`.
+The result is rounded only when the decision is stable across an error window of `2^8` units in the last working place; otherwise the precision doubles.
+The same generator writes the tables:
+
+```sh
+cargo +nightly-2026-05-14 test -p poulpy-ckks --release numerics::roots::tests::regenerate_quadrant_tables -- --ignored
+```
+
+A custom `CKKSFloat` declares `SIGNIFICAND_BITS` and obtains generated roots for every order.
+
+`poulpy-cpu-oracle/src/ckks_roots.rs` derives the same values without Astro-float.
+It computes `π` with Machin's formula and the cosine with its Taylor series on fixed-point `dashu-int` integers with 448 fractional bits, then asserts that a `2^16`-unit truncation-error window cannot change the rounding.
+
+Encoding twiddles and DFT matrix roots use these roots.
+PaCo and SHIP phases take runtime residues modulo large powers of two and use the canonical sine and cosine.
+
 ## Preparation and compatibility
 
-DFT roots and factor scaling, EvalMod interpolation nodes and amplitudes, Han–Ki degree selection, PaCo/SHIP phases, and approximation setup use the canonical math methods.
+DFT roots use the correctly rounded roots of unity.
+DFT factor scaling, EvalMod interpolation nodes and amplitudes, Han–Ki degree selection, PaCo/SHIP phases, and approximation setup use the canonical math methods.
 Generic polynomial interpolation accepts a cosine callback so that CKKS can choose its numerical policy without teaching Core about CKKS.
 
 The contract assumes identical input scalar bits, parameters, ciphertexts, and keys.
@@ -96,21 +123,24 @@ Future changes to the numerical algorithms must explicitly review this compatibi
 - Standard bootstrap fixtures check ciphertext words at input, C2S real and imaginary outputs, EvalMod real and imaginary outputs, and final output.
   The imaginary EvalMod checkpoint is captured after evaluation has written its output.
   Existing accuracy and manual/orchestrated-circuit checks remain active.
+- Both quadrant tables match the generator entry for entry.
+  The oracle's independent derivation matches every production root of order `2^17` in both precisions, and sampled roots of order `2^20`.
+  Symmetry tests check conjugation, quarter turns, and lowest-terms reduction bit for bit.
 - Codec tests cover half-integers, signed limits, non-finite values, the normal/subnormal transition, and double-rounding counterexamples.
   A binary128 arithmetic reference checks 70,000 combinations of binary64 inputs and seven scales through 1,074, checking both integer widths and both scalar implementations.
 - Native CI is configured to run the same fixtures on Linux x86-64, Intel macOS, Apple Silicon, and Linux AArch64.
   The portable lane additionally enables `libquadmath` to check that the feature cannot change CKKS output.
 
 Local validation ran the workspace and x86 backend suites, including AVX2 and AVX-512.
-Linux AArch64 encoding, setup, and complete bootstrap fixtures also ran locally under QEMU with both glibc and musl, covering portable and NEON backends with both scalar precisions.
-Both environments also passed the independent FFT corpus through degree 65,536.
+Linux AArch64 encoding, setup, and complete bootstrap fixtures also ran locally under QEMU with musl, covering portable and NEON backends with both scalar precisions.
+The same environment passed the independent FFT corpus through degree 65,536 and the root-table checks.
 Intel macOS and Apple Silicon passed cross-compilation checks; Intel macOS additionally passed actual AVX2 assembly code generation.
 QEMU Linux execution checks ARM arithmetic and byte parity, while native macOS CI checks the Apple OS and runtime combinations.
 
 Useful local commands:
 
 ```sh
-cargo +nightly-2026-05-14 test -p poulpy-ckks --profile ci numerics::tests
+cargo +nightly-2026-05-14 test -p poulpy-ckks --profile ci numerics::
 cargo +nightly-2026-05-14 test -p poulpy-cpu-portable --profile ci --features enable-ckks --test ckks_determinism
 cargo +nightly-2026-05-14 test -p poulpy-cpu-portable --profile ci --features enable-ckks encoding_determinism
 cargo +nightly-2026-05-14 test -p poulpy-cpu-portable --profile ci --features enable-ckks bootstrapping_standard_e2e
@@ -170,19 +200,21 @@ The AVX2 ring FFT timings at degree 65,536 remain within 1% of the original; the
 
 ### Cold setup
 
-Binary128 canonical transcendental evaluation still costs more than the original platform-dependent setup.
-Sharing identical trigonometric evaluations roughly halves table construction time: 594 ms versus 1,145 ms for the full geometric family at degree 65,536.
-Initializing dimensions on demand further avoids constructing unused tables.
-The following first-encoding timings include the requested encoding plan construction and use scale 110:
+Encoding table construction reads the root tables.
+The following first-encoding timings include encoding plan construction for `FFT64Avx512` at scale 58, as Criterion medians on one pinned CPU.
+The comparison column evaluates the same twiddles with canonical sine and cosine instead of the tables.
 
-| Degree | Original | Initial deterministic implementation | Fixed |
-| ---: | ---: | ---: | ---: |
-| 2,048 | 2.16 ms | about 37 ms | 9.92 ms |
-| 65,536 | 79.03 ms | about 1.2 s | 326.85 ms |
+| Scalar | Degree | Canonical trigonometry | Root tables |
+| --- | ---: | ---: | ---: |
+| `f64` | 2,048 | 41.0 µs | 47.7 µs |
+| `f64` | 65,536 | 1.47 ms | 1.68 ms |
+| `Quad` | 2,048 | 10.0 ms | 0.70 ms |
+| `Quad` | 65,536 | 331 ms | 34.3 ms |
 
-This reduces the cold regression substantially but does not eliminate it: first binary128 encoding remains about four times the original cost.
+Binary128 setup is dominated by the Astro-float evaluations that the tables replace.
+For binary64, the symmetry reduction and table reads cost about 0.2 ms more than pinned `libm` at degree 65,536.
 Later calls reuse the initialized dimension; requesting another dimension constructs that dimension once.
-The temporary trig cache is discarded after construction, and there is no global cache.
+Cached-plan encoding runs the same kernels with the same table layout.
 These measurements do not claim native ARM, macOS, GPU, or total bootstrap performance.
 
 ### Reproducing the workloads
