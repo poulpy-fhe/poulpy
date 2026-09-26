@@ -4,10 +4,10 @@
 //! same result.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, NoiseInfos,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, NoiseInfos,
     layouts::{
-        Base2K, GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
+        Base2K, GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
+        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -18,7 +18,7 @@ use poulpy_hal::{
     test_suite::vec_znx_backend_mut,
 };
 
-use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, Secret, ideal_secret, party_secrets, secret_from_seed};
+use super::fixtures::{BASE2K, K, PARTIES, RANK, Secret, collective_public_key, ideal_secret, party_secrets, secret_from_seed};
 use crate::{
     api::{GLWEKeyswitchShare, GLWEPublicKeyShare, GLWEPublicKeyswitchShare, PatAggregate},
     layouts::MHEModuleAlloc,
@@ -113,29 +113,13 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_sk_tmp_bytes(&layout)
-            .max(module.glwe_public_key_share_tmp_bytes(&layout))
-            .max(module.glwe_public_key_finalize_tmp_bytes())
-            .max(module.glwe_public_key_prepare_tmp_bytes(&layout))
-            .max(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout))
+            .max(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout, &layout))
             .max(module.glwe_public_keyswitch_finalize_tmp_bytes())
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
 
-    let mut pk_acc = module.glwe_pat_compressed_alloc_from_infos(&layout);
-    let mut pk_share = module.glwe_pat_compressed_alloc_from_infos(&layout);
-    for (i, (_, sk)) in parties_out.iter().enumerate() {
-        let dst = if i == 0 { &mut pk_acc } else { &mut pk_share };
-        let mut source_xe = Source::new([40 + i as u8; 32]);
-        module.glwe_public_key_share(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
-        if i > 0 {
-            module.glwe_pat_compressed_aggregate_assign(&mut pk_acc, &pk_share);
-        }
-    }
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    module.glwe_public_key_finalize(&mut pk, &pk_acc, Distribution::TernaryProb(0.5), &mut scratch.borrow());
-    let mut pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&layout);
-    module.glwe_public_key_prepare(&mut pk_out, &pk, &mut scratch.borrow());
+    let pk_out = collective_public_key(module, &parties_out, &layout);
 
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
 
@@ -197,6 +181,39 @@ where
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_keyswitch_finalize_tmp_bytes());
     module.glwe_public_keyswitch_finalize(&mut res, &ct, &share, &mut scratch.borrow());
+}
+
+/// Sharing under a public key less precise than the share panics.
+pub fn test_glwe_public_keyswitch_pk_precision<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>:
+        GLWEPublicKeyswitchShare<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout(module);
+    let pk_layout = GLWELayout {
+        k: TorusPrecision(K.0 - BASE2K.0),
+        ..layout
+    };
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+    let (_, sk_in) = secret_from_seed(module, [150u8; 32]);
+    let pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
+    let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.glwe_public_keyswitch_share_tmp_bytes(&layout, &layout, &pk_layout));
+    module.glwe_public_keyswitch_share(
+        &mut res,
+        &ct,
+        &sk_in,
+        &pk_out,
+        &flood_infos(layout),
+        &enc_infos,
+        &mut Source::new([20u8; 32]),
+        &mut Source::new([10u8; 32]),
+        &mut scratch.borrow(),
+    );
 }
 
 fn glwe_layout<BE: poulpy_hal::layouts::Backend>(module: &Module<BE>) -> GLWELayout {

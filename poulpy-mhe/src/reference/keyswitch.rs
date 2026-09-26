@@ -96,10 +96,11 @@ where
 }
 
 pub trait GLWEPublicKeyswitchShareReference<BE: Backend> {
-    fn glwe_public_keyswitch_share_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    fn glwe_public_keyswitch_share_tmp_bytes_reference<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
-        B: GLWEInfos;
+        B: GLWEInfos,
+        P: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_public_keyswitch_share_reference<R, C, S, K, E1, E2>(
@@ -145,16 +146,18 @@ where
         + VecZnxSubAssign<BE>
         + VecZnxAddAssign<BE>,
 {
-    fn glwe_public_keyswitch_share_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    fn glwe_public_keyswitch_share_tmp_bytes_reference<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos,
+        P: GLWEInfos,
     {
         BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(ct_infos))
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
                 .max(self.glwe_normalize_tmp_bytes())
                 .max(self.glwe_encrypt_pk_tmp_bytes(res_infos))
+                .max(self.glwe_encrypt_pk_tmp_bytes(pk_infos))
     }
 
     fn glwe_public_keyswitch_share_reference<R, C, S, K, E1, E2>(
@@ -176,6 +179,10 @@ where
         E1: EncryptionInfos,
         E2: EncryptionInfos,
     {
+        assert!(
+            pk_out.size() >= res.size(),
+            "invalid share: public key less precise than the share"
+        );
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut pt, sk_in, &mut scratch_1);
         let base2k = ct.base2k().as_usize();

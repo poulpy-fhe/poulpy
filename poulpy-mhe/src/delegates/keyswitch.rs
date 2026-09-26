@@ -54,12 +54,13 @@ impl<BE: Backend + GLWEKeyswitchShareImpl> GLWEKeyswitchShare<BE> for Module<BE>
 }
 
 impl<BE: Backend + GLWEPublicKeyswitchShareImpl> GLWEPublicKeyswitchShare<BE> for Module<BE> {
-    fn glwe_public_keyswitch_share_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    fn glwe_public_keyswitch_share_tmp_bytes<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos,
+        P: GLWEInfos,
     {
-        BE::glwe_public_keyswitch_share_tmp_bytes(self, ct_infos, res_infos)
+        BE::glwe_public_keyswitch_share_tmp_bytes(self, ct_infos, res_infos, pk_infos)
     }
 
     fn glwe_public_keyswitch_share<R, C, S, K, E1, E2>(

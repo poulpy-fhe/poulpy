@@ -50,10 +50,11 @@ pub unsafe trait GLWEKeyswitchShareImpl: Backend {
 /// Reproduce the reference share and finalization within the queried scratch
 /// budgets.
 pub unsafe trait GLWEPublicKeyswitchShareImpl: Backend {
-    fn glwe_public_keyswitch_share_tmp_bytes<A, B>(module: &Module<Self>, ct_infos: &A, res_infos: &B) -> usize
+    fn glwe_public_keyswitch_share_tmp_bytes<A, B, P>(module: &Module<Self>, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
-        B: GLWEInfos;
+        B: GLWEInfos,
+        P: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_public_keyswitch_share<R, C, S, K, E1, E2>(
@@ -140,16 +141,18 @@ macro_rules! impl_mhe_keyswitch_reference {
         }
 
         unsafe impl $crate::oep::GLWEPublicKeyswitchShareImpl for $be {
-            fn glwe_public_keyswitch_share_tmp_bytes<A, B>(
+            fn glwe_public_keyswitch_share_tmp_bytes<A, B, P>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_infos: &A,
                 res_infos: &B,
+                pk_infos: &P,
             ) -> usize
             where
                 A: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEInfos,
+                P: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchShareReference<$be>>::glwe_public_keyswitch_share_tmp_bytes_reference(module, ct_infos, res_infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchShareReference<$be>>::glwe_public_keyswitch_share_tmp_bytes_reference(module, ct_infos, res_infos, pk_infos)
             }
 
             fn glwe_public_keyswitch_share<R, C, S, K, E1, E2>(

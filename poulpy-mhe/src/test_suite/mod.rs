@@ -139,6 +139,12 @@ macro_rules! mhe_backend_test_suite {
             fn glwe_public_keyswitch_finalize_layout_mismatch() {
                 $crate::test_suite::keyswitch::test_glwe_public_keyswitch_finalize_layout_mismatch(&Module::<$backend>::new(64));
             }
+
+            #[test]
+            #[should_panic(expected = "invalid share: public key less precise than the share")]
+            fn glwe_public_keyswitch_pk_precision() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_pk_precision(&Module::<$backend>::new(64));
+            }
         }
     };
 }

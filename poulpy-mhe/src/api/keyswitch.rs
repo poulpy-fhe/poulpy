@@ -51,11 +51,13 @@ pub trait GLWEKeyswitchShare<BE: Backend> {
 /// Collective key switching to a public key: the finalized ciphertext is
 /// encrypted under `pk_out`, at its rank.
 pub trait GLWEPublicKeyswitchShare<BE: Backend> {
-    /// `ct_infos` is the ciphertext layout, `res_infos` the share layout.
-    fn glwe_public_keyswitch_share_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    /// `ct_infos` is the ciphertext layout, `res_infos` the share layout and
+    /// `pk_infos` the public key layout.
+    fn glwe_public_keyswitch_share_tmp_bytes<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
-        B: GLWEInfos;
+        B: GLWEInfos,
+        P: GLWEInfos;
 
     /// Writes this party's share into `res`: the encryption under `pk_out` of
     /// the inner product of the masks of `ct` with `sk_in`, plus smudging
