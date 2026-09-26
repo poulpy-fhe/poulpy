@@ -29,6 +29,16 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn glwe_switching_key_pat_compressed_layout() {
+                $crate::test_suite::layouts::test_glwe_switching_key_pat_compressed(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_automorphism_key_pat_compressed_layout() {
+                $crate::test_suite::layouts::test_glwe_automorphism_key_pat_compressed(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_pat_compressed_ops() {
                 $crate::test_suite::pat::test_glwe_pat_compressed_ops(&Module::<$backend>::new(256));
             }
