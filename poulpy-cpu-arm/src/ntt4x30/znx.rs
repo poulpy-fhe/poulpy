@@ -33,7 +33,7 @@ use crate::neon::{
 };
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::znx::{
-    znx_add_assign_ref as kn_add_assign, znx_add_ref as kn_add, znx_automorphism_ref as kn_automorphism,
+    standard::znx_automorphism_ref as kn_automorphism, znx_add_assign_ref as kn_add_assign, znx_add_ref as kn_add,
     znx_automorphism_rotate_ref as kn_automorphism_rotate, znx_extract_digit_addmul_ref as kn_extract_digit_addmul,
     znx_mul_add_power_of_two_ref as kn_mul_add_p2, znx_mul_power_of_two_assign_ref as kn_mul_p2_assign,
     znx_mul_power_of_two_ref as kn_mul_p2, znx_negate_assign_ref as kn_negate_assign, znx_negate_ref as kn_negate,
@@ -108,6 +108,11 @@ impl ZnxAutomorphism for NTT4x30Neon {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         kn_automorphism(p, res, a);
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        poulpy_cpu_ref::reference::znx::standard::znx_automorphism_ref(p, res, a)
     }
 }
 

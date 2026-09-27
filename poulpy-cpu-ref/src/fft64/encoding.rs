@@ -1,7 +1,4 @@
-use crate::reference::fft64::{
-    module::FFT64Plan,
-    reim::{ReimFFTTable, ReimIFFTTable},
-};
+use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
 use bytemuck::Zeroable;
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
@@ -37,20 +34,6 @@ impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFTNew<F> for FFT64Reim
             fft: ReimFFTTable::new(m),
             ifft: ReimIFFTTable::new(m),
         }
-    }
-}
-
-impl<F: Float + FloatConst + Debug + Zeroable> NegacyclicFFT<F> for FFT64Plan<F> {
-    fn m(&self) -> usize {
-        self.fft().m()
-    }
-
-    fn fft(&self, data: &mut [F]) {
-        self.fft().execute(data);
-    }
-
-    fn ifft(&self, data: &mut [F]) {
-        self.ifft().execute(data);
     }
 }
 

@@ -408,9 +408,12 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + ConversionReference<BE>
         + ModuleN
         + GGLWEProductReference<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -427,10 +430,10 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     let tsk_base2k: usize = tsk.base2k().into();
 
     assert!(
-        scratch.available() >= module.ggsw_expand_rows_tmp_bytes_reference(&res_backend, tsk),
+        scratch.available() >= ggsw_expand_rows_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk),
         "scratch.available(): {} < GGSWExpandRows::ggsw_expand_rows_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_expand_rows_tmp_bytes_reference(&res_backend, tsk)
+        ggsw_expand_rows_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk)
     );
 
     let rank: usize = res_backend.rank().into();
@@ -593,19 +596,6 @@ pub trait ConversionReference<BE: Backend> {
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn ggsw_expand_rows_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos;
-
-    fn ggsw_expand_row_reference<R>(
-        &self,
-        res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
 }
 
 impl<BE: Backend> ConversionReference<BE> for ::poulpy_hal::layouts::Module<BE>
@@ -617,17 +607,7 @@ where
         + crate::api::GLWEBytesOf<BE>
         + crate::api::GLWEKeyswitch<BE>
         + poulpy_hal::api::VecZnxNormalizeTmpBytes
-        + poulpy_hal::api::VecZnxNormalize<BE>
-        + crate::reference::keyswitching::GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxBigBytesOf
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
-        + poulpy_hal::api::VecZnxDftBytesOf
-        + poulpy_hal::api::VecZnxIdftApplyTmpBytes
-        + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
-        + poulpy_hal::api::VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxDftApply<BE>
-        + poulpy_hal::api::VecZnxDftZero<BE>
-        + poulpy_hal::api::VecZnxIdftApply<BE>,
+        + poulpy_hal::api::VecZnxNormalize<BE>,
 {
     fn lwe_sample_extract_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -694,7 +674,41 @@ where
     {
         crate::reference::conversion::glwe_expand_lwe_matrix_reference::<BE, _, _, _>(self, res, a, scratch)
     }
+}
 
+/// Portable GGSW conversion helpers, available on every ring.
+pub trait GGSWConversionReference<BE: Backend> {
+    fn ggsw_expand_rows_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    where
+        R: GGSWInfos,
+        A: GGLWEInfos;
+
+    fn ggsw_expand_row_reference<R>(
+        &self,
+        res: &mut R,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos;
+}
+
+impl<BE: Backend> GGSWConversionReference<BE> for Module<BE>
+where
+    Module<BE>: GLWEBytesOf<BE>
+        + ModuleN
+        + GGLWEProductReference<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalize<BE>,
+{
     fn ggsw_expand_rows_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: crate::layouts::GGSWInfos,

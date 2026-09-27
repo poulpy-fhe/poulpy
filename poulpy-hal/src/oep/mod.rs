@@ -41,6 +41,7 @@
 //!
 //! ```text
 //! HalVecZnxImpl        (root)
+//! HalVecZnxMonomialImpl -> HalVecZnxImpl
 //! HalVecZnxBigImpl     (root)
 //! HalVecZnxDftImpl    -> HalVecZnxBigImpl
 //! HalSvpImpl          -> HalVecZnxDftImpl
@@ -49,7 +50,8 @@
 //! ```
 //!
 //! The graph is acyclic; a new backend implements the families in topological
-//! order: `HalModuleImpl`, `HalVecZnxImpl`, `HalVecZnxBigImpl`,
+//! order: `HalModuleImpl`, `HalVecZnxImpl` (and `HalVecZnxMonomialImpl` outside
+//! the conjugate-invariant ring), `HalVecZnxBigImpl`,
 //! `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
 //! `HalConvolutionImpl` in any order.
 

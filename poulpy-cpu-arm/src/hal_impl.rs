@@ -36,6 +36,14 @@ where
     (slice, arena)
 }
 
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Neon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64Neon {
+    poulpy_cpu_ref::fft64_ring_arith_standard!();
+}
+
 unsafe impl HalVecZnxImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
@@ -63,6 +71,10 @@ unsafe impl HalSvpImpl for FFT64Neon {
 
 unsafe impl HalVecZnxDftImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl HalVecZnxImpl for NTT4x30Neon {

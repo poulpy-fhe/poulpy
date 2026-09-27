@@ -539,15 +539,12 @@ macro_rules! impl_ggsw_rotate_derived_full {
 #[macro_export]
 macro_rules! impl_operations_reference_full {
     ($be:ty) => {
-        $crate::impl_ggsw_rotate_derived_full!($be);
         $crate::impl_glwe_mul_const_reference_full!($be);
         $crate::impl_glwe_mul_plain_reference_full!($be);
         $crate::impl_glwe_add_reference_full!($be);
         $crate::impl_glwe_sub_reference_full!($be);
         $crate::impl_glwe_negate_reference_full!($be);
         $crate::impl_glwe_zero_reference_full!($be);
-        $crate::impl_glwe_rotate_reference_full!($be);
-        $crate::impl_glwe_mul_xp_minus_one_reference_full!($be);
         $crate::impl_glwe_copy_reference_full!($be);
         $crate::impl_glwe_shift_reference_full!($be);
         $crate::impl_glwe_normalize_reference_full!($be);

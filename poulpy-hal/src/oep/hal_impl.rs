@@ -271,25 +271,6 @@ pub unsafe trait HalVecZnxImpl: Backend {
         crate::oep::vec_znx_lsh_assign_derived::<Self>(module, base2k, k, a, a_col, scratch)
     }
 
-    fn vec_znx_rotate(
-        module: &Module<Self>,
-        k: i64,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-    );
-
-    fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize;
-
-    fn vec_znx_rotate_assign(
-        module: &Module<Self>,
-        k: i64,
-        a: &mut VecZnxBackendMut<'_, Self>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    );
-
     fn vec_znx_automorphism(
         module: &Module<Self>,
         k: i64,
@@ -306,6 +287,65 @@ pub unsafe trait HalVecZnxImpl: Backend {
         k: i64,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+
+    fn vec_znx_switch_ring(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    );
+
+    fn vec_znx_copy(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    );
+
+    fn vec_znx_fill_uniform(
+        module: &Module<Self>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        seed: [u8; 32],
+    );
+
+    /// Every column of `res` filled in increasing order, each with the next
+    /// seed of `source`. Default body: `vec_znx_fill_uniform_source_all_derived`.
+    fn vec_znx_fill_uniform_source_all<R>(module: &Module<Self>, base2k: usize, k: usize, res: &mut R, source: &mut Source)
+    where
+        R: VecZnxToBackendMut<Self>,
+    {
+        crate::oep::vec_znx_fill_uniform_source_all_derived::<Self, R>(module, base2k, k, res, source)
+    }
+}
+
+/// Monomial multiplication (`X^k`), not implemented by conjugate-invariant backends.
+///
+/// # Safety
+/// Same contract as [`HalVecZnxImpl`].
+pub unsafe trait HalVecZnxMonomialImpl: HalVecZnxImpl {
+    fn vec_znx_rotate(
+        module: &Module<Self>,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    );
+
+    fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize;
+
+    fn vec_znx_rotate_assign(
+        module: &Module<Self>,
+        k: i64,
+        a: &mut VecZnxBackendMut<'_, Self>,
+        a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -343,40 +383,6 @@ pub unsafe trait HalVecZnxImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<Self>(module, k, res, res_col, scratch)
-    }
-
-    fn vec_znx_switch_ring(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-    );
-
-    fn vec_znx_copy(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-    );
-
-    fn vec_znx_fill_uniform(
-        module: &Module<Self>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        res_col: usize,
-        seed: [u8; 32],
-    );
-
-    /// Every column of `res` filled in increasing order, each with the next
-    /// seed of `source`. Default body: `vec_znx_fill_uniform_source_all_derived`.
-    fn vec_znx_fill_uniform_source_all<R>(module: &Module<Self>, base2k: usize, k: usize, res: &mut R, source: &mut Source)
-    where
-        R: VecZnxToBackendMut<Self>,
-    {
-        crate::oep::vec_znx_fill_uniform_source_all_derived::<Self, R>(module, base2k, k, res, source)
     }
 }
 

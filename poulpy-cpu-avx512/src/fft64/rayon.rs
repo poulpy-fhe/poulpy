@@ -18,6 +18,14 @@ fn dft_automorphism(
 
 poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon, FFT64Avx512, dft_automorphism);
 
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512Rayon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64Avx512Rayon {
+    poulpy_cpu_ref::fft64_ring_arith_standard!();
+}
+
 impl poulpy_cpu_rayon::RayonTuning for FFT64Avx512Rayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;

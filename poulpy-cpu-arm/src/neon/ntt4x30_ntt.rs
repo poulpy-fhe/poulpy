@@ -491,8 +491,9 @@ mod tests {
     use super::*;
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
-        ntt::{NttTable, NttTableInv, ntt_ref},
+        ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
+        standard::ntt_ref,
     };
 
     /// NEON NTT then NEON iNTT round-trips to the original (mod each Q[k]).

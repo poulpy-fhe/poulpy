@@ -14,8 +14,9 @@ use poulpy_cpu_ref::reference::ntt4x30::{
         BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref, vec_mat1col_product_bbb_ref, vec_mat1col_product_bbc_ref,
         vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref,
     },
-    ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
+    ntt::{NttTable, NttTableInv},
     primes::{PrimeSet, Primes30},
+    standard::{intt_ref, ntt_ref},
 };
 
 use super::NTT4x30Neon;

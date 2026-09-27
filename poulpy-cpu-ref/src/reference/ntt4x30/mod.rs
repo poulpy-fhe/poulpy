@@ -53,8 +53,9 @@
 //!   ([`mat_vec::BaaMeta`], [`mat_vec::BbbMeta`], [`mat_vec::BbcMeta`]
 //!   and the corresponding product functions).
 //! - [`ntt`]: NTT precomputation tables ([`ntt::NttTable`],
-//!   [`ntt::NttTableInv`]) and reference execution
-//!   ([`ntt::ntt_ref`], [`ntt::intt_ref`]).
+//!   [`ntt::NttTableInv`]).
+//! - [`standard`], [`conjugate_invariant`]: per-ring table construction, reference execution
+//!   (`ntt_ref`, `intt_ref`) and automorphism plans (`build_ntt4x30_automorphism_plan`).
 //!
 //! # Trait overview
 //!
@@ -84,10 +85,12 @@
 //! | [`NttExtract1BlkContiguous`] | Extract one x2-block from a contiguous q120b array |
 
 pub mod arithmetic;
+pub mod conjugate_invariant;
 pub mod convolution;
 pub mod mat_vec;
 pub mod ntt;
 pub mod primes;
+pub mod standard;
 pub mod svp;
 pub mod types;
 pub mod vec_znx_big;
@@ -138,6 +141,11 @@ pub(super) fn pow2_mod(exp: u64, q: u64) -> u64 {
 pub trait NttDFTExecute<Table> {
     /// Apply the NTT (or iNTT) described by `table` to `data` in place.
     fn ntt_dft_execute(table: &Table, data: &mut [u64]);
+
+    /// Slot permutation of `X -> X^p` in this transform's layout.
+    fn ntt_automorphism_plan(n: usize, p: i64) -> vec_znx_dft::NttAutomorphismPlan {
+        standard::build_ntt4x30_automorphism_plan(n, p)
+    }
 }
 
 /// Load a polynomial from the standard `i64` coefficient representation

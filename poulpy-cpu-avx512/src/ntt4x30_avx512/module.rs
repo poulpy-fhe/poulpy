@@ -18,6 +18,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     primes::Primes30,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
+use poulpy_hal::layouts::{Ring, Standard};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{Backend, CrtWord},
@@ -34,8 +35,8 @@ use super::NTT4x30Avx512;
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT4x30Avx512>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT4x30Avx512Handle {
-    ring_plans: NttPlanSet<Primes30>,
+pub struct NTT4x30Avx512Handle<R: Ring = Standard> {
+    ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
@@ -171,7 +172,11 @@ impl Backend for NTT4x30Avx512 {
 /// # Panics
 ///
 /// Panics if the runtime CPU does not support the AVX-512F instruction set.
-unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
+unsafe impl<R: Ring> NttHandleFactory for NTT4x30Avx512Handle<R>
+where
+    poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+{
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30Avx512Handle {
             table_cache: Default::default(),
@@ -192,8 +197,9 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
 ///
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised in [`NTT4x30Avx512::new_impl`].
-unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+unsafe impl<R: Ring> NttHandleProvider for NTT4x30Avx512Handle<R> {
+    type Ring = R;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
         self.ring_plans.for_ring(n)
     }
 
@@ -206,7 +212,7 @@ unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30Avx512Handle {
+unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30Avx512Handle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

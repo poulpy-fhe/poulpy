@@ -224,7 +224,17 @@ impl ZnxMulPowerOfTwoAssign for NTT4x30Avx512Rayon {
     }
 }
 
-forward_znx!(ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
+impl ZnxAutomorphism for NTT4x30Avx512Rayon {
+    #[inline(always)]
+    fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
+        <NTT4x30Avx512 as ZnxAutomorphism>::znx_automorphism(p, res, a)
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        <NTT4x30Avx512 as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
+    }
+}
 forward_znx!(ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
 parallel_assign!(ZnxCopy, znx_copy);
 parallel_assign!(ZnxNegate, znx_negate);
@@ -513,6 +523,10 @@ impl BigWordHadamardProduct for NTT4x30Avx512Rayon {
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
     }
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Avx512Rayon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl HalVecZnxImpl for NTT4x30Avx512Rayon {

@@ -27,6 +27,14 @@ fn dft_automorphism(
 
 poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon, FFT64Neon, dft_automorphism);
 
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64NeonRayon {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64NeonRayon {
+    poulpy_cpu_ref::fft64_ring_arith_standard!();
+}
+
 impl poulpy_cpu_rayon::RayonTuning for FFT64NeonRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;

@@ -1,5 +1,7 @@
 use std::ptr::NonNull;
 
+use poulpy_hal::layouts::{Ring, Standard};
+
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
@@ -74,8 +76,8 @@ use crate::{
 /// The handle is destroyed via [`Backend::destroy()`](poulpy_hal::layouts::Backend::destroy)
 /// when the module is dropped, which reconstructs the `Box` from the raw pointer and drops it.
 #[repr(C)]
-pub struct FFT64Avx512Handle {
-    ring_plans: FFT64PlanSet<f64>,
+pub struct FFT64Avx512Handle<R: Ring = Standard> {
+    ring_plans: FFT64PlanSet<f64, R>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
@@ -207,7 +209,10 @@ impl Backend for FFT64Avx512 {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
+unsafe impl<R: Ring> FFT64HandleFactory for FFT64Avx512Handle<R>
+where
+    FFT64Plan<f64, R>: poulpy_cpu_ref::reference::fft64::module::FFT64PlanNew,
+{
     fn create_fft64_handle(n: usize) -> Self {
         FFT64Avx512Handle {
             table_cache: Default::default(),
@@ -225,8 +230,9 @@ unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
     }
 }
 
-unsafe impl FFTHandleProvider<f64> for FFT64Avx512Handle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64Avx512Handle<R> {
+    type Ring = R;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
         self.ring_plans.for_ring(n)
     }
 }
@@ -282,6 +288,11 @@ impl ZnxAutomorphism for FFT64Avx512 {
         unsafe {
             znx_automorphism_avx512(p, res, a);
         }
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        poulpy_cpu_ref::reference::znx::standard::znx_automorphism_ref(p, res, a)
     }
 }
 
@@ -772,7 +783,7 @@ impl BigWordHadamardProduct for FFT64Avx512 {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle {
+unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

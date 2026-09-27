@@ -23,7 +23,9 @@
 //! `impl_*_reference_full!` macros implement a backend's `*Impl` family with the
 //! available reference algorithms and derived defaults. Purely derived families
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
-//! the provided implementations for all core families except [`SamplingImpl`].
+//! the provided implementations for all core families except [`SamplingImpl`] and the
+//! standard-only families (monomial operations and the Galois trace), which
+//! conjugate-invariant backends do not implement.
 //!
 //! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
 //! required methods to reference helpers and inherit the derived defaults you
@@ -76,14 +78,15 @@ pub use operations::*;
 pub use polynomial_evaluation::*;
 pub use sampling::*;
 
-/// Explicitly forwards every core operation family except backend-supplied sampling.
+/// Forwards every core family except sampling and the standard-only families (LWE conversion,
+/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`, trace).
 ///
 /// Select the individual family macros instead when replacing an operation. The
 /// reference gadget-product and external-product bodies require contiguous DFT limbs.
 #[macro_export]
 macro_rules! impl_core_reference_full {
     ($be:ty) => {
-        $crate::impl_conversion_reference_full!($be);
+        $crate::impl_ggsw_conversion_reference_full!($be);
         $crate::impl_decryption_reference_full!($be);
         $crate::impl_encryption_reference_full!($be);
         $crate::impl_operations_reference_full!($be);
@@ -95,8 +98,6 @@ macro_rules! impl_core_reference_full {
         $crate::impl_automorphism_reference_full!($be);
         $crate::impl_glwe_external_product_reference_full!($be);
         $crate::impl_glwe_keyswitch_reference_full!($be);
-        $crate::impl_glwe_packing_derived_full!($be);
-        $crate::impl_glwe_trace_derived_full!($be);
         $crate::impl_linear_transformation_reference_full!($be);
         $crate::impl_lwe_keyswitch_reference_full!($be);
         $crate::impl_glwe_tensoring_reference!($be);
@@ -107,8 +108,8 @@ macro_rules! impl_core_reference_full {
 pub use crate::{
     impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full, impl_decryption_reference_full,
     impl_encryption_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
-    impl_gglwe_product_digits_strided_reference, impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full,
-    impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_copy_reference_full,
+    impl_gglwe_product_digits_strided_reference, impl_ggsw_conversion_reference_full, impl_ggsw_external_product_derived_full,
+    impl_ggsw_keyswitch_derived_full, impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_copy_reference_full,
     impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full,
     impl_glwe_mul_plain_reference_full, impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full,
     impl_glwe_normalize_reference_full, impl_glwe_packing_derived_full, impl_glwe_rotate_reference_full,

@@ -2,6 +2,8 @@
 
 use std::ptr::NonNull;
 
+use poulpy_hal::layouts::{Ring, Standard};
+
 use poulpy_cpu_ref::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
@@ -15,8 +17,8 @@ use super::FFT64Neon;
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
 /// [`Module::new`](poulpy_hal::api::ModuleNew::new).
 #[repr(C)]
-pub struct FFT64NeonHandle {
-    ring_plans: FFT64PlanSet<f64>,
+pub struct FFT64NeonHandle<R: Ring = Standard> {
+    ring_plans: FFT64PlanSet<f64, R>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
@@ -144,7 +146,10 @@ impl Backend for FFT64Neon {
 /// # Safety
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
-unsafe impl FFT64HandleFactory for FFT64NeonHandle {
+unsafe impl<R: Ring> FFT64HandleFactory for FFT64NeonHandle<R>
+where
+    FFT64Plan<f64, R>: poulpy_cpu_ref::reference::fft64::module::FFT64PlanNew,
+{
     fn create_fft64_handle(n: usize) -> Self {
         FFT64NeonHandle {
             table_cache: Default::default(),
@@ -153,13 +158,14 @@ unsafe impl FFT64HandleFactory for FFT64NeonHandle {
     }
 }
 
-unsafe impl FFTHandleProvider<f64> for FFT64NeonHandle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64NeonHandle<R> {
+    type Ring = R;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
         self.ring_plans.for_ring(n)
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64NeonHandle {
+unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64NeonHandle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

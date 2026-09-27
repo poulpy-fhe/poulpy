@@ -370,7 +370,7 @@ mod tests {
         assert!(module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).is_ok());
 
         let required = CKKSEncodingHostOps::<FFT64Ref, f64>::ckks_reim_tmp_bytes(&module, 8);
-        let mut undersized = ScratchOwned::<FFT64Ref>::alloc(required - FFT64Ref::SCRATCH_ALIGN);
+        let mut undersized = ScratchOwned::<FFT64Ref>::alloc(required - <FFT64Ref>::SCRATCH_ALIGN);
         assert!(
             module
                 .ckks_encode_reim_into(&mut pt, &re, &im, &mut undersized.arena())

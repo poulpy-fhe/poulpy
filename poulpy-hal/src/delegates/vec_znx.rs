@@ -12,11 +12,19 @@ use crate::{
         Backend, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
         VecZnxToBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
-    oep::HalVecZnxImpl,
+    oep::{HalVecZnxImpl, HalVecZnxMonomialImpl},
     source::Source,
 };
 
 macro_rules! impl_vec_znx_delegate {
+    (monomial $trait:ty, $($body:item)+) => {
+        impl<B> $trait for Module<B>
+        where
+            B: Backend<ZnxWord = i64> + HalVecZnxMonomialImpl,
+        {
+            $($body)+
+        }
+    };
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
@@ -303,7 +311,7 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxRotate<B>,
+    monomial VecZnxRotate<B>,
     fn vec_znx_rotate(
         &self,
         k: i64,
@@ -317,14 +325,14 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxRotateAssignTmpBytes,
+    monomial VecZnxRotateAssignTmpBytes,
     fn vec_znx_rotate_assign_tmp_bytes(&self) -> usize {
         B::vec_znx_rotate_assign_tmp_bytes(self)
     }
 );
 
 impl_vec_znx_delegate!(
-    VecZnxRotateAssign<B>,
+    monomial VecZnxRotateAssign<B>,
     fn vec_znx_rotate_assign(&self, k: i64, a: &mut VecZnxBackendMut<'_, B>, a_col: usize, scratch: &mut ScratchArena<'_, B>) {
         B::vec_znx_rotate_assign(self, k, a, a_col, scratch);
     }
@@ -381,7 +389,7 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxMulXpMinusOne<B>,
+    monomial VecZnxMulXpMinusOne<B>,
     fn vec_znx_mul_xp_minus_one(
         &self,
         p: i64,
@@ -395,14 +403,14 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxMulXpMinusOneAssignTmpBytes,
+    monomial VecZnxMulXpMinusOneAssignTmpBytes,
     fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self, size: usize) -> usize {
         B::vec_znx_mul_xp_minus_one_assign_tmp_bytes(self, size)
     }
 );
 
 impl_vec_znx_delegate!(
-    VecZnxMulXpMinusOneAssign<B>,
+    monomial VecZnxMulXpMinusOneAssign<B>,
     fn vec_znx_mul_xp_minus_one_assign(
         &self,
         p: i64,

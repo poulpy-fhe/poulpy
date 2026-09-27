@@ -1,13 +1,14 @@
 //! Backend extension points for DFT-domain [`poulpy_hal::layouts::VecZnxDft`] operations.
 
+use crate::reference::fft64::ring_arith::Fft64RingArith;
 use std::mem::size_of;
 
 use crate::reference::{
     fft64::{
         module::FFTModuleHandle,
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
+        reim::ReimArith,
         vec_znx_dft::{
-            Fft64AutomorphismPlan, build_fft64_automorphism_plan, vec_znx_dft_add as fft64_vec_znx_dft_add,
+            Fft64AutomorphismPlan, vec_znx_dft_add as fft64_vec_znx_dft_add,
             vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
             vec_znx_dft_automorphism as fft64_vec_znx_dft_automorphism,
             vec_znx_dft_automorphism_add as fft64_vec_znx_dft_automorphism_add, vec_znx_dft_copy as fft64_vec_znx_dft_copy,
@@ -23,8 +24,7 @@ use crate::reference::{
         primes::Primes30,
         types::Q120bScalar,
         vec_znx_dft::{
-            NttAutomorphismPlan, NttModuleHandle, build_ntt4x30_automorphism_plan,
-            ntt4x30_vec_znx_dft_add as ntt4x30_default_vec_znx_dft_add,
+            NttAutomorphismPlan, NttModuleHandle, ntt4x30_vec_znx_dft_add as ntt4x30_default_vec_znx_dft_add,
             ntt4x30_vec_znx_dft_add_assign as ntt4x30_default_vec_znx_dft_add_assign,
             ntt4x30_vec_znx_dft_apply as ntt4x30_default_vec_znx_dft_apply,
             ntt4x30_vec_znx_dft_automorphism as ntt4x30_default_vec_znx_dft_automorphism,
@@ -92,13 +92,13 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table_for(n), step, offset, res, res_col, a, a_col);
+        fft64_vec_znx_dft_apply::<Self>(module.get_fft_plan(n), step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -116,16 +116,15 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
         let _ = scratch;
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
+        fft64_vec_znx_idft_apply::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmpa_default(
@@ -135,14 +134,13 @@ where
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
+        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
     }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
@@ -244,9 +242,10 @@ where
 
     fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
     where
-        Self: Backend<DftWord = f64, ZnxWord = i64>,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + Fft64RingArith,
     {
-        build_fft64_automorphism_plan(n, p)
+        <Self as Fft64RingArith>::fft64_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
@@ -257,7 +256,7 @@ where
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
@@ -273,7 +272,7 @@ where
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + Fft64RingArith,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
@@ -309,8 +308,11 @@ where
         a_col: usize,
     ) where
         Module<Self>: NttModuleHandle,
-        Self:
-            Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttFromZnx64
+            + NttZero
+            + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
         ntt4x30_default_vec_znx_dft_apply::<Self>(module, step, offset, res, res_col, a, a_col);
@@ -333,7 +335,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-            + NttDFTExecute<NttTableInv<Primes30>>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttToZnx128
             + NttCopy,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -355,7 +357,9 @@ where
         a_col: usize,
     ) where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
+        Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttToZnx128,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
         ntt4x30_default_vec_znx_idft_apply_tmpa::<Self>(module, res, res_col, a, a_col);
@@ -460,9 +464,10 @@ where
 
     fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
     where
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
+        Self: Backend<ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, <Module<Self> as NttModuleHandle>::Ring>>,
+        Module<Self>: NttModuleHandle,
     {
-        build_ntt4x30_automorphism_plan(n, p)
+        <Self as NttDFTExecute<NttTable<Primes30, <Module<Self> as NttModuleHandle>::Ring>>>::ntt_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(

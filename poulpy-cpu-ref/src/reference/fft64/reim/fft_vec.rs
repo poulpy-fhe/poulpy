@@ -162,3 +162,29 @@ pub fn reim_mul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
         ri[i] = _ri;
     }
 }
+
+#[inline(always)]
+pub fn reim_real_addmul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
+    debug_assert_eq!(res.len(), a.len());
+    debug_assert_eq!(res.len(), b.len());
+    for ((res, a), b) in res.iter_mut().zip(a).zip(b) {
+        *res += *a * *b;
+    }
+}
+
+#[inline(always)]
+pub fn reim_real_mul_assign_ref(res: &mut [f64], a: &[f64]) {
+    debug_assert_eq!(res.len(), a.len());
+    for (res, a) in res.iter_mut().zip(a) {
+        *res *= *a;
+    }
+}
+
+#[inline(always)]
+pub fn reim_real_mul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
+    debug_assert_eq!(res.len(), a.len());
+    debug_assert_eq!(res.len(), b.len());
+    for ((res, a), b) in res.iter_mut().zip(a).zip(b) {
+        *res = *a * *b;
+    }
+}

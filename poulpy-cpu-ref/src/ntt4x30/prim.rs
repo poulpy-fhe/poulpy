@@ -10,14 +10,17 @@ use crate::reference::ntt4x30::{
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
     arithmetic::{add_bbb_ref, b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
+    conjugate_invariant,
     mat_vec::{
         BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref, vec_mat1col_product_bbb_ref, vec_mat1col_product_bbc_ref,
         vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref,
     },
-    ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
+    ntt::{NttTable, NttTableInv},
     primes::{PrimeSet, Primes30},
+    standard,
     types::Q_SHIFTED,
 };
+use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
 
 use super::NTT4x30Ref;
 
@@ -25,17 +28,39 @@ use super::NTT4x30Ref;
 // NTT execution
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Ref {
+impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Ref<Standard> {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        ntt_ref::<Primes30>(table, data);
+    fn ntt_dft_execute(table: &NttTable<Primes30, Standard>, data: &mut [u64]) {
+        standard::ntt_ref::<Primes30>(table, data);
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Ref {
+impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Ref<Standard> {
     #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        intt_ref::<Primes30>(table, data);
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, Standard>, data: &mut [u64]) {
+        standard::intt_ref::<Primes30>(table, data);
+    }
+}
+
+impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Ref<ConjugateInvariant> {
+    #[inline(always)]
+    fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
+        conjugate_invariant::ntt_ref::<Primes30>(table, data);
+    }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+        conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
+    }
+}
+
+impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Ref<ConjugateInvariant> {
+    #[inline(always)]
+    fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
+        conjugate_invariant::intt_ref::<Primes30>(table, data);
+    }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+        conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
     }
 }
 
@@ -43,14 +68,14 @@ impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Ref {
 // Domain conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttFromZnx64 for NTT4x30Ref {
+impl<R: Ring> NttFromZnx64 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         b_from_znx64_ref::<Primes30>(a.len(), res, a);
     }
 }
 
-impl NttToZnx128 for NTT4x30Ref {
+impl<R: Ring> NttToZnx128 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         b_to_znx128_ref::<Primes30>(divisor_is_n, res, a);
@@ -61,14 +86,14 @@ impl NttToZnx128 for NTT4x30Ref {
 // Addition / subtraction / negation / copy / zero
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttAdd for NTT4x30Ref {
+impl<R: Ring> NttAdd for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         add_bbb_ref::<Primes30>(res.len() / 4, res, a, b);
     }
 }
 
-impl NttAddAssign for NTT4x30Ref {
+impl<R: Ring> NttAddAssign for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -81,7 +106,7 @@ impl NttAddAssign for NTT4x30Ref {
     }
 }
 
-impl NttSub for NTT4x30Ref {
+impl<R: Ring> NttSub for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         let n = res.len() / 4;
@@ -94,7 +119,7 @@ impl NttSub for NTT4x30Ref {
     }
 }
 
-impl NttSubAssign for NTT4x30Ref {
+impl<R: Ring> NttSubAssign for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -107,7 +132,7 @@ impl NttSubAssign for NTT4x30Ref {
     }
 }
 
-impl NttSubNegateAssign for NTT4x30Ref {
+impl<R: Ring> NttSubNegateAssign for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -122,7 +147,7 @@ impl NttSubNegateAssign for NTT4x30Ref {
 
 /// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
 /// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
-impl NttNegate for NTT4x30Ref {
+impl<R: Ring> NttNegate for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -137,7 +162,7 @@ impl NttNegate for NTT4x30Ref {
 
 /// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
 /// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
-impl NttNegateAssign for NTT4x30Ref {
+impl<R: Ring> NttNegateAssign for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         let n = res.len() / 4;
@@ -150,14 +175,14 @@ impl NttNegateAssign for NTT4x30Ref {
     }
 }
 
-impl NttZero for NTT4x30Ref {
+impl<R: Ring> NttZero for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl NttCopy for NTT4x30Ref {
+impl<R: Ring> NttCopy for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
@@ -168,14 +193,14 @@ impl NttCopy for NTT4x30Ref {
 // Multiply-accumulate
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttMulBbb for NTT4x30Ref {
+impl<R: Ring> NttMulBbb for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
         vec_mat1col_product_bbb_ref::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl NttMulBbc for NTT4x30Ref {
+impl<R: Ring> NttMulBbc for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         vec_mat1col_product_bbc_ref::<Primes30>(meta, ell, res, ntt_coeff, prepared);
@@ -186,7 +211,7 @@ impl NttMulBbc for NTT4x30Ref {
 // q120b → q120c conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttCFromB for NTT4x30Ref {
+impl<R: Ring> NttCFromB for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         c_from_b_ref::<Primes30>(n, res, a);
@@ -197,28 +222,28 @@ impl NttCFromB for NTT4x30Ref {
 // VMP x2-block kernels
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttMulBbc1ColX2 for NTT4x30Ref {
+impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         vec_mat1col_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl NttMulBbc2ColsX2 for NTT4x30Ref {
+impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         vec_mat2cols_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl NttExtract1BlkContiguous for NTT4x30Ref {
+impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, dst, src);
     }
 }
 
-impl NttPackLeft1BlkX2 for NTT4x30Ref {
+impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -240,7 +265,7 @@ impl NttPackLeft1BlkX2 for NTT4x30Ref {
     }
 }
 
-impl NttPackRight1BlkX2 for NTT4x30Ref {
+impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -254,7 +279,7 @@ impl NttPackRight1BlkX2 for NTT4x30Ref {
     }
 }
 
-impl NttPairwisePackLeft1BlkX2 for NTT4x30Ref {
+impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -280,7 +305,7 @@ impl NttPairwisePackLeft1BlkX2 for NTT4x30Ref {
     }
 }
 
-impl NttPairwisePackRight1BlkX2 for NTT4x30Ref {
+impl<R: Ring> NttPairwisePackRight1BlkX2 for NTT4x30Ref<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);

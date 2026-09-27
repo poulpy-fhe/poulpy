@@ -49,9 +49,15 @@ mod znx;
 
 pub use module::NTT4x30RefHandle;
 
+use std::marker::PhantomData;
+
+use poulpy_hal::layouts::{Ring, Standard};
+
 /// Reference (portable) CPU backend using Q120 NTT arithmetic.
 ///
-/// `NTT4x30Ref` is a zero-sized marker type that selects the reference NTT4x30 CPU backend
+/// `NTT4x30Ref<R>` is a zero-sized marker type that selects the reference NTT4x30 CPU backend
+/// over ring `R` (the standard ring by default, [`NTT4x30CIRef`](crate::NTT4x30CIRef) for the
+/// conjugate invariant ring)
 /// when used as the type parameter `B` in [`poulpy_hal::layouts::Module<B>`](poulpy_hal::layouts::Module)
 /// and related HAL types. It implements all open extension point (OEP) traits from
 /// `poulpy_hal::oep` by delegating to the portable reference functions in
@@ -67,8 +73,8 @@ pub use module::NTT4x30RefHandle;
 ///
 /// # Thread safety
 ///
-/// `NTT4x30Ref` is `Send + Sync` (derived from being a zero-sized, field-less struct).
+/// `NTT4x30Ref` is `Send + Sync` (derived from being a zero-sized struct).
 /// The `Module<NTT4x30Ref>` that holds the NTT tables is also `Send + Sync`, so modules can
 /// be shared across threads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30Ref;
+pub struct NTT4x30Ref<R: Ring = Standard>(PhantomData<R>);

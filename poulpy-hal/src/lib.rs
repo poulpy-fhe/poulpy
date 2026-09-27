@@ -1,7 +1,7 @@
 //! # poulpy-hal
 //!
 //! A trait-based Hardware Abstraction Layer (HAL) for lattice-based polynomial
-//! arithmetic over the cyclotomic ring `Z[X]/(X^N + 1)`.
+//! arithmetic over the cyclotomic ring `Z[X]/(X^N + 1)` and its conjugate-invariant subring.
 //!
 //! This crate provides backend-agnostic data layouts and a trait-based API for
 //! polynomial operations commonly used in lattice-based cryptography (LWE/Module-LWE
@@ -12,8 +12,10 @@
 //!
 //! ## Core Concepts
 //!
-//! **Ring:** All polynomials live in `Z[X]/(X^N + 1)` where `N` is a power of
-//! two (the *ring degree*). A [`layouts::Module`] encapsulates `N` together with
+//! **Ring:** Polynomials have `N` coefficients, `N` a power of two (the *ring
+//! degree*), in `Z[X]/(X^N + 1)` or in the conjugate-invariant subring of
+//! `Z[X]/(X^(2N) + 1)`, as selected by [`Backend::Ring`](layouts::Backend::Ring).
+//! A [`layouts::Module`] encapsulates `N` together with
 //! an optional backend-specific handle (e.g. precomputed FFT twiddle factors).
 //!
 //! **Limbed representation (base-2^k):** Large coefficients are decomposed into

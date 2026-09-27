@@ -1,12 +1,13 @@
 //! Backend extension points for scalar-vector product (SVP) operations
 //! on [`SvpPPol`](poulpy_hal::layouts::SvpPPol).
 
+use crate::reference::fft64::ring_arith::Fft64RingArith;
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::reference::{
     fft64::{
         module::FFTModuleHandle,
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+        reim::ReimArith,
         svp::{
             svp_apply_dft_to_dft as fft64_svp_apply_dft_to_dft, svp_apply_dft_to_dft_assign as fft64_svp_apply_dft_to_dft_assign,
             svp_prepare as fft64_svp_prepare,
@@ -33,8 +34,8 @@ where
 {
     fn svp_prepare_default<R>(module: &Module<Self>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, Self>, a_col: usize)
     where
-        Module<Self>: FFTModuleHandle<f64>,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<Self>,
@@ -43,7 +44,7 @@ where
         let n: usize = res_ref.n();
         check_degree::<Self>(module.n(), n);
         assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
-        fft64_svp_prepare::<Self>(module.get_fft_table_for(n), &mut res_ref, res_col, a, a_col);
+        fft64_svp_prepare::<Self>(module.get_fft_plan(n), &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(
@@ -76,13 +77,13 @@ where
         b: &VecZnxDftBackendRef<'b, Self>,
         b_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<Self>,
     {
         let a_ref = a.to_backend_ref();
-        fft64_svp_apply_dft_to_dft::<Self>(res, res_col, &a_ref, a_col, b, b_col);
+        fft64_svp_apply_dft_to_dft(res, res_col, &a_ref, a_col, b, b_col);
     }
 
     fn svp_apply_dft_to_dft_assign_default<A>(
@@ -92,13 +93,13 @@ where
         a: &A,
         a_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<Self>,
     {
         let a_ref = a.to_backend_ref();
-        fft64_svp_apply_dft_to_dft_assign::<Self>(res, res_col, &a_ref, a_col);
+        fft64_svp_apply_dft_to_dft_assign(res, res_col, &a_ref, a_col);
     }
 }
 
@@ -112,7 +113,10 @@ where
     fn svp_prepare_default<R>(module: &Module<Self>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, Self>, a_col: usize)
     where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttFromZnx64
+            + NttCFromB,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<Self>,

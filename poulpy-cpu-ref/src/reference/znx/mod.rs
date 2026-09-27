@@ -2,21 +2,21 @@ pub use super::normalization::*;
 
 mod add;
 mod arithmetic_ref;
-mod automorphism;
 mod automorphism_rotate;
+pub mod conjugate_invariant;
 mod copy;
 mod mul;
 mod neg;
 mod normalization;
 mod rotate;
 mod sampling;
+pub mod standard;
 mod sub;
 mod switch_ring;
 mod zero;
 
 pub use add::*;
 pub use arithmetic_ref::*;
-pub use automorphism::*;
 pub use automorphism_rotate::*;
 pub use copy::*;
 pub use mul::*;
@@ -51,6 +51,9 @@ pub trait ZnxSubNegateAssign {
 
 pub trait ZnxAutomorphism {
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]);
+
+    /// [`Self::znx_automorphism`] on `i128` big coefficients.
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]);
 }
 
 pub trait ZnxAutomorphismRotate {

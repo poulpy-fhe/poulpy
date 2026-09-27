@@ -1360,8 +1360,9 @@ mod tests {
     use super::*;
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
-        ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
+        ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
+        standard::{intt_ref, ntt_ref},
     };
 
     /// AVX2 NTT followed by AVX2 iNTT is the identity — mirrors the ref test.

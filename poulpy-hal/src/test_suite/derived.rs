@@ -42,11 +42,12 @@ use crate::{
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
-        cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived,
-        cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived,
-        cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived,
-        vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived, vmp_apply_dft_to_dft_add_tmp_bytes_derived,
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl,
+        cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived,
+        cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
+        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
+        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
     test_suite::{
@@ -1069,7 +1070,7 @@ where
 
 /// `vec_znx_mul_xp_minus_one`: the OEP default body versus an oracle
 /// hand-built from the public api traits (`rotate` then `sub_assign`).
-pub fn test_vec_znx_mul_xp_minus_one_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_mul_xp_minus_one_derived<BE: TestBackend + HalVecZnxMonomialImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxRotate<BE> + VecZnxSubAssign<BE>,
 {
@@ -1148,8 +1149,10 @@ pub fn test_vec_znx_fill_uniform_source_all_derived<BE: TestBackend + HalVecZnxI
 /// for bit. The default body gets an arena sized by its own
 /// `_tmp_bytes_derived`, the dispatched op one sized by the api `_tmp_bytes`,
 /// which an override may have shrunk.
-pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxMonomialImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE> + VecZnxMulXpMinusOneAssignTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {

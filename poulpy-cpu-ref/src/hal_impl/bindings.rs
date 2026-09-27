@@ -1,5 +1,6 @@
 use super::FFT64Ref;
 use super::NTT4x30Ref;
+use poulpy_hal::layouts::Ring;
 
 use crate::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
@@ -11,47 +12,93 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-unsafe impl HalVecZnxImpl for FFT64Ref {
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Ref {
+    crate::hal_impl_vec_znx_monomial!();
+}
+
+unsafe impl<R: Ring> HalVecZnxImpl for FFT64Ref<R>
+where
+    Self: crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl for FFT64Ref {
+unsafe impl<R: Ring> HalModuleImpl for FFT64Ref<R>
+where
+    crate::reference::fft64::module::FFT64Plan<f64, R>: crate::reference::fft64::module::FFT64PlanNew,
+{
     crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl for FFT64Ref {
+unsafe impl<R: Ring> HalVmpImpl for FFT64Ref<R>
+where
+    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl for FFT64Ref {
+unsafe impl<R: Ring> HalConvolutionImpl for FFT64Ref<R>
+where
+    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl for FFT64Ref {
+unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Ref<R>
+where
+    Self: crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl for FFT64Ref {
+unsafe impl<R: Ring> HalSvpImpl for FFT64Ref<R>
+where
+    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl for FFT64Ref {
+unsafe impl<R: Ring> HalVecZnxDftImpl for FFT64Ref<R>
+where
+    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
-unsafe impl HalVecZnxImpl for NTT4x30Ref {
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Ref {
+    crate::hal_impl_vec_znx_monomial!();
+}
+
+unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalModuleImpl for NTT4x30Ref<R>
+where
+    crate::reference::ntt4x30::vec_znx_dft::NttPlan<crate::reference::ntt4x30::primes::Primes30, R>:
+        crate::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+{
     crate::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalVmpImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 
     fn cnv_apply_dft_sum_tmp_bytes(
@@ -84,14 +131,27 @@ unsafe impl HalConvolutionImpl for NTT4x30Ref {
     }
 }
 
-unsafe impl HalVecZnxBigImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalSvpImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl for NTT4x30Ref {
+unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Ref<R>
+where
+    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
+        + crate::reference::znx::ZnxAutomorphism,
+{
     crate::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

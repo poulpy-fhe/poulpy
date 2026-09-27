@@ -6,7 +6,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
-- **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Backend::CYCLOTOMIC_ORDER_FACTOR` derives from it.
+- **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
+- **Breaking:** `vec_znx_rotate*` and `vec_znx_mul_xp_minus_one*` move from `HalVecZnxImpl` to `HalVecZnxMonomialImpl`, which conjugate-invariant backends do not implement.
 - **Breaking:** replace `Backend::MAX_BASE2K` and `Module::MAX_BASE2K` with runtime `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, dispatched through `MaxBase2k` ([#312](https://github.com/poulpy-fhe/poulpy/issues/312)). NTT and FFT64 helpers use the `squaring` flag to distinguish independent products from squares, selecting a radix from a whole-polynomial Gaussian failure estimate using the tighter Mills-ratio upper bound, capped at `BE::ZnxWord::BITS - 2`. CPU backends and Rayon wrappers implement or forward the query. See [failure estimates](docs/base2k-failure-probability.md) for model assumptions and addition headroom.
 - **Breaking:** `PrimeSet` implementations must provide `LOG_Q_PRODUCT`, the floating-point base-2 logarithm of their actual CRT modulus. `PrimeSet::validate()` checks it against the declared primes; existing prime-set tests run this check.
 - AVX-512/IFMA HAL CI runs natively when supported, with pinned, checksum-verified Intel SDE as the fallback, including Rayon variants. Native ARM CI runs the full NEON backend suite on every push and pull request; additional QEMU HAL and core tests on x86 are available through the manual `run_neon_qemu` workflow input. The AVX-512 execution filters cover HAL and core; CKKS ModUp runtime coverage remains in the separate CKKS follow-up to #234. HAL documentation describes the derived compositions, required mutation variants, and current backend trait signatures.
@@ -54,6 +55,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** the GGSW methods of `ConversionImpl` and `ConversionReference` move to `GGSWConversionImpl` (registered by `impl_ggsw_conversion_reference_full!`) and `GGSWConversionReference`; `AutomorphismImpl` requires `GLWEKeyswitchImpl` and `GGSWConversionImpl`, and `GGSWKeyswitchImpl` requires `GGSWConversionImpl`, instead of `ConversionImpl`; `impl_core_reference_full!` and `impl_operations_reference_full!` no longer register LWE conversion, packing, GLWE/GGSW rotate, or `mul_xp_minus_one`, and `impl_core_reference_full!` no longer registers the GLWE trace, whose Galois elements are the standard ring's.
 - **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.
 - Packing uses its reserved arena temporary instead of allocating a GLWE at every merge, and rejects mixed input layouts before mutation. Removed unused HAL scratch-query bounds from the automorphism reference.
 - Derived plaintext-minus-ciphertext subtraction negates the mask as well as the body. GGSW keyswitching respects a shorter destination row count; conversion and automorphism scratch sizing account for selected core overrides.
@@ -138,8 +140,13 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
-- Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend.
+- Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend, and the standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate, `mul_xp_minus_one`, GLWE trace) by each standard-ring backend.
 
+- **Breaking:** the FFT64 reference kernels (`vec_znx_dft_apply`, `vec_znx_idft_apply*`, `svp_prepare`, `vmp_prepare`, `convolution_prepare_*`) take the ring-typed `&FFT64Plan` instead of `ReimFFTTable`/`ReimIFFTTable`, and the NTT4x30 reference kernels take `&Module<BE>` instead of `&impl NttModuleHandle`.
+- **Breaking:** backends using the FFT64 defaults implement `Fft64RingArith` once per ring (`fft64_ring_arith_standard!`/`fft64_ring_arith_ci!`); NTT4x30 rings differ only in their `NttDFTExecute` impls, which gain `ntt_automorphism_plan`, and `ZnxAutomorphism` gains the required `znx_automorphism_i128`; plans are built per ring (`FFT64PlanNew`, `NttPlanNew`); ring-specific transforms, slot products and automorphisms have no ring branches.
+- **Breaking:** per-ring reference code lives in the `standard` and `conjugate_invariant` submodules of `reference::{fft64, ntt4x30, znx}`, under the same names in both; `ntt_ref`, `intt_ref`, `build_fft64_automorphism_plan`, `build_ntt4x30_automorphism_plan` and `znx_automorphism_ref` (now generic over the coefficient type) move to `standard`.
+- **Breaking:** `FFT64Ref`, `NTT4x30Ref` and the FFT64/NTT4x30 module handles take a ring parameter, `Standard` by default (expression paths read `<FFT64Ref>::..`), and `FFTHandleProvider`/`NttHandleProvider` declare their `Ring`; `FFT64CIRef` and `NTT4x30CIRef` are the conjugate-invariant instantiations. Ring selection is static, CI and standard prepared data have distinct types, and standard modules allocate no CI transform tables. The CI `n`-coefficient basis has ambient order `4n`.
+- `FFT64CIRef` and `NTT4x30CIRef` have no `max_base2k` model and return `None`: a square's constant coefficient has a large positive mean on the conjugate invariant ring.
 - AVX and AVX-512 CI each use native execution when available and SDE for bounded HAL/core contracts otherwise. Compilation is separate from the five-minute test execution budget, with per-test timings and caches refreshed after source changes. AVX uses AVX2/FMA-only code generation and Haswell emulation.
 
 - NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.

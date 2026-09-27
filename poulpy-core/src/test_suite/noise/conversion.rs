@@ -175,8 +175,10 @@ where
     }
 }
 
-pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::ConversionImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -295,8 +297,10 @@ where
     assert_eq!(glwe_pt.data.at(0, 0)[0], lwe_pt_conv.data.at(0, 0)[0]);
 }
 
-pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::ConversionImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -426,8 +430,10 @@ where
     assert_eq!(glwe_pt_conv.data.at(0, 0)[a_idx], lwe_pt.data.at(0, 0)[0]);
 }
 
-pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::ConversionImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -523,7 +529,9 @@ where
     }
 }
 
-pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<
+    BE: crate::test_suite::noise::TestBackend + crate::oep::ConversionImpl,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -570,8 +578,10 @@ pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suit
     );
 }
 
-pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBackend + crate::oep::ConversionImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,

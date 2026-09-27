@@ -115,12 +115,17 @@ To implement your own backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
+   Backends using the FFT64 defaults implement `Fft64RingArith` for their ring
+   (`fft64_ring_arith_standard!` or `fft64_ring_arith_ci!`); NTT4x30 backends
+   implement `NttDFTExecute` for their ring's tables.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
 CPU backends share their common registrations through `impl_cpu_core_defaults!`
 and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
-transforms, and encapsulated ModUp remain explicit backend choices. Backends
+transforms, and encapsulated ModUp remain explicit backend choices, as do the
+standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
+rotate, `mul_xp_minus_one`, GLWE trace), which only standard-ring backends register. Backends
 that override other families can register the individual operation macros.
 
 Use either a family macro or a handwritten implementation of the same core
@@ -140,6 +145,30 @@ No modifications to those crates are necessary — the HAL provides the extensio
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Conjugate invariant rings
+
+`Module::<FFT64CIRef>::new(n)` and `Module::<NTT4x30CIRef>::new(n)` select
+an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
+The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
+cyclotomic order is `4n`. They alias `FFT64Ref<ConjugateInvariant>` and
+`NTT4x30Ref<ConjugateInvariant>`; the ring parameter defaults to the standard ring.
+NTT modules support invariant degrees up to `2^17` with the current prime sets.
+
+The ring is selected by the backend type. Standard plans leave the CI tables empty,
+and CI plans own their required tables directly. Ring-specific transforms,
+slot products and automorphisms have one implementation per ring
+(`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`), whose reference bodies live in the
+`standard` and `conjugate_invariant` submodules of `reference::{fft64, ntt4x30, znx}`
+under the same names. The two rings have distinct
+module handles and prepared-data types; layout compatibility only connects
+implementations of the same ring.
+
+Transforms, polynomial products, and automorphisms use this basis. Sparse
+operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
+not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
+packing, or LWE conversion; the GLWE trace uses standard-ring Galois elements and
+is not implemented either, and `max_base2k` has no CI model.
 
 ## Binary-FHE integration
 

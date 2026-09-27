@@ -28,11 +28,10 @@ pub use shift::*;
 pub use trace::*;
 
 use crate::oep::{
-    AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
-    GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
-    GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-    GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-    LWEKeyswitchImpl, SamplingImpl,
+    AutomorphismImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
+    GGSWConversionImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl,
+    GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEShiftImpl, GLWESubImpl,
+    GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -72,15 +71,10 @@ pub trait TestBackend:
     + GGLWEProductDigitsStridedImpl
     + GLWEMulConstImpl
     + GLWEMulPlainImpl
-    + GLWERotateImpl
-    + GLWEMulXpMinusOneImpl
     + GLWEShiftImpl
     + GLWENormalizeImpl
-    + GLWETraceImpl
-    + GLWEPackImpl
-    + GGSWRotateImpl
     + DecryptionImpl
-    + ConversionImpl
+    + GGSWConversionImpl
     + AutomorphismImpl
     + SamplingImpl
 where
@@ -109,15 +103,10 @@ where
         + GGLWEProductDigitsStridedImpl
         + GLWEMulConstImpl
         + GLWEMulPlainImpl
-        + GLWERotateImpl
-        + GLWEMulXpMinusOneImpl
         + GLWEShiftImpl
         + GLWENormalizeImpl
-        + GLWETraceImpl
-        + GLWEPackImpl
-        + GGSWRotateImpl
         + DecryptionImpl
-        + ConversionImpl
+        + GGSWConversionImpl
         + AutomorphismImpl
         + SamplingImpl,
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,

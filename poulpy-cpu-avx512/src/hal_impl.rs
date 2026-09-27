@@ -33,6 +33,14 @@ where
     (slice, arena)
 }
 
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512 {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64Avx512 {
+    poulpy_cpu_ref::fft64_ring_arith_standard!();
+}
+
 unsafe impl HalVecZnxImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
@@ -71,6 +79,10 @@ unsafe impl HalVecZnxDftImpl for FFT64Avx512 {
     ) {
         crate::fft64::fft64_vec_znx_dft_automorphism_avx512::<Self>(plan, res, res_col, a, a_col);
     }
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Avx512 {
+    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl HalVecZnxImpl for NTT4x30Avx512 {
@@ -629,7 +641,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+        poulpy_cpu_ref::reference::ntt4x30::standard::build_ntt4x30_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -679,6 +691,10 @@ mod ifma_impl {
         oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     };
     use std::mem::size_of;
+
+    unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT3x42Ifma {
+        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    }
 
     unsafe impl HalVecZnxImpl for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
@@ -1043,7 +1059,7 @@ mod ifma_impl {
             // (bit-reversal over log2(n) bits + level-0 ω^i twiddle), not by
             // the prime set, so the NTT4x30 closed-form builder is identical
             // for NTT3x42.
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
+            poulpy_cpu_ref::reference::ntt4x30::standard::build_ntt4x30_automorphism_plan(n, p)
         }
 
         fn vec_znx_dft_automorphism_with_plan(
