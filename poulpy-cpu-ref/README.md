@@ -153,6 +153,8 @@ an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
 The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
 cyclotomic order is `4n`. They alias `FFT64Ref<ConjugateInvariant>` and
 `NTT4x30Ref<ConjugateInvariant>`; the ring parameter defaults to the standard ring.
+The accelerated CPU and Rayon backends take the same parameter, with CI aliases
+such as `FFT64CIAvx512`, `NTT4x30CIAvx` and `NTT3x42CIIfmaRayon`.
 NTT modules support invariant degrees up to `2^17` with the current prime sets.
 
 The ring is selected by the backend type. Standard plans leave the CI tables empty,

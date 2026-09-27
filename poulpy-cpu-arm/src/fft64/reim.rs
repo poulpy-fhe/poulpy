@@ -10,6 +10,7 @@ use poulpy_cpu_ref::reference::fft64::{
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
 use super::FFT64Neon;
+use poulpy_hal::layouts::Ring;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
 /// dispatching to NEON-accelerated kernels on AArch64 and the portable
@@ -78,35 +79,35 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
+impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::fft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
+impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_ref(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
+impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::ifft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
+impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_ref(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ReimArith for FFT64Neon {
+impl<R: Ring> ReimArith for FFT64Neon<R> {
     // reim_add / reim_add_assign: defer to the portable autovec impl. The
     // hand-NEON loop (see neon::reim_arith::reim_add_neon) is memory-bandwidth
     // bound at large n; the autovec reference is as fast or faster.
@@ -165,10 +166,10 @@ impl ReimArith for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl ReimArith for FFT64Neon {}
+impl<R: Ring> ReimArith for FFT64Neon<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl Reim4BlkMatVec for FFT64Neon {
+impl<R: Ring> Reim4BlkMatVec for FFT64Neon<R> {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         crate::neon::reim4_arith::reim4_extract_1blk_contiguous_neon(m, rows, blk, dst, src);
@@ -197,13 +198,25 @@ impl Reim4BlkMatVec for FFT64Neon {
     fn reim4_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
         crate::neon::reim4_arith::reim4_mat2cols_2ndcol_prod_neon(nrows, dst, u, v);
     }
+    #[inline(always)]
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 8>(nrows, dst, u, v, 0) }
+    }
+    #[inline(always)]
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<2, 16>(nrows, dst, u, v, 0) }
+    }
+    #[inline(always)]
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        unsafe { crate::neon::reim4_arith::reim4_real_mat_prod_neon::<1, 16>(nrows, dst, u, v, 8) }
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl Reim4BlkMatVec for FFT64Neon {}
+impl<R: Ring> Reim4BlkMatVec for FFT64Neon<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl Reim4Convolution for FFT64Neon {
+impl<R: Ring> Reim4Convolution for FFT64Neon<R> {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         crate::neon::reim4_conv::reim4_convolution_1coeff_neon(k, dst, a, a_size, b, b_size);
@@ -211,6 +224,16 @@ impl Reim4Convolution for FFT64Neon {
     #[inline(always)]
     fn reim4_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         crate::neon::reim4_conv::reim4_convolution_2coeffs_neon(k, dst, a, a_size, b, b_size);
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        unsafe { crate::neon::reim4_conv::reim4_real_convolution_1coeff_neon(k, dst, a, a_size, b, b_size) }
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        let (lo, hi) = dst.split_at_mut(8);
+        Self::reim4_real_convolution_1coeff(k, lo.try_into().unwrap(), a, a_size, b, b_size);
+        Self::reim4_real_convolution_1coeff(k + 1, hi.try_into().unwrap(), a, a_size, b, b_size);
     }
     #[inline(always)]
     fn reim4_convolution_by_real_const_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64]) {
@@ -223,10 +246,10 @@ impl Reim4Convolution for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl Reim4Convolution for FFT64Neon {}
+impl<R: Ring> Reim4Convolution for FFT64Neon<R> {}
 
 #[cfg(target_arch = "aarch64")]
-impl I64Ops for FFT64Neon {
+impl<R: Ring> I64Ops for FFT64Neon<R> {
     #[inline(always)]
     fn i64_extract_1blk_contiguous(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
         crate::neon::conv_i64::i64_extract_1blk_contiguous_neon(n, offset, rows, blk, dst, src);
@@ -246,9 +269,9 @@ impl I64Ops for FFT64Neon {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl I64Ops for FFT64Neon {}
+impl<R: Ring> I64Ops for FFT64Neon<R> {}
 
-impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
+impl<R: Ring> poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)

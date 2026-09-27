@@ -207,14 +207,14 @@ macro_rules! fft64_ring_arith_standard {
             $crate::reference::fft64::standard::build_fft64_automorphism_plan(n, p)
         }
         fn fft64_automorphism(plan: &$crate::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
-            $crate::reference::fft64::standard::fft64_automorphism_ref(plan, res, a)
+            <Self as $crate::reference::fft64::reim::ReimArith>::reim_automorphism(plan, res, a)
         }
         fn fft64_automorphism_add(
             plan: &$crate::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan,
             res: &mut [f64],
             a: &[f64],
         ) {
-            $crate::reference::fft64::standard::fft64_automorphism_add_ref(plan, res, a)
+            <Self as $crate::reference::fft64::reim::ReimArith>::reim_automorphism_add(plan, res, a)
         }
     };
 }

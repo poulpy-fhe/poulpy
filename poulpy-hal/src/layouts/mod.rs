@@ -519,12 +519,13 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// This is useful for proof or delegating backends that want to remain a
 /// distinct backend type while reusing the same owned buffer, borrowed views,
 /// scalar types, and handle representation as a source backend.
+/// A trailing `; generic R: Ring` forwards every instantiation of a generic marker.
 #[macro_export]
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
-    ($be:ty, $from:ty $(, $executor:ty)?) => {
-        impl poulpy_hal::layouts::Backend for $be {
+    ($be:ty, $from:ty $(, $executor:ty)? $(; generic $g:ident: $gb:path)?) => {
+        impl$(<$g: $gb>)? poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
             const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
@@ -686,16 +687,16 @@ macro_rules! impl_backend_from {
 
         // A delegating backend forwards all storage behavior verbatim, so every
         // container layout is shared with the source backend by construction.
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
 }
 

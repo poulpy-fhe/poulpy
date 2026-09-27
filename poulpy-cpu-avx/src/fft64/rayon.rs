@@ -1,38 +1,54 @@
 //! Rayon-scheduled wrapper for the AVX2 FFT64 backend.
 
-use poulpy_hal::layouts::{Module, VecZnxDftBackendMut, VecZnxDftBackendRef};
+use poulpy_hal::layouts::Ring;
 
 use super::FFT64AvxRayon;
-use crate::FFT64Avx;
 
-fn dft_automorphism(
-    _module: &Module<FFT64AvxRayon>,
-    plan: &<FFT64Avx as poulpy_hal::oep::HalVecZnxDftImpl>::AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, FFT64AvxRayon>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, FFT64AvxRayon>,
-    a_col: usize,
-) {
-    super::fft64_vec_znx_dft_automorphism_avx::<FFT64AvxRayon>(plan, res, res_col, a, a_col);
+mod standard {
+    use poulpy_cpu_ref::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+
+    use super::FFT64AvxRayon;
+    use crate::FFT64Avx;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64AvxRayon, FFT64Avx);
+
+    unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64AvxRayon {
+        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    }
+
+    impl ZnxAutomorphismRotate for FFT64AvxRayon {
+        #[inline(always)]
+        fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+            <FFT64Avx as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+        }
+    }
+
+    impl Fft64RingArith for FFT64AvxRayon {
+        poulpy_cpu_ref::fft64_ring_arith_standard!();
+    }
 }
 
-poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64AvxRayon, FFT64Avx, dft_automorphism);
+mod conjugate_invariant {
+    use poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith;
+    use poulpy_hal::layouts::ConjugateInvariant;
 
-unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64AvxRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    use super::FFT64AvxRayon;
+    use crate::FFT64Avx;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64AvxRayon<ConjugateInvariant>, FFT64Avx<ConjugateInvariant>);
+
+    impl Fft64RingArith for FFT64AvxRayon<ConjugateInvariant> {
+        poulpy_cpu_ref::fft64_ring_arith_ci!();
+    }
 }
 
-impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64AvxRayon {
-    poulpy_cpu_ref::fft64_ring_arith_standard!();
-}
-
-impl poulpy_cpu_rayon::RayonTuning for FFT64AvxRayon {
+impl<R: Ring> poulpy_cpu_rayon::RayonTuning for FFT64AvxRayon<R> {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64AvxRayon {
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64AvxRayon<R> {
     const PREPARE: usize = 8;
     const APPLY: usize = 8;
     const VMP: usize = 8;

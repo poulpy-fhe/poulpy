@@ -1,38 +1,54 @@
 //! Rayon-scheduled wrapper for the AVX-512 FFT64 backend.
 
-use poulpy_hal::layouts::{Module, VecZnxDftBackendMut, VecZnxDftBackendRef};
+use poulpy_hal::layouts::Ring;
 
 use super::FFT64Avx512Rayon;
-use crate::FFT64Avx512;
 
-fn dft_automorphism(
-    _module: &Module<FFT64Avx512Rayon>,
-    plan: &<FFT64Avx512 as poulpy_hal::oep::HalVecZnxDftImpl>::AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, FFT64Avx512Rayon>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, FFT64Avx512Rayon>,
-    a_col: usize,
-) {
-    super::fft64_vec_znx_dft_automorphism_avx512::<FFT64Avx512Rayon>(plan, res, res_col, a, a_col);
+mod standard {
+    use poulpy_cpu_ref::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+
+    use super::FFT64Avx512Rayon;
+    use crate::FFT64Avx512;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon, FFT64Avx512);
+
+    unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512Rayon {
+        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    }
+
+    impl ZnxAutomorphismRotate for FFT64Avx512Rayon {
+        #[inline(always)]
+        fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+            <FFT64Avx512 as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+        }
+    }
+
+    impl Fft64RingArith for FFT64Avx512Rayon {
+        poulpy_cpu_ref::fft64_ring_arith_standard!();
+    }
 }
 
-poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon, FFT64Avx512, dft_automorphism);
+mod conjugate_invariant {
+    use poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith;
+    use poulpy_hal::layouts::ConjugateInvariant;
 
-unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512Rayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    use super::FFT64Avx512Rayon;
+    use crate::FFT64Avx512;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon<ConjugateInvariant>, FFT64Avx512<ConjugateInvariant>);
+
+    impl Fft64RingArith for FFT64Avx512Rayon<ConjugateInvariant> {
+        poulpy_cpu_ref::fft64_ring_arith_ci!();
+    }
 }
 
-impl poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith for FFT64Avx512Rayon {
-    poulpy_cpu_ref::fft64_ring_arith_standard!();
-}
-
-impl poulpy_cpu_rayon::RayonTuning for FFT64Avx512Rayon {
+impl<R: Ring> poulpy_cpu_rayon::RayonTuning for FFT64Avx512Rayon<R> {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512Rayon {
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Avx512Rayon<R> {
     const PREPARE: usize = 8;
     const APPLY: usize = 8;
     const VMP: usize = 8;

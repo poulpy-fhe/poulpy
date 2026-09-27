@@ -11,11 +11,11 @@ use poulpy_cpu_ref::reference::{
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     znx::{
-        ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
-        ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-        ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-        ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
-        ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
+        ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
+        ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
+        ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
+        ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+        znx_copy_ref, znx_rotate, znx_zero_ref,
     },
 };
 use poulpy_hal::{
@@ -46,9 +46,9 @@ use crate::{
         },
     },
     znx_avx::{
-        znx_add_assign_avx, znx_add_avx, znx_automorphism_avx, znx_automorphism_rotate_avx, znx_extract_digit_addmul_avx,
-        znx_mul_add_power_of_two_avx, znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx, znx_negate_assign_avx,
-        znx_negate_avx, znx_normalize_digit_avx, znx_normalize_final_step_assign_avx, znx_normalize_final_step_avx,
+        znx_add_assign_avx, znx_add_avx, znx_extract_digit_addmul_avx, znx_mul_add_power_of_two_avx,
+        znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx, znx_negate_assign_avx, znx_negate_avx,
+        znx_normalize_digit_avx, znx_normalize_final_step_assign_avx, znx_normalize_final_step_avx,
         znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx, znx_normalize_first_step_carry_only_avx,
         znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx, znx_normalize_middle_step_carry_only_avx,
         znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
@@ -83,31 +83,20 @@ pub struct FFT64AvxHandle<R: Ring = Standard> {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Avx<R> {}
 
-impl poulpy_hal::layouts::MaxBase2k for FFT64Avx {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
-    }
-}
-
-impl Backend for FFT64Avx {
+impl<R: Ring> Backend for FFT64Avx<R> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
+    type Ring = R;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64AvxHandle;
+    type Handle = FFT64AvxHandle<R>;
     type Location = Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -235,7 +224,7 @@ unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64AvxHandle<R> {
     }
 }
 
-impl ZnxAdd for FFT64Avx {
+impl<R: Ring> ZnxAdd for FFT64Avx<R> {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -244,7 +233,7 @@ impl ZnxAdd for FFT64Avx {
     }
 }
 
-impl ZnxAddAssign for FFT64Avx {
+impl<R: Ring> ZnxAddAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -253,7 +242,7 @@ impl ZnxAddAssign for FFT64Avx {
     }
 }
 
-impl ZnxSub for FFT64Avx {
+impl<R: Ring> ZnxSub for FFT64Avx<R> {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -262,7 +251,7 @@ impl ZnxSub for FFT64Avx {
     }
 }
 
-impl ZnxSubAssign for FFT64Avx {
+impl<R: Ring> ZnxSubAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -271,7 +260,7 @@ impl ZnxSubAssign for FFT64Avx {
     }
 }
 
-impl ZnxSubNegateAssign for FFT64Avx {
+impl<R: Ring> ZnxSubNegateAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -280,37 +269,14 @@ impl ZnxSubNegateAssign for FFT64Avx {
     }
 }
 
-impl ZnxAutomorphism for FFT64Avx {
-    #[inline(always)]
-    fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        unsafe {
-            znx_automorphism_avx(p, res, a);
-        }
-    }
-
-    #[inline(always)]
-    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        poulpy_cpu_ref::reference::znx::standard::znx_automorphism_ref(p, res, a)
-    }
-}
-
-impl ZnxAutomorphismRotate for FFT64Avx {
-    #[inline(always)]
-    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-        unsafe {
-            znx_automorphism_rotate_avx(p, k, res, a);
-        }
-    }
-}
-
-impl ZnxCopy for FFT64Avx {
+impl<R: Ring> ZnxCopy for FFT64Avx<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_ref(res, a);
     }
 }
 
-impl ZnxNegate for FFT64Avx {
+impl<R: Ring> ZnxNegate for FFT64Avx<R> {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         unsafe {
@@ -319,7 +285,7 @@ impl ZnxNegate for FFT64Avx {
     }
 }
 
-impl ZnxNegateAssign for FFT64Avx {
+impl<R: Ring> ZnxNegateAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         unsafe {
@@ -328,7 +294,7 @@ impl ZnxNegateAssign for FFT64Avx {
     }
 }
 
-impl ZnxMulAddPowerOfTwo for FFT64Avx {
+impl<R: Ring> ZnxMulAddPowerOfTwo for FFT64Avx<R> {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -337,7 +303,7 @@ impl ZnxMulAddPowerOfTwo for FFT64Avx {
     }
 }
 
-impl ZnxMulPowerOfTwo for FFT64Avx {
+impl<R: Ring> ZnxMulPowerOfTwo for FFT64Avx<R> {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -346,7 +312,7 @@ impl ZnxMulPowerOfTwo for FFT64Avx {
     }
 }
 
-impl ZnxMulPowerOfTwoAssign for FFT64Avx {
+impl<R: Ring> ZnxMulPowerOfTwoAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         unsafe {
@@ -355,21 +321,21 @@ impl ZnxMulPowerOfTwoAssign for FFT64Avx {
     }
 }
 
-impl ZnxRotate for FFT64Avx {
+impl<R: Ring> ZnxRotate for FFT64Avx<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate::<Self>(p, res, src);
     }
 }
 
-impl ZnxZero for FFT64Avx {
+impl<R: Ring> ZnxZero for FFT64Avx<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_ref(res);
     }
 }
 
-impl ZnxSwitchRing for FFT64Avx {
+impl<R: Ring> ZnxSwitchRing for FFT64Avx<R> {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -378,7 +344,7 @@ impl ZnxSwitchRing for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeFirstStep for FFT64Avx {
+impl<R: Ring> ZnxNormalizeFirstStep for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_first_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -387,7 +353,7 @@ impl ZnxNormalizeFirstStep for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeMiddleStep for FFT64Avx {
+impl<R: Ring> ZnxNormalizeMiddleStep for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -396,7 +362,7 @@ impl ZnxNormalizeMiddleStep for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeFinalStep for FFT64Avx {
+impl<R: Ring> ZnxNormalizeFinalStep for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -405,7 +371,7 @@ impl ZnxNormalizeFinalStep for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeFinalStepAssign for FFT64Avx {
+impl<R: Ring> ZnxNormalizeFinalStepAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -414,7 +380,7 @@ impl ZnxNormalizeFinalStepAssign for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeFirstStepCarryOnly for FFT64Avx {
+impl<R: Ring> ZnxNormalizeFirstStepCarryOnly for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -423,7 +389,7 @@ impl ZnxNormalizeFirstStepCarryOnly for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeFirstStepAssign for FFT64Avx {
+impl<R: Ring> ZnxNormalizeFirstStepAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -432,7 +398,7 @@ impl ZnxNormalizeFirstStepAssign for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeMiddleStepCarryOnly for FFT64Avx {
+impl<R: Ring> ZnxNormalizeMiddleStepCarryOnly for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
         unsafe {
@@ -441,7 +407,7 @@ impl ZnxNormalizeMiddleStepCarryOnly for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeMiddleStepAssign for FFT64Avx {
+impl<R: Ring> ZnxNormalizeMiddleStepAssign for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
         unsafe {
@@ -450,7 +416,7 @@ impl ZnxNormalizeMiddleStepAssign for FFT64Avx {
     }
 }
 
-impl ZnxExtractDigitAddMul for FFT64Avx {
+impl<R: Ring> ZnxExtractDigitAddMul for FFT64Avx<R> {
     #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
@@ -459,7 +425,7 @@ impl ZnxExtractDigitAddMul for FFT64Avx {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx {
+impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
@@ -513,7 +479,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeDigit for FFT64Avx {
+impl<R: Ring> ZnxNormalizeDigit for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
@@ -522,21 +488,21 @@ impl ZnxNormalizeDigit for FFT64Avx {
     }
 }
 
-impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx {
+impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx<R> {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         ReimFFTAvx::reim_dft_execute(table, data);
     }
 }
 
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx {
+impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx<R> {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ReimIFFTAvx::reim_dft_execute(table, data);
     }
 }
 
-impl ReimArith for FFT64Avx {
+impl<R: Ring> ReimArith for FFT64Avx<R> {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         unsafe { reim_from_znx_i64_bnd50_fma(res, a) }
@@ -611,9 +577,18 @@ impl ReimArith for FFT64Avx {
     fn reim_zero(res: &mut [f64]) {
         reim_zero_ref(res)
     }
+
+    #[inline(always)]
+    fn reim_automorphism(
+        plan: &poulpy_cpu_ref::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan,
+        res: &mut [f64],
+        a: &[f64],
+    ) {
+        super::automorphism::reim_automorphism_avx(plan, res, a)
+    }
 }
 
-impl Reim4BlkMatVec for FFT64Avx {
+impl<R: Ring> Reim4BlkMatVec for FFT64Avx<R> {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         unsafe { reim4_extract_1blk_from_reim_contiguous_avx(m, rows, blk, dst, src) }
@@ -650,7 +625,7 @@ impl Reim4BlkMatVec for FFT64Avx {
     }
 }
 
-impl Reim4Convolution for FFT64Avx {
+impl<R: Ring> Reim4Convolution for FFT64Avx<R> {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { reim4_convolution_1coeff_avx(k, dst, a, a_size, b, b_size) }
@@ -747,7 +722,7 @@ impl Reim4Convolution for FFT64Avx {
     }
 }
 
-impl I64Ops for FFT64Avx {
+impl<R: Ring> I64Ops for FFT64Avx<R> {
     #[inline(always)]
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe { crate::znx_avx::znx_hadamard_product_i64_avx2(res, a, b) }
@@ -774,7 +749,7 @@ impl I64Ops for FFT64Avx {
     }
 }
 
-impl BigWordHadamardProduct for FFT64Avx {
+impl<R: Ring> BigWordHadamardProduct for FFT64Avx<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)

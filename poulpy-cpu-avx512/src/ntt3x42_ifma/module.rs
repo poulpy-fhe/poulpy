@@ -15,9 +15,10 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     types::Q126Scalar,
 };
+use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory;
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Module, PrepareHint},
+    layouts::{Backend, Module, PrepareHint, Ring, Standard},
 };
 
 /// Opaque handle for the [`NTT3x42Ifma`](super::NTT3x42Ifma) backend.
@@ -29,55 +30,58 @@ use poulpy_hal::{
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT3x42Ifma>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT3x42IfmaHandle {
+pub struct NTT3x42IfmaHandle<R: Ring = Standard> {
     /// Forward tables for every degree the module serves, indexed by
     /// `log2(degree) - log2(MIN_DEGREE)`; the last entry is the module's own.
-    pub(crate) tables_ntt: Vec<Ntt3x42IfmaTable<Primes42>>,
+    pub(crate) tables_ntt: Vec<Ntt3x42IfmaTable<Primes42, R>>,
     /// Inverse tables, same indexing.
-    pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42>>,
+    pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42, R>>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl NTT3x42IfmaHandle {
-    const LOG_MIN_DEGREE: usize = NTT3x42Ifma::MIN_DEGREE.ilog2() as usize;
+impl<R: Ring> NTT3x42IfmaHandle<R> {
+    const LOG_MIN_DEGREE: usize = <NTT3x42Ifma>::MIN_DEGREE.ilog2() as usize;
 
     /// The forward table for degree `n`, a power of two the module serves.
-    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42> {
+    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42, R> {
         &self.tables_ntt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
     }
 
     /// The inverse table for degree `n`.
-    pub(crate) fn table_intt_for(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42> {
+    pub(crate) fn table_intt_for(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42, R> {
         &self.tables_intt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
     }
-}
 
-impl poulpy_hal::layouts::MaxBase2k for NTT3x42Ifma {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
-            <Primes42 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
+    /// Tables of every degree from [`Backend::MIN_DEGREE`] to `n`, built by the ring's constructors.
+    pub(super) fn with_tables(
+        n: usize,
+        ntt: fn(usize) -> Ntt3x42IfmaTable<Primes42, R>,
+        intt: fn(usize) -> Ntt3x42IfmaTableInv<Primes42, R>,
+    ) -> Self {
+        let degrees = || (Self::LOG_MIN_DEGREE..=n.ilog2() as usize).map(|log_degree| 1usize << log_degree);
+        NTT3x42IfmaHandle {
+            table_cache: Default::default(),
+            tables_ntt: degrees().map(ntt).collect(),
+            tables_intt: degrees().map(intt).collect(),
+            meta_bbc: Bbc126IfmaMeta::new(),
+        }
     }
 }
 
-impl Backend for NTT3x42Ifma {
+impl<R: Ring> Backend for NTT3x42Ifma<R> {
     const MIN_DEGREE: usize = 8;
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
+    type Ring = R;
     type DftWord = Q126Scalar;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT3x42IfmaHandle;
+    type Handle = NTT3x42IfmaHandle<R>;
     type Location = poulpy_hal::layouts::Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -226,7 +230,7 @@ impl Backend for NTT3x42Ifma {
 /// The borrow lives for `&Module<NTT3x42Ifma>` and is sound under the
 /// no-aliasing assumption documented on `Module`.
 #[inline(always)]
-pub(crate) fn handle(module: &Module<NTT3x42Ifma>) -> &NTT3x42IfmaHandle {
+pub(crate) fn handle<R: Ring>(module: &Module<NTT3x42Ifma<R>>) -> &NTT3x42IfmaHandle<R> {
     unsafe { &*module.ptr() }
 }
 
@@ -258,28 +262,22 @@ fn assert_runtime_support() {
 /// Verifies AVX-512-IFMA availability at runtime, then heap-allocates a
 /// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of every
 /// degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
-pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
+pub(crate) fn module_new<R: Ring>(n: u64) -> Module<NTT3x42Ifma<R>>
+where
+    NTT3x42IfmaHandle<R>: NttHandleFactory,
+{
     assert_runtime_support();
     assert!(
-        n as usize >= NTT3x42Ifma::MIN_DEGREE,
+        n as usize >= <NTT3x42Ifma>::MIN_DEGREE,
         "NTT3x42Ifma requires n >= {}, got {n}",
-        NTT3x42Ifma::MIN_DEGREE
+        <NTT3x42Ifma>::MIN_DEGREE
     );
-    let handle = NTT3x42IfmaHandle {
-        table_cache: Default::default(),
-        tables_ntt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
-            .map(|log_degree| Ntt3x42IfmaTable::new(1usize << log_degree))
-            .collect(),
-        tables_intt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
-            .map(|log_degree| Ntt3x42IfmaTableInv::new(1usize << log_degree))
-            .collect(),
-        meta_bbc: Bbc126IfmaMeta::new(),
-    };
-    let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));
+    let handle = NTT3x42IfmaHandle::<R>::create_ntt_handle(n as usize);
+    let ptr: NonNull<NTT3x42IfmaHandle<R>> = NonNull::from(Box::leak(Box::new(handle)));
     unsafe { Module::from_nonnull(ptr, n) }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {
+unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

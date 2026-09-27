@@ -139,4 +139,14 @@ pub trait ReimArith {
     fn reim_zero(res: &mut [f64]) {
         reim_zero_ref(res)
     }
+
+    /// Complex-slot permutation of one limb: `res = tau_p(a)`.
+    fn reim_automorphism(plan: &crate::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        crate::reference::fft64::standard::fft64_automorphism_ref(plan, res, a)
+    }
+
+    /// Complex-slot permutation of one limb: `res += tau_p(a)`.
+    fn reim_automorphism_add(plan: &crate::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        crate::reference::fft64::standard::fft64_automorphism_add_ref(plan, res, a)
+    }
 }
