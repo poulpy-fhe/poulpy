@@ -90,3 +90,20 @@ pub fn default_bench_params_core() -> Vec<CoreParams> {
         },
     ]
 }
+
+/// Public-key encryption at four 17-bit limbs, ranks {1, 2, 4}, ring degrees {2^11, 2^14}.
+pub fn default_bench_params_encrypt_pk() -> Vec<CoreParams> {
+    let mut result = Vec::new();
+    for n in [1 << 11, 1 << 14] {
+        for rank in [1, 2, 4] {
+            result.push(CoreParams {
+                n,
+                base2k: 17,
+                k: 4 * 17,
+                rank,
+                dsize: 1,
+            });
+        }
+    }
+    result
+}

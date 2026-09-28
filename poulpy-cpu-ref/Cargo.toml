@@ -94,3 +94,8 @@ required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 [[bench]]
 name = "normalize"
 harness = false
+
+[[bench]]
+name = "encrypt_pk"
+harness = false
+required-features = ["enable-core"]
