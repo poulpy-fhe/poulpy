@@ -24,7 +24,10 @@ use poulpy_hal::{
     test_suite::upload_vec_znx,
 };
 
-fn upload<B: Backend<ZnxWord = i64>>(module: &Module<B>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<B> {
+fn upload<B: Backend<ZnxWord = i64>>(
+    module: &Module<B>,
+    pt: &CKKSPlaintextOwned<HostBytesBackend<B::Ring>>,
+) -> CKKSPlaintextOwned<B> {
     let mut out = module.ckks_plaintext_alloc_from_infos(pt);
     *out.data_mut() = upload_vec_znx::<B>(pt.data());
     out
@@ -62,7 +65,7 @@ where
         meta: coeff_meta.meta,
     };
     let bytes = module.ckks_all_ops_tmp_bytes(&layout, &key, &pt_layout);
-    let host = Module::<HostBytesBackend>::new(module.n() as u64);
+    let host = Module::<HostBytesBackend<B::Ring>>::new(module.n() as u64);
     let mut results = Vec::new();
     for basis in [Basis::Monomial, Basis::Chebyshev] {
         let poly = Polynomial::new(

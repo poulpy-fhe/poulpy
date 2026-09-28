@@ -599,7 +599,7 @@ mod limb_range_tests {
             middle.data.fill(0);
         }
 
-        let limb_bytes = HostBytesBackend::bytes_of_vec_znx_dft(n, cols, 1);
+        let limb_bytes = <HostBytesBackend>::bytes_of_vec_znx_dft(n, cols, 1);
         assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
         assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
         assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
@@ -609,7 +609,7 @@ mod limb_range_tests {
     #[should_panic(expected = "VecZnxDft::from_shape: windowed shapes are not supported")]
     fn from_shape_rejects_a_coefficient_window() {
         let shape = VecZnxShape::new(8, 1, 2).window_coeffs(4, 4);
-        let bytes = HostBytesBackend::bytes_of_vec_znx_dft(8, 1, 2);
+        let bytes = <HostBytesBackend>::bytes_of_vec_znx_dft(8, 1, 2);
         let _ = VecZnxDft::<AlignedBuf, i64, HostBytesBackend>::from_shape(AlignedBuf::from(vec![0u8; bytes]), shape);
     }
 

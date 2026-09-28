@@ -176,3 +176,5 @@ pub trait CKKSScalar: Float + FromPrimitive + ToPrimitive + Debug {}
 impl<T> CKKSScalar for T where T: Float + FromPrimitive + ToPrimitive + Debug {}
 
 pub use plaintext::CKKSPlaintextVecHostCodec;
+
+pub use poulpy_core::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};

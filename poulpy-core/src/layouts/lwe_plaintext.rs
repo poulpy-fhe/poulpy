@@ -1,7 +1,9 @@
 use poulpy_hal::AlignedBuf;
 use std::fmt;
 
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
+use poulpy_hal::layouts::{
+    Backend, Data, HostBytesBackend, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+};
 
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
@@ -106,7 +108,7 @@ impl<W: ZnxWord> LWEPlaintext<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,

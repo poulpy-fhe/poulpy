@@ -5,11 +5,14 @@ use std::fmt::Debug;
 use anyhow::{Result, anyhow};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 use poulpy_core::layouts::Base2K;
-use poulpy_hal::layouts::{HostBytesBackend, Module};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{HostBytesBackend, Module, Ring},
+};
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
@@ -26,19 +29,18 @@ pub struct PolynomialApproximation<P> {
     pub coeff_log_delta: usize,
 }
 
-impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
+impl<R: Ring> PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, R>> {
     /// Prepares `poly` and its interval map on the host.
     pub fn from_polynomial<F, M>(
         poly: &Polynomial<F>,
         base2k: Base2K,
         coeff_meta: M,
         strategy: SplitStrategy,
-        module: &Module<HostBytesBackend>,
+        module: &Module<HostBytesBackend<R>>,
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
         M: Into<CoeffsMeta>,
-        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let coeff_meta = coeff_meta.into();
         let bsgs = poly
@@ -132,6 +134,7 @@ impl<P> PolynomialApproximation<P> {
 mod tests {
     use super::*;
     use crate::Quad;
+    use crate::layouts::CKKSPlaintextOwned;
 
     fn prepare(a: f64, b: f64) -> PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
         let module = Module::<HostBytesBackend>::new(256);

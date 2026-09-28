@@ -43,8 +43,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
-        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena,
-        ScratchOwned, ZnxView, ZnxWord,
+        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena,
+        ScratchOwned, Standard, ZnxView, ZnxWord,
     },
     source::Source,
 };
@@ -247,11 +247,14 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
 {
 }
 
-/// Aggregates all `Module<HostBytesBackend>` capabilities needed by the CKKS
+/// Aggregates the `Module<HostBytesBackend<R>>` capabilities needed by the CKKS
 /// test suite.
-pub trait TestContextHostModule: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend> {}
+pub trait TestContextHostModule<R: Ring = Standard>:
+    ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>
+{
+}
 
-impl<M: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>> TestContextHostModule for M {}
+impl<R: Ring, M: ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>> TestContextHostModule<R> for M {}
 
 // ─── scalar + test-vector marker ─────────────────────────────────────────────
 
@@ -536,8 +539,8 @@ where
 
 // ─── plaintext upload / download ─────────────────────────────────────────────
 
-/// Uploads a host-side plaintext to the backend.
-pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<BE>
+/// Uploads a host-side plaintext to a backend of the same ring.
+pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
 {
@@ -547,7 +550,7 @@ where
 }
 
 /// Downloads a backend plaintext to the host.
-pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord> {
+pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring> {
     pt.to_host_owned::<BE>()
 }
 
@@ -555,7 +558,7 @@ pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<Al
 
 /// Encodes complex slots into a host plaintext then uploads it to the backend.
 pub fn encode_and_upload_pt<BE, F, E>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     base2k: Base2K,
@@ -565,7 +568,7 @@ pub fn encode_and_upload_pt<BE, F, E>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -577,7 +580,7 @@ where
 
 /// Encodes a packed constant (at most 2 coefficients: re, im) and uploads.
 pub fn ckks_pt_cst<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     prec: CKKSLayout,
@@ -586,7 +589,7 @@ pub fn ckks_pt_cst<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let coeff_count = if im.is_some() { 2 } else { 1 };
@@ -605,7 +608,7 @@ where
 
 /// Encodes a full-degree constant (sets coefficient 0 = re, coefficient m = im) and uploads.
 pub fn ckks_pt_cst_full<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     prec: CKKSLayout,
@@ -615,7 +618,7 @@ pub fn ckks_pt_cst_full<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let n = m * 2;
@@ -634,13 +637,13 @@ where
 
 /// Encodes and uploads the add/sub test constant.
 pub fn add_sub_const_pt<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst::<BE, F>(
@@ -655,14 +658,14 @@ where
 
 /// Encodes and uploads the multiply test constant as a full-degree plaintext.
 pub fn mul_const_full_pt<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     m: usize,
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst_full::<BE, F>(host_module, module, base2k, PT_PREC, m, Some(MUL_CONST.0), Some(MUL_CONST.1))
@@ -677,13 +680,13 @@ where
 pub fn gen_sk_with_raw<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
     seed: [u8; 32],
 ) -> (BackendGLWESecret<BE>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
@@ -698,13 +701,13 @@ where
 pub fn gen_sk<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     seed: [u8; 32],
 ) -> GLWESecretPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     gen_sk_with_raw(params, module, host_module, seed).1
 }
@@ -786,7 +789,7 @@ where
 pub fn gen_encapsulation_keys<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
     sk_dense_raw: &BackendGLWESecret<BE>,
     ephemeral_secret_weight: usize,
     k_in: usize,
@@ -799,7 +802,7 @@ pub fn gen_encapsulation_keys<BE>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     // Sparse ephemeral secret skSparse (fixed Hamming weight).
     let mut source = Source::new(next_test_seed(7));
@@ -820,7 +823,7 @@ where
 pub fn ckks_encrypt<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
@@ -831,7 +834,7 @@ pub fn ckks_encrypt<BE, F, E>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -847,7 +850,7 @@ where
 pub fn ckks_encrypt_coeffs<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     coeffs: &[F],
@@ -857,9 +860,9 @@ pub fn ckks_encrypt_coeffs<BE, F>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
     let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
@@ -884,7 +887,7 @@ where
 pub fn ckks_encrypt_with_prec<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
@@ -896,7 +899,7 @@ pub fn ckks_encrypt_with_prec<BE, F, E>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -926,7 +929,7 @@ pub fn ckks_encrypt_pt<BE>(
     module: &Module<BE>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
-    host_pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    host_pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSCiphertextOwned<BE>
 where
@@ -1015,7 +1018,7 @@ pub fn ckks_decrypt_with_prec<BE>(
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     prec: CKKSLayout,
     scratch: &mut ScratchArena<'_, BE>,
-) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord>>
+) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -1071,10 +1074,10 @@ where
 }
 
 /// Decodes a host-side plaintext to slot vectors.
-pub fn ckks_decode_pt<F, E>(
+pub fn ckks_decode_pt<F, E, R: Ring>(
     encoder: &ReferenceEncoder<E>,
     m: usize,
-    pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    pt: &CKKSPlaintextOwned<HostBytesBackend<R>>,
 ) -> (Vec<F>, Vec<F>)
 where
     F: TestScalar,
@@ -1337,7 +1340,12 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
 
-pub fn assert_ct_meta<D: Data, W: ZnxWord>(label: &str, ct: &CKKSCiphertext<D, W>, log_delta: usize, log_budget: usize) {
+pub fn assert_ct_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    log_delta: usize,
+    log_budget: usize,
+) {
     assert_eq!(ct.log_delta(), log_delta, "{label}: unexpected log_delta");
     assert_eq!(ct.log_budget(), log_budget, "{label}: unexpected log_budget");
 }
@@ -1348,10 +1356,10 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
-pub fn assert_unary_output_meta<D: Data, W: ZnxWord>(
+pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W>,
-    input: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R>,
+    input: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1361,11 +1369,11 @@ pub fn assert_unary_output_meta<D: Data, W: ZnxWord>(
     );
 }
 
-pub fn assert_binary_output_meta<D: Data, W: ZnxWord>(
+pub fn assert_binary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W>,
-    a: &CKKSCiphertext<impl Data, W>,
-    b: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R>,
+    a: &CKKSCiphertext<impl Data, W, R>,
+    b: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1375,9 +1383,9 @@ pub fn assert_binary_output_meta<D: Data, W: ZnxWord>(
     );
 }
 
-pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord>(
+pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W>,
+    ct: &CKKSCiphertext<D, W, R>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
@@ -1389,9 +1397,9 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord>(
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
-pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord>(
+pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W>,
+    ct: &CKKSCiphertext<D, W, R>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {

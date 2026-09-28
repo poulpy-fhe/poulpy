@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
+    Backend, Data, HostBytesBackend, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
     VecZnxToBackendRef, ZnxWord,
 };
 
@@ -216,7 +216,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = infos.size();
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -230,7 +230,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -242,20 +242,6 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
 }
 
 impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
-    pub fn alloc_with_meta(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        GLWEPlaintext {
-            data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
-                n.into(),
-                1,
-                size,
-            ),
-            base2k,
-            k,
-        }
-    }
-
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
     where
         A: GLWEInfos,

@@ -402,7 +402,7 @@ fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
 
 fn accumulate<BE, D, F>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertext<D, BE::ZnxWord>,
+    dst: &mut CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
     n: usize,
     scratch: &mut ScratchArena<'_, BE>,
     mut mul_term_into_tmp: F,
@@ -411,7 +411,7 @@ where
     BE: Backend,
     D: Data,
     Module<BE>: CKKSAddOps<BE>,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
@@ -487,16 +487,16 @@ where
 
     fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
@@ -508,14 +508,14 @@ where
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
@@ -529,15 +529,15 @@ where
 
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
         b: &[&E],
         pt_coeffs: &[usize],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;

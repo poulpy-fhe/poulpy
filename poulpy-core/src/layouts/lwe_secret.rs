@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use poulpy_hal::{
     api::VecZnxZero,
     layouts::{
@@ -36,7 +36,7 @@ impl<W: ZnxWord> LWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree) -> Self {
         LWESecret {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), 1)),
+                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), 1)),
                 n.into(),
                 1,
             ),

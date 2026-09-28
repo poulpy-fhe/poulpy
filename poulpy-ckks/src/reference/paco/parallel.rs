@@ -423,13 +423,6 @@ where
             worker_module.n(),
             context.plan().n(),
         );
-        ckks_ensure!(
-            worker_module.cyclotomic_order() == module.cyclotomic_order(),
-            "PaCo worker {} cyclotomic order {} does not match caller order {}",
-            worker + 1,
-            worker_module.cyclotomic_order(),
-            module.cyclotomic_order(),
-        );
         let worker_required = direct_tmp_bytes_validated(worker_module, output, context, keys)
             .with_context(|| format!("cannot size PaCo worker {} scratch", worker + 1))?;
         let worker_available = worker_scratch.borrow().available();

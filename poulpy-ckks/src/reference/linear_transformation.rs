@@ -18,7 +18,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
+    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
 use crate::{
@@ -37,9 +37,9 @@ use poulpy_core::GLWEBytesOf;
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the
 /// single `LinearTransformation<P>` container without overlapping impls.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
-    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -56,7 +56,7 @@ where
 }
 
 /// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
-impl<D: Data, W: ZnxWord> LtDiagonalScale for CKKSPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalScale for CKKSPlaintext<D, W, R> {
     fn lt_log_scale(&self) -> usize {
         self.log_delta()
     }

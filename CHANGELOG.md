@@ -8,6 +8,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
 - `impl_backend_from!` accepts a trailing `; generic R: Ring` to forward every instantiation of a generic backend marker.
+- **Breaking:** `HostBytesBackend<R: Ring = Standard>` takes the ring as a type parameter; associated calls through the bare name use `<HostBytesBackend>::`.
 - **Breaking:** `vec_znx_rotate*` and `vec_znx_mul_xp_minus_one*` move from `HalVecZnxImpl` to `HalVecZnxMonomialImpl`, which conjugate-invariant backends do not implement.
 - **Breaking:** replace `Backend::MAX_BASE2K` and `Module::MAX_BASE2K` with runtime `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, dispatched through `MaxBase2k` ([#312](https://github.com/poulpy-fhe/poulpy/issues/312)). NTT and FFT64 helpers use the `squaring` flag to distinguish independent products from squares, selecting a radix from a whole-polynomial Gaussian failure estimate using the tighter Mills-ratio upper bound, capped at `BE::ZnxWord::BITS - 2`. CPU backends and Rayon wrappers implement or forward the query. See [failure estimates](docs/base2k-failure-probability.md) for model assumptions and addition headroom.
 - **Breaking:** `PrimeSet` implementations must provide `LOG_Q_PRODUCT`, the floating-point base-2 logarithm of their actual CRT modulus. `PrimeSet::validate()` checks it against the declared primes; existing prime-set tests run this check.
@@ -56,6 +57,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - **Breaking:** the GGSW methods of `ConversionImpl` and `ConversionReference` move to `GGSWConversionImpl` (registered by `impl_ggsw_conversion_reference_full!`) and `GGSWConversionReference`; `AutomorphismImpl` requires `GLWEKeyswitchImpl` and `GGSWConversionImpl`, and `GGSWKeyswitchImpl` requires `GGSWConversionImpl`, instead of `ConversionImpl`; `impl_core_reference_full!` and `impl_operations_reference_full!` no longer register LWE conversion, packing, GLWE/GGSW rotate, or `mul_xp_minus_one`, and `impl_core_reference_full!` no longer registers the GLWE trace, whose Galois elements are the standard ring's.
 - **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.
 - Packing uses its reserved arena temporary instead of allocating a GLWE at every merge, and rejects mixed input layouts before mutation. Removed unused HAL scratch-query bounds from the automorphism reference.
@@ -93,6 +95,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** `CKKSCiphertext<D, W, R>` and `CKKSPlaintext<D, W, R>` carry their ring as a type parameter; a module accepts only operands of its backend's `Ring`, so mixing rings is a compile error. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. Host polynomial encoding and the test helpers take their ring from the `HostBytesBackend<R>` module.
+- **Breaking:** SHIP, PaCo and functional-bootstrapping LUTs are typed for the standard ring: `ShipCoeffEncodings`, `PaCoKeySet` and `PaCoKeysPrepared` hold standard-ring operands, and `CKKSShipCoeffEncodingImpl`, `CKKSPaCoCoeffEncodingImpl`, `ship_coeff_encodings_host`, `paco_coeff_encodings_host`, the `poulpy-cpu-ref` `ship_coeff_encodings_staged` and `paco_coeff_encodings_staged` wrappers, `ShipKeySet::prepare`/`generate`, `PaCoKeySet::prepare`/`into_prepare`, `PaCoContext::compile`, `PaCoSecretSpec::sigma_slots_reim` and `EncodedLut::transfer_to` require `Backend<Ring = Standard>`.
 - **Breaking:** test utilities replace `preset_for_backend::<BE>` with `preset_with_max_base2k(preset, fixture_base2k)`; `bootstrapping_presets_meet_precision` now takes the fixture radix explicitly. Existing FFT and NTT fixtures retain their 19- and 52-bit radices.
 - EvalMod scratch sizing includes the final copy into the caller's destination, including copy overrides whose workspace grows with destination capacity.
 - **Breaking:** add/subtract-one operations have dedicated `ckks_add_one_tmp_bytes` / `ckks_sub_one_tmp_bytes` queries, following the selected plaintext-constant implementation by default. Shared polynomial and EvalMod budgets include these queries. Add/subtract reference wrappers and backend macros share one definition.

@@ -7,8 +7,8 @@ use std::{
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ToOwnedDeep,
-        VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostBytesBackend, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
+        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
 };
 
@@ -258,10 +258,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     {
         crate::layouts::assert_dense(self, "VecZnx::to_host_owned");
         let shape = self.shape();
-        VecZnx::from_shape(
-            crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
-            shape,
-        )
+        VecZnx::from_shape(<HostBytesBackend>::from_bytes(BE::to_host_bytes(&self.data)), shape)
     }
 
     /// Formats this backend-owned vector through the existing host [`fmt::Display`] implementation.

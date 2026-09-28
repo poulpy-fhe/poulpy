@@ -21,7 +21,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::HostStaged;
+use poulpy_hal::layouts::{HostStaged, Standard};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
@@ -110,8 +110,8 @@ pub struct HMuxRotKeyPrepared<D: Data, BE: Backend> {
 /// complex bootstrap; the mux keys are shared between both halves).
 pub struct ShipIndexKeys<D: Data, W: ZnxWord> {
     pub(crate) mux_keys: Vec<Vec<HMuxRotKey<D, W>>>,
-    pub(crate) masks: Vec<CKKSCiphertext<D, W>>,
-    pub(crate) masks2: Vec<CKKSCiphertext<D, W>>,
+    pub(crate) masks: Vec<CKKSCiphertext<D, W, Standard>>,
+    pub(crate) masks2: Vec<CKKSCiphertext<D, W, Standard>>,
 }
 
 /// Prepared form of [`ShipIndexKeys`]: the masks become left convolution
@@ -224,14 +224,14 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     /// Prepares every key for `module`: gadget keys are preprocessed and the
     /// selector masks become left convolution operands. `scratch` must hold
     /// the per-key prepare scratch, which is validated up front.
-    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = Standard>>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D, W>: GLWEToBackendRef<BE>,
+        CKKSCiphertext<D, W, Standard>: GLWEToBackendRef<BE>,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -266,7 +266,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
         );
 
         let prepare_masks =
-            |masks: &[CKKSCiphertext<D, W>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
+            |masks: &[CKKSCiphertext<D, W, Standard>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
                 masks
                     .iter()
                     .map(|ct| {
@@ -363,7 +363,7 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<HMuxRotKey<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: HostStaged,
+    BE: HostStaged + Backend<Ring = Standard>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
     Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -440,7 +440,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: HostStaged + Backend<OwnedBuf = D>,
+        BE: HostStaged + Backend<OwnedBuf = D, Ring = Standard>,
         D: HostDataRef + HostDataMut,
         F: ShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
