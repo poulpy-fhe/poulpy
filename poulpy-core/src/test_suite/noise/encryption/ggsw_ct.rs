@@ -1,7 +1,6 @@
-use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned},
+    layouts::{Module, ScalarZnx, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -86,18 +85,9 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     assert!(
-                        ct.noise(
-                            module,
-                            row,
-                            col,
-                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
-                                &pt_scalar,
-                            ),
-                            &sk_prepared,
-                            &mut scratch.borrow(),
-                        )
-                        .std()
-                        .log2()
+                        ct.noise(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
+                            .std()
+                            .log2()
                             <= noise_f(col)
                     )
                 }
@@ -183,18 +173,9 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     assert!(
-                        ct.noise(
-                            module,
-                            row,
-                            col,
-                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
-                                &pt_scalar,
-                            ),
-                            &sk_prepared,
-                            &mut scratch.borrow(),
-                        )
-                        .std()
-                        .log2()
+                        ct.noise(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
+                            .std()
+                            .log2()
                             <= noise_f(col)
                     )
                 }

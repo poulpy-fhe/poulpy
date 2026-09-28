@@ -1,8 +1,8 @@
-use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef,
-    MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
+    MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
+use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -539,7 +539,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
 
         GGSW {
             data: MatZnx::from_data(
-                <HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                alloc_aligned::<u8>(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),

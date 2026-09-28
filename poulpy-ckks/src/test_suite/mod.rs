@@ -328,6 +328,16 @@ macro_rules! ckks_backend_test_suite {
                 };
             }
 
+            macro_rules! run_params_test {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() {
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params);
+                    }
+                };
+            }
+
             macro_rules! run_test_ignored {
                 ($name:ident, $path:path) => {
                     #[test]
@@ -864,19 +874,19 @@ macro_rules! ckks_backend_test_suite {
                 eval_mod_cos_discrete_even,
                 $crate::test_suite::eval_mod::test_eval_mod_cos_discrete_even
             );
-            run_test!(
+            run_params_test!(
                 bootstrapping_standard_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
             );
-            run_test!(
+            run_params_test!(
                 bootstrapping_evalround_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_evalround_e2e
             );
-            run_test!(
+            run_params_test!(
                 bootstrapping_s2c_first_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
             );
-            run_test!(
+            run_params_test!(
                 bootstrapping_batch_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_batch_e2e
             );

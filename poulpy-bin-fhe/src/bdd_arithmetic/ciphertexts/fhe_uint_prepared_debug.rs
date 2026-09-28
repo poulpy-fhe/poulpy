@@ -1,4 +1,4 @@
-use poulpy_hal::AlignedBuf;
+use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::marker::PhantomData;
 
 use crate::bdd_arithmetic::{BDDKeyPrepared, FheUint, FheUintPrepareDebug, ToBits};
@@ -19,8 +19,7 @@ use poulpy_core::{
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::api::ModuleN;
 use poulpy_hal::layouts::{
-    Backend, Data, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef,
-    ScratchArena, Stats, ZnxWord, ZnxZero,
+    Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, Stats, ZnxWord,
 };
 
 /// A debug variant of `FheUintPrepared` that stores per-bit GGSW ciphertexts
@@ -127,17 +126,14 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
         let mut stats = Vec::new();
         for (i, ggsw) in self.bits.iter().enumerate() {
             use poulpy_hal::layouts::ZnxViewMut;
-            let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
+            let mut pt_want: ScalarZnx<AlignedBuf, i64> = ScalarZnx::from_data(
+                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
                 usize::from(self.n()),
                 1,
             );
-            pt_want.zero();
             pt_want.at_mut(0, 0)[0] = want.bit(i) as i64;
             let mut scratch_bit = scratch.borrow();
-            let pt_ref =
-                <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(&pt_want);
-            stats.push(ggsw.noise(module, row, col, &pt_ref, sk, &mut scratch_bit));
+            stats.push(ggsw.noise(module, row, col, &pt_want.to_ref(), sk, &mut scratch_bit));
         }
         stats
     }

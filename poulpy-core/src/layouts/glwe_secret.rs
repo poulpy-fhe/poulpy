@@ -1,5 +1,5 @@
-use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
+use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::{AlignedBuf, alloc_aligned};
 use poulpy_hal::{
     api::{ScalarZnxAutomorphism, ScalarZnxCIUnfold, VecZnxCopy, VecZnxZero},
     layouts::{
@@ -141,7 +141,7 @@ impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecret {
             data: ScalarZnx::from_data(
-                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
+                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
                 n.into(),
                 rank.into(),
             ),

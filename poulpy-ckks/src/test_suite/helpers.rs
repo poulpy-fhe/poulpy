@@ -1,7 +1,7 @@
 //! Free-function test helpers for the CKKS test suite.
 //!
 //! Provides trait aliases ([`TestContextBackend`], [`TestContextSharedModule`],
-//! [`TestContextModule`], [`TestContextHostModule`]), test-vector generators, "want" functions for
+//! [`TestContextModule`]), test-vector generators, "want" functions for
 //! expected values, key-generation helpers, encode/upload/download utilities,
 //! encrypt/decrypt wrappers, and precision/metadata assertion helpers.
 //!
@@ -44,7 +44,7 @@ use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
         Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena,
-        ScratchOwned, Standard, ZnxView, ZnxWord,
+        ScratchOwned, ZnxView, ZnxWord,
     },
     source::Source,
 };
@@ -253,15 +253,6 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
 {
 }
 
-/// Aggregates the `Module<HostBytesBackend<R>>` capabilities needed by the CKKS
-/// test suite.
-pub trait TestContextHostModule<R: Ring = Standard>:
-    ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>
-{
-}
-
-impl<R: Ring, M: ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>> TestContextHostModule<R> for M {}
-
 // ─── scalar + test-vector marker ─────────────────────────────────────────────
 
 pub trait TestScalar: Copy + CKKSEncodingScalar + FromPrimitive + ToPrimitive {}
@@ -445,10 +436,7 @@ pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
     prec: CKKSLayout,
     re: &[F],
     im: &[F],
-) -> (Vec<F>, Vec<F>)
-where
-    Module<HostBytesBackend>: TestContextHostModule,
-{
+) -> (Vec<F>, Vec<F>) {
     let mut pt = host_module.ckks_pt_vec_alloc(base2k, prec.k());
     pt.set_meta(prec.meta());
     encoder.encode_reim(&mut pt, re, im).unwrap();
@@ -466,10 +454,7 @@ pub fn quantized_vector<F: TestScalar, E: NegacyclicFFT<F>>(
     params: &CKKSTestParams,
     which: TestVector,
     log_delta: usize,
-) -> (Vec<F>, Vec<F>)
-where
-    Module<HostBytesBackend>: TestContextHostModule,
-{
+) -> (Vec<F>, Vec<F>) {
     let m = params.n / 2;
     let (re, im) = match which {
         TestVector::First => test_vector_1::<F>(m),
@@ -574,7 +559,6 @@ pub fn encode_and_upload_pt<BE, F, E>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -595,7 +579,6 @@ pub fn ckks_pt_cst<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let coeff_count = if im.is_some() { 2 } else { 1 };
@@ -624,7 +607,6 @@ pub fn ckks_pt_cst_full<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let n = m * 2;
@@ -649,7 +631,6 @@ pub fn add_sub_const_pt<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst::<BE, F>(
@@ -671,7 +652,6 @@ pub fn mul_const_full_pt<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst_full::<BE, F>(host_module, module, base2k, PT_PREC, m, Some(MUL_CONST.0), Some(MUL_CONST.1))
@@ -692,7 +672,6 @@ pub fn gen_sk_with_raw<BE>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
@@ -713,7 +692,6 @@ pub fn gen_sk<BE>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     gen_sk_with_raw(params, module, host_module, seed).1
 }
@@ -808,7 +786,6 @@ pub fn gen_encapsulation_keys<BE>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     // Sparse ephemeral secret skSparse (fixed Hamming weight).
     let mut source = Source::new(next_test_seed(7));
@@ -840,7 +817,6 @@ pub fn ckks_encrypt<BE, F, E>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -866,9 +842,7 @@ pub fn ckks_encrypt_coeffs<BE, F>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
     let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
@@ -905,7 +879,6 @@ pub fn ckks_encrypt_with_prec<BE, F, E>(
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {

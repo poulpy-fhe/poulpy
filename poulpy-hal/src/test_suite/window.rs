@@ -12,9 +12,9 @@ use crate::{
         VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, DataView, HostBytesBackend, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx,
-        VecZnxBig, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape,
-        ZnxView, ZnxViewMut, ZnxWord,
+        Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, VecZnxBig,
+        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape, ZnxView,
+        ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -292,8 +292,7 @@ where
 }
 
 fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE> {
-    let host_bytes = BE::to_host_bytes(v.data());
-    VecZnxBig::from_shape(<HostBytesBackend>::from_host_bytes(&host_bytes), v.shape())
+    VecZnxBig::from_shape(AlignedBuf::from(BE::to_host_bytes(v.data())), v.shape())
 }
 
 pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
