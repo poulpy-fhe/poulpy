@@ -214,10 +214,10 @@ where
 ///
 /// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEEncryptPkReference<BE: Backend> {
-    fn glwe_encrypt_pk_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
-        A: GLWEInfos,
-        B: GLWEInfos;
+        R: GLWEInfos,
+        K: GLWEInfos;
 
     fn glwe_encrypt_pk_reference<R, P, K, E>(
         &self,
@@ -252,10 +252,10 @@ impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
 where
     Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_pk_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
-        A: GLWEInfos,
-        B: GLWEInfos,
+        R: GLWEInfos,
+        K: GLWEInfos,
     {
         let size: usize = res_infos.size().max(pk_infos.size());
         let cols: usize = (res_infos.rank() + 1).into();

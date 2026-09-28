@@ -380,7 +380,7 @@ where
         };
         let glwe_infos = EncryptionLayout::new_from_default_sigma(layout(k_ct)).unwrap();
 
-        // A public key more precise than the output needs more than the output's width.
+        // A public key more precise than the output needs scratch past the output's width.
         for k_pk in [k_ct, k_ct + base2k] {
             let pk_infos = EncryptionLayout::new_from_default_sigma(layout(k_pk)).unwrap();
 

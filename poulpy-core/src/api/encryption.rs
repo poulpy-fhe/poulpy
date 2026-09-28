@@ -106,13 +106,13 @@ pub trait GLWEEncryptSk<BE: Backend> {
 }
 
 pub trait GLWEEncryptPk<BE: Backend> {
-    /// `res_infos` is the output layout and `pk_infos` the public key layout,
-    /// at least as precise as the output.
-    fn glwe_encrypt_pk_tmp_bytes<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
+    /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
+    fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
-        A: GLWEInfos,
-        B: GLWEInfos;
+        R: GLWEInfos,
+        K: GLWEInfos;
 
+    /// Panics if `pk` is less precise than `res`.
     fn glwe_encrypt_pk<R, P, K, E>(
         &self,
         res: &mut R,
@@ -128,6 +128,7 @@ pub trait GLWEEncryptPk<BE: Backend> {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
+    /// Same precondition as [`Self::glwe_encrypt_pk`].
     fn glwe_encrypt_zero_pk<R, K, E>(
         &self,
         res: &mut R,
