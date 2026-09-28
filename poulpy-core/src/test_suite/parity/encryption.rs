@@ -179,8 +179,11 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(source_snapshot("encrypt_zero_sk_sources", &mut e, &mut a));
 
         let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
-        for key in &mut pk.keys {
-            poison_glwe::<B, _>(key);
+        for l in 0..pk.rank().as_usize() {
+            poison_glwe::<B, _>(&mut glwe_public_key_entry_view_mut::<B>(
+                &mut GLWEPublicKeyToBackendMut::<B>::to_backend_mut(&mut pk),
+                l,
+            ));
         }
         module.glwe_public_key_generate(
             &mut pk,
@@ -190,8 +193,11 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
         );
-        for key in &pk.keys {
-            results.push(snapshot_glwe::<B, _>("public_key_generate", key));
+        for l in 0..pk.rank().as_usize() {
+            results.push(snapshot_glwe::<B, _>(
+                "public_key_generate",
+                &glwe_public_key_entry_view::<B>(&GLWEPublicKeyToBackendRef::<B>::to_backend_ref(&pk), l),
+            ));
         }
         results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
         assert_eq!(pk.dist(), sk.dist());

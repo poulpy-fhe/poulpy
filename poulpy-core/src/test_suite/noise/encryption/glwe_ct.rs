@@ -6,8 +6,8 @@ use poulpy_hal::{
         VecZnxDftAlloc, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView,
+        Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, ToOwnedDeep, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView, ZnxViewMut,
     },
     source::Source,
     test_suite::{TestParams, scalar_znx_backend_mut, scalar_znx_backend_ref, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -285,9 +285,9 @@ where
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    fn fnv1a<T: WriterTo>(value: &T) -> u64 {
+    fn fnv1a(write: impl FnOnce(&mut Vec<u8>) -> std::io::Result<()>) -> u64 {
         let mut bytes: Vec<u8> = Vec::new();
-        value.write_to(&mut bytes).unwrap();
+        write(&mut bytes).unwrap();
         bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
             (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
         })
@@ -360,7 +360,15 @@ where
         &mut scratch.borrow(),
     );
 
-    [fnv1a(&pk), fnv1a(&ct), fnv1a(&ct_zero)]
+    // The key digest hashes the vector key's format, the distribution then entry 0 as a GLWE, so the recorded value holds.
+    [
+        fnv1a(|b| {
+            pk.dist().write_to(b)?;
+            pk.entry(0).write_to(b)
+        }),
+        fnv1a(|b| ct.write_to(b)),
+        fnv1a(|b| ct_zero.write_to(b)),
+    ]
 }
 
 pub fn test_glwe_encrypt_pk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -566,16 +574,35 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut pk_want: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&infos);
         let (mut xe, mut xa) = (Source::new([2u8; 32]), Source::new([3u8; 32]));
-        for key in &mut pk_want.keys {
-            module.glwe_encrypt_zero_sk(key, &sk_prepared, &infos, &mut xe, &mut xa, &mut scratch.borrow());
-            module.glwe_normalize_assign(key, &mut scratch.borrow());
+        let keys_want: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = (0..rank)
+            .map(|_| {
+                let mut key: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+                module.glwe_encrypt_zero_sk(&mut key, &sk_prepared, &infos, &mut xe, &mut xa, &mut scratch.borrow());
+                module.glwe_normalize_assign(&mut key, &mut scratch.borrow());
+                key
+            })
+            .collect();
+        for (l, key) in keys_want.iter().enumerate() {
+            assert_eq!(pk.entry(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
         }
-        assert_eq!(pk.keys, pk_want.keys, "rank={rank}");
+        assert!(pk.is_canonical(), "rank={rank}");
 
         let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
         module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+
+        // A flag-clear key with digits out of range prepares, through its normalization, to the same matrix.
+        let size: usize = pk.size();
+        let mut entry = pk.entry_mut(rank - 1);
+        for limb in 1..size {
+            entry.data.at_mut(0, limb - 1).iter_mut().for_each(|digit| *digit -= 1);
+            entry.data.at_mut(0, limb).iter_mut().for_each(|digit| *digit += 1 << base2k);
+        }
+        pk.canonical = false;
+        let mut pk_prepared_lazy: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_public_key_prepared_alloc_from_infos(&infos);
+        module.glwe_public_key_prepare(&mut pk_prepared_lazy, &pk, &mut scratch.borrow());
+        assert!(pk_prepared_lazy == pk_prepared, "rank={rank}: lazy preparation differs");
 
         let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
         module.vec_znx_fill_uniform_source(
@@ -599,9 +626,7 @@ where
 
         let mut source_xu: Source = Source::new([5u8; 32]);
         let mut source_xe: Source = Source::new([6u8; 32]);
-        let size: usize = pk.size();
-        let entries: Vec<GLWEPrepared<BE::OwnedBuf, BE>> = pk
-            .entries()
+        let entries: Vec<GLWEPrepared<BE::OwnedBuf, BE>> = keys_want
             .iter()
             .map(|entry| {
                 let mut prepared: GLWEPrepared<BE::OwnedBuf, BE> = module.glwe_prepared_alloc_from_infos(entry);

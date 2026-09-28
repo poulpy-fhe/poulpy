@@ -486,10 +486,19 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn glwe_public_key_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKey<B::OwnedBuf, B::ZnxWord> {
         assert!(infos.rank().as_usize() >= 1, "invalid public key: rank must be at least 1");
+        let (n, rank, size) = (infos.n().as_usize(), infos.rank().as_usize(), infos.size());
         GLWEPublicKey {
-            keys: (0..infos.rank().as_usize())
-                .map(|_| self.glwe_alloc_from_infos(infos))
-                .collect(),
+            data: MatZnx::from_data(
+                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
+                n,
+                1,
+                rank,
+                rank + 1,
+                size,
+            ),
+            base2k: infos.base2k(),
+            k: infos.k(),
+            canonical: true,
             dist: Distribution::NONE,
         }
     }

@@ -1,12 +1,13 @@
 use poulpy_hal::{
     AlignedBuf,
     api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
-    layouts::{Backend, MatZnxAtBackendMut, Module, ReaderFrom, WriterTo},
+    layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, WriterTo},
     source::Source,
     test_suite::serialization::test_reader_writer_interface,
 };
 
 use crate::api::GLWEMaskFill;
+use crate::dist::Distribution;
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPublicKey, GLWESwitchingKey, GLWETensorKey,
     GLWEToLWEKey, LWE, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
@@ -45,9 +46,6 @@ where
         module.fill_glwe_from_source(glwe, &mut source);
     }
     let mut pk: [GLWEPublicKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK));
-    for key in pk.iter_mut().flat_map(|pk| pk.keys.iter_mut()) {
-        module.fill_glwe_from_source(key, &mut source);
-    }
     for v in glwe_c
         .iter_mut()
         .map(|x| &mut x.data)
@@ -88,6 +86,7 @@ where
     for m in gglwe
         .iter_mut()
         .map(|x| &mut x.data)
+        .chain(pk.iter_mut().map(|x| &mut x.data))
         .chain(gglwe_c.iter_mut().map(|x| &mut x.data))
         .chain(swk.iter_mut().map(|x| &mut x.key.data))
         .chain(swk_c.iter_mut().map(|x| &mut x.key.data))
@@ -120,26 +119,37 @@ where
     }
 
     test_reader_writer_interface(glwe);
-    let pk_rank_1: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, Rank(1));
-    let mut crafted: Vec<u8> = Vec::new();
-    pk_rank_1.write_to(&mut crafted).unwrap();
-    pk_rank_1.keys[0].write_to(&mut crafted).unwrap();
+    // A stream is one row of `rank` encryptions of zero at the stated precision.
+    let size: usize = K.0.div_ceil(BASE2K.0) as usize;
+    let zeros: Vec<u8> = vec![0u8; GLWEPublicKey::<AlignedBuf, i64>::bytes_of(N_GLWE, BASE2K, K, RANK)];
     let mut receiver: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    for (base2k, rows, cols_in, cols_out, size) in [
+        (BASE2K, 2, 1, 2, size),
+        (BASE2K, 1, 2, 2, size),
+        (BASE2K, 1, 0, 1, size),
+        (BASE2K, 1, 2, 3, size - 1),
+        (Base2K(0), 1, 2, 3, size),
+    ] {
+        let mut stream: Vec<u8> = Vec::new();
+        Distribution::NONE.write_to(&mut stream).unwrap();
+        stream.extend(base2k.0.to_le_bytes());
+        stream.extend(K.0.to_le_bytes());
+        MatZnx::<&[u8], i64>::from_data(&zeros, N_GLWE.into(), rows, cols_in, cols_out, size)
+            .write_to(&mut stream)
+            .unwrap();
+        assert_eq!(
+            receiver.read_from(&mut stream.as_slice()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+    }
+    let mut flag_clear: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    flag_clear.canonical = false;
+    let mut stream: Vec<u8> = Vec::new();
     assert_eq!(
-        receiver.read_from(&mut crafted.as_slice()).unwrap_err().kind(),
-        std::io::ErrorKind::InvalidData
+        flag_clear.write_to(&mut stream).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidInput
     );
-    // Entries of the right rank must also share the first entry's radix.
-    let pk_rank_2: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
-    let other_radix: GLWE<AlignedBuf, i64> = GLWE::alloc(N_GLWE, Base2K(BASE2K.0 + 1), K, RANK);
-    let mut mixed: Vec<u8> = Vec::new();
-    pk_rank_2.dist.write_to(&mut mixed).unwrap();
-    pk_rank_2.keys[0].write_to(&mut mixed).unwrap();
-    other_radix.write_to(&mut mixed).unwrap();
-    assert_eq!(
-        receiver.read_from(&mut mixed.as_slice()).unwrap_err().kind(),
-        std::io::ErrorKind::InvalidData
-    );
+    assert!(stream.is_empty());
     test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);

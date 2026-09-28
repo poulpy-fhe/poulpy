@@ -11,7 +11,7 @@ use crate::{
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
         GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut, LWEToBackendMut,
-        prepared::GLWESecretPreparedToBackendRef,
+        glwe_public_key_entry_view_mut, prepared::GLWESecretPreparedToBackendRef,
     },
     oep::EncryptionImpl,
 };
@@ -84,9 +84,10 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             "insufficient scratch for GLWE public key generation"
         );
         let mut pk = res.to_backend_mut();
-        for mut key in pk.keys.iter_mut() {
-            BE::glwe_encrypt_zero_sk(module, &mut key, sk, enc_infos, source_xe, source_xa, scratch);
-            module.glwe_normalize_assign(&mut key, scratch);
+        for l in 0..pk.rank().as_usize() {
+            let mut entry = glwe_public_key_entry_view_mut::<BE>(&mut pk, l);
+            BE::glwe_encrypt_zero_sk(module, &mut entry, sk, enc_infos, source_xe, source_xa, scratch);
+            module.glwe_normalize_assign(&mut entry, scratch);
         }
     }
     res.set_canonical(true);

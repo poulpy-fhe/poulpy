@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchArenaTakeBasic, VecZnxCopy, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
+    api::{ScratchArenaTakeBasic, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
     layouts::{
         Backend, Data, MatZnxToBackendRef, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef,
         mat_znx_at_backend_mut_from_mut,
@@ -11,7 +11,7 @@ use crate::{
     dist::Distribution,
     layouts::{
         Base2K, Degree, GLWE, GLWEInfos, GLWEPreparedFactory, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank,
-        TorusPrecision,
+        TorusPrecision, glwe_public_key_entry_view,
     },
 };
 
@@ -65,13 +65,7 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
 
 pub trait GLWEPublicKeyPreparedFactory<B: Backend>
 where
-    Self: GetDegree
-        + GLWEPreparedFactory<B>
-        + VmpPMatAlloc<B>
-        + VmpPMatBytesOf
-        + VmpPrepare<B>
-        + VmpPrepareTmpBytes
-        + VecZnxCopy<B>,
+    Self: GetDegree + GLWEPreparedFactory<B> + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes,
 {
     fn glwe_public_key_prepared_alloc(
         &self,
@@ -141,7 +135,7 @@ where
             let mut res = res.to_backend_mut();
             let other = other.to_backend_ref();
             assert!(
-                res.data.cols_in() == other.keys.len(),
+                res.data.cols_in() == other.data.cols_in(),
                 "public key and prepared public key have different entry counts"
             );
             assert_eq!(res.n(), self.ring_degree());
@@ -150,40 +144,36 @@ where
             assert_eq!(res.k(), other.k());
             assert_eq!(res.size(), other.size());
 
-            let (rank, size): (usize, usize) = (other.keys.len(), other.size());
-            let (mut mat, mut scratch_1) =
-                scratch
-                    .borrow()
-                    .take_mat_znx_scratch(self.ring_degree().into(), 1, rank, rank + 1, size);
-            for (l, key) in other.keys.iter().enumerate() {
-                let mut entry = GLWE {
-                    data: mat_znx_at_backend_mut_from_mut::<B>(&mut mat, 0, l),
-                    k: key.k(),
-                    base2k: key.base2k(),
-                    canonical: true,
-                };
-                if key.is_canonical() {
-                    for i in 0..rank + 1 {
-                        self.vec_znx_copy(&mut entry.data, i, &key.data, i);
-                    }
-                } else {
-                    self.glwe_normalize(&mut &mut entry, &key, &mut scratch_1.borrow());
+            if other.canonical {
+                self.vmp_prepare(&mut res.data, &other.data, scratch);
+            } else {
+                let (rank, size): (usize, usize) = (other.data.cols_in(), other.size());
+                let (mut mat, mut scratch_1) =
+                    scratch
+                        .borrow()
+                        .take_mat_znx_scratch(self.ring_degree().into(), 1, rank, rank + 1, size);
+                for l in 0..rank {
+                    let mut entry = GLWE {
+                        data: mat_znx_at_backend_mut_from_mut::<B>(&mut mat, 0, l),
+                        k: other.k(),
+                        base2k: other.base2k(),
+                        canonical: true,
+                    };
+                    self.glwe_normalize(
+                        &mut &mut entry,
+                        &glwe_public_key_entry_view::<B>(&other, l),
+                        &mut scratch_1.borrow(),
+                    );
                 }
+                self.vmp_prepare(&mut res.data, &mat.to_backend_ref(), &mut scratch_1);
             }
-            self.vmp_prepare(&mut res.data, &mat.to_backend_ref(), &mut scratch_1);
         }
         *res.dist_mut() = *other.dist();
     }
 }
 
 impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where
-    Self: GetDegree
-        + GLWEPreparedFactory<B>
-        + VmpPMatAlloc<B>
-        + VmpPMatBytesOf
-        + VmpPrepare<B>
-        + VmpPrepareTmpBytes
-        + VecZnxCopy<B>
+    Self: GetDegree + GLWEPreparedFactory<B> + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes
 {
 }
 
