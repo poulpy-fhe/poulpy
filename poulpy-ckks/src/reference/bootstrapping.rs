@@ -16,8 +16,8 @@ use std::ops::Deref;
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps,
-        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
+        CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
@@ -847,6 +847,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
             + CKKSImagOps<BE>
             + CKKSEvalModOps<BE>
             + CKKSPolynomialEvaluationOps<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
@@ -1101,6 +1102,7 @@ where
         + CKKSSubOps<BE>
         + CKKSEvalModOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>
@@ -1162,6 +1164,7 @@ where
         + CKKSSubOps<BE>
         + CKKSEvalModOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>

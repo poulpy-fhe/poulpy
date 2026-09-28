@@ -14,7 +14,10 @@
 //! |----------|----------------|
 //! | [`test_rotate_assign`] | in-place rotation for each requested shift |
 
-use crate::{CKKSCompositionError, CKKSInfos, api::CKKSRotateOps};
+use crate::{
+    CKKSCompositionError, CKKSInfos,
+    api::{CKKSModuleInfos, CKKSRotateOps},
+};
 use std::collections::HashMap;
 
 use super::helpers::{
@@ -25,7 +28,7 @@ use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{GaloisElement, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{HostBytesBackend, Module, ScratchArena, Standard},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
@@ -52,7 +55,7 @@ pub fn test_rotate_aligned<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.galois_element(r);
+        let gal = module.ckks_galois_element(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
@@ -111,7 +114,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.galois_element(r);
+        let gal = module.ckks_galois_element(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
@@ -170,7 +173,7 @@ pub fn test_rotate_assign<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.galois_element(r);
+        let gal = module.ckks_galois_element(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }

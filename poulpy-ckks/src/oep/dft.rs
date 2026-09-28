@@ -165,7 +165,7 @@ pub unsafe trait DFTImpl:
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
+pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
     fn ckks_new_dft_matrix_impl<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,

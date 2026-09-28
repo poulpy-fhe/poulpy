@@ -51,6 +51,8 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             pt.log_delta(),
         )?);
         ct.set_log_delta(pt.log_delta());
+        ct.set_log_sparsity(pt.log_sparsity());
+        ct.set_slots(pt.slots());
         self.ckks_add_pt_vec_into_reference(ct, pt, scratch)?;
         // The raw limb-add above can leave digits one bit beyond the `base2k`
         // normalized range; a fresh encryption is typed `Normalized`, so

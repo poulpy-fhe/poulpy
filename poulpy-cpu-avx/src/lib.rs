@@ -244,6 +244,34 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avxrayon, crat
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
 poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avxrayon, crate::NTT4x30CIAvxRayon, crate::NTT4x30AvxRayon);
 
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64avx,
+    crate::FFT64CIAvx,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
 pub mod capabilities;
 
 #[cfg(all(feature = "enable-avx", feature = "enable-bin-fhe"))]

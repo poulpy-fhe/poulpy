@@ -125,8 +125,10 @@ CPU backends share their common registrations through `impl_cpu_core_defaults!`
 and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
 transforms, and encapsulated ModUp remain explicit backend choices, as do the
 standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
-rotate, `mul_xp_minus_one`, GLWE trace), which only standard-ring backends register. Backends
-that override other families can register the individual operation macros.
+rotate, `mul_xp_minus_one`, GLWE trace) and the standard-only CKKS families
+(conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP
+coefficient encodings), which only standard-ring backends register. Backends that
+override other families can register the individual operation macros.
 
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while

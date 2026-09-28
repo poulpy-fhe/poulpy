@@ -22,7 +22,10 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
+    api::{
+        CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
+        CKKSSubOps, PolynomialInputTransform,
+    },
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
@@ -53,6 +56,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
     ) -> Result<()>
     where
         Self: CKKSPolynomialEvaluationOps<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
@@ -70,6 +74,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
 impl<BE: Backend> CKKSEvalModOpsReference<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -125,6 +130,7 @@ fn eval_mod<R, C, P, F, BE, H>(
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
