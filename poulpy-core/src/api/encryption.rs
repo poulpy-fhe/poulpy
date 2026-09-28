@@ -106,6 +106,11 @@ pub trait GLWEEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// Public-key encryption under a [`GLWEPublicKeyPrepared`](crate::layouts::GLWEPublicKeyPrepared)
+/// of rank `r`: draws `u_1, .., u_r` in order from `source_xu` under the key's
+/// distribution and outputs `Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)`, one
+/// fresh error per column drawn in column order from `source_xe`, each column
+/// normalized once at the output's `k`.
 pub trait GLWEEncryptPk<BE: Backend> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
@@ -152,6 +157,9 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
 
     /// Generate a public key using caller-owned scratch. The arena may contain
     /// arbitrary bytes and must meet [`Self::glwe_public_key_generate_tmp_bytes`].
+    /// The `rank` entries are generated in order, each a normalized encryption of
+    /// zero under `sk` (mask from `source_xa`, error from `source_xe`), and the
+    /// key takes the secret's distribution.
     fn glwe_public_key_generate<R, S, E>(
         &self,
         res: &mut R,

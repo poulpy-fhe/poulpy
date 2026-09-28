@@ -9,6 +9,9 @@ use crate::{
     layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
 };
 
+/// GLWE public key of rank `r`: `r` encryptions of zero under the secret `s`,
+/// `pk_l = (b_l, a_{l,1}, .., a_{l,r})` with `b_l = -Sum_j a_{l,j} s_j + e_l`,
+/// one per ephemeral of a public-key encryption.
 #[derive(PartialEq, Eq)]
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
     pub(crate) keys: Vec<GLWE<D, W>>,

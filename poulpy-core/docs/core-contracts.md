@@ -93,6 +93,29 @@ with another layout must provide its own `GGLWEProductDigitsStridedImpl` and
 `GLWEExternalProductImpl` implementations. The incompatible shared bodies
 are rejected at compile time.
 
+## Public keys
+
+A public key of rank `r` holds `r` encryptions of zero under the secret `s`,
+one per ephemeral: `pk_l = (b_l, a_{l,1}, .., a_{l,r})` with
+`b_l = -Sum_j a_{l,j} s_j + e_l`. Generation fills the entries in order, each
+with the selected secret-key zero encryption and a normalization.
+
+Public-key encryption draws `u_1, .., u_r` in order from `source_xu` under the
+key's distribution and computes
+
+    ct = Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)
+
+with the products accumulated in the DFT domain, one fresh error per column
+drawn in column order from `source_xe`, and one normalization per column at the
+output's `k`. Its phase is `m + Sum_l u_l e_l + e_0 + Sum_j e_j s_j`.
+
+Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
+sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one
+more with the pseudorandom `b_l`, so a ciphertext is MLWE(`n`, `r`), the
+instance the key rests on. A single ephemeral would give `r + 1` ring-LWE
+samples of degree `n` in one secret, so parameters sized for dimension `n r`
+would not protect it.
+
 ## Testing a replacement
 
 Select the comparison backend with `backend_ref` and the backend under test
