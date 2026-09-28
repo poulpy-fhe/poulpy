@@ -15,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SlotsKind,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos, SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
 };
@@ -110,8 +110,8 @@ impl EncodingPermutation {
 /// Per-ring placement of `m` slots in the `2m` ambient coefficients of the
 /// slot transform.
 pub trait CKKSSlotEmbedding: Ring {
-    /// Slot kind of a plaintext encoded on this ring, given the caller's claim.
-    fn encoded_slots(claim: SlotsKind) -> SlotsKind;
+    /// Widest slot kind the ring holds; a value's own kind may be narrower.
+    const SLOTS: SlotsKind;
 
     /// In-place planar slots to coefficients.
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
@@ -128,9 +128,7 @@ pub trait CKKSSlotEmbedding: Ring {
 
 /// Complex slots over all `2m` coefficients.
 impl CKKSSlotEmbedding for Standard {
-    fn encoded_slots(claim: SlotsKind) -> SlotsKind {
-        claim
-    }
+    const SLOTS: SlotsKind = SlotsKind::Complex;
 
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
@@ -152,9 +150,7 @@ impl CKKSSlotEmbedding for Standard {
 /// Real slots: imaginary inputs are discarded, the `m` independent
 /// coefficients sit in the first half and the second half is workspace.
 impl CKKSSlotEmbedding for ConjugateInvariant {
-    fn encoded_slots(_claim: SlotsKind) -> SlotsKind {
-        SlotsKind::Real
-    }
+    const SLOTS: SlotsKind = SlotsKind::Real;
 
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
@@ -205,13 +201,15 @@ where
 /// zero. Sparse inputs occupy every `degree / coeff_count` coefficient; the
 /// remaining coefficients are zero. Invalid shape or non-representable scalar
 /// inputs are rejected before writing the plaintext. The input and metadata are
-/// preserved. Host-access bounds are specific to this reference helper, not the
-/// resident encoding extension point.
+/// preserved, except the slot kind, which is narrowed to the ring's
+/// ([`CKKSSlotEmbedding::SLOTS`]). Host-access bounds are specific to this
+/// reference helper, not the resident encoding extension point.
 pub fn encode_coeffs_into_host<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
+    BE::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar + NumCast,
-    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
+    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -239,29 +237,32 @@ where
     };
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
-    let mut backend = pt.to_backend_mut();
+    {
+        let mut backend = pt.to_backend_mut();
 
-    if narrow {
-        let data: Vec<i64> = coeffs
-            .iter()
-            .map(|&x| {
-                quantize(x)?
-                    .to_i64()
-                    .context("CKKS coefficient is not representable as an i64 at the plaintext scale")
-            })
-            .collect::<Result<_>>()?;
-        backend.data_mut().encode_vec_i64_strided(base2k, 0, k, gap, &data);
-    } else {
-        let data: Vec<i128> = coeffs
-            .iter()
-            .map(|&x| {
-                quantize(x)?
-                    .to_i128()
-                    .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
-            })
-            .collect::<Result<_>>()?;
-        backend.data_mut().encode_vec_i128_strided(base2k, 0, k, gap, &data);
+        if narrow {
+            let data: Vec<i64> = coeffs
+                .iter()
+                .map(|&x| {
+                    quantize(x)?
+                        .to_i64()
+                        .context("CKKS coefficient is not representable as an i64 at the plaintext scale")
+                })
+                .collect::<Result<_>>()?;
+            backend.data_mut().encode_vec_i64_strided(base2k, 0, k, gap, &data);
+        } else {
+            let data: Vec<i128> = coeffs
+                .iter()
+                .map(|&x| {
+                    quantize(x)?
+                        .to_i128()
+                        .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
+                })
+                .collect::<Result<_>>()?;
+            backend.data_mut().encode_vec_i128_strided(base2k, 0, k, gap, &data);
+        }
     }
+    pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
     Ok(())
 }
 

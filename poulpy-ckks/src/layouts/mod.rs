@@ -152,7 +152,7 @@ pub use encoding_buffer::{
 };
 pub(crate) use encoding_buffer::{
     copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
-    copy_reim_host_into_encoding_buffer,
+    copy_reim_host_into_encoding_buffer, slot_coeff_count,
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
 pub use functional_bootstrapping::EncodedLut;

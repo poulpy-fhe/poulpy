@@ -4,14 +4,12 @@ use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult as Result, SetCKKSInfos,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos},
-    layouts::{CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferViewMut},
+    api::{CKKSEncodingOps, CKKSEncodingScalar},
+    layouts::{
+        CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferViewMut,
+        slot_coeff_count,
+    },
 };
-
-/// Coefficients a transformed `len`-scalar slot buffer holds: `len` on the standard ring, `len / 2` on the invariant ring.
-pub(crate) fn slot_coeff_count<BE: Backend>(module: &Module<BE>, len: usize) -> usize {
-    len / 2 * (module.n() / module.ckks_max_slots())
-}
 
 fn prefix<'a, BE: Backend + 'a, F>(
     buf: &'a mut CKKSEncodingBufferBackendMut<'_, BE, F>,

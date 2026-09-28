@@ -13,14 +13,14 @@ use crate::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
     },
-    oep::{CKKSEncodingImpl, CKKSImpl},
+    oep::{CKKSEncodingImpl, CKKSImpl, CKKSPolynomialEvaluationImpl},
     polynomial::{Basis, ComplexBSGSPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy},
     power_basis::{PowerBasis, PowerBasisGen},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos},
+    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module},
@@ -36,11 +36,20 @@ fn upload<B: Backend<ZnxWord = i64>>(
     out
 }
 
-fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+/// Shape, tensor key and scratch shared by the polynomial runs.
+struct Setup<B: Backend> {
+    layout: CKKSLayout,
+    key: GGLWELayout,
+    prepared_key: GLWETensorKeyPrepared<B::OwnedBuf, B>,
+    coeff_meta: CoeffsMeta,
+    bytes: usize,
+    host: Module<HostBytesBackend<B::Ring>>,
+}
+
+fn setup<B>(params: CKKSTestParams, module: &Module<B>) -> Setup<B>
 where
-    B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
-    F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + CKKSEvalModOps<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    B: Backend<ZnxWord = i64>,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     let b = params.base2k;
     let layout = CKKSLayout {
@@ -69,21 +78,55 @@ where
     };
     let bytes = module.ckks_all_ops_tmp_bytes(&layout, &key, &pt_layout);
     let host = Module::<HostBytesBackend<B::Ring>>::new(module.n() as u64);
+    Setup {
+        layout,
+        key,
+        prepared_key,
+        coeff_meta,
+        bytes,
+        host,
+    }
+}
+
+fn polynomial<F: CKKSEncodingScalar>(basis: Basis) -> Polynomial<F> {
+    Polynomial::new(
+        basis,
+        [0.125, -0.25, 0.0625, 0.125]
+            .into_iter()
+            .map(|v| F::from_f64(v).unwrap())
+            .collect(),
+    )
+}
+
+fn folded<F: CKKSEncodingScalar>(basis: Basis, parity: Parity) -> Polynomial<F> {
+    let coeffs = match parity {
+        Parity::Even => vec![0.125, 0.0, 0.0625, 0.0, 0.03125],
+        _ => vec![0.0, 0.125, 0.0, 0.0625, 0.0, 0.03125],
+    };
+    Polynomial::new_with_parity(basis, coeffs.into_iter().map(|v| F::from_f64(v).unwrap()).collect(), parity)
+}
+
+fn real_polynomials<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+where
+    B: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+{
+    let b = params.base2k;
+    let Setup {
+        layout,
+        prepared_key,
+        coeff_meta,
+        bytes,
+        host,
+        ..
+    } = setup(params, module);
     let mut results = Vec::new();
     for basis in [Basis::Monomial, Basis::Chebyshev] {
-        let poly = Polynomial::new(
-            basis,
-            vec![
-                F::from_f64(0.125).unwrap(),
-                F::from_f64(-0.25).unwrap(),
-                F::from_f64(0.0625).unwrap(),
-                F::from_f64(0.125).unwrap(),
-            ],
-        );
-        let encoded = poly
+        let encoded = polynomial::<F>(basis)
             .encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
-            .unwrap();
-        let encoded = encoded.map_baby_steps_ref(|pt| upload(module, pt));
+            .unwrap()
+            .map_baby_steps_ref(|pt| upload(module, pt));
         let input = fixture_ciphertext(module, &layout, 127);
         let before = snapshot::<B, _>(&input);
         let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
@@ -120,13 +163,65 @@ where
             "prepared and one-shot real evaluation differ"
         );
         results.push(snapshot::<B, _>(&one_shot));
-        let complex = ComplexBSGSPolynomial {
-            re: encoded,
-            im: poly
-                .encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+        // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
+        for parity in [Parity::Even, Parity::Odd] {
+            let encoded = folded::<F>(basis, parity)
+                .encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                 .unwrap()
-                .map_baby_steps_ref(|pt| upload(module, pt)),
+                .map_baby_steps_ref(|pt| upload(module, pt));
+            let mut out = fixture_ciphertext(module, &layout, 139);
+            with_scratch::<B, _>(bytes, |scratch| {
+                module.ckks_eval_poly_real_const_coeffs(&mut out, &input, &encoded, &prepared_key, scratch)
+            })
+            .unwrap();
+            results.push(snapshot::<B, _>(&out));
+        }
+        assert_eq!(before, snapshot::<B, _>(&input));
+    }
+    results
+}
+
+fn complex_polynomials_and_eval_mod<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+where
+    B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSAllOpsTmpBytes<B> + CKKSEvalModOps<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+{
+    let b = params.base2k;
+    let Setup {
+        layout,
+        key,
+        prepared_key,
+        coeff_meta,
+        bytes,
+        host,
+    } = setup(params, module);
+    let mut results = Vec::new();
+    for basis in [Basis::Monomial, Basis::Chebyshev] {
+        let poly = polynomial::<F>(basis);
+        let encode = || {
+            poly.encode_bsgs_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+                .unwrap()
+                .map_baby_steps_ref(|pt| upload(module, pt))
         };
+        let complex = ComplexBSGSPolynomial {
+            re: encode(),
+            im: encode(),
+        };
+        let input = fixture_ciphertext(module, &layout, 127);
+        let before = snapshot::<B, _>(&input);
+        let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
+        with_scratch::<B, _>(bytes, |scratch| {
+            powers.populate(
+                complex.re.degree(),
+                complex.re.log_split(),
+                complex.re.parity(),
+                module,
+                &prepared_key,
+                scratch,
+            )
+        })
+        .unwrap();
         let mut prepared_out = fixture_ciphertext(module, &layout, 137);
         with_scratch::<B, _>(bytes, |scratch| {
             module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<B>, _, _>(
@@ -149,30 +244,16 @@ where
             "prepared and one-shot complex evaluation differ"
         );
         results.push(snapshot::<B, _>(&one_shot));
-        assert_eq!(before, snapshot::<B, _>(&input));
-        // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
         for parity in [Parity::Even, Parity::Odd] {
-            let coeffs = match parity {
-                Parity::Even => vec![0.125, 0.0, 0.0625, 0.0, 0.03125],
-                _ => vec![0.0, 0.125, 0.0, 0.0625, 0.0, 0.03125],
-            };
-            let poly = Polynomial::new_with_parity(basis, coeffs.into_iter().map(|v| F::from_f64(v).unwrap()).collect(), parity);
-            let encoded = poly
-                .encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
-                .unwrap()
-                .map_baby_steps_ref(|pt| upload(module, pt));
-            let mut out = fixture_ciphertext(module, &layout, 139);
-            with_scratch::<B, _>(bytes, |scratch| {
-                module.ckks_eval_poly_real_const_coeffs(&mut out, &input, &encoded, &prepared_key, scratch)
-            })
-            .unwrap();
-            results.push(snapshot::<B, _>(&out));
-            let complex = ComplexBSGSPolynomial {
-                re: encoded,
-                im: poly
-                    .encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
+            let poly = folded::<F>(basis, parity);
+            let encode_folded = || {
+                poly.encode_bsgs_folded_with(&host, b.into(), coeff_meta, SplitStrategy::MinDepth)
                     .unwrap()
-                    .map_baby_steps_ref(|pt| upload(module, pt)),
+                    .map_baby_steps_ref(|pt| upload(module, pt))
+            };
+            let complex = ComplexBSGSPolynomial {
+                re: encode_folded(),
+                im: encode_folded(),
             };
             let mut out = fixture_ciphertext(module, &layout, 143);
             with_scratch::<B, _>(bytes, |scratch| {
@@ -180,7 +261,6 @@ where
             })
             .unwrap();
             results.push(snapshot::<B, _>(&out));
-            assert_eq!(before, snapshot::<B, _>(&input));
 
             // Reject inconsistent real/imaginary input schedules before the
             // input transform can allocate or mutate any ciphertext.
@@ -203,8 +283,8 @@ where
                 .is_err()
             );
             assert_eq!(untouched, snapshot::<B, _>(&out));
-            assert_eq!(before, snapshot::<B, _>(&input));
         }
+        assert_eq!(before, snapshot::<B, _>(&input));
     }
     for kind in [
         EvalModType::SinCheby,
@@ -246,8 +326,25 @@ where
     results
 }
 
-/// Checks real/complex prepared-basis and one-shot evaluation, folded inputs,
-/// and every EvalMod family with its selected scratch query and unchanged input.
+/// Checks real prepared-basis and one-shot evaluation and folded inputs.
+pub fn test_real_polynomial_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
+    BT: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
+    F: CKKSEncodingScalar,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+{
+    assert_eq!(reference.n(), tested.n());
+    assert_eq!(
+        real_polynomials::<BR, F>(params, reference),
+        real_polynomials::<BT, F>(params, tested),
+        "real polynomial parity differs"
+    );
+}
+
+/// Checks complex prepared-basis and one-shot evaluation, folded inputs, and
+/// every EvalMod family with its selected scratch query and unchanged input.
 pub fn test_polynomial_eval_mod_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
@@ -258,8 +355,8 @@ where
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(
-        run::<BR, F>(params, reference),
-        run::<BT, F>(params, tested),
-        "polynomial or EvalMod parity differs"
+        complex_polynomials_and_eval_mod::<BR, F>(params, reference),
+        complex_polynomials_and_eval_mod::<BT, F>(params, tested),
+        "complex polynomial or EvalMod parity differs"
     );
 }

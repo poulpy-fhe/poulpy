@@ -12,11 +12,12 @@ use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
     CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, PaCoScalar, ShipScalar},
+    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, PaCoDFTPlan, PaCoPlan, PaCoSlotOrder, ShipPlan,
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSShipCoeffEncodingImpl},
+    reference::encoding::CKKSSlotEmbedding,
     test_suite::CKKSTestParams,
 };
 
@@ -76,7 +77,7 @@ where
     );
 }
 
-fn encoding_transforms<B, F>(module: &Module<B>, n: usize) -> Vec<Vec<F>>
+fn encoding_transforms<B, F>(module: &Module<B>) -> Vec<Vec<F>>
 where
     B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
@@ -84,7 +85,8 @@ where
     let plans = B::ckks_encoding_plans_create_impl(module).unwrap();
     // Repeat the geometric family in reverse order to reuse the same cached
     // plans after their first production-dispatch construction.
-    let dimensions: Vec<_> = (1..=n.ilog2()).map(|log| 1usize << log).collect();
+    let cap = 2 * module.ckks_max_slots();
+    let dimensions: Vec<_> = (1..=cap.ilog2()).map(|log| 1usize << log).collect();
     let mut observed = Vec::new();
     for len in dimensions.iter().chain(dimensions.iter().rev()).copied() {
         for real in [true, false] {
@@ -116,12 +118,15 @@ where
                 &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
             )
             .unwrap();
-            scalar_close(&input, &cached.to_host::<B>(), transform_tolerance::<F>(len));
-            scalar_close(&input, &fresh.to_host::<B>(), transform_tolerance::<F>(len));
+            scalar_close(&cached.to_host::<B>(), &fresh.to_host::<B>(), transform_tolerance::<F>(len));
+            // Real slots round-trip on every ring; the invariant ring drops imaginary parts.
+            if real {
+                scalar_close(&input, &cached.to_host::<B>(), transform_tolerance::<F>(len));
+            }
             observed.push(cached.to_host::<B>());
         }
     }
-    for len in [0, 1, 3, 2 * n] {
+    for len in [0, 1, 3, 2 * cap] {
         let input = vec![F::from_f64(0.375).unwrap(); len];
         let mut values = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
         assert!(module.ckks_slots_to_coeffs_assign(&mut values).is_err());
@@ -135,6 +140,7 @@ where
 fn coefficient_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<Snapshot>
 where
     B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    B::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
     Module<B>: GLWEMaskFill<B>,
 {
@@ -167,11 +173,15 @@ where
                     .collect();
                 let buffer = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
                 let mut pt = fixture_plaintext(module, &layout, 47);
-                let original_layout = snapshot::<B, _>(&pt).layout;
+                let mut expected_layout = snapshot::<B, _>(&pt).layout;
+                expected_layout.meta.slots = slots.meet(B::Ring::SLOTS);
                 module.ckks_encode_coeffs_into(&mut pt, &buffer).unwrap();
                 assert!(buffer.to_host::<B>() == input, "coefficient encoding changed its input");
                 let encoded = snapshot::<B, _>(&pt);
-                assert!(encoded.layout == original_layout, "coefficient encoding changed metadata");
+                assert!(
+                    encoded.layout == expected_layout,
+                    "coefficient encoding changed metadata other than the ring's slot kind"
+                );
                 let want: Vec<F> = input.iter().map(|&x| (x * scale).round() / scale).collect();
                 let canonical = coefficients::<B, F>(&pt);
                 let gap = 1usize << log_sparsity;
@@ -221,6 +231,46 @@ where
     observations
 }
 
+/// Encodes and decodes planar slots through the two slot-composition OEP
+/// methods, for every slot count up to the module's capacity.
+fn slot_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<(CKKSPlaintextOwned<B>, Vec<F>)>
+where
+    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    F: CKKSEncodingScalar,
+    Module<B>: GLWEMaskFill<B>,
+{
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: params.n.into(),
+            base2k: params.base2k.into(),
+            k: 65usize.into(),
+            rank: 0usize.into(),
+        },
+        meta: CKKSMeta {
+            log_delta: 40,
+            log_sparsity: 0,
+            slots: SlotsKind::Complex,
+        },
+    };
+    let max_slots = module.ckks_max_slots();
+    (0..=max_slots.ilog2())
+        .map(|log| {
+            let len = 2 << log;
+            let input: Vec<F> = (0..len)
+                .map(|i| F::from_i64((i % 13) as i64 - 6).unwrap() / F::from_f64(32.0).unwrap())
+                .collect();
+            let mut slots = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
+            let mut pt = fixture_plaintext(module, &layout, 53);
+            B::ckks_encode_slots_assign_into_impl(module, &mut pt, &mut slots).unwrap();
+            let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); len]);
+            let before = snapshot::<B, _>(&pt);
+            B::ckks_decode_slots_into_impl(module, &pt, &mut decoded).unwrap();
+            assert!(snapshot::<B, _>(&pt) == before, "slot decoding changed plaintext");
+            (pt, decoded.to_host::<B>())
+        })
+        .collect()
+}
+
 /// Pairs every encoding OEP, including plan creation/cache reuse and both
 /// coefficient codecs. The independently decoded integer representation,
 /// quantization ties, sparse tails, metadata, and failure preservation are
@@ -229,21 +279,44 @@ pub fn test_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BR::Ring: CKKSSlotEmbedding,
+    BT::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
     Module<BR>: GLWEMaskFill<BR>,
     Module<BT>: GLWEMaskFill<BT>,
 {
     assert!(params.n >= 8 && params.n.is_power_of_two());
-    let reference = encoding_transforms::<BR, F>(r, params.n);
-    let tested = encoding_transforms::<BT, F>(t, params.n);
+    let reference = encoding_transforms::<BR, F>(r);
+    let tested = encoding_transforms::<BT, F>(t);
     assert_eq!(reference.len(), tested.len());
+    let tolerance = transform_tolerance::<F>(2 * r.ckks_max_slots());
     for (reference, tested) in reference.iter().zip(&tested) {
-        scalar_close(reference, tested, transform_tolerance::<F>(params.n));
+        scalar_close(reference, tested, tolerance);
     }
     assert!(
         coefficient_codec::<BR, F>(r, params) == coefficient_codec::<BT, F>(t, params),
         "coefficient codec parity failed"
     );
+}
+
+/// Pairs the two slot-composition OEP methods exactly, for every slot count up
+/// to the module's capacity: the encoded plaintexts and the decoded slots must
+/// be bit-identical.
+pub fn test_slot_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    F: CKKSEncodingScalar,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
+{
+    let reference = slot_codec::<BR, F>(r, params);
+    let tested = slot_codec::<BT, F>(t, params);
+    assert_eq!(reference.len(), tested.len());
+    for ((pt_r, slots_r), (pt_t, slots_t)) in reference.iter().zip(&tested) {
+        assert!(snapshot::<BR, _>(pt_r) == snapshot::<BT, _>(pt_t), "slot encoding differs");
+        assert!(slots_r == slots_t, "slot decoding differs");
+    }
 }
 
 /// Pairs PaCo coefficient embedding for both slot-order conventions. Each

@@ -37,7 +37,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
-        LinearTransformationPrepared, LtDiagonalScale,
+        LinearTransformationPrepared, LtDiagonalMeta,
     },
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan,
@@ -251,7 +251,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
@@ -277,7 +277,7 @@ fn eval_factor<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,

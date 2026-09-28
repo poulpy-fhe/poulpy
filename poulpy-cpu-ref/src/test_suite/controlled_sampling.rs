@@ -1,8 +1,8 @@
-//! Optional FFT64 comparison adapter for controlled encryption parity.
+//! Optional FFT64 comparison adapters, one per ring, for controlled encryption parity.
 //!
 //! The generic parity suite and sample provider live in `poulpy-core`; callers
 //! may select this adapter, another adapter, or backends with matching streams.
-use super::ControlledSamplingFFT64Ref;
+use super::{ControlledSamplingFFT64CIRef, ControlledSamplingFFT64Ref};
 use poulpy_core::{
     Distribution, NoiseInfos,
     oep::SamplingImpl,
@@ -10,48 +10,54 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::*;
 
-// Safety: this test reference backend copies distribution-correct draws from
-// the backend under test and mutates only the selected coefficient/limb column.
-unsafe impl SamplingImpl for ControlledSamplingFFT64Ref {
-    fn scalar_znx_fill_distribution(
-        _: &Module<Self>,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
-        col: usize,
-        dist: Distribution,
-        seed: [u8; 32],
-    ) {
-        let samples = scalar_samples(res.n(), dist, seed);
-        res.at_mut(col, 0).copy_from_slice(&samples);
-    }
-    fn vec_znx_add_normal(
-        _: &Module<Self>,
-        base2k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        col: usize,
-        noise: NoiseInfos,
-        seed: [u8; 32],
-    ) {
-        let samples = noise_samples(res.n(), base2k, noise, seed, false);
-        let (limb, shift) = noise.target_limb_and_shift(base2k);
-        for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-            *dst += sample << shift;
+// Safety: these test reference backends copy distribution-correct draws from
+// the backend under test and mutate only the selected coefficient/limb column.
+macro_rules! impl_controlled_sampling {
+    ($($be:ty),+) => {$(
+        unsafe impl SamplingImpl for $be {
+            fn scalar_znx_fill_distribution(
+                _: &Module<Self>,
+                res: &mut ScalarZnxBackendMut<'_, Self>,
+                col: usize,
+                dist: Distribution,
+                seed: [u8; 32],
+            ) {
+                let samples = scalar_samples(res.n(), dist, seed);
+                res.at_mut(col, 0).copy_from_slice(&samples);
+            }
+            fn vec_znx_add_normal(
+                _: &Module<Self>,
+                base2k: usize,
+                res: &mut VecZnxBackendMut<'_, Self>,
+                col: usize,
+                noise: NoiseInfos,
+                seed: [u8; 32],
+            ) {
+                let samples = noise_samples(res.n(), base2k, noise, seed, false);
+                let (limb, shift) = noise.target_limb_and_shift(base2k);
+                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
+                    *dst += sample << shift;
+                }
+            }
+            fn vec_znx_big_add_normal(
+                _: &Module<Self>,
+                base2k: usize,
+                res: &mut VecZnxBigBackendMut<'_, Self>,
+                col: usize,
+                noise: NoiseInfos,
+                seed: [u8; 32],
+            ) {
+                let samples = noise_samples(res.n(), base2k, noise, seed, true);
+                let (limb, shift) = noise.target_limb_and_shift(base2k);
+                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
+                    *dst += sample << shift;
+                }
+            }
         }
-    }
-    fn vec_znx_big_add_normal(
-        _: &Module<Self>,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        col: usize,
-        noise: NoiseInfos,
-        seed: [u8; 32],
-    ) {
-        let samples = noise_samples(res.n(), base2k, noise, seed, true);
-        let (limb, shift) = noise.target_limb_and_shift(base2k);
-        for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-            *dst += sample << shift;
-        }
-    }
+    )+};
 }
+
+impl_controlled_sampling!(ControlledSamplingFFT64Ref, ControlledSamplingFFT64CIRef);
 
 #[cfg(test)]
 mod tests {

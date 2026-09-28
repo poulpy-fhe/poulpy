@@ -183,12 +183,7 @@ macro_rules! impl_ckks_encoding {
                     + ::poulpy_ckks::SetCKKSInfos,
             {
                 ::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, F, P>(pt, coeffs)
-                    .map_err(::poulpy_ckks::CKKSError::from)?;
-                let slots = <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::encoded_slots(
-                    ::poulpy_ckks::CKKSInfos::slots(pt),
-                );
-                ::poulpy_ckks::SetCKKSInfos::set_slots(pt, slots);
-                Ok(())
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_decode_coeffs_into_impl<P>(

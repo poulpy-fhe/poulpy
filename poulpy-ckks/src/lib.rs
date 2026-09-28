@@ -194,6 +194,14 @@ impl SlotsKind {
         }
     }
 
+    /// Kind of a value that lies in both fields: `Complex` only when both are.
+    pub fn meet(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Complex, Self::Complex) => Self::Complex,
+            _ => Self::Real,
+        }
+    }
+
     /// Whether the slots are known to be real.
     pub fn is_real(self) -> bool {
         self == Self::Real
@@ -526,6 +534,14 @@ mod slots_kind_tests {
         assert_eq!(Real.join(Complex), Complex);
         assert_eq!(Complex.join(Real), Complex);
         assert_eq!(Complex.join(Complex), Complex);
+    }
+
+    #[test]
+    fn meet_keeps_complex_only_when_both_operands_are_complex() {
+        assert_eq!(Real.meet(Real), Real);
+        assert_eq!(Real.meet(Complex), Real);
+        assert_eq!(Complex.meet(Real), Real);
+        assert_eq!(Complex.meet(Complex), Complex);
     }
 
     #[test]

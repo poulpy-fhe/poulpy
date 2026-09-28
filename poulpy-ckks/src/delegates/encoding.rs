@@ -6,8 +6,8 @@ use poulpy_hal::layouts::{Backend, Module};
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos},
-    layouts::{CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef},
-    oep::{CKKSEncodingImpl, derived::encoding::slot_coeff_count},
+    layouts::{CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, slot_coeff_count},
+    oep::CKKSEncodingImpl,
 };
 
 struct CKKSEncodingPlanKey<F>(std::marker::PhantomData<fn() -> F>);
