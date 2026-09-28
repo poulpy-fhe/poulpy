@@ -366,7 +366,6 @@ where
     BE: HostStaged + Backend<Ring = Standard>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
-    Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
@@ -452,7 +451,6 @@ impl<D: Data> ShipKeySet<D, i64> {
             + CKKSEncryptOps<BE>
             + CKKSEncodingOps<BE, F>
             + GaloisElement,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {

@@ -1735,7 +1735,6 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

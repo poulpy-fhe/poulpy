@@ -40,8 +40,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_sk_with_raw, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
+            ckks_encrypt_pt, gen_atk, gen_sk_with_raw, test_vector_1,
         },
     },
 };
@@ -171,12 +171,10 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -248,12 +246,10 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -325,12 +321,10 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -411,12 +405,10 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = sparse_params(&params);
     let base2k = params.base2k;
@@ -506,12 +498,10 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -596,12 +586,10 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = sparse_params(&params);
     let base2k = params.base2k;
@@ -706,12 +694,10 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     // ---- dense (full slot count): Split, Encode + Decode ----
     {

@@ -36,7 +36,7 @@ The generic adapter traits follow the same pattern:
 - `VmpPMatToBackendMut<BE>`
 - etc...
 
-Host-visible code should construct `HostBytesBackend` views directly, either through backend-native `*ToBackendRef/*ToBackendMut` impls or the small `*_host_backend_ref/mut` helpers used by shared host utilities. Generic HAL compute code should still be written against backend views, not raw host slices.
+Host-visible code should construct `HostBytesBackend` views directly through backend-native `*ToBackendRef/*ToBackendMut` impls. Generic HAL compute code should still be written against backend views, not raw host slices.
 
 #### Core Layouts
 

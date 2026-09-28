@@ -16,7 +16,8 @@ use crate::{
         VmpExtractSelectedRows, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
-        Backend, DigestU64, HostBytesBackend, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
+        Backend, DigestU64, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
+        VecZnxOwned,
     },
     source::Source,
 };
@@ -24,6 +25,7 @@ use crate::{
 use crate::layouts::VecZnxBigOwned;
 use crate::layouts::VecZnxDftOwned;
 use crate::layouts::VmpPMatOwned;
+use crate::test_suite::TestBackend;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -43,7 +45,6 @@ where
 
 pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -147,7 +148,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
+                    let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -187,7 +188,6 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
 pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -350,7 +350,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
+                    let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -392,7 +392,6 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 /// to preparing a matrix built from exactly those rows and limbs.
 pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -401,15 +400,12 @@ pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: cr
     Module<BT>: VmpPMatAlloc<BT> + VmpPrepare<BT> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BT>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
-    check_extract_selected_rows(params, module_host, module_ref);
-    check_extract_selected_rows(params, module_host, module_test);
+    check_extract_selected_rows(params, module_ref);
+    check_extract_selected_rows(params, module_test);
 }
 
-fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
-    params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
-    module: &Module<BE>,
-) where
+fn check_extract_selected_rows<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
+where
     Module<BE>: VmpPMatAlloc<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -451,7 +447,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
                         }
                         // Oracle: the same rows and limb prefix, prepared densely.
                         let (a_ncols, res_ncols) = (cols_out * size, cols_out * res_size);
-                        let mut sel = module_host.mat_znx_alloc(params.n, res_rows, cols_in, cols_out, res_size);
+                        let mut sel = MatZnxOwned::<i64>::alloc(params.n, res_rows, cols_in, cols_out, res_size);
                         for i in 0..res_rows {
                             for c in 0..cols_in {
                                 let src_row: usize = (first + i * step) * cols_in + c;
@@ -546,7 +542,6 @@ where
 /// narrowed pass, which only a comparison against another family can see.
 pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -759,7 +754,7 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                             let res_acc_big_ref = idft_into_alloc(module_ref, &mut res_acc_ref);
                             let res_acc_big_test = idft_into_alloc(module_test, &mut res_acc_test);
 
-                            let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
+                            let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols_out, size_out);
                             let mut res_apply_small_ref = upload_vec_znx::<BR>(&res_host_template);
                             let mut res_apply_small_test = upload_vec_znx::<BT>(&res_host_template);
                             let mut res_acc_small_ref = upload_vec_znx::<BR>(&res_host_template);
@@ -835,7 +830,6 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
 /// matrix is zero, whatever the matrix held before.
 pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -931,7 +925,7 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-    let template = module_host.vec_znx_alloc(params.n, cols, size);
+    let template = VecZnxOwned::<i64>::alloc(params.n, cols, size);
     let mut res_ref_backend = upload_vec_znx::<BR>(&template);
     let mut res_test_backend = upload_vec_znx::<BT>(&template);
 
@@ -960,7 +954,7 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
         );
     }
 
-    let want = module_host.vec_znx_alloc(params.n, cols, size);
+    let want = VecZnxOwned::<i64>::alloc(params.n, cols, size);
     assert_eq!(download_vec_znx::<BR>(&res_ref_backend), want);
     assert_eq!(download_vec_znx::<BT>(&res_test_backend), want);
 }

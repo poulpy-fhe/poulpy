@@ -15,7 +15,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
-        helpers::{TestContextBackend, TestContextHostModule, TestContextModule},
+        helpers::{TestContextBackend, TestContextModule},
         presets::{BootstrappingPresetRun, preset_with_max_base2k},
     },
 };
@@ -24,14 +24,13 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::ScratchOwnedAlloc,
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
 fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -83,7 +82,6 @@ pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criteri
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
