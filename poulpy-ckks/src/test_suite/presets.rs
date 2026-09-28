@@ -36,8 +36,8 @@ use crate::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::CKKSTestParams,
     test_suite::helpers::{
-        PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, TestContextSharedModule,
-        assert_canonical_at_k, ckks_spec, precision_stats, test_vector_1,
+        PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule, assert_canonical_at_k, ckks_spec,
+        precision_stats, test_vector_1,
     },
 };
 
@@ -81,7 +81,6 @@ impl<BE> BootstrappingPresetRun<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -254,7 +253,6 @@ pub fn bootstrapping_presets_meet_precision<BE>(fixture_base2k: usize)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,

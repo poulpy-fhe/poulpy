@@ -35,8 +35,8 @@ use crate::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
-    ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
+    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_decrypt_decode,
+    ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
 };
 use poulpy_core::layouts::GLWESecretSampling;
 
@@ -75,7 +75,6 @@ fn gen_sk_with_host<BE>(
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
@@ -276,7 +275,6 @@ where
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -421,7 +419,6 @@ fn ship_bootstrap_case<BE, F, E>(
         + Convolution<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + ShipScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -546,7 +543,6 @@ where
         + Convolution<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + ShipScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -565,7 +561,6 @@ where
         + Convolution<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + ShipScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {

@@ -63,8 +63,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, assert_canonical_at_k,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_canonical_at_k, ckks_encrypt_with_prec,
+            ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
         },
         presets::{PRECISION_LOG_BUDGET, ring_switched_setup},
     },
@@ -92,20 +92,15 @@ fn meta(log_delta: usize, log_budget: usize) -> CoeffsMeta {
 }
 
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
-pub fn test_bootstrapping_standard_e2e<BE, F, E>(
-    params: CKKSTestParams,
-    _module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
-) where
+pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
+where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -580,20 +575,15 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
 /// Scale bridge: the LP C2S folds in `1/K` (EvalMod's `[-1,1]` domain) while EvalMod
 /// emits the residue at natural scale, so `r0_lp` is scaled up by `K`; the HP C2S
 /// uses natural (`1.0`) scaling, and SlotsToCoeffs the standard `2^log_message_ratio`.
-pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
-    params: CKKSTestParams,
-    _module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
-) where
+pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
+where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -947,20 +937,15 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
 /// ```text
 /// SlotsToCoeffs(split) ─► ModRaise ─► CoeffsToSlots(split) ─► EvalMod(×2) ─► relabel /2^R
 /// ```
-pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
-    params: CKKSTestParams,
-    _module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
-) where
+pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
+where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -998,13 +983,11 @@ fn run_s2c_first_case<BE, F, E>(
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1350,7 +1333,6 @@ where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + TestContextBackend,
     Module<BE>: CKKSDecryptOps<BE>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     assert_canonical_at_k::<BE>("decrypt_coeffs", ct);
     let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
@@ -1402,11 +1384,8 @@ fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKS
 /// Refreshes ciphertexts of degree `n`, under their own secret, on a bootstrap
 /// module of degree `2n` through [`MergeFold`]: a complex input merged with a real
 /// pair, then a second real pair alone.
-pub fn test_bootstrapping_merge_e2e<BE, F, E>(
-    mut params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
+pub fn test_bootstrapping_merge_e2e<BE, F, E>(mut params: CKKSTestParams)
+where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1414,7 +1393,9 @@ pub fn test_bootstrapping_merge_e2e<BE, F, E>(
     for<'a> MergeFold<'a, GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>>:
         CKKSBootstrapFold<BE, Ciphertext = CKKSCiphertextOwned<BE>>,
 {
-    let n = module.n();
+    let n = params.n;
+    let module = &Module::<BE>::new(n as u64);
+    let host_module = &Module::<HostBytesBackend>::new(n as u64);
     let bootstrap_module = Module::<BE>::new(2 * n as u64);
     let bootstrap_host = Module::<HostBytesBackend>::new(2 * n as u64);
     params.prec_meta = CKKSMeta {

@@ -47,8 +47,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_spec, gen_atk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
+            ckks_spec, gen_atk,
         },
         paco_ops::assert_slots,
         paco_reference_model::{centered, monomial_mul, seq_paco_reference},
@@ -67,7 +67,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -87,7 +86,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {

@@ -6,6 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- **Breaking:** remove `vec_znx_host_backend_ref` and `vec_znx_host_backend_mut` (use `at`/`at_mut` on host layouts); cross-backend test functions no longer take a host module.
 - **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
 - `impl_backend_from!` accepts a trailing `; generic R: Ring` to forward every instantiation of a generic backend marker.
 - **Breaking:** `HostBytesBackend<R: Ring = Standard>` takes the ring as a type parameter; associated calls through the bare name use `<HostBytesBackend>::`.
@@ -100,6 +101,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking:** remove the test-suite `TestContextHostModule` trait; host modules need no bound.
+- **Breaking:** `test_bootstrapping_{standard,evalround,s2c_first,merge}_e2e` take only their parameters; they build their own modules.
 - **Breaking:** `ckks_bootstrap` and `ckks_bootstrap_tmp_bytes` refresh a batch through a `CKKSBootstrapFold`, taking `fold`, `outs` and `ins`; `StandardFold` refreshes standard ciphertexts one per bootstrap, except that consecutive real-slot inputs share one bootstrap as the real and imaginary parts, split back with its conjugation key into outputs one bit narrower.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; `BootstrappingReference` is public. `test_bootstrapping_parity` compares it across backends.
 - Add `CKKSCIRingMapOps` (`ckks_ci_unfold`, `ckks_ci_fold`) behind `CKKSCIRingMapImpl`, implemented by conjugate-invariant modules only.
@@ -153,6 +156,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-bin-fhe`
 
+- **Breaking:** remove the unused `FheUint::from_glwe_to_mut` and `FheUint::from_glwe_to_ref`.
 - **Breaking:** binary-FHE backend operation families now require explicit `*Impl` opt-in. Public lower-layer reference circuits remain independently callable; same-layer wrappers are crate-private derived defaults. Blind-rotation scheduling is selected explicitly by backend wiring.
 - Added caller-selected coefficient parity for scheme evaluation and key/preparation lifecycles, exact scratch guards, and shared registrations alongside backend implementations. Native CI enables binary-FHE; Intel SDE remains limited to HAL/core.
 - **Breaking:** GLWE/GGSW blind-rotation queries take source and destination infos, with separate assignment queries; selection queries take all input infos. Prepared circuit-bootstrap queries accept a metadata descriptor so one-shot wrappers honor selected workspace requirements. Added dedicated one-word BDD and prepared-integer encryption queries.

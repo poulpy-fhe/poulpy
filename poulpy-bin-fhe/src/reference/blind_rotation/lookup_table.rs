@@ -7,7 +7,7 @@ use poulpy_hal::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes,
     },
-    layouts::{Backend, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut, vec_znx_host_backend_mut},
+    layouts::{Backend, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut},
 };
 
 /// Encodes host function samples using the canonical LUT layout and HAL operations.
@@ -85,11 +85,8 @@ where
                     res.data[i].size(),
                 )),
             );
-            {
-                let mut res_at = vec_znx_host_backend_mut(&mut host);
-                for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
-                    znx_switch_ring(res_at.at_mut(0, limb), limb_data);
-                }
+            for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(host.size()) {
+                znx_switch_ring(host.at_mut(0, limb), limb_data);
             }
             BE::copy_from_host(res.data[i].data_mut().data_mut(), host.data());
             if i + 1 < res.extension_factor() {
@@ -110,11 +107,8 @@ where
                 res.data[0].size(),
             )),
         );
-        {
-            let mut res_at = vec_znx_host_backend_mut(&mut host);
-            for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
-                res_at.at_mut(0, limb).copy_from_slice(limb_data);
-            }
+        for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(host.size()) {
+            host.at_mut(0, limb).copy_from_slice(limb_data);
         }
         BE::copy_from_host(res.data[0].data_mut().data_mut(), host.data());
     }

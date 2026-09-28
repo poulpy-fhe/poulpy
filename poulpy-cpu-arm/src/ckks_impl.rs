@@ -1,5 +1,9 @@
 use super::{FFT64Neon, NTT4x30Neon};
-use poulpy_ckks::impl_ckks_encapsulated_mod_up_reference;
+use poulpy_ckks::{
+    impl_ckks_bootstrapping_reference, impl_ckks_ci_ring_map_reference, impl_ckks_complex_polynomial_evaluation_reference,
+    impl_ckks_conjugate_reference, impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference,
+    impl_ckks_eval_mod_reference, impl_ckks_imag_reference, oep::CIBridge,
+};
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Neon);
 impl_ckks_encapsulated_mod_up_reference!(NTT4x30Neon);
@@ -24,37 +28,37 @@ select_neon_encoding_transform!(super::FFT64CINeon);
 select_neon_encoding_transform!(super::NTT4x30CINeon);
 
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_dft_reference!(super::FFT64Neon);
-::poulpy_ckks::impl_ckks_eval_mod_reference!(super::FFT64Neon);
+impl_ckks_conjugate_reference!(super::FFT64Neon);
+impl_ckks_imag_reference!(super::FFT64Neon);
+impl_ckks_bootstrapping_reference!(super::FFT64Neon);
+impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Neon);
+impl_ckks_dft_reference!(super::FFT64Neon);
+impl_ckks_eval_mod_reference!(super::FFT64Neon);
 poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::FFT64Neon);
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::FFT64Neon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_dft_reference!(super::NTT4x30Neon);
-::poulpy_ckks::impl_ckks_eval_mod_reference!(super::NTT4x30Neon);
+impl_ckks_conjugate_reference!(super::NTT4x30Neon);
+impl_ckks_imag_reference!(super::NTT4x30Neon);
+impl_ckks_bootstrapping_reference!(super::NTT4x30Neon);
+impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Neon);
+impl_ckks_dft_reference!(super::NTT4x30Neon);
+impl_ckks_eval_mod_reference!(super::NTT4x30Neon);
 poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::NTT4x30Neon);
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::NTT4x30Neon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64NeonRayon);
+impl_ckks_conjugate_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64NeonRayon);
+impl_ckks_imag_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64NeonRayon);
+impl_ckks_bootstrapping_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64NeonRayon);
+impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_dft_reference!(super::FFT64NeonRayon);
+impl_ckks_dft_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_eval_mod_reference!(super::FFT64NeonRayon);
+impl_ckks_eval_mod_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -62,45 +66,45 @@ poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30NeonRayon);
+impl_ckks_conjugate_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30NeonRayon);
+impl_ckks_imag_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30NeonRayon);
+impl_ckks_bootstrapping_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30NeonRayon);
+impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_dft_reference!(super::NTT4x30NeonRayon);
+impl_ckks_dft_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_eval_mod_reference!(super::NTT4x30NeonRayon);
+impl_ckks_eval_mod_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::NTT4x30NeonRayon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CINeon);
-::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CINeon);
-impl ::poulpy_ckks::oep::CIBridge for super::FFT64Neon {
+impl_ckks_ci_ring_map_reference!(super::FFT64CINeon);
+impl CIBridge for super::FFT64Neon {
     type CI = super::FFT64CINeon;
 }
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CINeon);
-::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeon);
-impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30Neon {
+impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeon);
+impl CIBridge for super::NTT4x30Neon {
     type CI = super::NTT4x30CINeon;
 }
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CINeonRayon);
+impl_ckks_ci_ring_map_reference!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
-impl ::poulpy_ckks::oep::CIBridge for super::FFT64NeonRayon {
+impl CIBridge for super::FFT64NeonRayon {
     type CI = super::FFT64CINeonRayon;
 }
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeonRayon);
+impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
-impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30NeonRayon {
+impl CIBridge for super::NTT4x30NeonRayon {
     type CI = super::NTT4x30CINeonRayon;
 }
 #[cfg(feature = "enable-rayon")]

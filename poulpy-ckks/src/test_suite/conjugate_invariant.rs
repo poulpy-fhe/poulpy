@@ -26,8 +26,8 @@ use poulpy_hal::{
 use super::{
     CKKSTestParams,
     helpers::{
-        TestContextBackend, TestContextHostModule, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch,
-        ckks_encrypt_pt, gen_atk, gen_sk_with_raw, gen_tsk,
+        TestContextBackend, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch, ckks_encrypt_pt, gen_atk,
+        gen_sk_with_raw, gen_tsk,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -46,7 +46,6 @@ pub fn test_conjugate_invariant_leveled<BE>(
         + CKKSLinearTransformationOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
         + CnvPVecAlloc<BE>,
-    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);

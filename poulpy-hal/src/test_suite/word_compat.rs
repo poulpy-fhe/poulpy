@@ -32,21 +32,17 @@ use crate::{
         VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, DataView, HostBytesBackend, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint,
-        ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible,
-        VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
+        Backend, DataView, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut,
+        ScratchOwned, SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible,
+        VmpPMatOwned,
     },
     source::Source,
 };
 
 /// Same input, DFT on each backend: the resulting `VecZnxDft` buffers must be
 /// byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_dft_bytes<BA, BB>(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    module_a: &Module<BA>,
-    module_b: &Module<BB>,
-) where
+pub fn test_word_compat_dft_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+where
     BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
     Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA>,
@@ -71,12 +67,8 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
 
 /// Same input, `svp_prepare` on each backend: the resulting `SvpPPol` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    module_a: &Module<BA>,
-    module_b: &Module<BB>,
-) where
+pub fn test_word_compat_svp_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+where
     BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
     Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
@@ -121,12 +113,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
 /// block-interleaved layout on the other: their divergence under a shared
 /// DFT word is now prevented by construction, the backends being distinct
 /// container types with no `VmpPMat` marker.
-pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    module_a: &Module<BA>,
-    module_b: &Module<BB>,
-) where
+pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+where
     BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
     Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
@@ -181,12 +169,8 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
 /// (IDFT + normalize) by the other, in both directions, and must yield the
 /// same coefficient-domain result as native consumption. Valid for every
 /// shared-word pair, including `f64` FFT backends.
-pub fn test_word_compat_dft_cross_idft<BA, BB>(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    module_a: &Module<BA>,
-    module_b: &Module<BB>,
-) where
+pub fn test_word_compat_dft_cross_idft<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+where
     BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord, ZnxWord = BA::ZnxWord>
         + VecZnxDftLayoutCompatible<BA>,
@@ -239,7 +223,6 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
 /// and the hint round-trips through allocation.
 pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     _module_a: &Module<BA>,
     _module_b: &Module<BB>,
 ) {
