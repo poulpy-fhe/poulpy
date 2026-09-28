@@ -20,7 +20,12 @@
 //!   42-bit prime residues into two `u64` words per coefficient.
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
+use std::marker::PhantomData;
+
+use poulpy_hal::layouts::{Ring, Standard};
+
 pub(crate) mod bbc_meta;
+mod conjugate_invariant;
 pub(crate) mod convolution;
 mod execution;
 pub(crate) mod kernels;
@@ -33,6 +38,7 @@ pub(crate) mod rayon;
 #[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
 pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 pub(crate) mod reference;
+mod standard;
 pub(crate) mod svp;
 pub(crate) mod tables;
 pub(crate) mod traits;
@@ -69,22 +75,25 @@ mod tests;
 ///
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42Ifma;
+pub struct NTT3x42Ifma<R: Ring = Standard>(PhantomData<R>);
 
 /// Rayon-parallel AVX512-IFMA backend.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42IfmaRayon;
+pub struct NTT3x42IfmaRayon<R: Ring = Standard>(PhantomData<R>);
 
 #[cfg(feature = "enable-rayon")]
 pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
 
 #[cfg(feature = "enable-rayon")]
-poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);
+poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon<R>, NTT3x42Ifma<R>, NTT3x42IfmaRayonExecutor; generic R: Ring);
 
 #[cfg(feature = "enable-rayon")]
-impl poulpy_hal::layouts::MaxBase2k for NTT3x42IfmaRayon {
+impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT3x42IfmaRayon<R>
+where
+    NTT3x42Ifma<R>: poulpy_hal::layouts::MaxBase2k,
+{
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        <NTT3x42Ifma as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
+        <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
 }

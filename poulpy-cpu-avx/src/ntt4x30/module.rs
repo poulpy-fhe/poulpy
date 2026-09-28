@@ -42,32 +42,20 @@ pub struct NTT4x30AvxHandle<R: Ring = Standard> {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx {}
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Avx<R> {}
 
-impl poulpy_hal::layouts::MaxBase2k for NTT4x30Avx {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
-            <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
-    }
-}
-
-impl Backend for NTT4x30Avx {
+impl<R: Ring> Backend for NTT4x30Avx<R> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
+    type Ring = R;
     type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30AvxHandle;
+    type Handle = NTT4x30AvxHandle<R>;
     type Location = Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)

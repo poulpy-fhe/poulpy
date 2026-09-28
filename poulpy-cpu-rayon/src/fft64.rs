@@ -99,7 +99,7 @@ macro_rules! rayon_forward_znx_const {
 /// forwards that query along with the arithmetic it preserves.
 #[macro_export]
 macro_rules! impl_fft64_rayon_backend {
-    ($rayon:ty, $base:ty, $dft_automorphism:path) => {
+    ($rayon:ty, $base:ty) => {
         mod fft64_rayon_backend {
             #[allow(unused_imports)]
             use super::*;
@@ -115,11 +115,12 @@ use $crate::__private::poulpy_cpu_ref::{
             convolution::I64Ops,
             module::FFTModuleHandle,
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
+            vec_znx_dft::Fft64AutomorphismPlan,
             reim4::{Reim4BlkMatVec, Reim4Convolution, reim4_gather_sparse_block, reim4_gather_sparse_block_sum},
             vmp::{vmp_prepare as fft64_vmp_prepare, vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes},
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
             ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
             ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
             ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
@@ -201,7 +202,6 @@ impl ZnxAutomorphism for $rayon {
         <$base as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
     }
 }
-$crate::rayon_forward_znx!($rayon, $base, ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
 $crate::rayon_parallel_assign!($rayon, $base, ZnxCopy, znx_copy);
 $crate::rayon_parallel_assign!($rayon, $base, ZnxNegate, znx_negate);
 $crate::rayon_parallel_unary!($rayon, $base, ZnxNegateAssign, znx_negate_assign);
@@ -341,6 +341,14 @@ impl ReimArith for $rayon {
     fn reim_zero(res: &mut [f64]) {
         <$base as ReimArith>::reim_zero(res)
     }
+    #[inline(always)]
+    fn reim_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        <$base as ReimArith>::reim_automorphism(plan, res, a)
+    }
+    #[inline(always)]
+    fn reim_automorphism_add(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        <$base as ReimArith>::reim_automorphism_add(plan, res, a)
+    }
 }
 
 impl Reim4BlkMatVec for $rayon {
@@ -388,6 +396,7 @@ impl Reim4BlkMatVec for $rayon {
 
 #[allow(clippy::too_many_arguments)]
 fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
+    convolution: fn(&mut [f64], usize, usize, &[f64], usize, &[f64], usize),
     m: usize,
     min_size: usize,
     offset: usize,
@@ -439,7 +448,7 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
             } else {
                 &b0[block * 8 * b_size..]
             };
-            <$base as Reim4Convolution>::reim4_convolution(out, min_size, offset, a, a_size, b, b_size);
+            convolution(out, min_size, offset, a, a_size, b, b_size);
             unsafe {
                 let dst = dst_ptr.get();
                 for k in 0..min_size {
@@ -491,6 +500,7 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<false, false>(
+            <$base as Reim4Convolution>::reim4_convolution,
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -514,6 +524,7 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<false, true>(
+            <$base as Reim4Convolution>::reim4_convolution,
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -539,6 +550,93 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<true, false>(
+            <$base as Reim4Convolution>::reim4_convolution,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution_1coeff(k, dst, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution_2coeffs(k, dst, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution(dst: &mut [f64], dst_size: usize, offset: usize, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution(dst, dst_size, offset, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_apply(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, false>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_apply_accumulate(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, true>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_pairwise_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a0: &[f64],
+        a1: &[f64],
+        a_size: usize,
+        b0: &[f64],
+        b1: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_pairwise_apply(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<true, false>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
             m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
         );
     }
@@ -1420,7 +1518,14 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        $dft_automorphism(module, plan, res, res_col, a, a_col);
+        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_with_plan(
+            base_module(module),
+            plan,
+            &mut base_dft_mut(res),
+            res_col,
+            &base_dft_ref(a),
+            a_col,
+        );
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(

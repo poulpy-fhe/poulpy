@@ -1,20 +1,40 @@
-use super::{FFT64Avx, NTT4x30Avx};
+use super::{FFT64Avx, FFT64CIAvx, NTT4x30Avx, NTT4x30CIAvx};
 #[cfg(feature = "enable-rayon")]
-use super::{FFT64AvxRayon, NTT4x30AvxRayon};
+use super::{FFT64AvxRayon, FFT64CIAvxRayon, NTT4x30AvxRayon, NTT4x30CIAvxRayon};
 use poulpy_core::{impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference};
-use poulpy_hal::layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
+use poulpy_cpu_ref::reference::{
+    ntt4x30::{
+        NttDFTExecute,
+        ntt::{NttTable, NttTableInv},
+        primes::Primes30,
+    },
+    znx::ZnxAutomorphism,
+};
+use poulpy_hal::layouts::{Module, Ring, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
 impl_glwe_tensoring_reference!(FFT64Avx);
 impl_glwe_tensoring_reference!(NTT4x30Avx);
+impl_glwe_tensoring_reference!(FFT64CIAvx);
+impl_glwe_tensoring_reference!(NTT4x30CIAvx);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_tensoring_reference!(FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_tensoring_reference!(NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_reference!(FFT64CIAvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_reference!(NTT4x30CIAvxRayon);
 impl_gglwe_product_digits_strided_reference!(FFT64Avx);
+impl_gglwe_product_digits_strided_reference!(FFT64CIAvx);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference!(FFT64AvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_product_digits_strided_reference!(FFT64CIAvxRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
+unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx<R>
+where
+    Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
+{
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -50,7 +70,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        super::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<_, poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -76,6 +96,8 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx, ntt4x30);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Avx);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Avx);
 ::poulpy_core::impl_glwe_trace_derived_full!(super::NTT4x30Avx);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64CIAvx, fft64);
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30CIAvx, ntt4x30);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64AvxRayon, fft64);
 #[cfg(feature = "enable-rayon")]
@@ -104,3 +126,7 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30AvxRayon, ntt4x30);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_trace_derived_full!(super::NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64CIAvxRayon, fft64);
+#[cfg(feature = "enable-rayon")]
+poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30CIAvxRayon, ntt4x30);

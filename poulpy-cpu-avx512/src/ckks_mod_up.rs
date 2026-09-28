@@ -72,7 +72,7 @@ impl ModUpBackend for NTT4x30Avx512 {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<_, SerialTaskExecutor>(
             module,
             res,
             a,
@@ -131,7 +131,7 @@ impl ModUpBackend for NTT3x42Ifma {
             1,
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<_, SerialTaskExecutor>(
             res,
             a,
             dsize,

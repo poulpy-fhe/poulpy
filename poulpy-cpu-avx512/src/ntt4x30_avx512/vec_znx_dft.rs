@@ -3,12 +3,14 @@ use core::arch::x86_64::{
     __m512i, _mm512_add_epi32, _mm512_cmp_epu32_mask, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
     _mm512_mask_sub_epi32, _mm512_storeu_si512, _mm512_sub_epi32,
 };
+use poulpy_cpu_ref::reference::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, NttToZnx128,
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},
 };
 use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
     ZnxViewMut, check_degree,
@@ -93,20 +95,31 @@ pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
     }
 }
 
-pub(crate) fn dft_limb(module: &Module<NTT4x30Avx512>, n: usize, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]) {
+pub(crate) fn dft_limb<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    n: usize,
+    dst: &mut [u32],
+    src: Option<&[i64]>,
+    tmp: &mut [u64],
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     if let Some(src) = src {
-        NTT4x30Avx512::ntt_from_znx64(tmp, src);
-        NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+        NTT4x30Avx512::<R>::ntt_from_znx64(tmp, src);
+        NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
         unsafe { pack_limb_q120(n, dst, tmp) };
     } else {
         dst.fill(0);
     }
 }
 
-pub(crate) fn idft_limb(module: &Module<NTT4x30Avx512>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+pub(crate) fn idft_limb<R: Ring>(module: &Module<NTT4x30Avx512<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64])
+where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     unsafe { unpack_limb_q120(n, tmp, src) };
-    NTT4x30Avx512::ntt_dft_execute(module.get_intt_table_for(n), tmp);
-    NTT4x30Avx512::ntt_to_znx128(dst, n, tmp);
+    NTT4x30Avx512::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
+    NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
 }
 
 #[inline(always)]
@@ -203,19 +216,21 @@ unsafe fn packed_negate_assign(n: usize, dst: &mut [u32]) {
     }
 }
 
-pub(crate) fn vec_znx_dft_apply(
-    module: &Module<NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_apply<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
     assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let cols = res.cols();
     let res_size = res.size();
@@ -233,17 +248,19 @@ pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
-pub(crate) fn vec_znx_idft_apply(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_idft_apply<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
     tmp: &mut [u64],
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
     assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
@@ -262,26 +279,30 @@ pub(crate) fn vec_znx_idft_apply(
     }
 }
 
-pub(crate) fn vec_znx_idft_apply_tmpa(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     let mut tmp = vec![0u64; 4 * a.n()];
     let a_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(a);
     vec_znx_idft_apply(module, res, res_col, &a_ref, a_col, &mut tmp);
 }
 
-pub(crate) fn idft_compact_in_place(
-    module: &Module<NTT4x30Avx512>,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn idft_compact_in_place<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     a_col: usize,
     tmp: &mut [u64],
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     let n = a.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
     let table = module.get_intt_table_for(n);
     let cols = a.cols();
     let size = a.size();
@@ -289,18 +310,18 @@ pub(crate) fn idft_compact_in_place(
     for limb in 0..size {
         let slot = packed_limb_mut(data, n, cols, a_col, limb);
         unsafe { unpack_limb_q120(n, tmp, slot) };
-        NTT4x30Avx512::ntt_dft_execute(table, tmp);
+        NTT4x30Avx512::<R>::ntt_dft_execute(table, tmp);
         let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
-        NTT4x30Avx512::ntt_to_znx128(dst, n, tmp);
+        NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
     }
 }
 
-pub(crate) fn vec_znx_dft_add(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_add<R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -338,10 +359,10 @@ pub(crate) fn vec_znx_dft_add(
     }
 }
 
-pub(crate) fn vec_znx_dft_add_assign(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_add_assign<R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -360,12 +381,12 @@ pub(crate) fn vec_znx_dft_add_assign(
     }
 }
 
-pub(crate) fn vec_znx_dft_sub(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_sub<R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -403,10 +424,10 @@ pub(crate) fn vec_znx_dft_sub(
     }
 }
 
-pub(crate) fn vec_znx_dft_sub_assign(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_sub_assign<R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -425,10 +446,10 @@ pub(crate) fn vec_znx_dft_sub_assign(
     }
 }
 
-pub(crate) fn vec_znx_dft_sub_negate_assign(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -447,12 +468,12 @@ pub(crate) fn vec_znx_dft_sub_negate_assign(
     }
 }
 
-pub(crate) fn vec_znx_dft_copy(
+pub(crate) fn vec_znx_dft_copy<R: Ring>(
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
@@ -472,7 +493,7 @@ pub(crate) fn vec_znx_dft_copy(
     }
 }
 
-pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>, res_col: usize) {
+pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>, res_col: usize) {
     let n = res.n();
     let cols = res.cols();
     let size = res.size();
@@ -482,11 +503,11 @@ pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
     }
 }
 
-pub(crate) fn vec_znx_dft_automorphism(
+pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
     plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     {
@@ -513,11 +534,11 @@ pub(crate) fn vec_znx_dft_automorphism(
     }
 }
 
-pub(crate) fn vec_znx_dft_automorphism_add<E: TaskExecutor>(
+pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     {

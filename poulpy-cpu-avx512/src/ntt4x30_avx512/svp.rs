@@ -2,9 +2,15 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, _mm256_loadu_si256, _mm256_storeu_si256, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_mul_epu32,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_ref::reference::ntt4x30::{
+    NttDFTExecute, NttFromZnx64,
+    ntt::{NttTable, NttTableInv},
+    primes::Primes30,
+    vec_znx_dft::NttModuleHandle,
+};
+use poulpy_hal::layouts::Ring;
 use poulpy_hal::{
-    api::{VecZnxDftAlloc, VecZnxDftApply},
+    api::VecZnxDftAlloc,
     layouts::{
         DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
         VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
@@ -48,27 +54,29 @@ unsafe fn mul_packed_limb_assign(n: usize, dst: &mut [u32], factor: &[u32]) {
     }
 }
 
-pub(crate) fn svp_prepare(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_prepare<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, NTT4x30Avx512>,
+    a: &ScalarZnxBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     let n = res.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let mut tmp = vec![0u64; 4 * n];
-    NTT4x30Avx512::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
+    NTT4x30Avx512::<R>::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
+    NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     unsafe { pack_limb_q120(n, &mut data[4 * n * res_col..][..4 * n], &tmp) };
 }
 
-pub(crate) fn svp_ppol_copy(
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_ppol_copy<R: Ring>(
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
@@ -85,29 +93,31 @@ pub(crate) fn svp_ppol_copy(
     dst[4 * n * res_col..][..4 * n].copy_from_slice(&src[4 * n * a_col..][..4 * n]);
 }
 
-pub(crate) fn svp_apply_dft(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
     b_col: usize,
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b.size());
     let mut b_dft = b_dft_owned.to_backend_mut();
-    module.vec_znx_dft_apply(1, 0, &mut b_dft, 0, b, b_col);
+    super::vec_znx_dft::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.reborrow_backend_ref(), 0);
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn svp_apply_dft_to_dft(
-    _module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft_to_dft<R: Ring>(
+    _module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -130,11 +140,11 @@ pub(crate) fn svp_apply_dft_to_dft(
     }
 }
 
-pub(crate) fn svp_apply_dft_to_dft_assign(
-    _module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+pub(crate) fn svp_apply_dft_to_dft_assign<R: Ring>(
+    _module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx512<R>>,
     a_col: usize,
 ) {
     let n = res.n();

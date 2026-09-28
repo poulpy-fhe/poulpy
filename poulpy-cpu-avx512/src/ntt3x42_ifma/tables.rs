@@ -17,9 +17,15 @@
 
 use std::marker::PhantomData;
 
-use poulpy_hal::{AlignedVec, alloc_aligned};
+use poulpy_hal::{
+    AlignedVec, alloc_aligned,
+    layouts::{Ring, Standard},
+};
 
-use super::primes::{PrimeSetNtt3x42Ifma, modq_pow64};
+use super::{
+    conjugate_invariant::BasisChangeTable,
+    primes::{PrimeSetNtt3x42Ifma, modq_pow64},
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Precomputation data structures
@@ -29,8 +35,8 @@ use super::primes::{PrimeSetNtt3x42Ifma, modq_pow64};
 ///
 /// No per-level metadata is needed — the IFMA-native butterfly keeps all
 /// values in `[0, 2q)` without explicit reduction levels.
-pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
-    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
+pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
+    /// NTT size (a power of two at most `(2 << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR`).
     pub n: usize,
     /// `2q[k]` for each prime (lane 3 = 0); used for the final `[0, 4q)` → `[0, 2q)` pass.
     pub q2: [u64; 4],
@@ -53,11 +59,13 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
     pub tail_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
     pub tail_quot: Vec<u64>,
-    _phantom: PhantomData<P>,
+    /// Conjugate-invariant basis change per prime, empty on the standard ring.
+    pub(super) basis: [BasisChangeTable; 3],
+    _phantom: PhantomData<(P, R)>,
 }
 
 /// Precomputed twiddle-factor table for the inverse NTT (3-prime IFMA).
-pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
+pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub n: usize,
     pub q2: [u64; 4],
     pub q4: [u64; 4],
@@ -69,7 +77,14 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
     pub inv_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
     pub inv_quot: Vec<u64>,
-    _phantom: PhantomData<P>,
+    /// Conjugate-invariant basis change per prime, empty on the standard ring.
+    pub(super) basis: [BasisChangeTable; 3],
+    _phantom: PhantomData<(P, R)>,
+}
+
+/// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set.
+fn max_ntt_degree<P: PrimeSetNtt3x42Ifma, R: Ring>() -> usize {
+    (2usize << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR as usize
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -290,12 +305,12 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
 // Forward NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
-    pub fn new(n: usize) -> Self {
+impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTable<P, R> {
+    pub(super) fn build(n: usize, basis: [BasisChangeTable; 3]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
-            "NTT size must be a power of two ≤ 2^{}, got {n}",
-            P::MAX_LOG_N
+            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            "NTT size must be a power of two ≤ {}, got {n}",
+            max_ntt_degree::<P, R>()
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -334,6 +349,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
                 root_quot,
                 tail_root,
                 tail_quot,
+                basis,
                 _phantom: PhantomData,
             };
         }
@@ -383,6 +399,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
             root_quot,
             tail_root,
             tail_quot,
+            basis,
             _phantom: PhantomData,
         }
     }
@@ -392,12 +409,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
 // Inverse NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
-    pub fn new(n: usize) -> Self {
+impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
+    pub(super) fn build(n: usize, basis: [BasisChangeTable; 3]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
-            "NTT size must be a power of two ≤ 2^{}, got {n}",
-            P::MAX_LOG_N
+            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            "NTT size must be a power of two ≤ {}, got {n}",
+            max_ntt_degree::<P, R>()
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -430,6 +447,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
                 powomega,
                 inv_root,
                 inv_quot,
+                basis,
                 _phantom: PhantomData,
             };
         }
@@ -478,6 +496,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
             powomega,
             inv_root,
             inv_quot,
+            basis,
             _phantom: PhantomData,
         }
     }

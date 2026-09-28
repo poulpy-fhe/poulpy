@@ -21,6 +21,8 @@ use poulpy_hal::{
 
 use super::super::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
 use crate::NTT4x30Neon;
+use poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable;
+use poulpy_hal::layouts::Ring;
 
 #[derive(Clone, Copy)]
 struct SendU64Ptr(*mut u64);
@@ -45,14 +47,16 @@ pub(crate) fn vmp_prepare_tmp_bytes_neon(n: usize) -> usize {
 /// The prepared matrix uses one plane per CRT prime. Within each plane the
 /// layout is `block_pair -> output_column -> input_row`, and every row stores
 /// four u64 values in lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-pub(crate) fn vmp_prepare_neon_pm(
-    module: &Module<NTT4x30Neon>,
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon>,
-    a: &MatZnxBackendRef<'_, NTT4x30Neon>,
+pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
+    module: &Module<NTT4x30Neon<R>>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
+    a: &MatZnxBackendRef<'_, NTT4x30Neon<R>>,
     tmp: &mut [u64],
-) {
+) where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>>,
+{
     let n = res.n();
-    check_degree::<NTT4x30Neon>(module.n(), n);
+    check_degree::<NTT4x30Neon<R>>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -80,9 +84,9 @@ pub(crate) fn vmp_prepare_neon_pm(
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
 
-            NTT4x30Neon::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            NTT4x30Neon::ntt_dft_execute(table, tmp_b);
-            NTT4x30Neon::ntt_c_from_b(n, tmp_c, tmp_b);
+            NTT4x30Neon::<R>::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
+            NTT4x30Neon::<R>::ntt_dft_execute(table, tmp_b);
+            NTT4x30Neon::<R>::ntt_c_from_b(n, tmp_c, tmp_b);
             let tmp_c_u64: &[u64] = cast_slice(tmp_c);
 
             for bp in 0..n_block_pairs {
@@ -284,11 +288,11 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_neon<E: TaskExecutor>(
-    module: &Module<NTT4x30Neon>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon>,
+pub(crate) fn vmp_apply_dft_to_dft_neon<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -318,11 +322,11 @@ pub(crate) fn vmp_apply_dft_to_dft_neon<E: TaskExecutor>(
     );
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_add_neon<E: TaskExecutor>(
-    module: &Module<NTT4x30Neon>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon>,
+pub(crate) fn vmp_apply_dft_to_dft_add_neon<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -354,9 +358,9 @@ pub(crate) fn vmp_apply_dft_to_dft_add_neon<E: TaskExecutor>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`, in the prime-major prepared layout.
-pub(crate) fn vmp_extract_selected_rows_neon_pm(
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon>,
-    a: &VmpPMatBackendRef<'_, NTT4x30Neon>,
+pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
     first_row: usize,
     row_step: usize,
 ) {

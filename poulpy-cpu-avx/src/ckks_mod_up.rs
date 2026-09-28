@@ -68,7 +68,7 @@ impl ModUpBackend for NTT4x30Avx {
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<SerialTaskExecutor>(
+        super::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<_, SerialTaskExecutor>(
             module,
             res,
             a,
