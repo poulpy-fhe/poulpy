@@ -64,6 +64,7 @@ where
         k: TorusPrecision,
         rank: Rank,
     ) -> GLWEPublicKeyPrepared<B::OwnedBuf, B> {
+        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         GLWEPublicKeyPrepared {
             keys: (0..rank.as_usize())
                 .map(|_| self.glwe_prepared_alloc(base2k, k, rank))

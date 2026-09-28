@@ -99,6 +99,7 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
+        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         GLWEPublicKey {
             keys: (0..rank.as_usize()).map(|_| GLWE::alloc(n, base2k, k, rank)).collect(),
             dist: Distribution::NONE,
@@ -132,10 +133,19 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
         for key in &mut self.keys {
             key.read_from(reader)?;
         }
-        if self.keys.iter().any(|key| key.rank().as_usize() != self.keys.len()) {
+        let consistent = self.keys.first().is_none_or(|first| {
+            self.keys.iter().all(|key| {
+                key.rank().as_usize() == self.keys.len()
+                    && key.n() == first.n()
+                    && key.base2k() == first.base2k()
+                    && key.k() == first.k()
+                    && key.size() == first.size()
+            })
+        });
+        if !consistent {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "invalid public key: entry count differs from its rank",
+                "invalid public key: entries differ in layout or from its rank",
             ));
         }
         Ok(())

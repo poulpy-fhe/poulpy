@@ -129,6 +129,17 @@ where
         receiver.read_from(&mut crafted.as_slice()).unwrap_err().kind(),
         std::io::ErrorKind::InvalidData
     );
+    // Entries of the right rank must also share the first entry's radix.
+    let pk_rank_2: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    let other_radix: GLWE<AlignedBuf, i64> = GLWE::alloc(N_GLWE, Base2K(BASE2K.0 + 1), K, RANK);
+    let mut mixed: Vec<u8> = Vec::new();
+    pk_rank_2.dist.write_to(&mut mixed).unwrap();
+    pk_rank_2.keys[0].write_to(&mut mixed).unwrap();
+    other_radix.write_to(&mut mixed).unwrap();
+    assert_eq!(
+        receiver.read_from(&mut mixed.as_slice()).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidData
+    );
     test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);

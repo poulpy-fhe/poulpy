@@ -2,13 +2,13 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
         VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
+        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        VecZnxToBackendRef, scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -286,9 +286,7 @@ where
     {
         assert!(
             scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
-            "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res, pk)
+            "insufficient scratch for GLWE public-key encryption"
         );
         self.glwe_encrypt_pk_internal(
             res,
@@ -316,9 +314,7 @@ where
     {
         assert!(
             scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
-            "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res, pk)
+            "insufficient scratch for GLWE public-key encryption"
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }
@@ -346,6 +342,8 @@ where
     Self: SvpPrepare<BE>
         + SvpApplyDftToDft<BE>
         + VecZnxDftAddAssign<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxZero<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
@@ -395,32 +393,35 @@ where
         let rank: usize = pk.keys.len();
 
         // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
-        let scratch = scratch.borrow();
-        let (mut u_dft, mut scratch_1) = scratch.take_svp_ppol_scratch(self.n(), rank, PrepareHint::Reuse);
-
-        {
-            let (mut u_backend, scratch_2) = scratch_1.take_scalar_znx_scratch(self.n(), rank);
-            let dist: Distribution = match pk.dist() {
-                Distribution::NONE => panic!(
-                    "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
-                     Self::generate"
-                ),
-                Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
-                dist => *dist,
-            };
-            for l in 0..rank {
-                self.scalar_znx_fill_distribution(&mut u_backend.to_backend_mut(), l, dist, source_xu);
-                self.svp_prepare(&mut u_dft, l, &u_backend.to_backend_ref(), l);
+        let dist: Distribution = match pk.dist() {
+            Distribution::NONE => panic!(
+                "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
+                 Self::generate"
+            ),
+            Distribution::ENCAPSULATED(_) => panic!("invalid public key: secret is tagged for encapsulation"),
+            // A zero ephemeral leaves the ciphertext as the message plus fresh noise.
+            Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
+                panic!("invalid public key: zero ephemeral distribution")
             }
-            scratch_1 = scratch_2;
+            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if *p <= 0.0 => {
+                panic!("invalid public key: zero ephemeral distribution")
+            }
+            dist => *dist,
+        };
+
+        let scratch = scratch.borrow();
+        let (mut u_dft, scratch_1) = scratch.take_svp_ppol_scratch(self.n(), rank, PrepareHint::Reuse);
+        let (mut u_backend, scratch_1) = scratch_1.take_scalar_znx_scratch(self.n(), rank);
+        for l in 0..rank {
+            self.scalar_znx_fill_distribution(&mut u_backend.to_backend_mut(), l, dist, source_xu);
+            self.svp_prepare(&mut u_dft, l, &u_backend.to_backend_ref(), l);
         }
 
         let (mut tmp_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
         let (mut ci_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
         let (mut ci_big, mut scratch_1) = scratch_1.take_vec_znx_big_scratch(self.n(), 1, size_pk);
-        let u_dft_ref = u_dft.to_backend_ref();
-
         for i in 0..cols {
+            let u_dft_ref = u_dft.to_backend_ref();
             {
                 let mut ci_dft_backend = ci_dft.to_backend_mut();
                 self.svp_apply_dft_to_dft(&mut ci_dft_backend, 0, &u_dft_ref, 0, &pk.keys[0].data, i);
@@ -456,6 +457,14 @@ where
                 &mut scratch_1,
             );
         }
+
+        // The ephemerals and the partial products would decrypt the ciphertext from the caller's scratch.
+        for l in 0..rank {
+            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u_backend), l);
+            self.svp_prepare(&mut u_dft, l, &u_backend.to_backend_ref(), l);
+        }
+        self.vec_znx_dft_zero(&mut tmp_dft.to_backend_mut(), 0);
+        self.vec_znx_dft_zero(&mut ci_dft.to_backend_mut(), 0);
     }
 }
 

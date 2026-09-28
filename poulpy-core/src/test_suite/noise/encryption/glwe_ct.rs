@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
-        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare,
+        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
     },
@@ -17,11 +17,12 @@ use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWENormalize,
-    GLWEPublicKeyGenerate, GLWESub, GetDistribution, ScalarZnxFillDistribution, VecZnxBigAddNormal,
+    GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut, ScalarZnxFillDistribution, VecZnxBigAddNormal,
+    dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecret,
-        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
         compressed::{GLWECompressed, GLWEDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -636,5 +637,75 @@ where
             );
         }
         assert_eq!(ct, want, "rank={rank}");
+
+        // The ephemerals are the arena's first two regions; left in place they would decrypt `ct`.
+        let bytes: usize = module.glwe_encrypt_pk_tmp_bytes(&infos, &infos);
+        let mut zeroed: ScratchOwned<BE> = ScratchOwned {
+            data: BE::from_host_bytes(&vec![0u8; bytes]),
+            _phantom: std::marker::PhantomData,
+        };
+        module.glwe_encrypt_pk(
+            &mut ct,
+            &pt,
+            &pk_prepared,
+            &infos,
+            &mut Source::new([5u8; 32]),
+            &mut Source::new([6u8; 32]),
+            &mut zeroed.borrow(),
+        );
+        let u_dft_bytes: usize = module.bytes_of_svp_ppol(n, rank, PrepareHint::Reuse);
+        let u_start: usize = BE::scratch_aligned(u_dft_bytes);
+        let arena: Vec<u8> = BE::to_host_bytes(&zeroed.data);
+        assert!(
+            arena[..u_dft_bytes].iter().all(|&b| b == 0),
+            "rank={rank}: prepared ephemerals left in scratch"
+        );
+        assert!(
+            arena[u_start..u_start + BE::bytes_of_scalar_znx(n, rank)]
+                .iter()
+                .all(|&b| b == 0),
+            "rank={rank}: ephemerals left in scratch"
+        );
     }
+}
+
+/// A key tagged with a zero-weight distribution would encrypt with `u = 0`.
+pub fn test_glwe_encrypt_pk_zero_ephemeral<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptPk<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: module.n().into(),
+        base2k: params.base2k.into(),
+        k: (params.base2k * 3 + 1).into(),
+        rank: 2_usize.into(),
+    })
+    .unwrap();
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    let mut pk: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
+    *pk.dist_mut() = Distribution::TernaryProb(0.0);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos));
+    module.glwe_encrypt_zero_pk(
+        &mut ct,
+        &pk,
+        &infos,
+        &mut Source::new([0u8; 32]),
+        &mut Source::new([0u8; 32]),
+        &mut scratch.borrow(),
+    );
+}
+
+/// A public key has one entry per rank, so rank 0 has none.
+pub fn test_glwe_public_key_rank_zero<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+{
+    let _: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> =
+        module.glwe_public_key_alloc(params.base2k.into(), (params.base2k * 3 + 1).into(), Rank(0));
 }
