@@ -18,13 +18,12 @@ use crate::{
 /// one per ephemeral of a public-key encryption.
 ///
 /// Stored as a GGLWE is: a matrix of one row, `r` input and `r + 1` output
-/// columns, entry `l` at input column `l`. The key carries one canonical flag
-/// for all its entries.
+/// columns, entry `l` at input column `l`. Its entries are canonical: a writer
+/// through `at_mut` or `at_view_mut` must leave them so.
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
-    pub(crate) canonical: bool,
     pub(crate) dist: Distribution,
 }
 
@@ -39,17 +38,6 @@ where
 
 impl<D: Data, W: ZnxWord> Eq for GLWEPublicKey<D, W> where MatZnx<D, W>: Eq {}
 
-impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
-    pub fn is_canonical(&self) -> bool {
-        self.canonical
-    }
-
-    /// For entries written through a mutable view.
-    pub fn set_canonical(&mut self, canonical: bool) {
-        self.canonical = canonical
-    }
-}
-
 impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
     /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
     pub fn at(&self, l: usize) -> GLWE<&[u8], W> {
@@ -57,39 +45,34 @@ impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
             data: self.data.at(0, l),
             base2k: self.base2k,
             k: self.k,
-            canonical: self.canonical,
+            canonical: true,
         }
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
-    /// Clears the key's canonical flag: set it back with [`Self::set_canonical`]
-    /// once every entry is canonical.
     pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        self.canonical = false;
         GLWE {
             data: self.data.at_mut(0, l),
             base2k: self.base2k,
             k: self.k,
-            canonical: false,
+            canonical: true,
         }
     }
 }
 
 /// Backend view of entry `l` of an owned public key.
 pub trait GLWEPublicKeyAtViewMut<BE: Backend> {
-    /// Clears the key's canonical flag, as [`GLWEPublicKey::at_mut`] does.
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE>;
 }
 
 impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
-        self.canonical = false;
         GLWEViewMut::from_inner(GLWE {
             data: MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
             base2k: self.base2k,
             k: self.k,
-            canonical: false,
+            canonical: true,
         })
     }
 }
@@ -100,11 +83,10 @@ pub fn glwe_public_key_at_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<
         data: mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
         base2k: pk.base2k,
         k: pk.k,
-        canonical: pk.canonical,
+        canonical: true,
     })
 }
 
-/// The view's flag never reaches the owner: the caller sets it on the key.
 pub(crate) fn glwe_public_key_at_view_mut<'a, BE: Backend>(
     pk: &'a mut GLWEPublicKeyBackendMut<'_, BE>,
     l: usize,
@@ -113,7 +95,7 @@ pub(crate) fn glwe_public_key_at_view_mut<'a, BE: Backend>(
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
         base2k: pk.base2k,
         k: pk.k,
-        canonical: false,
+        canonical: true,
     })
 }
 
@@ -217,7 +199,6 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
             ),
             base2k,
             k,
-            canonical: true,
             dist: Distribution::NONE,
         }
     }
@@ -239,7 +220,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKey<D, W> {
         f.debug_struct("GLWEPublicKey")
             .field("base2k", &self.base2k)
             .field("k", &self.k)
-            .field("canonical", &self.canonical)
             .field("dist", &self.dist)
             .field("data", &self.data)
             .finish()
@@ -275,21 +255,12 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
         self.dist = dist;
         self.base2k = base2k;
         self.k = k;
-        self.canonical = true;
         Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
-    /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        if !self.canonical {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "public key is not canonical: normalize it before serializing",
-            ));
-        }
         self.dist.write_to(writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.k.0)?;
@@ -313,7 +284,6 @@ where
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
-            canonical: self.canonical,
             dist: self.dist,
         }
     }
@@ -321,10 +291,6 @@ where
 
 pub trait GLWEPublicKeyToBackendMut<BE: Backend> {
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE>;
-
-    /// Sets the key's canonical flag; a flag set on the view returned by
-    /// [`Self::to_backend_mut`] is lost.
-    fn set_canonical(&mut self, canonical: bool);
 }
 
 impl<BE: Backend, D: Data> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKey<D, BE::ZnxWord>
@@ -336,12 +302,7 @@ where
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,
-            canonical: self.canonical,
             dist: self.dist,
         }
-    }
-
-    fn set_canonical(&mut self, canonical: bool) {
-        self.canonical = canonical
     }
 }

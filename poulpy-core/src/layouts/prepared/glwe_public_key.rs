@@ -1,18 +1,12 @@
 use poulpy_hal::{
-    api::{ScratchArenaTakeBasic, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{
-        Backend, Data, MatZnxToBackendRef, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef,
-        mat_znx_at_backend_mut_from_mut,
-    },
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
+    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{
-        Base2K, Degree, GLWE, GLWEInfos, GLWEPreparedFactory, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank,
-        TorusPrecision, glwe_public_key_at_view,
-    },
+    layouts::{Base2K, Degree, GLWEInfos, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
 };
 
 /// DFT-domain (prepared) variant of a [`GLWEPublicKey`](crate::layouts::GLWEPublicKey):
@@ -65,7 +59,7 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
 
 pub trait GLWEPublicKeyPreparedFactory<B: Backend>
 where
-    Self: GetDegree + GLWEPreparedFactory<B> + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes,
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes,
 {
     fn glwe_public_key_prepared_alloc(
         &self,
@@ -118,12 +112,8 @@ where
     where
         A: GLWEInfos,
     {
-        let (rank, size): (usize, usize) = (infos.rank().into(), infos.size());
-        let lvl_0: usize = B::bytes_of_mat_znx(self.ring_degree().into(), 1, rank, rank + 1, size);
-        let lvl_1: usize = self
-            .glwe_normalize_tmp_bytes()
-            .max(self.vmp_prepare_tmp_bytes(1, rank, rank + 1, size));
-        B::scratch_aligned(lvl_0) + lvl_1
+        let rank: usize = infos.rank().into();
+        self.vmp_prepare_tmp_bytes(1, rank, rank + 1, infos.size())
     }
 
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
@@ -144,36 +134,14 @@ where
             assert_eq!(res.k(), other.k());
             assert_eq!(res.size(), other.size());
 
-            if other.canonical {
-                self.vmp_prepare(&mut res.data, &other.data, scratch);
-            } else {
-                let (rank, size): (usize, usize) = (other.data.cols_in(), other.size());
-                let (mut mat, mut scratch_1) =
-                    scratch
-                        .borrow()
-                        .take_mat_znx_scratch(self.ring_degree().into(), 1, rank, rank + 1, size);
-                for l in 0..rank {
-                    let mut entry = GLWE {
-                        data: mat_znx_at_backend_mut_from_mut::<B>(&mut mat, 0, l),
-                        k: other.k(),
-                        base2k: other.base2k(),
-                        canonical: true,
-                    };
-                    self.glwe_normalize(
-                        &mut &mut entry,
-                        &glwe_public_key_at_view::<B>(&other, l),
-                        &mut scratch_1.borrow(),
-                    );
-                }
-                self.vmp_prepare(&mut res.data, &mat.to_backend_ref(), &mut scratch_1);
-            }
+            self.vmp_prepare(&mut res.data, &other.data, scratch);
         }
         *res.dist_mut() = *other.dist();
     }
 }
 
 impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where
-    Self: GetDegree + GLWEPreparedFactory<B> + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes
 {
 }
 

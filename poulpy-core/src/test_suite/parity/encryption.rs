@@ -182,7 +182,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         for l in 0..pk.rank().as_usize() {
             poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
         }
-        assert!(!pk.is_canonical(), "a mutable entry view must clear the key's flag");
         module.glwe_public_key_generate(
             &mut pk,
             &skp,

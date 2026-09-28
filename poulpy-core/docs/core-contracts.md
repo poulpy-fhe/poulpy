@@ -101,11 +101,12 @@ their draw order from `source_xa`, `source_xe` and `source_xu`: the parity
 tests compare the outputs and the source states. A ciphertext's phase is
 `m + Sum_l u_l e_l + e_0 + Sum_j e_j s_j`. `GLWEPublicKey` stores its `r`
 encryptions of zero as a GGLWE does, one matrix of one row, entry `l` at input
-column `l`, with one canonical flag for the key; `at` and `at_mut` view an
-entry as a GLWE, and a mutable view clears the key's flag. `GLWEPublicKeyPrepared` is that matrix prepared, directly
-from a canonical key, and the reference encryption computes `Sum_l u_l pk_l`
-as one vector-matrix product, then adds each column's error before its single
-normalization at the output's `k`.
+column `l`; `at` and `at_mut` view an entry as a GLWE. The entries are
+canonical: generation writes them so, `read_from` trusts the stream, and a
+writer through a mutable view must leave them so. `GLWEPublicKeyPrepared` is
+that matrix prepared by one `vmp_prepare`, and the reference encryption
+computes `Sum_l u_l pk_l` as one vector-matrix product, then adds each
+column's error before its single normalization at the output's `k`.
 
 Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
 sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one

@@ -498,7 +498,6 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             ),
             base2k: infos.base2k(),
             k: infos.k(),
-            canonical: true,
             dist: Distribution::NONE,
         }
     }

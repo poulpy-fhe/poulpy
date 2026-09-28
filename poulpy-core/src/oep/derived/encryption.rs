@@ -90,7 +90,6 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             module.glwe_normalize_assign(&mut entry, scratch);
         }
     }
-    res.set_canonical(true);
     *res.dist_mut() = *sk.dist();
 }
 

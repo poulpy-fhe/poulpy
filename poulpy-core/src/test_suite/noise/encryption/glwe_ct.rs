@@ -7,7 +7,7 @@ use poulpy_hal::{
     },
     layouts::{
         Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, ToOwnedDeep, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView, ZnxViewMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView,
     },
     source::Source,
     test_suite::{TestParams, scalar_znx_backend_mut, scalar_znx_backend_ref, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -586,22 +586,9 @@ where
         for (l, key) in keys_want.iter().enumerate() {
             assert_eq!(pk.at(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
         }
-        assert!(pk.is_canonical(), "rank={rank}");
 
         let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
         module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
-
-        // A flag-clear key with digits out of range prepares, through its normalization, to the same matrix.
-        let size: usize = pk.size();
-        let mut entry = pk.at_mut(rank - 1);
-        for limb in 1..size {
-            entry.data.at_mut(0, limb - 1).iter_mut().for_each(|digit| *digit -= 1);
-            entry.data.at_mut(0, limb).iter_mut().for_each(|digit| *digit += 1 << base2k);
-        }
-        let mut pk_prepared_lazy: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
-            module.glwe_public_key_prepared_alloc_from_infos(&infos);
-        module.glwe_public_key_prepare(&mut pk_prepared_lazy, &pk, &mut scratch.borrow());
-        assert!(pk_prepared_lazy == pk_prepared, "rank={rank}: lazy preparation differs");
 
         let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
         module.vec_znx_fill_uniform_source(
@@ -640,6 +627,7 @@ where
             module.svp_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
         }
 
+        let size: usize = pk.size();
         let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
         let mut acc = module.vec_znx_dft_alloc(n, 1, size);
         let mut prod = module.vec_znx_dft_alloc(n, 1, size);

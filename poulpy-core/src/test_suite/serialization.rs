@@ -144,19 +144,8 @@ where
             receiver.read_from(&mut stream.as_slice()).unwrap_err().kind(),
             std::io::ErrorKind::InvalidData
         );
-        assert!(
-            receiver == pristine && receiver.is_canonical(),
-            "a rejected stream changed the key"
-        );
+        assert!(receiver == pristine, "a rejected stream changed the key");
     }
-    let mut flag_clear: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
-    flag_clear.canonical = false;
-    let mut stream: Vec<u8> = Vec::new();
-    assert_eq!(
-        flag_clear.write_to(&mut stream).unwrap_err().kind(),
-        std::io::ErrorKind::InvalidInput
-    );
-    assert!(stream.is_empty());
     test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);
