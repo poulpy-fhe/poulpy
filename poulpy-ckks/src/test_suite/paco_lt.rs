@@ -43,8 +43,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk,
-            gen_sk_with_raw, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw,
+            test_vector_1,
         },
     },
 };
@@ -96,7 +96,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -208,7 +207,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -240,7 +238,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -286,7 +283,6 @@ pub fn test_paco_packing<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, 
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {
     use crate::layouts::paco::secret::pack_chunk;

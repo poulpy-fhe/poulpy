@@ -13,7 +13,7 @@ use crate::{
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextHostModule, TestScalar, assert_precision_for_log_delta, test_vector_1},
+        helpers::{TestContextBackend, TestScalar, assert_precision_for_log_delta, test_vector_1},
     },
 };
 
@@ -30,7 +30,6 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<HostBytesBackend>: TestContextHostModule,
 {
     let m = params.n / 2;
     let log_delta = params.prec().log_delta();

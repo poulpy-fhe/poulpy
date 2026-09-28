@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
-use poulpy_hal::AlignedBuf;
+use poulpy_hal::{AlignedBuf, alloc_aligned};
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPrepare},
-    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolOwned},
+    layouts::{Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
 use std::marker::PhantomData;
@@ -67,11 +67,8 @@ pub fn prepare_blind_rotation_key_ref<BE>(
 
     if let Distribution::BinaryBlock(_) = other.dist {
         let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
-        let mut buf: ScalarZnx<AlignedBuf, i64> = ScalarZnx::from_data(
-            <HostBytesBackend>::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)),
-            n,
-            1,
-        );
+        let mut buf: ScalarZnx<AlignedBuf, i64> =
+            ScalarZnx::from_data(alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)), n, 1);
         (0..n << 1).for_each(|i| {
             let mut res: SvpPPolOwned<BE> = module.svp_ppol_alloc(module.n(), 1, PrepareHint::Reuse);
             set_xai_plus_y(module, i, 0, &mut res, &mut buf);
