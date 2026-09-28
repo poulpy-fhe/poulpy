@@ -18,6 +18,17 @@ pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
     pub(crate) dist: Distribution,
 }
 
+impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
+    /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
+    pub fn entries(&self) -> &[GLWE<D, W>] {
+        &self.keys
+    }
+
+    pub fn entries_mut(&mut self) -> &mut [GLWE<D, W>] {
+        &mut self.keys
+    }
+}
+
 impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
