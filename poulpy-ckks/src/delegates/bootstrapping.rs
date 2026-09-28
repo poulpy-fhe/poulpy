@@ -12,8 +12,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
-        CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSComplexPolynomialEvaluationOps,
+        CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSSubOps,
     },
     layouts::EvalModPlan,
     layouts::{
@@ -43,6 +44,7 @@ where
         + CKKSMulOps<BE>
         + CKKSAffineOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + GLWENormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,

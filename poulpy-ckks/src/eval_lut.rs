@@ -15,8 +15,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos, SlotsKind,
     api::{
-        Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps,
+        Basis, CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
@@ -78,7 +78,7 @@ pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    Module<BE>: CKKSEvalModOps<BE> + CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -177,7 +177,7 @@ pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    Module<BE>: CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,

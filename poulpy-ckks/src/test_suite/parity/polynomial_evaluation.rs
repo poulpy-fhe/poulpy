@@ -5,7 +5,10 @@ use super::{
 };
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
-    api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps, CKKSPolynomialEvaluationOps},
+    api::{
+        CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps,
+        CKKSPolynomialEvaluationOps,
+    },
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},

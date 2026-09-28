@@ -520,6 +520,11 @@ macro_rules! ckks_backend_test_suite {
                 $rotations
             );
             run_test_with_arg!(
+                rotate_negative,
+                $crate::test_suite::rotate::test_rotate_aligned,
+                &[-1, -7]
+            );
+            run_test_with_arg!(
                 rotate_smaller_output,
                 $crate::test_suite::rotate::test_rotate_smaller_output,
                 $rotations
@@ -1005,5 +1010,6 @@ pub mod ship;
 pub mod slots_kind;
 pub mod sub;
 
+pub mod conjugate_invariant;
 /// Paired OEP conformance with caller-selected comparison backends.
 pub mod parity;

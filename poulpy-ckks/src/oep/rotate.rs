@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSRotateImpl: Backend {
+pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_rotate_into_impl<Dst, Src>(

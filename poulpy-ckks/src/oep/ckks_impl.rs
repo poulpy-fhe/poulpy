@@ -1,8 +1,9 @@
 use poulpy_hal::layouts::Backend;
 
 use super::{
-    CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl, CKKSMulImpl, CKKSNegImpl,
-    CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl, DFTImpl,
+    CKKSAddImpl, CKKSComplexPolynomialEvaluationImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSEvalModImpl,
+    CKKSImagImpl, CKKSMulImpl, CKKSNegImpl, CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl,
+    CKKSSubImpl, DFTImpl,
 };
 
 /// Aggregate CKKS dispatch surface.
@@ -16,7 +17,8 @@ use super::{
 /// [`DFTMatrixImpl<F>`](super::DFTMatrixImpl), and
 /// [`CKKSPaCoCoeffEncodingImpl`](super::CKKSPaCoCoeffEncodingImpl) — carry
 /// an encoding-scalar type parameter and therefore cannot be part of a
-/// non-generic bundle; bound them separately where needed.
+/// non-generic bundle; bound them separately where needed. It includes the
+/// standard-only families, so conjugate-invariant backends do not implement it.
 ///
 /// # Safety
 ///
@@ -37,6 +39,7 @@ pub unsafe trait CKKSImpl:
     + CKKSConjugateImpl
     + CKKSMulImpl
     + CKKSPolynomialEvaluationImpl
+    + CKKSComplexPolynomialEvaluationImpl
     + DFTImpl
     + CKKSEvalModImpl
 {
@@ -55,6 +58,7 @@ unsafe impl<BE: Backend> CKKSImpl for BE where
         + CKKSConjugateImpl
         + CKKSMulImpl
         + CKKSPolynomialEvaluationImpl
+        + CKKSComplexPolynomialEvaluationImpl
         + DFTImpl
         + CKKSEvalModImpl
 {

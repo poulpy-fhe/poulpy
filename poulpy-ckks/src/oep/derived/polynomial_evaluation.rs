@@ -1,4 +1,4 @@
-use crate::api::CKKSPolynomialEvaluationOps;
+use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
@@ -101,7 +101,7 @@ pub(crate) fn ckks_eval_poly_complex_const_coeffs_derived<BE: Backend, R, S, C, 
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>: crate::api::CKKSPolynomialEvaluationOps<BE>
+    Module<BE>: CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>

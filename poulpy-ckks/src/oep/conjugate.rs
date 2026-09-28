@@ -3,7 +3,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSConjugateImpl: Backend {
+pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
     fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_conjugate_into_impl<Dst, Src>(

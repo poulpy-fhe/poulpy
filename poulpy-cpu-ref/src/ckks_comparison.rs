@@ -13,5 +13,6 @@ mod comparison {
     poulpy_ckks::impl_ckks_encryption_reference!(ControlledSamplingFFT64Ref);
     poulpy_ckks::impl_ckks_mul_reference!(ControlledSamplingFFT64Ref);
     poulpy_ckks::impl_ckks_polynomial_evaluation_reference!(ControlledSamplingFFT64Ref);
+    poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(ControlledSamplingFFT64Ref);
     poulpy_ckks::impl_ckks_eval_mod_reference!(ControlledSamplingFFT64Ref);
 }

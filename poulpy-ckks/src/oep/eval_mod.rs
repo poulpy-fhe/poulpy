@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 
@@ -16,7 +16,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSEvalModImpl: Backend {
+pub unsafe trait CKKSEvalModImpl: Backend<Ring = Standard> {
     fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
         module: &Module<Self>,
         res: &R,

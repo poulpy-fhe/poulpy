@@ -11,11 +11,11 @@ use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     GALOISGENERATOR,
     api::NegacyclicFFT,
-    layouts::{Backend, HostDataMut, HostDataRef},
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Ring, Standard},
 };
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
 };
@@ -103,6 +103,82 @@ impl EncodingPermutation {
             values.swap(a, b);
             values.swap(self.slots + a, self.slots + b);
         }
+        Ok(())
+    }
+}
+
+/// Per-ring placement of `m` slots in the `2m` ambient coefficients of the
+/// slot transform.
+pub trait CKKSSlotEmbedding: Ring {
+    /// Slot kind of a plaintext encoded on this ring, given the caller's claim.
+    fn encoded_slots(claim: SlotsKind) -> SlotsKind;
+
+    /// In-place planar slots to coefficients.
+    fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar + NumCast,
+        T: NegacyclicFFT<F>;
+
+    /// In-place coefficients to planar slots.
+    fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar,
+        T: NegacyclicFFT<F>;
+}
+
+/// Complex slots over all `2m` coefficients.
+impl CKKSSlotEmbedding for Standard {
+    fn encoded_slots(claim: SlotsKind) -> SlotsKind {
+        claim
+    }
+
+    fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar + NumCast,
+        T: NegacyclicFFT<F>,
+    {
+        map.slots_to_coeffs_assign(fft, values)
+    }
+
+    fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar,
+        T: NegacyclicFFT<F>,
+    {
+        map.coeffs_to_slots_assign(fft, values)
+    }
+}
+
+/// Real slots: imaginary inputs are discarded, the `m` independent
+/// coefficients sit in the first half and the second half is workspace.
+impl CKKSSlotEmbedding for ConjugateInvariant {
+    fn encoded_slots(_claim: SlotsKind) -> SlotsKind {
+        SlotsKind::Real
+    }
+
+    fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar + NumCast,
+        T: NegacyclicFFT<F>,
+    {
+        ensure!(values.len() == 2 * map.slots);
+        values[map.slots..].fill(F::zero());
+        map.slots_to_coeffs_assign(fft, values)
+    }
+
+    fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
+    where
+        F: CKKSEncodingScalar,
+        T: NegacyclicFFT<F>,
+    {
+        ensure!(values.len() == 2 * map.slots);
+        // Unfold the invariant coefficients: `X^-j = -X^(2m-j)`.
+        values[map.slots] = F::zero();
+        for j in 1..map.slots {
+            values[2 * map.slots - j] = -values[j];
+        }
+        map.coeffs_to_slots_assign(fft, values)?;
+        values[map.slots..].fill(F::zero());
         Ok(())
     }
 }

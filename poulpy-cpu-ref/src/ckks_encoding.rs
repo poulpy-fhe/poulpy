@@ -168,7 +168,8 @@ macro_rules! impl_ckks_encoding {
             fn ckks_encoding_plans_create_impl(
                 module: &::poulpy_hal::layouts::Module<$be>,
             ) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
-                $crate::ckks_encoding::OwnedEncodingPlanSet::new(module.max_n()).map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_encoding::OwnedEncodingPlanSet::new(2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
+                    .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_encode_coeffs_into_impl<P>(
@@ -177,10 +178,17 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be> + ::poulpy_core::layouts::IntPolyInfos,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + ::poulpy_ckks::SetCKKSInfos,
             {
                 ::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, F, P>(pt, coeffs)
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                    .map_err(::poulpy_ckks::CKKSError::from)?;
+                let slots = <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::encoded_slots(
+                    ::poulpy_ckks::CKKSInfos::slots(pt),
+                );
+                ::poulpy_ckks::SetCKKSInfos::set_slots(pt, slots);
+                Ok(())
             }
 
             fn ckks_decode_coeffs_into_impl<P>(
@@ -202,8 +210,12 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                map.slots_to_coeffs_assign(fft, values.as_mut_slice())
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::slots_to_coeffs_assign(
+                    map,
+                    fft,
+                    values.as_mut_slice(),
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_coeffs_to_slots_assign_impl(
@@ -213,8 +225,12 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                map.coeffs_to_slots_assign(fft, values.as_mut_slice())
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::coeffs_to_slots_assign(
+                    map,
+                    fft,
+                    values.as_mut_slice(),
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
         }
     };

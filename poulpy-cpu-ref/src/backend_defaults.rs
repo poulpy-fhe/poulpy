@@ -21,16 +21,14 @@ macro_rules! impl_cpu_core_defaults {
     };
 }
 
-/// Registers shared CKKS defaults and encoding for a CPU backend.
-/// The backend selects its encoding transform and encapsulated ModUp implementation separately.
+/// Registers the CKKS families shared by both rings, with encoding, for a CPU backend.
+/// The backend selects its encoding transform separately; standard backends also register the standard-only families.
 #[cfg(feature = "enable-ckks")]
 #[macro_export]
 macro_rules! impl_cpu_ckks_defaults {
     ($be:ty) => {
-        ::poulpy_ckks::impl_ckks_conjugate_reference!($be);
         ::poulpy_ckks::impl_ckks_copy_reference!($be);
         ::poulpy_ckks::impl_ckks_encryption_reference!($be);
-        ::poulpy_ckks::impl_ckks_imag_reference!($be);
         ::poulpy_ckks::impl_ckks_mul_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
@@ -38,11 +36,7 @@ macro_rules! impl_cpu_ckks_defaults {
         ::poulpy_ckks::impl_ckks_add_reference!($be);
         ::poulpy_ckks::impl_ckks_sub_reference!($be);
         ::poulpy_ckks::impl_ckks_plaintext_reference!($be);
-        ::poulpy_ckks::impl_ckks_dft_reference!($be);
-        ::poulpy_ckks::impl_ckks_eval_mod_reference!($be);
         ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference!($be);
         $crate::impl_ckks_encoding!($be);
-        $crate::impl_ckks_paco_coeff_encoding!($be);
-        $crate::impl_ckks_ship_coeff_encoding!($be);
     };
 }

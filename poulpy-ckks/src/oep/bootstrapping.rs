@@ -4,7 +4,7 @@
 //! Core key-switch operation.
 
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
 
@@ -17,7 +17,7 @@ use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference composition, honor all key layouts, and stay
 /// within the supplied scratch arena.
-pub unsafe trait CKKSEncapsulatedModUpImpl: Backend {
+pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
         module: &Module<Self>,
         dst_infos: &Dst,

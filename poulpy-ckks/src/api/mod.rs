@@ -21,6 +21,7 @@ mod ship;
 mod sub;
 mod tmp_bytes;
 
+pub use crate::CKKSModuleInfos;
 pub use add::CKKSAddOps;
 pub use approximation::CKKSApproximationOps;
 pub use bootstrapping::CKKSBootstrappingOps;
