@@ -2,7 +2,7 @@ use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module, ScratchArena, VecZnxDft},
+    layouts::{Backend, Data, Module, ScratchArena, VecZnxDft, vec_znx_dft_backend_mut_from_mut},
 };
 
 use crate::{
@@ -145,6 +145,16 @@ impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
             data: self.data.to_backend_mut(),
+            base2k: self.base2k,
+            k: self.k,
+        }
+    }
+}
+
+impl<B: Backend> GLWEPreparedToBackendMut<B> for &mut GLWEPrepared<B::BufMut<'_>, B> {
+    fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
+        GLWEPrepared {
+            data: vec_znx_dft_backend_mut_from_mut::<B>(&mut self.data),
             base2k: self.base2k,
             k: self.k,
         }

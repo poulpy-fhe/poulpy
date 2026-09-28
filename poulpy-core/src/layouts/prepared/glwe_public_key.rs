@@ -4,18 +4,17 @@ use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Degree, GLWEInfos, GLWEPrepared, GLWEPreparedBackendMut, GLWEPreparedBackendRef, GLWEPreparedFactory,
-        GLWEPreparedToBackendMut, GLWEPreparedToBackendRef, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision,
+        Base2K, Degree, GLWEInfos, GLWEPrepared, GLWEPreparedFactory, GLWEPreparedToBackendMut, GLWEPreparedToBackendRef,
+        GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision,
     },
 };
 
-/// DFT-domain (prepared) variant of a GLWE public key.
-///
-/// Wraps a [`GLWEPrepared`] with distribution metadata for public-key
-/// encryption. Tied to a specific backend via `B: Backend`.
+/// DFT-domain (prepared) variant of a [`GLWEPublicKey`](crate::layouts::GLWEPublicKey):
+/// one [`GLWEPrepared`] per entry and the distribution public-key encryption
+/// draws its ephemerals from. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GLWEPrepared<D, B>,
+    pub(crate) keys: Vec<GLWEPrepared<D, B>>,
     pub(crate) dist: Distribution,
 }
 
@@ -33,25 +32,25 @@ impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
     fn base2k(&self) -> Base2K {
-        self.key.base2k()
+        self.keys[0].base2k()
     }
 
     fn max_size(&self) -> usize {
-        self.key.max_size()
+        self.keys[0].max_size()
     }
 
     fn n(&self) -> Degree {
-        self.key.n()
+        self.keys[0].n()
     }
 
     fn k(&self) -> TorusPrecision {
-        self.key.k()
+        self.keys[0].k()
     }
 }
 
 impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
     fn rank(&self) -> Rank {
-        self.key.rank()
+        self.keys[0].rank()
     }
 }
 
@@ -66,7 +65,9 @@ where
         rank: Rank,
     ) -> GLWEPublicKeyPrepared<B::OwnedBuf, B> {
         GLWEPublicKeyPrepared {
-            key: self.glwe_prepared_alloc(base2k, k, rank),
+            keys: (0..rank.as_usize())
+                .map(|_| self.glwe_prepared_alloc(base2k, k, rank))
+                .collect(),
             dist: Distribution::NONE,
         }
     }
@@ -79,7 +80,7 @@ where
     }
 
     fn glwe_public_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.glwe_prepared_bytes_of(base2k, k, rank)
+        rank.as_usize() * self.glwe_prepared_bytes_of(base2k, k, rank)
     }
 
     fn glwe_public_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -98,10 +99,20 @@ where
 
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
-        R: GLWEPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWEToBackendRef<B> + GetDistribution + GLWEInfos,
+        R: GLWEPublicKeyPreparedToBackendMut<B> + GetDistributionMut,
+        O: GLWEPublicKeyToBackendRef<B> + GetDistribution,
     {
-        self.glwe_prepare(res, other, scratch);
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
+            assert!(
+                res.keys.len() == other.keys.len(),
+                "public key and prepared public key have different entry counts"
+            );
+            for (mut res_key, other_key) in res.keys.iter_mut().zip(other.keys.iter()) {
+                self.glwe_prepare(&mut res_key, &other_key, scratch);
+            }
+        }
         *res.dist_mut() = *other.dist();
     }
 }
@@ -124,7 +135,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyPreparedBackendRef<'_, B> {
         GLWEPublicKeyPrepared {
-            key: self.key.to_backend_ref(),
+            keys: self.keys.iter().map(|key| key.to_backend_ref()).collect(),
             dist: self.dist,
         }
     }
@@ -140,27 +151,9 @@ where
 {
     fn to_backend_mut(&mut self) -> GLWEPublicKeyPreparedBackendMut<'_, B> {
         GLWEPublicKeyPrepared {
-            key: self.key.to_backend_mut(),
+            keys: self.keys.iter_mut().map(|key| key.to_backend_mut()).collect(),
             dist: self.dist,
         }
-    }
-}
-
-impl<D: Data, B: Backend> GLWEPreparedToBackendMut<B> for GLWEPublicKeyPrepared<D, B>
-where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendMut<B>,
-{
-    fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
-        self.key.to_backend_mut()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEPreparedToBackendRef<B> for GLWEPublicKeyPrepared<D, B>
-where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendRef<B>,
-{
-    fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
-        self.key.to_backend_ref()
     }
 }
 

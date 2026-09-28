@@ -1,15 +1,23 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{Module, ScratchOwned, WriterTo, ZnxView},
+    api::{
+        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare,
+        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        VecZnxDftAlloc, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
+    },
+    layouts::{
+        Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView,
+    },
     source::Source,
-    test_suite::{TestParams, vec_znx_backend_mut},
+    test_suite::{TestParams, scalar_znx_backend_mut, scalar_znx_backend_ref, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate, GLWESub,
+    EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWENormalize,
+    GLWEPublicKeyGenerate, GLWESub, GetDistribution, ScalarZnxFillDistribution, VecZnxBigAddNormal,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecret,
@@ -442,8 +450,9 @@ where
             let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
+            // Sum_l u_l e_l has rank terms, as Sum_j e_j s_j does.
             let noise_want: f64 =
-                ((((rank as f64) + 1.0) * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2() - (k_ct as f64);
+                ((2.0 * rank as f64 * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2() - (k_ct as f64);
             let noise_want_tol: f64 = noise_want + 1.05_f64.log2();
             assert!(
                 noise_have <= noise_want_tol,
@@ -484,4 +493,148 @@ where
         &mut Source::new([0u8; 32]),
         &mut scratch.borrow(),
     );
+}
+
+/// `glwe_public_key_generate` and `glwe_encrypt_pk` equal their per-entry formulas replayed from the same sources.
+pub fn test_glwe_encrypt_pk_replay<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptPk<BE>
+        + GLWEEncryptSk<BE>
+        + GLWENormalize<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWESecretPreparedFactory<BE>
+        + VecZnxFillUniformSource<BE>
+        + ScalarZnxAlloc<BE>
+        + ScalarZnxFillDistribution<BE>
+        + SvpPPolAlloc<BE>
+        + SvpPrepare<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigAddNormal<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let k: usize = base2k * 3 + 1;
+    let n: usize = module.n();
+
+    for rank in 1_usize..3 {
+        let infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        })
+        .unwrap();
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .glwe_encrypt_pk_tmp_bytes(&infos, &infos)
+                .max(module.glwe_public_key_generate_tmp_bytes(&infos))
+                .max(module.glwe_public_key_prepare_tmp_bytes(&infos))
+                .max(module.vec_znx_big_normalize_tmp_bytes()),
+        );
+
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&infos);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([1u8; 32]));
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk_prepared, &sk);
+
+        let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&infos);
+        module.glwe_public_key_generate(
+            &mut pk,
+            &sk_prepared,
+            &infos,
+            &mut Source::new([2u8; 32]),
+            &mut Source::new([3u8; 32]),
+            &mut scratch.borrow(),
+        );
+
+        let mut pk_want: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&infos);
+        let (mut xe, mut xa) = (Source::new([2u8; 32]), Source::new([3u8; 32]));
+        for key in &mut pk_want.keys {
+            module.glwe_encrypt_zero_sk(key, &sk_prepared, &infos, &mut xe, &mut xa, &mut scratch.borrow());
+            module.glwe_normalize_assign(key, &mut scratch.borrow());
+        }
+        assert_eq!(pk.keys, pk_want.keys, "rank={rank}");
+
+        let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
+        module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+
+        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            pt.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+            0,
+            &mut Source::new([4u8; 32]),
+        );
+
+        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+        module.glwe_encrypt_pk(
+            &mut ct,
+            &pt,
+            &pk_prepared,
+            &infos,
+            &mut Source::new([5u8; 32]),
+            &mut Source::new([6u8; 32]),
+            &mut scratch.borrow(),
+        );
+
+        let mut source_xu: Source = Source::new([5u8; 32]);
+        let mut source_xe: Source = Source::new([6u8; 32]);
+        let size: usize = pk_prepared.size();
+        let mut u = module.scalar_znx_alloc(n, rank);
+        let mut u_prepared = module.svp_ppol_alloc(n, rank, PrepareHint::Reuse);
+        for l in 0..rank {
+            module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut u), l, *pk.dist(), &mut source_xu);
+            module.svp_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
+        }
+
+        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+        let mut acc = module.vec_znx_dft_alloc(n, 1, size);
+        let mut prod = module.vec_znx_dft_alloc(n, 1, size);
+        let mut big = module.vec_znx_big_alloc(n, 1, size);
+        for col in 0..rank + 1 {
+            module.vec_znx_dft_zero(&mut acc.to_backend_mut(), 0);
+            for (l, key) in pk_prepared.keys.iter().enumerate() {
+                module.svp_apply_dft_to_dft(
+                    &mut prod.to_backend_mut(),
+                    0,
+                    &u_prepared.to_backend_ref(),
+                    l,
+                    &key.data.to_backend_ref(),
+                    col,
+                );
+                module.vec_znx_dft_add_assign(&mut acc.to_backend_mut(), 0, &prod.to_backend_ref(), 0);
+            }
+            module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut acc.to_backend_mut(), 0);
+            module.vec_znx_big_add_normal(base2k, &mut big.to_backend_mut(), 0, infos.noise_infos(), &mut source_xe);
+            if col == 0 {
+                module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&pt.data), 0);
+            }
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut want.data),
+                base2k,
+                k,
+                0,
+                col,
+                &big.to_backend_ref(),
+                base2k,
+                0,
+                &mut scratch.borrow(),
+            );
+        }
+        assert_eq!(ct, want, "rank={rank}");
+    }
 }

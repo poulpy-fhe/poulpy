@@ -10,10 +10,11 @@ use crate::{
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut,
         GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
-        GLWECompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
+        SetGaloisElement,
         compressed::{GGLWECompressedSeedMut, GGLWECompressedToBackendMut},
-        prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
+        prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 
@@ -126,7 +127,7 @@ pub trait GLWEEncryptPk<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 
     /// Same precondition as [`Self::glwe_encrypt_pk`].
     fn glwe_encrypt_zero_pk<R, K, E>(
@@ -140,7 +141,7 @@ pub trait GLWEEncryptPk<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GLWEPublicKeyGenerate<BE: Backend> {
@@ -160,7 +161,7 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }

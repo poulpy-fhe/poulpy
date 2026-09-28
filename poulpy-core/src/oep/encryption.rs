@@ -10,10 +10,10 @@ use crate::{
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
         GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
-        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef,
-        GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef,
-        LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
-        prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
+        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
+        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 
@@ -118,7 +118,7 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     fn glwe_encrypt_zero_pk<R, K, E>(
         module: &Module<Self>,
@@ -131,7 +131,7 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -150,7 +150,7 @@ pub unsafe trait EncryptionImpl: Backend {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
         Module<Self>: crate::GLWENormalize<Self>,
@@ -738,7 +738,7 @@ macro_rules! impl_encryption_reference_full {
         R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
         P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
         E: $crate::api::EncryptionInfos,
-        K: $crate::layouts::GLWEPreparedToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+        K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_reference::<R, P, K, E>(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
         }
 
@@ -753,7 +753,7 @@ macro_rules! impl_encryption_reference_full {
     ) where
         R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
         E: $crate::api::EncryptionInfos,
-        K: $crate::layouts::GLWEPreparedToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
+        K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_zero_pk_reference::<R, K, E>(module, res, pk, enc_infos, source_xu, source_xe, scratch)
         }
 

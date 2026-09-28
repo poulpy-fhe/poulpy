@@ -486,7 +486,9 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn glwe_public_key_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKey<B::OwnedBuf, B::ZnxWord> {
         GLWEPublicKey {
-            key: self.glwe_alloc_from_infos(infos),
+            keys: (0..infos.rank().as_usize())
+                .map(|_| self.glwe_alloc_from_infos(infos))
+                .collect(),
             dist: Distribution::NONE,
         }
     }

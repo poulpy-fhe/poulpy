@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::api::GLWEMaskFill;
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWESwitchingKey, GLWETensorKey, GLWEToLWEKey, LWE,
-    LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPublicKey, GLWESwitchingKey, GLWETensorKey,
+    GLWEToLWEKey, LWE, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
     compressed::{
         GGLWECompressed, GGSWCompressed, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWESwitchingKeyCompressed,
         GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWESwitchingKeyCompressed,
@@ -43,6 +43,10 @@ where
     let mut lwe_c: [LWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWECompressed::alloc::<BE>(BASE2K, K));
     for glwe in &mut glwe {
         module.fill_glwe_from_source(glwe, &mut source);
+    }
+    let mut pk: [GLWEPublicKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK));
+    for key in pk.iter_mut().flat_map(|pk| pk.keys.iter_mut()) {
+        module.fill_glwe_from_source(key, &mut source);
     }
     for v in glwe_c
         .iter_mut()
@@ -116,6 +120,7 @@ where
     }
 
     test_reader_writer_interface(glwe);
+    test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);
     test_reader_writer_interface(lwe_c);

@@ -130,7 +130,7 @@ where
                 plain,
                 [b, k, rank],
                 p,
-                BE::len_bytes(p.key.data.data())
+                p.keys.iter().map(|key| BE::len_bytes(key.data.data())).sum::<usize>()
             );
             let source = m.glwe_public_key_alloc_from_infos(&plain);
             m.glwe_public_key_prepare(

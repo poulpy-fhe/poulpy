@@ -1,5 +1,7 @@
+use std::fmt;
+
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -9,7 +11,7 @@ use crate::{
 
 #[derive(PartialEq, Eq)]
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GLWE<D, W>,
+    pub(crate) keys: Vec<GLWE<D, W>>,
     pub(crate) dist: Distribution,
 }
 
@@ -35,25 +37,25 @@ pub struct GLWEPublicKeyLayout {
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
     fn base2k(&self) -> Base2K {
-        self.key.base2k()
+        self.keys[0].base2k()
     }
 
     fn n(&self) -> Degree {
-        self.key.n()
+        self.keys[0].n()
     }
 
     fn max_size(&self) -> usize {
-        self.key.max_size()
+        self.keys[0].max_size()
     }
 
     fn k(&self) -> TorusPrecision {
-        self.key.k()
+        self.keys[0].k()
     }
 }
 
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPublicKey<D, W> {
     fn rank(&self) -> Rank {
-        self.key.rank()
+        self.keys[0].rank()
     }
 }
 
@@ -95,7 +97,7 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
         GLWEPublicKey {
-            key: GLWE::alloc(n, base2k, k, rank),
+            keys: (0..rank.as_usize()).map(|_| GLWE::alloc(n, base2k, k, rank)).collect(),
             dist: Distribution::NONE,
         }
     }
@@ -108,45 +110,79 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+        rank.as_usize() * GLWE::<AlignedBuf, W>::bytes_of(n, base2k, k, rank)
+    }
+}
+
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKey<D, W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GLWEPublicKey")
+            .field("keys", &self.keys)
+            .field("dist", &self.dist)
+            .finish()
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
-        self.key.read_from(reader)
+        for key in &mut self.keys {
+            key.read_from(reader)?;
+        }
+        Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        match self.dist.write_to(writer) {
-            Ok(()) => {}
-            Err(e) => return Err(e),
+        self.dist.write_to(writer)?;
+        for key in &self.keys {
+            key.write_to(writer)?;
         }
-        self.key.write_to(writer)
+        Ok(())
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPublicKey<D, BE::ZnxWord>
+pub type GLWEPublicKeyBackendRef<'a, BE> = GLWEPublicKey<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWEPublicKeyBackendMut<'a, BE> = GLWEPublicKey<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+
+pub trait GLWEPublicKeyToBackendRef<BE: Backend> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE>;
+}
+
+impl<BE: Backend, D: Data> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        self.key.to_backend_ref()
+    fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
+        GLWEPublicKey {
+            keys: self.keys.iter().map(|key| key.to_backend_ref()).collect(),
+            dist: self.dist,
+        }
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPublicKey<D, BE::ZnxWord>
+pub trait GLWEPublicKeyToBackendMut<BE: Backend> {
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE>;
+
+    /// [`GLWEToBackendMut::set_canonical`] on every entry.
+    fn set_canonical(&mut self, canonical: bool);
+}
+
+impl<BE: Backend, D: Data> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
     GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        self.key.to_backend_mut()
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        GLWEPublicKey {
+            keys: self.keys.iter_mut().map(|key| key.to_backend_mut()).collect(),
+            dist: self.dist,
+        }
     }
 
     fn set_canonical(&mut self, canonical: bool) {
-        self.key.canonical = canonical
+        for key in &mut self.keys {
+            key.canonical = canonical
+        }
     }
 }
