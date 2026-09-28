@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-    MatZnxToBackendRef, ReaderFrom, WriterTo,
+    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef,
+    MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 use std::{
     fmt,
@@ -539,7 +539,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
 
         GGSW {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                <HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),

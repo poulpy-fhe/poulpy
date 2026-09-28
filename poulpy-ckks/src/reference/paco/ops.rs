@@ -39,7 +39,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, galois_element},
+    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, Standard, galois_element},
 };
 
 use crate::{
@@ -118,7 +118,7 @@ pub trait PaCoSlotOps<BE: Backend> {
         TH: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
+impl<BE: Backend<Ring = Standard>> PaCoSlotOps<BE> for Module<BE>
 where
     Module<BE>: CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE> + GLWEAutomorphism<BE> + CyclotomicOrder + ModuleN,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,

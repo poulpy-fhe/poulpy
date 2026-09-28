@@ -54,7 +54,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
 /// PaCo test dimensions on the suite's `N = 256` ring: `B = 16`, chunk count
@@ -93,7 +93,7 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
 /// budget consumption.
 fn run_chain<BE, F, E>(base: &CKKSTestParams, factors: &[ComplexDiagonals<F>], label: &str)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -205,7 +205,7 @@ where
 /// `n = 2hC` slots), grouped at radices 1 and 2.
 pub fn test_paco_partial_c2s<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -237,7 +237,7 @@ where
 /// `C/2` slots), grouped at radices 1 and 2.
 pub fn test_paco_stc<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -284,7 +284,7 @@ where
 /// inverse).
 pub fn test_paco_packing<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

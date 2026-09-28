@@ -117,7 +117,7 @@ mod tests {
 
     fn fresh(n: usize, cols: usize) -> ScalarZnx<AlignedBuf, i64> {
         ScalarZnx::from_data(
-            HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, cols)),
+            <HostBytesBackend>::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, cols)),
             n,
             cols,
         )

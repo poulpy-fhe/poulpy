@@ -96,6 +96,11 @@ test. Data-management methods (`.set_meta_checked()`,
 `.to_host_owned()`) are the exception: they live on the struct because they
 are inherently tied to the type, not to the backend.
 
+The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
+backend (`Backend::Ring`): a module only accepts operands of its own ring, so
+mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
+ciphertext with real slots still belongs to the standard ring.
+
 ## Crate organization
 
 Public calls follow `api → delegates → oep`. A backend's explicit `*Impl`

@@ -38,7 +38,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, ZnxView},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
 
@@ -93,7 +93,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -533,7 +533,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -885,7 +885,7 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -929,7 +929,7 @@ fn run_s2c_first_case<BE, F, E>(
     guard_bits: usize,
 ) -> (f64, f64)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

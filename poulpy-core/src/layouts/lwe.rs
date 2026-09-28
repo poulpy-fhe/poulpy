@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use std::fmt;
 
 use poulpy_hal::layouts::{
@@ -292,13 +292,13 @@ impl<W: ZnxWord> LWE<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
             body: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
             ),
             mask: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
                 n.as_usize(),
                 1,
                 size,

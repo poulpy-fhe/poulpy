@@ -44,7 +44,7 @@ where
     Module<BE>: ScalarZnxFillDistribution<BE>,
 {
     let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+        <HostBytesBackend>::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
         module.n(),
         COLS,
     );

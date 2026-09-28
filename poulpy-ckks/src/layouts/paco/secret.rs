@@ -22,7 +22,7 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{GLWEInfos, GLWESecret, LWEInfos};
 use poulpy_core::{Distribution, GetDistributionMut};
 use poulpy_hal::{
-    layouts::{Backend, HostDataMut, Module, ScratchArena},
+    layouts::{Backend, HostDataMut, Module, ScratchArena, Standard},
     source::Source,
 };
 
@@ -489,7 +489,7 @@ impl PaCoSecretSpec {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<(Vec<F>, Vec<F>)>
     where
-        BE: Backend,
+        BE: Backend<Ring = Standard>,
         Module<BE>: CKKSEncodingOps<BE, F>,
         F: PaCoScalar,
     {

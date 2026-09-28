@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -71,7 +71,7 @@ pub struct BootstrappingPresetRun<BE: Backend> {
 
 impl<BE> BootstrappingPresetRun<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -242,7 +242,7 @@ where
 /// slow, so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>(fixture_base2k: usize)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,

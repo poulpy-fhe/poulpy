@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingImpl};
 
@@ -27,7 +27,7 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend {
+pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by coefficient embedding and β
     /// packing. This includes any scalar buffers used by native FFT kernels.
     fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(module: &Module<Self>, plan: &PaCoPlan) -> Result<usize>

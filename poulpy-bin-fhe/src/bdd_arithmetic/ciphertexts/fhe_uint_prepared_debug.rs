@@ -128,7 +128,7 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
         for (i, ggsw) in self.bits.iter().enumerate() {
             use poulpy_hal::layouts::ZnxViewMut;
             let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-                HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
+                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
                 usize::from(self.n()),
                 1,
             );
