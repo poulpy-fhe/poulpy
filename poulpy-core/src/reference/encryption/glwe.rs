@@ -258,13 +258,11 @@ where
         K: GLWEInfos,
     {
         let size: usize = res_infos.size().max(pk_infos.size());
-        let cols: usize = (res_infos.rank() + 1).into();
         let rank: usize = pk_infos.rank().into();
         assert_eq!(self.n() as u32, res_infos.n());
         let lvl_0: usize = self.bytes_of_svp_ppol(self.n(), rank, PrepareHint::Reuse);
         let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), rank);
-        let lvl_2: usize =
-            (cols + 1) * self.bytes_of_vec_znx_dft(self.n(), 1, size) + cols * self.bytes_of_vec_znx_big(self.n(), 1, size);
+        let lvl_2: usize = 2 * self.bytes_of_vec_znx_dft(self.n(), 1, size) + self.bytes_of_vec_znx_big(self.n(), 1, size);
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
@@ -417,11 +415,12 @@ where
             scratch_1 = scratch_2;
         }
 
-        let (mut tmp_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
+        let (mut tmp_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
+        let (mut ci_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
+        let (mut ci_big, mut scratch_1) = scratch_1.take_vec_znx_big_scratch(self.n(), 1, size_pk);
         let u_dft_ref = u_dft.to_backend_ref();
 
         for i in 0..cols {
-            let (mut ci_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
             {
                 let mut ci_dft_backend = ci_dft.to_backend_mut();
                 self.svp_apply_dft_to_dft(&mut ci_dft_backend, 0, &u_dft_ref, 0, &pk.keys[0].data, i);
@@ -431,7 +430,6 @@ where
                 }
             }
 
-            let (mut ci_big, scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), 1, size_pk);
             {
                 let mut ci_big_backend = ci_big.to_backend_mut();
                 let mut ci_dft_backend = ci_dft.to_backend_mut();
@@ -446,10 +444,17 @@ where
                 self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
             }
 
-            let ci_big_ref = ci_big.to_backend_ref();
-            scratch_1 = scratch_3.apply_mut(|scratch| {
-                self.vec_znx_big_normalize(&mut res.data, base2k, res_k, 0, i, &ci_big_ref, base2k, 0, scratch)
-            });
+            self.vec_znx_big_normalize(
+                &mut res.data,
+                base2k,
+                res_k,
+                0,
+                i,
+                &ci_big.to_backend_ref(),
+                base2k,
+                0,
+                &mut scratch_1,
+            );
         }
     }
 }

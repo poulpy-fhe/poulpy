@@ -1,7 +1,7 @@
 use poulpy_hal::{
     AlignedBuf,
     api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
-    layouts::{Backend, MatZnxAtBackendMut, Module},
+    layouts::{Backend, MatZnxAtBackendMut, Module, ReaderFrom, WriterTo},
     source::Source,
     test_suite::serialization::test_reader_writer_interface,
 };
@@ -120,6 +120,15 @@ where
     }
 
     test_reader_writer_interface(glwe);
+    let pk_rank_1: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, Rank(1));
+    let mut crafted: Vec<u8> = Vec::new();
+    pk_rank_1.write_to(&mut crafted).unwrap();
+    pk_rank_1.keys[0].write_to(&mut crafted).unwrap();
+    let mut receiver: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    assert_eq!(
+        receiver.read_from(&mut crafted.as_slice()).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidData
+    );
     test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);

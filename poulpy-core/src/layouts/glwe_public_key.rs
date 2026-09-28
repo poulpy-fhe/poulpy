@@ -129,6 +129,12 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
         for key in &mut self.keys {
             key.read_from(reader)?;
         }
+        if self.keys.iter().any(|key| key.rank().as_usize() != self.keys.len()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid public key: entry count differs from its rank",
+            ));
+        }
         Ok(())
     }
 }
