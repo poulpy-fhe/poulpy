@@ -1,9 +1,9 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
-        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare,
+        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
+        VecZnxDftAlloc, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut,
@@ -21,8 +21,9 @@ use crate::{
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecret,
-        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPreparedFactory, GLWEPublicKey,
+        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc, Rank,
         compressed::{GLWECompressed, GLWEDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -505,6 +506,7 @@ where
     Module<BE>: GLWEEncryptPk<BE>
         + GLWEEncryptSk<BE>
         + GLWENormalize<BE>
+        + GLWEPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEPublicKeyGenerate<BE>
         + GLWESecretPreparedFactory<BE>
@@ -515,6 +517,8 @@ where
         + SvpPrepare<BE>
         + SvpApplyDftToDft<BE>
         + VecZnxDftAlloc<BE>
+        + VecZnxDftBytesOf
+        + VmpApplyDftToDftTmpBytes
         + VecZnxDftZero<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -543,6 +547,7 @@ where
                 .glwe_encrypt_pk_tmp_bytes(&infos, &infos)
                 .max(module.glwe_public_key_generate_tmp_bytes(&infos))
                 .max(module.glwe_public_key_prepare_tmp_bytes(&infos))
+                .max(module.glwe_prepare_tmp_bytes(&infos))
                 .max(module.vec_znx_big_normalize_tmp_bytes()),
         );
 
@@ -594,7 +599,16 @@ where
 
         let mut source_xu: Source = Source::new([5u8; 32]);
         let mut source_xe: Source = Source::new([6u8; 32]);
-        let size: usize = pk_prepared.size();
+        let size: usize = pk.size();
+        let entries: Vec<GLWEPrepared<BE::OwnedBuf, BE>> = pk
+            .entries()
+            .iter()
+            .map(|entry| {
+                let mut prepared: GLWEPrepared<BE::OwnedBuf, BE> = module.glwe_prepared_alloc_from_infos(entry);
+                module.glwe_prepare(&mut prepared, entry, &mut scratch.borrow());
+                prepared
+            })
+            .collect();
         let mut u = module.scalar_znx_alloc(n, rank);
         let mut u_prepared = module.svp_ppol_alloc(n, rank, PrepareHint::Reuse);
         for l in 0..rank {
@@ -608,7 +622,7 @@ where
         let mut big = module.vec_znx_big_alloc(n, 1, size);
         for col in 0..rank + 1 {
             module.vec_znx_dft_zero(&mut acc.to_backend_mut(), 0);
-            for (l, key) in pk_prepared.keys.iter().enumerate() {
+            for (l, key) in entries.iter().enumerate() {
                 module.svp_apply_dft_to_dft(
                     &mut prod.to_backend_mut(),
                     0,
@@ -638,7 +652,7 @@ where
         }
         assert_eq!(ct, want, "rank={rank}");
 
-        // The ephemerals are the arena's first two regions; left in place they would decrypt `ct`.
+        // The ephemerals, their DFT, the product and its scratch lead the arena; left there they would decrypt `ct`.
         let bytes: usize = module.glwe_encrypt_pk_tmp_bytes(&infos, &infos);
         let mut zeroed: ScratchOwned<BE> = ScratchOwned {
             data: BE::from_host_bytes(&vec![0u8; bytes]),
@@ -653,18 +667,15 @@ where
             &mut Source::new([6u8; 32]),
             &mut zeroed.borrow(),
         );
-        let u_dft_bytes: usize = module.bytes_of_svp_ppol(n, rank, PrepareHint::Reuse);
-        let u_start: usize = BE::scratch_aligned(u_dft_bytes);
+        let u_dft_start: usize = BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank));
+        let product_start: usize = BE::scratch_aligned(u_dft_start + module.bytes_of_vec_znx_dft(n, rank, 1));
+        let tail_start: usize = BE::scratch_aligned(product_start + module.bytes_of_vec_znx_dft(n, rank + 1, size));
+        let vmp: usize = module.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
+        let wiped: usize = tail_start + BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)));
         let arena: Vec<u8> = BE::to_host_bytes(&zeroed.data);
         assert!(
-            arena[..u_dft_bytes].iter().all(|&b| b == 0),
-            "rank={rank}: prepared ephemerals left in scratch"
-        );
-        assert!(
-            arena[u_start..u_start + BE::bytes_of_scalar_znx(n, rank)]
-                .iter()
-                .all(|&b| b == 0),
-            "rank={rank}: ephemerals left in scratch"
+            arena[..wiped].iter().all(|&b| b == 0),
+            "rank={rank}: ephemerals or their products left in scratch"
         );
     }
 }

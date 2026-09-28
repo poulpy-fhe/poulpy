@@ -99,7 +99,11 @@ are rejected at compile time.
 generation and `GLWEEncryptPk` public-key encryption. A replacement must keep
 their draw order from `source_xa`, `source_xe` and `source_xu`: the parity
 tests compare the outputs and the source states. A ciphertext's phase is
-`m + Sum_l u_l e_l + e_0 + Sum_j e_j s_j`.
+`m + Sum_l u_l e_l + e_0 + Sum_j e_j s_j`. `GLWEPublicKeyPrepared` stores the
+entries as one prepared matrix of one row, entry `l` at input column `l`, and
+the reference encryption computes `Sum_l u_l pk_l` as one vector-matrix
+product, then adds each column's error before its single normalization at the
+output's `k`.
 
 Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
 sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one

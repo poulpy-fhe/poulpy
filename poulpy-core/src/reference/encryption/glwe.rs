@@ -1,14 +1,14 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
-        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
+        Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -250,7 +250,7 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_pk_tmp_bytes_reference<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
@@ -259,11 +259,14 @@ where
     {
         let size: usize = res_infos.size().max(pk_infos.size());
         let rank: usize = pk_infos.rank().into();
-        assert_eq!(self.n() as u32, res_infos.n());
-        let lvl_0: usize = self.bytes_of_svp_ppol(self.n(), rank, PrepareHint::Reuse);
-        let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), rank);
-        let lvl_2: usize = 2 * self.bytes_of_vec_znx_dft(self.n(), 1, size) + self.bytes_of_vec_znx_big(self.n(), 1, size);
-        let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
+        let n: usize = self.n();
+        assert_eq!(n as u32, res_infos.n());
+        let lvl_0: usize = BE::bytes_of_scalar_znx(n, rank);
+        let lvl_1: usize = self.bytes_of_vec_znx_dft(n, rank, 1);
+        let lvl_2: usize = self.bytes_of_vec_znx_dft(n, rank + 1, size);
+        let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
+        let lvl_3: usize = BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)))
+            .max(self.bytes_of_vec_znx_big(n, 1, size) + self.vec_znx_big_normalize_tmp_bytes());
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
@@ -339,18 +342,16 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkInternal<BE> for Module<BE>
 where
-    Self: SvpPrepare<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
+    Self: VecZnxDftApply<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftTmpBytes
         + VecZnxDftZero<BE>
         + VecZnxZero<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + SvpPPolBytesOf
         + ModuleN
-        + VecZnxDftBytesOf
         + ScalarZnxFillDistribution<BE>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -382,15 +383,15 @@ where
 
         let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
         assert!(
-            pk.keys.len() == res.rank().as_usize(),
+            pk.data.cols_out() == pk.data.cols_in() + 1,
             "invalid public key: entry count differs from its rank"
         );
+        let n: usize = self.n();
         let base2k: usize = pk.base2k().into();
         let noise_infos = enc_infos.noise_infos();
         let size_pk: usize = pk.size();
         let res_k: usize = res.k().as_usize();
-        let cols: usize = (res.rank() + 1).into();
-        let rank: usize = pk.keys.len();
+        let rank: usize = pk.data.cols_in();
 
         // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
         let dist: Distribution = match pk.dist() {
@@ -410,61 +411,66 @@ where
         };
 
         let scratch = scratch.borrow();
-        let (mut u_dft, scratch_1) = scratch.take_svp_ppol_scratch(self.n(), rank, PrepareHint::Reuse);
-        let (mut u_backend, scratch_1) = scratch_1.take_scalar_znx_scratch(self.n(), rank);
+        let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
+        let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
         for l in 0..rank {
-            self.scalar_znx_fill_distribution(&mut u_backend.to_backend_mut(), l, dist, source_xu);
-            self.svp_prepare(&mut u_dft, l, &u_backend.to_backend_ref(), l);
-        }
-
-        let (mut tmp_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
-        let (mut ci_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
-        let (mut ci_big, mut scratch_1) = scratch_1.take_vec_znx_big_scratch(self.n(), 1, size_pk);
-        for i in 0..cols {
-            let u_dft_ref = u_dft.to_backend_ref();
-            {
-                let mut ci_dft_backend = ci_dft.to_backend_mut();
-                self.svp_apply_dft_to_dft(&mut ci_dft_backend, 0, &u_dft_ref, 0, &pk.keys[0].data, i);
-                for (l, key) in pk.keys.iter().enumerate().skip(1) {
-                    self.svp_apply_dft_to_dft(&mut tmp_dft.to_backend_mut(), 0, &u_dft_ref, l, &key.data, i);
-                    self.vec_znx_dft_add_assign(&mut ci_dft_backend, 0, &tmp_dft.to_backend_ref(), 0);
-                }
-            }
-
-            {
-                let mut ci_big_backend = ci_big.to_backend_mut();
-                let mut ci_dft_backend = ci_dft.to_backend_mut();
-                self.vec_znx_idft_apply_tmpa(&mut ci_big_backend, 0, &mut ci_dft_backend, 0);
-            }
-
-            self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
-
-            if let Some((pt, col)) = &pt
-                && *col == i
-            {
-                self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
-            }
-
-            self.vec_znx_big_normalize(
-                &mut res.data,
-                base2k,
-                res_k,
+            self.scalar_znx_fill_distribution(&mut u.to_backend_mut(), l, dist, source_xu);
+            self.vec_znx_dft_apply(
+                1,
                 0,
-                i,
-                &ci_big.to_backend_ref(),
-                base2k,
-                0,
-                &mut scratch_1,
+                &mut u_dft.to_backend_mut(),
+                l,
+                &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
+                l,
             );
         }
 
-        // The ephemerals and the partial products would decrypt the ciphertext from the caller's scratch.
-        for l in 0..rank {
-            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u_backend), l);
-            self.svp_prepare(&mut u_dft, l, &u_backend.to_backend_ref(), l);
+        let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, size_pk);
+        self.vmp_apply_dft_to_dft(
+            &mut res_dft.to_backend_mut(),
+            &u_dft.to_backend_ref(),
+            &pk.data,
+            0,
+            &mut scratch_1.borrow(),
+        );
+
+        {
+            let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
+            for i in 0..rank + 1 {
+                self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
+                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
+
+                if let Some((pt, col)) = &pt
+                    && *col == i
+                {
+                    self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
+                }
+
+                self.vec_znx_big_normalize(
+                    &mut res.data,
+                    base2k,
+                    res_k,
+                    0,
+                    i,
+                    &ci_big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch_2,
+                );
+            }
         }
-        self.vec_znx_dft_zero(&mut tmp_dft.to_backend_mut(), 0);
-        self.vec_znx_dft_zero(&mut ci_dft.to_backend_mut(), 0);
+
+        // The ephemerals and the products would decrypt the ciphertext from the caller's scratch.
+        for l in 0..rank {
+            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u), l);
+            self.vec_znx_dft_zero(&mut u_dft.to_backend_mut(), l);
+        }
+        for i in 0..rank + 1 {
+            self.vec_znx_dft_zero(&mut res_dft.to_backend_mut(), i);
+        }
+        let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size_pk, 1, 1, rank, rank + 1, size_pk);
+        let (mut vmp_tmp, _) = scratch_1.take_vec_znx_scratch(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)));
+        self.vec_znx_zero(&mut vmp_tmp, 0);
     }
 }
 
