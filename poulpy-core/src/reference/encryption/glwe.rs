@@ -214,9 +214,10 @@ where
 ///
 /// Backend implementations may call this helper without changing their override selection.
 pub trait GLWEEncryptPkReference<BE: Backend> {
-    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
-        A: GLWEInfos;
+        A: GLWEInfos,
+        B: GLWEInfos;
 
     fn glwe_encrypt_pk_reference<R, P, K, E>(
         &self,
@@ -251,13 +252,14 @@ impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
 where
     Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
         A: GLWEInfos,
+        B: GLWEInfos,
     {
-        let size: usize = infos.size();
-        let cols: usize = (infos.rank() + 1).into();
-        assert_eq!(self.n() as u32, infos.n());
+        let size: usize = res_infos.size().max(pk_infos.size());
+        let cols: usize = (res_infos.rank() + 1).into();
+        assert_eq!(self.n() as u32, res_infos.n());
         let lvl_0: usize = self.bytes_of_svp_ppol(self.n(), 1, PrepareHint::Reuse);
         let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), 1);
         let lvl_2: usize = cols * (self.bytes_of_vec_znx_dft(self.n(), 1, size) + self.bytes_of_vec_znx_big(self.n(), 1, size));
@@ -283,10 +285,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res)
+            self.glwe_encrypt_pk_tmp_bytes_reference(res, pk)
         );
         self.glwe_encrypt_pk_internal(
             res,
@@ -313,10 +315,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res)
+            self.glwe_encrypt_pk_tmp_bytes_reference(res, pk)
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }
@@ -373,6 +375,7 @@ where
         assert_eq!(res.base2k(), pk.base2k());
         assert_eq!(res.n(), pk.n());
         assert_eq!(res.rank(), pk.rank());
+        assert!(pk.k() >= res.k(), "invalid public key: less precise than the output");
         if let Some((pt, _)) = &pt {
             assert_eq!(pt.base2k(), pk.base2k());
             assert_eq!(pt.n(), pk.n());

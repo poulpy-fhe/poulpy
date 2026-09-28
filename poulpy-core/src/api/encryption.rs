@@ -106,9 +106,12 @@ pub trait GLWEEncryptSk<BE: Backend> {
 }
 
 pub trait GLWEEncryptPk<BE: Backend> {
-    fn glwe_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
+    /// `res_infos` is the output layout and `pk_infos` the public key layout,
+    /// at least as precise as the output.
+    fn glwe_encrypt_pk_tmp_bytes<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
-        A: GLWEInfos;
+        A: GLWEInfos,
+        B: GLWEInfos;
 
     fn glwe_encrypt_pk<R, P, K, E>(
         &self,

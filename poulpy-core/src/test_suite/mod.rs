@@ -36,6 +36,8 @@ macro_rules! core_backend_test_suite {
                 glwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk,
                 glwe_encrypt_zero_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_sk,
                 glwe_encrypt_pk => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk,
+                #[should_panic(expected = "invalid public key: less precise than the output")]
+                glwe_encrypt_pk_imprecise_key => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_imprecise_key,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,

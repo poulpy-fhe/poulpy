@@ -161,11 +161,12 @@ impl_encryption_delegate!(
 
 impl_encryption_delegate!(
     GLWEEncryptPk<BE>,
-    fn glwe_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
         A: GLWEInfos,
+        B: GLWEInfos,
     {
-        BE::glwe_encrypt_pk_tmp_bytes(self, infos)
+        BE::glwe_encrypt_pk_tmp_bytes(self, res_infos, pk_infos)
     },
     fn glwe_encrypt_pk<R, P, K, E>(
         &self,

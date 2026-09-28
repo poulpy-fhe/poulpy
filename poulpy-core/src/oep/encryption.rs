@@ -100,9 +100,10 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn glwe_encrypt_pk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, pk_infos: &B) -> usize
     where
-        A: GLWEInfos;
+        A: GLWEInfos,
+        B: GLWEInfos;
 
     fn glwe_encrypt_pk<R, P, K, E>(
         module: &Module<Self>,
@@ -717,10 +718,11 @@ macro_rules! impl_encryption_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkReference<$be>>::glwe_encrypt_zero_sk_reference::<R, E, S>(module, res, sk, enc_infos, source_xe, source_xa, scratch)
         }
 
-    fn glwe_encrypt_pk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes<A, B>(module: &::poulpy_hal::layouts::Module<$be>, res_infos: &A, pk_infos: &B) -> usize
     where
-        A: $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_tmp_bytes_reference::<A>(module, infos)
+        A: $crate::layouts::GLWEInfos,
+        B: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_tmp_bytes_reference::<A, B>(module, res_infos, pk_infos)
         }
 
     fn glwe_encrypt_pk<R, P, K, E>(

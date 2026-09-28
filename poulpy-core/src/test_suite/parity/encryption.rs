@@ -206,7 +206,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &enc,
             &mut e,
             &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos)).arena(),
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
         );
         results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
         results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
@@ -217,7 +217,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &enc,
             &mut e,
             &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos)).arena(),
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
         );
         results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
         results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
