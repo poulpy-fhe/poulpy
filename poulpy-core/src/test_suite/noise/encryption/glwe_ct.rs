@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{Module, ScratchOwned, ZnxView},
+    layouts::{Module, ScratchOwned, WriterTo, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -260,6 +260,97 @@ where
             "noise_have: {noise_have} > noise_want: {noise_want}"
         );
     }
+}
+
+/// FNV-1a digests of the serialized rank-1 public key and its two encryptions under fixed seeds.
+pub fn glwe_public_key_rank1_digests<BE: crate::test_suite::noise::TestBackend>(module: &Module<BE>, base2k: usize) -> [u64; 3]
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptPk<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWESecretPreparedFactory<BE>
+        + VecZnxFillUniformSource<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    fn fnv1a<T: WriterTo>(value: &T) -> u64 {
+        let mut bytes: Vec<u8> = Vec::new();
+        value.write_to(&mut bytes).unwrap();
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    let infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        k: (3 * base2k + 1).into(),
+        rank: 1_usize.into(),
+    })
+    .unwrap();
+
+    let mut source_xs: Source = Source::new([1u8; 32]);
+    let mut source_xe: Source = Source::new([2u8; 32]);
+    let mut source_xa: Source = Source::new([3u8; 32]);
+    let mut source_xu: Source = Source::new([4u8; 32]);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_encrypt_pk_tmp_bytes(&infos)
+            .max(module.glwe_public_key_generate_tmp_bytes(&infos))
+            .max(module.glwe_public_key_prepare_tmp_bytes(&infos)),
+    );
+
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(1_usize.into());
+    module.glwe_secret_prepare(&mut sk_prepared, &sk);
+
+    let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&infos);
+    module.glwe_public_key_generate(
+        &mut pk,
+        &sk_prepared,
+        &infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
+    module.vec_znx_fill_uniform_source(
+        base2k,
+        pt.k().as_usize(),
+        &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+        0,
+        &mut source_xa,
+    );
+
+    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
+    module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    module.glwe_encrypt_pk(
+        &mut ct,
+        &pt,
+        &pk_prepared,
+        &infos,
+        &mut source_xu,
+        &mut source_xe,
+        &mut scratch.borrow(),
+    );
+    let mut ct_zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    module.glwe_encrypt_zero_pk(
+        &mut ct_zero,
+        &pk_prepared,
+        &infos,
+        &mut source_xu,
+        &mut source_xe,
+        &mut scratch.borrow(),
+    );
+
+    [fnv1a(&pk), fnv1a(&ct), fnv1a(&ct_zero)]
 }
 
 pub fn test_glwe_encrypt_pk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)

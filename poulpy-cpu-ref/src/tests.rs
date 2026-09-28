@@ -481,6 +481,22 @@ fn test_hal_serialization_fft64_ref() {
 
 #[cfg(feature = "enable-core")]
 #[test]
+fn test_glwe_public_key_rank1_golden() {
+    use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
+    // Recorded on the single-key public key at 0709b0e7: the vector key must reproduce them at rank 1.
+    const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
+    const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
+    assert_eq!(
+        (
+            glwe_public_key_rank1_digests(&Module::<FFT64Ref>::new(256), 17),
+            glwe_public_key_rank1_digests(&Module::<NTT4x30Ref>::new(256), 52),
+        ),
+        (FFT64, NTT4X30)
+    );
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
 fn test_core_serialization_fft64_ref() {
     poulpy_core::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(64));
 }
