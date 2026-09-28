@@ -11,7 +11,7 @@ use crate::{
     dist::Distribution,
     layouts::{
         Base2K, Degree, GLWE, GLWEInfos, GLWEPreparedFactory, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank,
-        TorusPrecision, glwe_public_key_entry_view,
+        TorusPrecision, glwe_public_key_at_view,
     },
 };
 
@@ -161,7 +161,7 @@ where
                     };
                     self.glwe_normalize(
                         &mut &mut entry,
-                        &glwe_public_key_entry_view::<B>(&other, l),
+                        &glwe_public_key_at_view::<B>(&other, l),
                         &mut scratch_1.borrow(),
                     );
                 }

@@ -3,8 +3,8 @@ use std::fmt;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo, ZnxWord,
-    mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom,
+    WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
 };
 
 use crate::{
@@ -43,11 +43,16 @@ impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
     pub fn is_canonical(&self) -> bool {
         self.canonical
     }
+
+    /// For entries written through a mutable view.
+    pub fn set_canonical(&mut self, canonical: bool) {
+        self.canonical = canonical
+    }
 }
 
 impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
     /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
-    pub fn entry(&self, l: usize) -> GLWE<&[u8], W> {
+    pub fn at(&self, l: usize) -> GLWE<&[u8], W> {
         GLWE {
             data: self.data.at(0, l),
             base2k: self.base2k,
@@ -58,21 +63,39 @@ impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
-    /// The view reports the key's canonical flag and drops a change to it:
-    /// set it on the key with [`GLWEPublicKeyToBackendMut::set_canonical`].
-    pub fn entry_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        let (base2k, k, canonical) = (self.base2k, self.k, self.canonical);
+    /// Clears the key's canonical flag: set it back with [`Self::set_canonical`]
+    /// once every entry is canonical.
+    pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
+        self.canonical = false;
         GLWE {
             data: self.data.at_mut(0, l),
-            base2k,
-            k,
-            canonical,
+            base2k: self.base2k,
+            k: self.k,
+            canonical: false,
         }
     }
 }
 
+/// Backend view of entry `l` of an owned public key.
+pub trait GLWEPublicKeyAtViewMut<BE: Backend> {
+    /// Clears the key's canonical flag, as [`GLWEPublicKey::at_mut`] does.
+    fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE>;
+}
+
+impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
+        self.canonical = false;
+        GLWEViewMut::from_inner(GLWE {
+            data: MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
+            base2k: self.base2k,
+            k: self.k,
+            canonical: false,
+        })
+    }
+}
+
 /// Backend view of entry `l` of a borrowed public key.
-pub fn glwe_public_key_entry_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<'_, BE>, l: usize) -> GLWEViewRef<'a, BE> {
+pub fn glwe_public_key_at_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<'_, BE>, l: usize) -> GLWEViewRef<'a, BE> {
     GLWEViewRef::from_inner(GLWE {
         data: mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
         base2k: pk.base2k,
@@ -81,17 +104,16 @@ pub fn glwe_public_key_entry_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendR
     })
 }
 
-/// Mutable backend view of entry `l`, with the same flag rule as [`GLWEPublicKey::entry_mut`].
-pub fn glwe_public_key_entry_view_mut<'a, BE: Backend>(
+/// The view's flag never reaches the owner: the caller sets it on the key.
+pub(crate) fn glwe_public_key_at_view_mut<'a, BE: Backend>(
     pk: &'a mut GLWEPublicKeyBackendMut<'_, BE>,
     l: usize,
 ) -> GLWEViewMut<'a, BE> {
-    let (base2k, k, canonical) = (pk.base2k, pk.k, pk.canonical);
     GLWEViewMut::from_inner(GLWE {
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
-        base2k,
-        k,
-        canonical,
+        base2k: pk.base2k,
+        k: pk.k,
+        canonical: false,
     })
 }
 
@@ -225,23 +247,34 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKey<D, W> {
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
+    /// Fails with [`std::io::ErrorKind::InvalidData`], leaving the key's layout
+    /// unchanged, on a stream that is not one row of `r >= 1` encryptions of
+    /// zero of a nonzero degree at its precision.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.dist = Distribution::read_from(reader)?;
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        self.data.read_from(reader)?;
-        let m = &self.data;
-        if self.base2k.0 == 0
-            || m.rows() != 1
-            || m.cols_in() == 0
-            || m.cols_out() != m.cols_in() + 1
-            || m.size() != self.k.0.div_ceil(self.base2k.0) as usize
+        let dist = Distribution::read_from(reader)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        // The matrix header (n, size, rows, cols_in, cols_out) is checked before the matrix overwrites the key.
+        let mut header = [0u8; 40];
+        reader.read_exact(&mut header)?;
+        let field = |i: usize| u64::from_le_bytes(header[8 * i..8 * i + 8].try_into().unwrap());
+        let (n, size, rows, cols_in, cols_out) = (field(0), field(1), field(2), field(3), field(4));
+        if base2k.0 == 0
+            || n == 0
+            || rows != 1
+            || cols_in == 0
+            || cols_in.checked_add(1) != Some(cols_out)
+            || size != u64::from(k.0.div_ceil(base2k.0))
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "invalid public key: not one row of rank encryptions of zero at its precision",
             ));
         }
+        self.data.read_from(&mut std::io::Read::chain(header.as_slice(), reader))?;
+        self.dist = dist;
+        self.base2k = base2k;
+        self.k = k;
         self.canonical = true;
         Ok(())
     }

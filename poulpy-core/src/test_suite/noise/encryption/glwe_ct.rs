@@ -360,11 +360,11 @@ where
         &mut scratch.borrow(),
     );
 
-    // The key digest hashes the vector key's format, the distribution then entry 0 as a GLWE, so the recorded value holds.
+    // Hashes the rank-1 bytes from before the matrix layout, the distribution then entry 0, so the recorded digests still hold.
     [
         fnv1a(|b| {
             pk.dist().write_to(b)?;
-            pk.entry(0).write_to(b)
+            pk.at(0).write_to(b)
         }),
         fnv1a(|b| ct.write_to(b)),
         fnv1a(|b| ct_zero.write_to(b)),
@@ -584,7 +584,7 @@ where
             })
             .collect();
         for (l, key) in keys_want.iter().enumerate() {
-            assert_eq!(pk.entry(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
+            assert_eq!(pk.at(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
         }
         assert!(pk.is_canonical(), "rank={rank}");
 
@@ -593,12 +593,11 @@ where
 
         // A flag-clear key with digits out of range prepares, through its normalization, to the same matrix.
         let size: usize = pk.size();
-        let mut entry = pk.entry_mut(rank - 1);
+        let mut entry = pk.at_mut(rank - 1);
         for limb in 1..size {
             entry.data.at_mut(0, limb - 1).iter_mut().for_each(|digit| *digit -= 1);
             entry.data.at_mut(0, limb).iter_mut().for_each(|digit| *digit += 1 << base2k);
         }
-        pk.canonical = false;
         let mut pk_prepared_lazy: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&infos);
         module.glwe_public_key_prepare(&mut pk_prepared_lazy, &pk, &mut scratch.borrow());

@@ -180,11 +180,9 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
 
         let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
         for l in 0..pk.rank().as_usize() {
-            poison_glwe::<B, _>(&mut glwe_public_key_entry_view_mut::<B>(
-                &mut GLWEPublicKeyToBackendMut::<B>::to_backend_mut(&mut pk),
-                l,
-            ));
+            poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
         }
+        assert!(!pk.is_canonical(), "a mutable entry view must clear the key's flag");
         module.glwe_public_key_generate(
             &mut pk,
             &skp,
@@ -196,7 +194,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         for l in 0..pk.rank().as_usize() {
             results.push(snapshot_glwe::<B, _>(
                 "public_key_generate",
-                &glwe_public_key_entry_view::<B>(&GLWEPublicKeyToBackendRef::<B>::to_backend_ref(&pk), l),
+                &glwe_public_key_at_view::<B>(&GLWEPublicKeyToBackendRef::<B>::to_backend_ref(&pk), l),
             ));
         }
         results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));

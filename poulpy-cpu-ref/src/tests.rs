@@ -483,7 +483,7 @@ fn test_hal_serialization_fft64_ref() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
-    // Recorded on the single-key public key: the vector key must reproduce them at rank 1.
+    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
     const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
     const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
     assert_eq!(

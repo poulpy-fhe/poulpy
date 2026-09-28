@@ -122,24 +122,31 @@ where
     // A stream is one row of `rank` encryptions of zero at the stated precision.
     let size: usize = K.0.div_ceil(BASE2K.0) as usize;
     let zeros: Vec<u8> = vec![0u8; GLWEPublicKey::<AlignedBuf, i64>::bytes_of(N_GLWE, BASE2K, K, RANK)];
+    let pristine: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
     let mut receiver: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
-    for (base2k, rows, cols_in, cols_out, size) in [
-        (BASE2K, 2, 1, 2, size),
-        (BASE2K, 1, 2, 2, size),
-        (BASE2K, 1, 0, 1, size),
-        (BASE2K, 1, 2, 3, size - 1),
-        (Base2K(0), 1, 2, 3, size),
+    let n: usize = N_GLWE.into();
+    for (n, base2k, rows, cols_in, cols_out, size) in [
+        (n, BASE2K, 2, 1, 2, size),
+        (n, BASE2K, 1, 2, 2, size),
+        (n, BASE2K, 1, 0, 1, size),
+        (n, BASE2K, 1, 2, 3, size - 1),
+        (n, Base2K(0), 1, 2, 3, size),
+        (0, BASE2K, 1, 2, 3, size),
     ] {
         let mut stream: Vec<u8> = Vec::new();
-        Distribution::NONE.write_to(&mut stream).unwrap();
+        Distribution::TernaryFixed(1).write_to(&mut stream).unwrap();
         stream.extend(base2k.0.to_le_bytes());
         stream.extend(K.0.to_le_bytes());
-        MatZnx::<&[u8], i64>::from_data(&zeros, N_GLWE.into(), rows, cols_in, cols_out, size)
+        MatZnx::<&[u8], i64>::from_data(&zeros, n, rows, cols_in, cols_out, size)
             .write_to(&mut stream)
             .unwrap();
         assert_eq!(
             receiver.read_from(&mut stream.as_slice()).unwrap_err().kind(),
             std::io::ErrorKind::InvalidData
+        );
+        assert!(
+            receiver == pristine && receiver.is_canonical(),
+            "a rejected stream changed the key"
         );
     }
     let mut flag_clear: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
