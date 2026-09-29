@@ -24,8 +24,8 @@
 //! available reference algorithms and derived defaults. Purely derived families
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
 //! the provided implementations for all core families except [`SamplingImpl`] and the
-//! standard-only families (monomial operations and the Galois trace), which
-//! conjugate-invariant backends do not implement.
+//! standard-only families (monomial operations, the Galois trace and the
+//! conjugate-invariant maps), which conjugate-invariant backends do not implement.
 //!
 //! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
 //! required methods to reference helpers and inherit the derived defaults you
@@ -56,6 +56,7 @@
 //! control sampled values separately.
 
 mod automorphism;
+mod ci_conversion;
 mod conversion;
 mod decryption;
 pub(crate) mod derived;
@@ -68,6 +69,7 @@ mod polynomial_evaluation;
 mod sampling;
 
 pub use automorphism::*;
+pub use ci_conversion::*;
 pub use conversion::*;
 pub use decryption::*;
 pub use encryption::*;
@@ -109,11 +111,12 @@ pub use crate::{
     impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full, impl_decryption_reference_full,
     impl_encryption_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
     impl_gglwe_product_digits_strided_reference, impl_ggsw_conversion_reference_full, impl_ggsw_external_product_derived_full,
-    impl_ggsw_keyswitch_derived_full, impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_copy_reference_full,
-    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full,
-    impl_glwe_mul_plain_reference_full, impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full,
-    impl_glwe_normalize_reference_full, impl_glwe_packing_derived_full, impl_glwe_rotate_reference_full,
-    impl_glwe_shift_reference_full, impl_glwe_sub_reference_full, impl_glwe_tensoring_reference, impl_glwe_trace_derived_full,
-    impl_glwe_zero_reference_full, impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
-    impl_operations_reference_full, impl_polynomial_evaluation_derived_full,
+    impl_ggsw_keyswitch_derived_full, impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full,
+    impl_glwe_ci_conversion_reference_full, impl_glwe_copy_reference_full, impl_glwe_external_product_reference_full,
+    impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full, impl_glwe_mul_plain_reference_full,
+    impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full, impl_glwe_normalize_reference_full,
+    impl_glwe_packing_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full,
+    impl_glwe_sub_reference_full, impl_glwe_tensoring_reference, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,
+    impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full, impl_operations_reference_full,
+    impl_polynomial_evaluation_derived_full,
 };

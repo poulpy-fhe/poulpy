@@ -149,6 +149,32 @@ macro_rules! hal_impl_vec_znx_without_normalize {
     };
 }
 
+/// HAL `VecZnx` maps between the conjugate-invariant and standard rings.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_ci {
+    () => {
+        fn vec_znx_ci_embed(
+            _module: &::poulpy_hal::layouts::Module<Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            $crate::reference::vec_znx::vec_znx_ci_embed::<Self>(res, res_col, a, a_col)
+        }
+
+        fn vec_znx_ci_trace(
+            _module: &::poulpy_hal::layouts::Module<Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            $crate::reference::vec_znx::vec_znx_ci_trace::<Self>(res, res_col, a, a_col)
+        }
+    };
+}
+
 /// HAL `VecZnx` monomial methods (`X^k`).
 #[macro_export]
 macro_rules! hal_impl_vec_znx_monomial {

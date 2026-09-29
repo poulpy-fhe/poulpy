@@ -31,11 +31,12 @@ use crate::{
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
-    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch,
+    GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWESecretPreparedFactory, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
+        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWELayout, GLWESecretPreparedFactory,
+        GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
         GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
@@ -784,6 +785,38 @@ where
     let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
     module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch);
     ksk_prepared
+}
+
+/// Generates the prepared embed and trace keys between the conjugate-invariant secret
+/// `ci_sk` and the standard secret `sk` of `module`, of twice its degree.
+pub fn gen_ci_keys<BE, S>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    ci_sk: &S,
+    sk: &BackendGLWESecret<BE>,
+    k_in: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    GLWECIEmbedKeyPrepared<BE::OwnedBuf, BE>,
+    GLWECITraceKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
+    S: GLWESecretToBackendRef<BE>,
+{
+    let infos = params.ksk_layout(k_in);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut embed = module.glwe_ci_embed_key_alloc_from_infos(&infos);
+    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
+    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    let mut embed_prepared = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut embed_prepared, &embed, scratch);
+    let mut trace_prepared = module.glwe_ci_trace_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut trace_prepared, &trace, scratch);
+    (embed_prepared, trace_prepared)
 }
 
 /// Generates the sparse-secret encapsulation key-switching keys

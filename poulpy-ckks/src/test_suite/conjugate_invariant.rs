@@ -3,23 +3,26 @@ use std::collections::HashMap;
 use crate::{
     CKKSInfos, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
+        CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
         CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::{GLWEAutomorphismKeyPrepared, LWEInfos};
+use poulpy_core::{
+    GLWECIKeyEncryptSk,
+    layouts::{GLWEAutomorphismKeyPrepared, LWEInfos},
+};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module},
+    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
 use super::{
     CKKSTestParams,
     helpers::{
-        TestContextBackend, TestContextHostModule, TestContextSharedModule, alloc_ct, alloc_scratch, ckks_encrypt_pt, gen_atk,
-        gen_sk_with_raw, gen_tsk,
+        TestContextBackend, TestContextHostModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_precision,
+        ckks_decrypt_with_prec, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk, precision_at,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -423,7 +426,7 @@ where
 /// Instantiates conjugate invariant encoding and leveled-operation tests.
 #[macro_export]
 macro_rules! conjugate_invariant_ckks_test_suite {
-    ($name:ident, $backend:ty, $params:expr) => {
+    ($name:ident, $backend:ty, $standard:ty, $params:expr) => {
         mod $name {
             use poulpy_hal::{
                 api::ModuleNew,
@@ -442,6 +445,15 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_ring_map() {
+                let params = $params;
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
+                    params,
+                    Module::<$backend>::new(params.n as u64),
+                    Module::<$standard>::new((2 * params.n) as u64),
+                );
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
@@ -450,4 +462,90 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             }
         }
     };
+}
+
+/// Embeds a CI ciphertext into the standard ring of twice its degree, switches
+/// it to the standard secret and decrypts it there, then switches back and takes the trace.
+pub fn test_conjugate_invariant_ring_map<BE, STD>(mut params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>)
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    STD: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+    Module<STD>: TestContextSharedModule<STD> + CKKSEncodingOps<STD, f64> + CKKSCIRingMapOps<STD> + GLWECIKeyEncryptSk<STD>,
+{
+    params.prec_meta.slots = SlotsKind::Real;
+    // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
+    params.k += 1;
+    let standard_params = CKKSTestParams {
+        n: 2 * params.n,
+        ..params
+    };
+    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64);
+    let standard_host = Module::<HostBytesBackend>::new(standard_params.n as u64);
+    let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&params, &ci, &ci_host, [21; 32]);
+    let (standard_sk_raw, standard_sk) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [22; 32]);
+    let mut scratch = alloc_scratch(&params, &ci);
+    let mut standard_scratch = alloc_scratch(&standard_params, &standard);
+
+    let (embed_key, trace_key) = gen_ci_keys(
+        &standard_params,
+        &standard,
+        &ci_sk_raw,
+        &standard_sk_raw,
+        params.k,
+        &mut standard_scratch.borrow(),
+    );
+
+    let slots = params.n;
+    let want = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
+    let zeros = vec![0.0; slots];
+    let mut pt = ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    ci.ckks_encode_reim_into(&mut pt, &want, &zeros, &mut scratch.borrow())
+        .unwrap();
+    let ct = ckks_encrypt_pt(
+        &params,
+        &ci,
+        &ci_sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+
+    macro_rules! assert_output {
+        ($module:ident, $params:ident, $ct:ident, $sk:ident, $scratch:ident) => {{
+            let mut prec = precision_at(&$params, $ct.log_delta());
+            prec.meta = $ct.meta();
+            let pt = ckks_decrypt_with_prec(&$module, &$ct, &$sk, prec, &mut $scratch.borrow()).unwrap();
+            let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+            $module
+                .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut $scratch.borrow())
+                .unwrap();
+            assert_precision(concat!(stringify!($ct), " re"), &re, &want, $ct.log_delta(), $params.n);
+            assert_precision(concat!(stringify!($ct), " im"), &im, &zeros, $ct.log_delta(), $params.n);
+        }};
+    }
+
+    let mut extended = alloc_ct(&standard_params, &standard, params.k);
+    standard
+        .ckks_ci_embed(&mut extended, &ct, &embed_key, &mut standard_scratch.borrow())
+        .unwrap();
+    assert_eq!((extended.meta(), extended.k()), (ct.meta(), ct.k()));
+    assert!(extended.is_canonical());
+    assert_output!(standard, standard_params, extended, standard_sk, standard_scratch);
+
+    let mut back = alloc_ct(&params, &ci, params.k - 1);
+    standard
+        .ckks_ci_trace(&mut back, &extended, &trace_key, &mut standard_scratch.borrow())
+        .unwrap();
+    assert_eq!((back.log_delta(), back.slots()), (ct.log_delta(), SlotsKind::Real));
+    assert!(back.is_canonical());
+    assert_output!(ci, params, back, ci_sk, scratch);
+
+    let mut wrong_degree = alloc_ct(&params, &standard, params.k);
+    assert!(
+        standard
+            .ckks_ci_embed(&mut wrong_degree, &ct, &embed_key, &mut standard_scratch.borrow())
+            .is_err()
+    );
 }

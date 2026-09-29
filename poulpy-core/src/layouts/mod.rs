@@ -36,6 +36,7 @@ mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
 mod glwe_automorphism_key;
+mod glwe_ci_key;
 mod glwe_plaintext;
 mod glwe_public_key;
 mod glwe_secret;
@@ -76,6 +77,7 @@ pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;
+pub use glwe_ci_key::*;
 pub use glwe_plaintext::*;
 pub use glwe_public_key::*;
 pub use glwe_secret::*;
@@ -97,6 +99,8 @@ pub use lwe_to_glwe_key::*;
 pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
+
+use std::marker::PhantomData;
 
 use crate::dist::Distribution;
 use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec_znx_alloc_zeroed};
@@ -236,6 +240,9 @@ pub trait ModuleCoreAlloc {
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKey<Self::OwnedBuf, Self::ZnxWord>;
+
+    fn glwe_ci_embed_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECIEmbedKey<Self::OwnedBuf, Self::ZnxWord>;
+    fn glwe_ci_trace_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECITraceKey<Self::OwnedBuf, Self::ZnxWord>;
 
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord>;
     fn glwe_to_lwe_key_alloc(
@@ -587,6 +594,14 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             dsize,
             stride: 1,
         })
+    }
+
+    fn glwe_ci_embed_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECIEmbedKey<B::OwnedBuf, B::ZnxWord> {
+        GLWECIKey(self.glwe_switching_key_alloc_from_infos(infos), PhantomData)
+    }
+
+    fn glwe_ci_trace_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECITraceKey<B::OwnedBuf, B::ZnxWord> {
+        GLWECIKey(self.glwe_switching_key_alloc_from_infos(infos), PhantomData)
     }
 
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {

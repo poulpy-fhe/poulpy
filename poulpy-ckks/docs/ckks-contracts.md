@@ -35,8 +35,9 @@ operations, so their overrides remain effective.
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
-implementations. Affine operations, dot products, and linear transformations are
-API compositions with integration tests, not additional OEP families.
+implementations. Affine operations, dot products, linear transformations, and the
+conjugate-invariant ring maps are API compositions with integration tests, not
+additional OEP families.
 
 ## What an override must preserve
 

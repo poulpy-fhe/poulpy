@@ -166,6 +166,16 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
+    mod vec_znx_ci,
+    backend_ref =  crate::FFT64Ref,
+    backend_test = crate::NTT4x30Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
+        test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
+    }
+}
+cross_backend_test_suite! {
     mod svp,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,

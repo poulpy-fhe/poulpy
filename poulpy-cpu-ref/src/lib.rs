@@ -96,6 +96,7 @@ crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CI
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64ref,
     crate::FFT64CIRef,
+    crate::FFT64Ref,
     poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
 
@@ -103,6 +104,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30ref,
     crate::NTT4x30CIRef,
+    crate::NTT4x30Ref,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
 
@@ -127,6 +129,21 @@ use poulpy_cpu_ref::FFT64CIRef;
 use poulpy_hal::layouts::Module;
 fn trace<M: GLWETrace<FFT64CIRef>>(_: &M) {}
 fn check(module: &Module<FFT64CIRef>) { trace(module); }
+```
+So are the embedding and trace between the two rings:
+```
+use poulpy_core::{GLWECITrace, GLWECIEmbed};
+use poulpy_cpu_ref::FFT64Ref;
+use poulpy_hal::layouts::Module;
+fn maps<M: GLWECIEmbed<FFT64Ref> + GLWECITrace<FFT64Ref>>(_: &M) {}
+fn check(module: &Module<FFT64Ref>) { maps(module); }
+```
+```compile_fail
+use poulpy_core::GLWECIEmbed;
+use poulpy_cpu_ref::FFT64CIRef;
+use poulpy_hal::layouts::Module;
+fn embed<M: GLWECIEmbed<FFT64CIRef>>(_: &M) {}
+fn check(module: &Module<FFT64CIRef>) { embed(module); }
 ```"
 )]
 pub type FFT64CIRef = FFT64Ref<poulpy_hal::layouts::ConjugateInvariant>;
