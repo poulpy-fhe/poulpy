@@ -78,7 +78,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
 }
 
 /// Backend view of entry `l` of a borrowed public key.
-pub fn glwe_public_key_at_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<'_, BE>, l: usize) -> GLWEViewRef<'a, BE> {
+pub(crate) fn glwe_public_key_at_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<'_, BE>, l: usize) -> GLWEViewRef<'a, BE> {
     GLWEViewRef::from_inner(GLWE {
         data: mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
         base2k: pk.base2k,
