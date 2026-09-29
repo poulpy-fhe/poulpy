@@ -29,7 +29,9 @@
 use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::StandardFold;
 use poulpy_hal::AlignedBuf;
+use std::slice;
 use std::time::Instant;
 
 use poulpy_core::layouts::{
@@ -230,6 +232,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     // intermediates plus the largest nested stage).
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+            &StandardFold,
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
             &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
             &ctx,
@@ -299,7 +302,14 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .ckks_bootstrap(
+                &StandardFold,
+                slice::from_mut(&mut ct_bs),
+                slice::from_ref(&ct0),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
             .unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -341,7 +351,14 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .ckks_bootstrap(
+                &StandardFold,
+                slice::from_mut(&mut ct_bs),
+                slice::from_ref(&ct_real),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
             .unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
@@ -675,6 +692,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     // intermediates plus the largest nested stage).
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+            &StandardFold,
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
             &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
             &ctx,
@@ -720,7 +738,14 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .ckks_bootstrap(
+                &StandardFold,
+                slice::from_mut(&mut ct_bs),
+                slice::from_ref(&ct0),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
             .unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -762,7 +787,14 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .ckks_bootstrap(
+                &StandardFold,
+                slice::from_mut(&mut ct_bs),
+                slice::from_ref(&ct_real),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
             .unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
@@ -1065,6 +1097,7 @@ where
     };
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+            &StandardFold,
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
             &ckks_spec(n, base2k, log_delta, k_in - log_delta),
             &ctx,
@@ -1105,7 +1138,14 @@ where
     let (bs_re, bs_im) = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .ckks_bootstrap(
+                &StandardFold,
+                slice::from_mut(&mut ct_bs),
+                slice::from_ref(&ct0),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
             .unwrap();
         assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
         assert_eq!(ct_bs.log_delta(), log_delta);
@@ -1132,7 +1172,14 @@ where
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
             module
-                .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+                .ckks_bootstrap(
+                    &StandardFold,
+                    slice::from_mut(&mut ct_bs),
+                    slice::from_ref(&ct_real),
+                    &ctx,
+                    &bsk,
+                    &mut scratch.borrow(),
+                )
                 .unwrap();
             assert_eq!(ct_bs.slots(), SlotsKind::Real);
             assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
@@ -1160,12 +1207,32 @@ where
     );
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let err = module
-        .ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, &mut scratch.borrow())
+        .ckks_bootstrap(
+            &StandardFold,
+            slice::from_mut(&mut ct_out),
+            slice::from_ref(&ct_insufficient),
+            &ctx,
+            &bsk,
+            &mut scratch.borrow(),
+        )
         .unwrap_err();
     assert!(matches!(
         err.composition(),
         Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
     ));
+    assert!(
+        module
+            .ckks_bootstrap(
+                &StandardFold,
+                &mut [],
+                slice::from_ref(&ct_insufficient),
+                &ctx,
+                &bsk,
+                &mut scratch.borrow()
+            )
+            .is_err(),
+        "one output per input"
+    );
 
     let s_re = precision_stats(&bs_re, &re, log_delta);
     let s_im = precision_stats(&bs_im, &im, log_delta);

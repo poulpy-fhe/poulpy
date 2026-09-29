@@ -1,3 +1,4 @@
+use crate::layouts::StandardFold;
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
@@ -11,6 +12,7 @@ use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
+use std::slice;
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
@@ -468,7 +470,14 @@ fn run_case<BE, F, E>(
                 .unwrap_err();
             assert!(error.to_string().contains("context must be configured"));
             let error = module
-                .ckks_bootstrap(&mut rejected[0], &ct, &ctx, &keys, &mut op_scratch.borrow())
+                .ckks_bootstrap(
+                    &StandardFold,
+                    slice::from_mut(&mut rejected[0]),
+                    slice::from_ref(&ct),
+                    &ctx,
+                    &keys,
+                    &mut op_scratch.borrow(),
+                )
                 .unwrap_err();
             assert!(error.to_string().contains("identity bootstrapping context"));
             let encode_padded = |messages: &[isize]| {

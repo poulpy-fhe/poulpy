@@ -118,6 +118,7 @@ macro_rules! impl_ckks_infos {
 mod alloc;
 mod approximation;
 pub mod bootstrapping;
+pub mod bootstrapping_fold;
 pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
@@ -137,6 +138,7 @@ pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
 };
+pub use bootstrapping_fold::{CKKSBootstrapFold, StandardFold};
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
