@@ -184,7 +184,7 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
         let (rows, cols_in, cols_out, size) = (1, rank.as_usize(), (rank + 1).as_usize(), k.0.div_ceil(base2k.0) as usize);
         GLWEPublicKey {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                <poulpy_hal::layouts::HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     rows,
                     cols_in,
