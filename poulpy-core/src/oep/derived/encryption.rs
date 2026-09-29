@@ -9,9 +9,9 @@ use crate::{
     Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
-        GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut, LWEToBackendMut,
-        glwe_public_key_at_view_mut, prepared::GLWESecretPreparedToBackendRef,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyAtViewMut,
+        GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut,
+        LWEToBackendMut, prepared::GLWESecretPreparedToBackendRef,
     },
     oep::EncryptionImpl,
 };
@@ -85,7 +85,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
         );
         let mut pk = res.to_backend_mut();
         for l in 0..pk.rank().as_usize() {
-            let mut entry = glwe_public_key_at_view_mut::<BE>(&mut pk, l);
+            let mut entry = GLWEPublicKeyAtViewMut::<BE>::at_view_mut(&mut pk, l);
             BE::glwe_encrypt_zero_sk(module, &mut entry, sk, enc_infos, source_xe, source_xa, scratch);
             module.glwe_normalize_assign(&mut entry, scratch);
         }

@@ -193,7 +193,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         for l in 0..pk.rank().as_usize() {
             results.push(snapshot_glwe::<B, _>(
                 "public_key_generate",
-                &glwe_public_key_at_view::<B>(&GLWEPublicKeyToBackendRef::<B>::to_backend_ref(&pk), l),
+                &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
             ));
         }
         results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));

@@ -21,6 +21,16 @@ pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
     pub(crate) dist: Distribution,
 }
 
+impl<D: Data, B: Backend> GLWEPublicKeyPrepared<D, B> {
+    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut VmpPMat<D, B::DftWord, B> {
+        &mut self.data
+    }
+}
+
 impl<D: Data, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
     fn dist(&self) -> &Distribution {
         &self.dist

@@ -1,10 +1,14 @@
-use std::fmt;
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom,
-    WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
+    MatZnxToBackendRef, ReaderFrom, VecZnx, WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut,
+    mat_znx_at_backend_ref_from_ref,
 };
 
 use crate::{
@@ -19,7 +23,7 @@ use crate::{
 ///
 /// Stored as a GGLWE is: a matrix of one row, `r` input and `r + 1` output
 /// columns, entry `l` at input column `l`. Its entries are canonical: a writer
-/// through `at_mut` or `at_view_mut` must leave them so.
+/// through a mutable view or `data_mut` must leave them so.
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
@@ -38,65 +42,106 @@ where
 
 impl<D: Data, W: ZnxWord> Eq for GLWEPublicKey<D, W> where MatZnx<D, W>: Eq {}
 
+fn entry<D: Data, W: ZnxWord>(data: VecZnx<D, W>, base2k: Base2K, k: TorusPrecision) -> GLWE<D, W> {
+    GLWE {
+        data,
+        base2k,
+        k,
+        canonical: true,
+    }
+}
+
+impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
+    pub fn data(&self) -> &MatZnx<D, W> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        &mut self.data
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
     /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
     pub fn at(&self, l: usize) -> GLWE<&[u8], W> {
-        GLWE {
-            data: self.data.at(0, l),
-            base2k: self.base2k,
-            k: self.k,
-            canonical: true,
-        }
+        entry(self.data.at(0, l), self.base2k, self.k)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
     pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        GLWE {
-            data: self.data.at_mut(0, l),
-            base2k: self.base2k,
-            k: self.k,
-            canonical: true,
-        }
+        entry(self.data.at_mut(0, l), self.base2k, self.k)
     }
 }
 
-/// Backend view of entry `l` of an owned public key.
+/// Backend view of entry `l` of a public key.
+pub trait GLWEPublicKeyAtViewRef<BE: Backend> {
+    fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE>;
+}
+
+/// Mutable backend view of entry `l` of a public key.
+///
+/// A backend generation override reaches the entries of the key it receives:
+///
+/// ```
+/// use poulpy_core::layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut};
+/// use poulpy_hal::layouts::Backend;
+///
+/// fn write_entries<BE: Backend, R: GLWEPublicKeyToBackendMut<BE> + GLWEInfos>(res: &mut R) {
+///     let rank = res.rank().as_usize();
+///     let mut pk = res.to_backend_mut();
+///     for l in 0..rank {
+///         let _entry = pk.at_view_mut(l);
+///     }
+/// }
+/// ```
 pub trait GLWEPublicKeyAtViewMut<BE: Backend> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE>;
 }
 
-impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(GLWE {
-            data: MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
-            base2k: self.base2k,
-            k: self.k,
-            canonical: true,
-        })
+impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE> {
+        GLWEViewRef::from_inner(entry(
+            MatZnxAtBackendRef::<BE>::at_backend(&self.data, 0, l),
+            self.base2k,
+            self.k,
+        ))
     }
 }
 
-/// Backend view of entry `l` of a borrowed public key.
-pub(crate) fn glwe_public_key_at_view<'a, BE: Backend>(pk: &'a GLWEPublicKeyBackendRef<'_, BE>, l: usize) -> GLWEViewRef<'a, BE> {
-    GLWEViewRef::from_inner(GLWE {
-        data: mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
-        base2k: pk.base2k,
-        k: pk.k,
-        canonical: true,
-    })
+impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
+        GLWEViewMut::from_inner(entry(
+            MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
+            self.base2k,
+            self.k,
+        ))
+    }
 }
 
-pub(crate) fn glwe_public_key_at_view_mut<'a, BE: Backend>(
-    pk: &'a mut GLWEPublicKeyBackendMut<'_, BE>,
-    l: usize,
-) -> GLWEViewMut<'a, BE> {
-    GLWEViewMut::from_inner(GLWE {
-        data: mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
-        base2k: pk.base2k,
-        k: pk.k,
-        canonical: true,
-    })
+impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendRef<'_, BE> {
+    fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE> {
+        let pk = &self.inner;
+        GLWEViewRef::from_inner(entry(mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l), pk.base2k, pk.k))
+    }
+}
+
+impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendMut<'_, BE> {
+    fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE> {
+        let pk = &self.inner;
+        GLWEViewRef::from_inner(entry(mat_znx_at_backend_ref_from_mut::<BE>(&pk.data, 0, l), pk.base2k, pk.k))
+    }
+}
+
+impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
+    fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
+        let pk = &mut self.inner;
+        GLWEViewMut::from_inner(entry(
+            mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
+            pk.base2k,
+            pk.k,
+        ))
+    }
 }
 
 impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
@@ -268,8 +313,55 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
     }
 }
 
-pub type GLWEPublicKeyBackendRef<'a, BE> = GLWEPublicKey<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWEPublicKeyBackendMut<'a, BE> = GLWEPublicKey<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub struct GLWEPublicKeyBackendRef<'a, BE: Backend + 'a> {
+    inner: GLWEPublicKey<BE::BufRef<'a>, BE::ZnxWord>,
+}
+
+impl<'a, BE: Backend + 'a> GLWEPublicKeyBackendRef<'a, BE> {
+    pub fn from_inner(inner: GLWEPublicKey<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
+        Self { inner }
+    }
+
+    pub fn into_inner(self) -> GLWEPublicKey<BE::BufRef<'a>, BE::ZnxWord> {
+        self.inner
+    }
+}
+
+impl<'a, BE: Backend + 'a> Deref for GLWEPublicKeyBackendRef<'a, BE> {
+    type Target = GLWEPublicKey<BE::BufRef<'a>, BE::ZnxWord>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub struct GLWEPublicKeyBackendMut<'a, BE: Backend + 'a> {
+    inner: GLWEPublicKey<BE::BufMut<'a>, BE::ZnxWord>,
+}
+
+impl<'a, BE: Backend + 'a> GLWEPublicKeyBackendMut<'a, BE> {
+    pub fn from_inner(inner: GLWEPublicKey<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
+        Self { inner }
+    }
+
+    pub fn into_inner(self) -> GLWEPublicKey<BE::BufMut<'a>, BE::ZnxWord> {
+        self.inner
+    }
+}
+
+impl<'a, BE: Backend + 'a> Deref for GLWEPublicKeyBackendMut<'a, BE> {
+    type Target = GLWEPublicKey<BE::BufMut<'a>, BE::ZnxWord>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<BE: Backend> DerefMut for GLWEPublicKeyBackendMut<'_, BE> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
 
 pub trait GLWEPublicKeyToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE>;
@@ -280,12 +372,12 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
-        GLWEPublicKey {
+        GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
             dist: self.dist,
-        }
+        })
     }
 }
 
@@ -298,11 +390,11 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
-        GLWEPublicKey {
+        GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,
             dist: self.dist,
-        }
+        })
     }
 }
