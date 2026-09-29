@@ -179,7 +179,9 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(source_snapshot("encrypt_zero_sk_sources", &mut e, &mut a));
 
         let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
-        poison_glwe::<B, _>(&mut pk);
+        for l in 0..pk.rank().as_usize() {
+            poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
+        }
         module.glwe_public_key_generate(
             &mut pk,
             &skp,
@@ -188,7 +190,12 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
         );
-        results.push(snapshot_glwe::<B, _>("public_key_generate", &pk));
+        for l in 0..pk.rank().as_usize() {
+            results.push(snapshot_glwe::<B, _>(
+                "public_key_generate",
+                &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
+            ));
+        }
         results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
         assert_eq!(pk.dist(), sk.dist());
         let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
@@ -206,7 +213,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &enc,
             &mut e,
             &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos)).arena(),
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
         );
         results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
         results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
@@ -217,7 +224,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &enc,
             &mut e,
             &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos)).arena(),
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
         );
         results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
         results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));

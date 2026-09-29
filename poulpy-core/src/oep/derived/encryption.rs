@@ -9,9 +9,9 @@ use crate::{
     Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretPreparedFactory,
-        GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut, LWEToBackendMut,
-        prepared::GLWESecretPreparedToBackendRef,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyAtViewMut,
+        GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut,
+        LWEToBackendMut, prepared::GLWESecretPreparedToBackendRef,
     },
     oep::EncryptionImpl,
 };
@@ -60,7 +60,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
-    R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
     E: EncryptionInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     Module<BE>: GLWENormalize<BE>,
@@ -83,8 +83,12 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             scratch.available() >= glwe_public_key_generate_tmp_bytes_derived(module, res),
             "insufficient scratch for GLWE public key generation"
         );
-        BE::glwe_encrypt_zero_sk(module, res, sk, enc_infos, source_xe, source_xa, scratch);
-        module.glwe_normalize_assign(res, scratch);
+        let mut pk = res.to_backend_mut();
+        for l in 0..pk.rank().as_usize() {
+            let mut entry = GLWEPublicKeyAtViewMut::<BE>::at_view_mut(&mut pk, l);
+            BE::glwe_encrypt_zero_sk(module, &mut entry, sk, enc_infos, source_xe, source_xa, scratch);
+            module.glwe_normalize_assign(&mut entry, scratch);
+        }
     }
     *res.dist_mut() = *sk.dist();
 }

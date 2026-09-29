@@ -1,9 +1,11 @@
 use poulpy_core::{
-    GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
-    GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensoring,
+    GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk,
+    GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWEPublicKeyGenerate, GLWESub,
+    GLWESwitchingKeyEncryptSk, GLWETensoring,
     layouts::{
-        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, prepared::GGLWEPreparedFactory,
+        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
+        prepared::GGLWEPreparedFactory,
     },
 };
 use poulpy_hal::{
@@ -19,7 +21,7 @@ use crate::{
     BenchOp, bench_ops, bin_fhe_n,
     core::{
         automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations,
-        params::{CoreParams, default_bench_params_core},
+        params::{CoreParams, default_bench_params_core, default_bench_params_encrypt_pk},
     },
 };
 
@@ -60,6 +62,27 @@ where
             runner: encryption::runner_glwe_automorphism_key_encrypt_sk::<BE, _>,
         },
     ]
+}
+
+/// Public-key encryption under a prepared key, swept by [`default_bench_params_encrypt_pk`].
+pub fn bench_glwe_encrypt_pk<BE>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptPk<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let ops = [BenchOp {
+        layer: "core",
+        name: "glwe_encrypt_pk",
+        runner: encryption::runner_glwe_encrypt_pk::<BE, WallTime>,
+    }];
+    bench_ops(PhantomData::<BE>, &ops, default_bench_params_encrypt_pk(), c);
 }
 
 // ── decryption ───────────────────────────────────────────────────────────────

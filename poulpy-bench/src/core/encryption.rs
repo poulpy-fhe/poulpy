@@ -1,9 +1,11 @@
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptSk, NoiseInfos,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptPk, GLWEEncryptSk,
+    GLWEPublicKeyGenerate, NoiseInfos,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
+        prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
 use poulpy_hal::{
@@ -57,6 +59,76 @@ where
             &enc_infos,
             &mut source_xe,
             &mut source_xa,
+            &mut scratch.borrow(),
+        );
+        black_box(());
+    });
+}
+
+pub fn runner_glwe_encrypt_pk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptPk<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let infos = GLWELayout {
+        n: Degree(cp.n),
+        base2k: Base2K(cp.base2k),
+        k: TorusPrecision(cp.k),
+        rank: Rank(cp.rank),
+    };
+
+    let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+
+    let mut source_xs = Source::new([0u8; 32]);
+    let mut source_xa = Source::new([1u8; 32]);
+    let mut source_xe = Source::new([2u8; 32]);
+    let mut source_xu = Source::new([3u8; 32]);
+
+    let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+
+    let mut sk: GLWESecret<BE::OwnedBuf, i64> = module.glwe_secret_alloc_from_infos(&infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
+    module.glwe_secret_prepare(&mut sk_prepared, &sk);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_encrypt_pk_tmp_bytes(&infos, &infos)
+            .max(module.glwe_public_key_generate_tmp_bytes(&infos))
+            .max(module.glwe_public_key_prepare_tmp_bytes(&infos)),
+    );
+
+    let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
+    module.glwe_public_key_generate(
+        &mut pk,
+        &sk_prepared,
+        &enc_infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
+    module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+
+    let pt = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct = module.glwe_alloc_from_infos(&infos);
+
+    bencher.iter(|| {
+        module.glwe_encrypt_pk(
+            &mut ct,
+            &pt,
+            &pk_prepared,
+            &enc_infos,
+            &mut source_xu,
+            &mut source_xe,
             &mut scratch.borrow(),
         );
         black_box(());
