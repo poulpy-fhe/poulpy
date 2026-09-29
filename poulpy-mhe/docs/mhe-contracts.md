@@ -9,8 +9,9 @@ defaults in `oep::derived`.
 ## Public API organization
 
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
-the collective public key protocol and `api::evaluation_key` the collective
-switching and automorphism key protocols. A protocol trait, named
+the collective public key protocol, `api::evaluation_key` the collective
+switching and automorphism key protocols and `api::tensor_key` the collective
+tensor key protocol. A protocol trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
 from core's operations. All are re-exported by `api` and the crate root. Every
@@ -27,6 +28,7 @@ same trait.
 | `GLWEPublicKeyMHEProtocol` | `GLWEPublicKeyMHEProtocolImpl` | `reference::GLWEPublicKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 | `GLWESwitchingKeyMHEProtocol` | `GLWESwitchingKeyMHEProtocolImpl` | `reference::GLWESwitchingKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 | `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWETensorKeyMHEProtocol` | `GLWETensorKeyMHEProtocolImpl` | `reference::GLWETensorKeyMHEProtocolReference`; aggregation and finalization are derived defaults over `GGLWEPatImpl` |
 
 ## Normalization
 
@@ -56,10 +58,18 @@ key generation derives a distinct seed for each of the `rank` entries from the
 common seed; finalization rejects entries that share one, since common masks
 would make public-key encryption rank 1 in its ephemerals.
 
-Private `source_xe` streams must be independently
+Private `source_xe` and `source_xu` streams must be independently
 seeded for each party and purpose, kept secret and consumed without replay.
 Never initialize a private stream from a public mask seed. An advancing error
 stream can supply successive fresh samples.
+
+## Tensor key shares
+
+A tensor key share is a `GGLWEPat` laid out as core's `GLWETensorKey`: every
+entry is an encryption of zero under the collective public key with a component
+of the party's secret added to its masks. Its masks are sums, so finalization
+normalizes every column. The public key must be at least as precise as the
+share.
 
 ## Replacing an operation
 
@@ -68,8 +78,8 @@ seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
-`impl_mhe_public_key_reference!` or `impl_mhe_evaluation_key_reference!` alone
-when replacing another one. The
+`impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!` or
+`impl_mhe_tensor_key_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace

@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Backend, Module};
 use crate::layouts::{
     GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEAutomorphismKeyShare,
     GLWEAutomorphismKeyShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
-    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned,
+    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned,
 };
 
 /// PAT and share allocation on a backend module.
@@ -125,6 +125,26 @@ pub trait MHEModuleAlloc<BE: Backend>:
         GLWEAutomorphismKeyShare {
             key: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank, rank),
             p: 0,
+        }
+    }
+
+    fn glwe_tensor_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWETensorKeyShareOwned<BE> {
+        GLWETensorKeyShare {
+            key: self.gglwe_pat_alloc_from_infos(infos),
+        }
+    }
+
+    fn glwe_tensor_key_share_alloc(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> GLWETensorKeyShareOwned<BE> {
+        let pairs = Rank(rank.0 * (rank.0 + 1) / 2);
+        GLWETensorKeyShare {
+            key: self.gglwe_pat_alloc(base2k, dnum, dsize, k_aux, pairs, rank),
         }
     }
 }
