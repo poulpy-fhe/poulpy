@@ -98,6 +98,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- S2C-first compilation folds the input factor of two of the real/imaginary split into the initial SlotsToCoeffs, replacing the doubling at evaluation.
 - **Breaking:** `CKKSCiphertext<D, W, R>` and `CKKSPlaintext<D, W, R>` carry their ring as a type parameter; a module accepts only operands of its backend's `Ring`, so mixing rings is a compile error. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. Host polynomial encoding and the test helpers take their ring from the `HostBytesBackend<R>` module.
 - **Breaking:** SHIP, PaCo and functional-bootstrapping LUTs are typed for the standard ring: `ShipCoeffEncodings`, `PaCoKeySet` and `PaCoKeysPrepared` hold standard-ring operands, and `CKKSShipCoeffEncodingImpl`, `CKKSPaCoCoeffEncodingImpl`, `ship_coeff_encodings_host`, `paco_coeff_encodings_host`, the `poulpy-cpu-ref` `ship_coeff_encodings_staged` and `paco_coeff_encodings_staged` wrappers, `ShipKeySet::prepare`/`generate`, `PaCoKeySet::prepare`/`into_prepare`, `PaCoContext::compile`, `PaCoSecretSpec::sigma_slots_reim` and `EncodedLut::transfer_to` require `Backend<Ring = Standard>`.
 

@@ -76,7 +76,8 @@ The split forward transform needs a conjugation key — the automorphism for Gal
 Scale accounting is implicit.
 Poulpy's torus plaintext-multiply already realigns its result to the input `log_delta` through its `cnv_offset`, so the rescale is folded into each linear-transform evaluation: the transform is simply one prepared linear transformation per factor, chained, with no explicit rescale between factors.
 Each factor consumes its per-factor `log_delta` of budget, so the whole transform consumes `num_factors × factor_log_delta` bits.
-Two constant scalings ride along the matrices for free. CoeffsToSlots is pre-scaled by `1/K`. C2S-first uses `2^log_msg_ratio` on its final SlotsToCoeffs; S2C-first uses `1/2` on its initial SlotsToCoeffs to cancel the real/imaginary split.
+Two constant scalings ride along the matrices for free. CoeffsToSlots is pre-scaled by `1/K`. C2S-first uses `2^log_msg_ratio` on its final SlotsToCoeffs; S2C-first recipes use `1/2` on their initial SlotsToCoeffs to cancel the real/imaginary split.
+Compilation folds the S2C-first input factor of two into that initial matrix.
 
 ## EvalMod
 

@@ -406,11 +406,12 @@ impl<BE: Backend, F> BootstrappingContext<BE, F>
 where
     F: CKKSEncodingScalar,
 {
-    /// Compiles `plan` directly into backend-resident matrices and EvalMod.
+    /// Compiles `plan` into backend-resident matrices and EvalMod.
     ///
     /// Each stage carries its own coefficient metadata (`DFTPlan::meta` /
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
-    /// [`BootstrappingPlan::new`].
+    /// [`BootstrappingPlan::new`]. For S2C-first, the compiled initial transform
+    /// includes the input factor of two from the real/imaginary split.
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,
@@ -425,8 +426,12 @@ where
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
 
-        let s2c_lt: DFTMatrix<BE, Decode, Split> =
-            module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
+        let mut s2c_plan = plan.slots_to_coeffs.clone();
+        if plan.pipeline == BootstrappingPipeline::S2CFirst {
+            let scaling = 2.0 * s2c_plan.scaling().unwrap_or(1.0);
+            s2c_plan = s2c_plan.with_scaling(scaling)?;
+        }
+        let s2c_lt: DFTMatrix<BE, Decode, Split> = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &s2c_plan, scratch)?;
         let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch);
 
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
