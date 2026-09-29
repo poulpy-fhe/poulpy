@@ -8,7 +8,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
     Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
     MatZnxToBackendRef, ReaderFrom, VecZnx, WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut,
-    mat_znx_at_backend_ref_from_ref,
+    mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, mat_znx_backend_ref_from_ref,
 };
 
 use crate::{
@@ -363,6 +363,82 @@ impl<BE: Backend> DerefMut for GLWEPublicKeyBackendMut<'_, BE> {
     }
 }
 
+macro_rules! impl_public_key_infos_for_inner {
+    ($ty:ident) => {
+        impl<BE: Backend> LWEInfos for $ty<'_, BE> {
+            fn base2k(&self) -> Base2K {
+                self.inner.base2k()
+            }
+
+            fn n(&self) -> Degree {
+                self.inner.n()
+            }
+
+            fn max_size(&self) -> usize {
+                self.inner.max_size()
+            }
+
+            fn k(&self) -> TorusPrecision {
+                self.inner.k()
+            }
+        }
+
+        impl<BE: Backend> GLWEInfos for $ty<'_, BE> {
+            fn rank(&self) -> Rank {
+                self.inner.rank()
+            }
+        }
+
+        impl<BE: Backend> GetDistribution for $ty<'_, BE> {
+            fn dist(&self) -> &Distribution {
+                self.inner.dist()
+            }
+        }
+    };
+}
+
+impl_public_key_infos_for_inner!(GLWEPublicKeyBackendRef);
+impl_public_key_infos_for_inner!(GLWEPublicKeyBackendMut);
+
+impl<BE: Backend> GetDistributionMut for GLWEPublicKeyBackendMut<'_, BE> {
+    fn dist_mut(&mut self) -> &mut Distribution {
+        self.inner.dist_mut()
+    }
+}
+
+impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
+        GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
+            data: mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            dist: self.inner.dist,
+        })
+    }
+}
+
+impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
+        GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
+            data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            dist: self.inner.dist,
+        })
+    }
+}
+
+impl<BE: Backend> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
+            data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            dist: self.inner.dist,
+        })
+    }
+}
+
 pub trait GLWEPublicKeyToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE>;
 }
@@ -396,5 +472,23 @@ where
             k: self.k,
             dist: self.dist,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn borrows_forward_the_key_traits() {
+        // Deref does not satisfy trait bounds: each borrow implements them itself.
+        fn key<BE: Backend, T: GLWEInfos + GetDistribution + GLWEPublicKeyToBackendRef<BE> + GLWEPublicKeyAtViewRef<BE>>() {}
+        fn key_mut<BE: Backend, T: GetDistributionMut + GLWEPublicKeyToBackendMut<BE> + GLWEPublicKeyAtViewMut<BE>>() {}
+        fn assert_for<'a, BE: Backend + 'a>() {
+            key::<BE, GLWEPublicKeyBackendRef<'a, BE>>();
+            key::<BE, GLWEPublicKeyBackendMut<'a, BE>>();
+            key_mut::<BE, GLWEPublicKeyBackendMut<'a, BE>>();
+        }
+        assert_for::<poulpy_hal::layouts::HostBytesBackend>();
     }
 }
