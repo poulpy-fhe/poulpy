@@ -53,6 +53,10 @@ unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
 }
 
+unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Avx<poulpy_hal::layouts::ConjugateInvariant> {
+    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+}
+
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Avx<R>
 where
     Self: ZnxAutomorphism,
@@ -105,6 +109,10 @@ where
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Avx<poulpy_hal::layouts::ConjugateInvariant> {
+    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Avx<R>

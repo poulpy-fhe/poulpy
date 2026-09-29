@@ -1,13 +1,13 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use poulpy_hal::{
-    api::{ScalarZnxAutomorphism, VecZnxCopy, VecZnxZero},
+    api::{ScalarZnxAutomorphism, ScalarZnxCIUnfold, VecZnxCopy, VecZnxZero},
     layouts::{
         Backend, Data, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut,
         scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_ref,
     },
-    oep::HalVecZnxImpl,
+    oep::{HalVecZnxCIImpl, HalVecZnxImpl},
     source::Source,
 };
 
@@ -425,6 +425,39 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl> SecretConversion<B> for Module<B
                     j,
                 );
                 written += take;
+            }
+        }
+        res
+    }
+}
+
+pub trait GLWESecretCIUnfold<B: Backend> {
+    /// Unfolds a secret of this conjugate-invariant module, of degree `N`, into
+    /// the standard secret of degree `2N` under which unfolded ciphertexts decrypt.
+    ///
+    /// The result is tagged [`Distribution::ENCAPSULATED`]: its coefficients
+    /// mirror the source, so it only backs the ring-switching keys.
+    fn glwe_secret_ci_unfold<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<B>;
+}
+
+impl<B: Backend<ZnxWord = i64> + HalVecZnxCIImpl> GLWESecretCIUnfold<B> for Module<B> {
+    fn glwe_secret_ci_unfold<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<B>,
+    {
+        let src = src.to_backend_ref();
+        assert_eq!(src.n().as_usize(), self.n(), "CI secret degree must equal the module degree");
+        let mut res = self.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+            n: (2 * self.n()).into(),
+            rank: src.rank(),
+        });
+        res.dist = Distribution::ENCAPSULATED("conjugate-invariant");
+        {
+            let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            for j in 0..src.rank().as_usize() {
+                self.scalar_znx_ci_unfold(res_ref.data_mut(), j, src.data(), j);
             }
         }
         res

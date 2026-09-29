@@ -173,6 +173,9 @@ operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
 packing, or LWE conversion; the GLWE trace uses standard-ring Galois elements and
 is not implemented either, and `max_base2k` has no CI model.
+CI modules unfold their operands into the standard ring of degree `2n` and fold
+them back (`vec_znx_ci_unfold`, `vec_znx_ci_fold`); CKKS combines these with
+key switching on a standard module of that degree.
 
 ## Binary-FHE integration
 

@@ -20,6 +20,7 @@
 //! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
 //! EvalMod, encapsulated ModUp and the PaCo/SHIP coefficient encodings exist
 //! only on the standard ring: conjugate-invariant backends do not implement them.
+//! The conjugate-invariant ring maps exist only on conjugate-invariant backends.
 
 mod add;
 mod bootstrapping;
@@ -39,6 +40,7 @@ mod paco;
 mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
+mod ring_map;
 mod rotate;
 mod ship;
 mod sub;
@@ -73,6 +75,7 @@ pub use polynomial_evaluation::{
 };
 pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_reference;
+pub use ring_map::{CKKSCIRingMapImpl, impl_ckks_ci_ring_map_reference};
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_reference;
 pub use ship::CKKSShipCoeffEncodingImpl;
