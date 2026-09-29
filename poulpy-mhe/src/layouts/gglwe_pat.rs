@@ -10,23 +10,9 @@ pub type GGLWEPatOwned<BE> = GGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>
 
 /// Unseeded public aggregatable transcript of a GGLWE: a full [`GGLWE`], for
 /// transcripts whose masks are not uniform, such as public-key encryptions.
-///
-/// Normalize before serialization.
 #[derive(Clone)]
 pub struct GGLWEPat<D: Data, W: ZnxWord> {
     pub(crate) inner: GGLWE<D, W>,
-    pub(crate) canonical: bool,
-}
-
-impl<D: Data, W: ZnxWord> GGLWEPat<D, W> {
-    pub fn is_canonical(&self) -> bool {
-        self.canonical
-    }
-
-    /// For data written directly into the limbs.
-    pub fn set_canonical(&mut self, canonical: bool) {
-        self.canonical = canonical
-    }
 }
 
 impl<D: Data, W: ZnxWord> PartialEq for GGLWEPat<D, W>
@@ -112,28 +98,18 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEPat<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEPat<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GGLWEPat: canonical={} {}", self.canonical, self.inner)
+        write!(f, "GGLWEPat: {}", self.inner)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPat<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.inner.read_from(reader)?;
-        self.canonical = true;
-        Ok(())
+        self.inner.read_from(reader)
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPat<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
-    /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        if !self.canonical {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "GGLWEPat is not canonical: normalize it before serializing",
-            ));
-        }
         self.inner.write_to(writer)
     }
 }

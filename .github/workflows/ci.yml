@@ -28,14 +28,12 @@ env:
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-ref/enable-bin-fhe
-    poulpy-cpu-ref/enable-mhe
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-ref/enable-bin-fhe
-    poulpy-cpu-ref/enable-mhe
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
@@ -46,7 +44,6 @@ env:
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-ref/enable-bin-fhe
-    poulpy-cpu-ref/enable-mhe
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
@@ -61,7 +58,6 @@ env:
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-ref/enable-bin-fhe
-    poulpy-cpu-ref/enable-mhe
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-bin-fhe
     poulpy-cpu-arm/enable-neon

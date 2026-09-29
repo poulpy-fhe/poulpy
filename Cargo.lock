@@ -725,7 +725,6 @@ dependencies = [
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",
- "poulpy-mhe",
  "rand",
  "rand_chacha",
  "rand_core",

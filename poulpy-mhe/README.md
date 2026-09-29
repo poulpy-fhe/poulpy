@@ -12,7 +12,6 @@ Parties exchange public aggregatable transcripts (PATs), one type per shape:
 - `GGLWEPat`: unseeded full GGLWE.
 - Unseeded GLWE transcripts are core `GLWE`s.
 
-A PAT carries a canonical flag; normalize before `write_to` when it is clear.
 Allocate PATs through `MHEModuleAlloc` on a `Module`.
 
 ## Randomness

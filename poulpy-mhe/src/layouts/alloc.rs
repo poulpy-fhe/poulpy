@@ -10,7 +10,7 @@ use crate::layouts::{
 /// PAT allocation on a backend module.
 ///
 /// Every method is default-bodied over the core allocation supertraits, so the
-/// blanket impl for `Module<BE>` is empty. A fresh PAT is zero, hence canonical.
+/// blanket impl for `Module<BE>` is empty. A fresh PAT is zero.
 pub trait MHEModuleAlloc<BE: Backend>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -18,21 +18,18 @@ pub trait MHEModuleAlloc<BE: Backend>:
     fn glwe_pat_compressed_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPatCompressedOwned<BE> {
         GLWEPatCompressed {
             inner: self.glwe_compressed_alloc_from_infos(infos),
-            canonical: true,
         }
     }
 
     fn glwe_pat_compressed_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPatCompressedOwned<BE> {
         GLWEPatCompressed {
             inner: self.glwe_compressed_alloc(base2k, k, rank),
-            canonical: true,
         }
     }
 
     fn gglwe_pat_compressed_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatCompressedOwned<BE> {
         GGLWEPatCompressed {
             inner: self.gglwe_compressed_alloc_from_infos(infos),
-            canonical: true,
         }
     }
 
@@ -47,14 +44,12 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ) -> GGLWEPatCompressedOwned<BE> {
         GGLWEPatCompressed {
             inner: self.gglwe_compressed_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
-            canonical: true,
         }
     }
 
     fn gglwe_pat_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatOwned<BE> {
         GGLWEPat {
             inner: self.gglwe_alloc_from_infos(infos),
-            canonical: true,
         }
     }
 
@@ -69,7 +64,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ) -> GGLWEPatOwned<BE> {
         GGLWEPat {
             inner: self.gglwe_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
-            canonical: true,
         }
     }
 }

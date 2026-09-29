@@ -13,23 +13,9 @@ pub type GGLWEPatCompressedOwned<BE> = GGLWEPatCompressed<<BE as Backend>::Owned
 
 /// Seeded public aggregatable transcript of a GGLWE: the bodies of a
 /// [`GGLWECompressed`] whose masks every party regenerates from the common seed.
-///
-/// Normalize before serialization.
 #[derive(Clone)]
 pub struct GGLWEPatCompressed<D: Data, W: ZnxWord> {
     pub(crate) inner: GGLWECompressed<D, W>,
-    pub(crate) canonical: bool,
-}
-
-impl<D: Data, W: ZnxWord> GGLWEPatCompressed<D, W> {
-    pub fn is_canonical(&self) -> bool {
-        self.canonical
-    }
-
-    /// For data written directly into the limbs.
-    pub fn set_canonical(&mut self, canonical: bool) {
-        self.canonical = canonical
-    }
 }
 
 impl<D: Data, W: ZnxWord> PartialEq for GGLWEPatCompressed<D, W>
@@ -127,28 +113,18 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEPatCompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEPatCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GGLWEPatCompressed: canonical={} {}", self.canonical, self.inner)
+        write!(f, "GGLWEPatCompressed: {}", self.inner)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPatCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.inner.read_from(reader)?;
-        self.canonical = true;
-        Ok(())
+        self.inner.read_from(reader)
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPatCompressed<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
-    /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        if !self.canonical {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "GGLWEPatCompressed is not canonical: normalize it before serializing",
-            ));
-        }
         self.inner.write_to(writer)
     }
 }

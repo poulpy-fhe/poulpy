@@ -9,6 +9,5 @@
 //! sum of every party's secret. [`layouts`] holds one type per transcript
 //! shape.
 pub mod layouts;
-pub mod test_suite;
 
 pub use layouts::*;

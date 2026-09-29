@@ -1,9 +1,5 @@
 # Multiparty contracts
 
-## Canonical flag
-
-`write_to` refuses a PAT whose flag is clear.
-
 ## Randomness and seeds
 
 A public mask seed is common to all parties contributing to one result.

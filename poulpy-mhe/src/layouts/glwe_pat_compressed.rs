@@ -13,12 +13,9 @@ pub type GLWEPatCompressedOwned<BE> = GLWEPatCompressed<<BE as Backend>::OwnedBu
 
 /// Seeded public aggregatable transcript of a GLWE: the body of a
 /// [`GLWECompressed`] whose mask every party regenerates from the common seed.
-///
-/// Normalize before serialization.
 #[derive(Clone)]
 pub struct GLWEPatCompressed<D: Data, W: ZnxWord> {
     pub(crate) inner: GLWECompressed<D, W>,
-    pub(crate) canonical: bool,
 }
 
 impl<D: Data, W: ZnxWord> GLWEPatCompressed<D, W> {
@@ -28,15 +25,6 @@ impl<D: Data, W: ZnxWord> GLWEPatCompressed<D, W> {
 
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
         self.inner.data_mut()
-    }
-
-    pub fn is_canonical(&self) -> bool {
-        self.canonical
-    }
-
-    /// For data written directly into the limbs.
-    pub fn set_canonical(&mut self, canonical: bool) {
-        self.canonical = canonical
     }
 }
 
@@ -113,28 +101,18 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPatCompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPatCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GLWEPatCompressed: canonical={} {}", self.canonical, self.inner)
+        write!(f, "GLWEPatCompressed: {}", self.inner)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPatCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.inner.read_from(reader)?;
-        self.canonical = true;
-        Ok(())
+        self.inner.read_from(reader)
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPatCompressed<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
-    /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        if !self.canonical {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "GLWEPatCompressed is not canonical: normalize it before serializing",
-            ));
-        }
         self.inner.write_to(writer)
     }
 }

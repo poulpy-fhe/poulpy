@@ -3,7 +3,7 @@
 //! A seeded PAT (`*Compressed`) stores bodies whose masks every party
 //! regenerates from the common seed; an unseeded PAT stores the full
 //! ciphertext. Unseeded GLWE transcripts are plain core
-//! [`GLWE`](poulpy_core::layouts::GLWE)s, which already carry the canonical flag.
+//! [`GLWE`](poulpy_core::layouts::GLWE)s.
 
 mod alloc;
 mod gglwe_pat;
