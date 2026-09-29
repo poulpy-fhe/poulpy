@@ -11,8 +11,9 @@ defaults in `oep::derived`.
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
 the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
-switching protocols, `api::tensor_key` the collective tensor key protocol and
-`api::ggsw` the collective GGSW protocol. A protocol
+switching protocols, `api::tensor_key` the collective tensor key protocol,
+`api::ggsw` the collective GGSW protocol and `api::sharing` the
+encryption-to-shares and shares-to-encryption protocols. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -34,6 +35,8 @@ same trait.
 | `GGSWMHEProtocol` | `GGSWMHEProtocolImpl` | `reference::GGSWMHEProtocolReference`; aggregation is a derived default over `GGLWEPatCompressedImpl` |
 | `GLWEKeyswitchMHEProtocol` | `GLWEKeyswitchMHEProtocolImpl` | `reference::GLWEKeyswitchMHEProtocolReference` |
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
+| `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
+| `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
 
 ## Normalization
 
@@ -66,7 +69,7 @@ derives its sub-seeds and intentionally shares each circular column's mask
 between its two halves; its finalized ephemeral key may be reused under the
 GGSW conditions below.
 
-Private `source_xe` and `source_xu` streams must be independently
+Private `source_xe`, `source_xu` and `source_xm` streams must be independently
 seeded for each party and purpose, kept secret and consumed without replay.
 Never initialize a private stream from a public mask seed. An advancing error
 stream can supply successive fresh samples.
@@ -113,8 +116,8 @@ share.
 
 ## Smudging parameters
 
-Secret and public key switching
-require `flood: &impl SmudgingInfos`.
+Secret and public key switching and
+encryption-to-shares require `flood: &impl SmudgingInfos`.
 `SmudgingNoise` provides two full-width distributions:
 
 - `SmudgingNoise::gaussian(k, log_sigma, cutoff)` samples an integer discrete
@@ -136,7 +139,8 @@ An observable sampling-time side channel is outside this distribution claim.
 Set `k` to the sampling destination's precision to hide errors on its full
 integer grid. A smaller `k` leaves a coarser sampling lattice and may expose
 low error bits. Sampling precision is `res.k` for secret-key switching,
-and `ct.k` for public-key switching.
+and `ct.k` for public-key switching and E2S.
+E2S adds its flood to the public partial decryption, never to the private mask.
 The API checks this precision, distribution bounds and coefficient headroom
 before sampling. It cannot infer the input error or certify statistical hiding.
 
@@ -173,6 +177,34 @@ an exact conditional discrete Gaussian rather than a rounded real Gaussian.
 Small-sigma tests check forwarding and noise presence. These
 functional checks complement the distribution argument and parameter bounds.
 
+## Additive shares
+
+An additive share is a plaintext read as a signed integer in its top-`k`
+window, the torus value `M * 2^-k`. Raising a share or a ciphertext to a
+larger precision keeps the integer: `glwe_copy` into the wider layout, then
+`glwe_rsh` by the precision difference. Masks are therefore bounded integers,
+not uniform torus values: a mask is a uniform integer of `log_bound` bits, and
+the shares require `log_bound` below the ciphertext's precision. The caller
+picks `log_bound` at least the noisy plaintext's bit size plus the statistical
+hiding margin. Include input and aggregate flood noise when bounding that
+plaintext. Avoid wraparound of the masked reconstruction: a sufficient
+coefficientwise condition is
+`message_bound + input_noise_bound + sum(flood_bounds) + parties * 2^log_bound < 2^(k - 1)`.
+The familiar `log_bound + log2(parties) + 1 <= k` only budgets the masks;
+the remaining terms must also fit.
+
+An encryption-to-shares public share wraps a rank-0 core `GLWE`; the
+finalizing party adds the ciphertext's body and the aggregate to its mask, the
+other parties keep their masks as their shares. A shares-to-encryption share
+wraps a `GLWEPatCompressed`.
+
+`source_xm` must stay secret to the party and never be replayed. Every
+shares-to-encryption invocation needs a fresh `seed`, common to
+its participants: two encryptions under one secret and one seed reveal the
+difference of their plaintexts. Bounded masks hide the additive shares;
+independent flooding hides the input-dependent decryption noise when those
+shares are reconstructed.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
@@ -181,8 +213,8 @@ parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!` or
-`impl_mhe_keyswitch_reference!` alone when replacing another one. The
+`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!` or
+`impl_mhe_sharing_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
