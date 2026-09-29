@@ -7,14 +7,14 @@ use crate::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
         CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
-    layouts::CKKSModuleAlloc,
+    layouts::{CIFold, CKKSBootstrapFold, CKKSCiphertextOwned, CKKSModuleAlloc},
     oep::CIBridge,
 };
 use poulpy_core::{
     GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWESecretCIUnfold, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -474,6 +474,21 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_bootstrap_merge() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((4 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    6,
+                );
+            }
+            #[test]
             fn ckks_ci_bootstrap_s2c_without_guards() {
                 let params = $params;
                 let ci = Module::<$backend>::new(params.n as u64);
@@ -667,101 +682,32 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSCIRingMapOps<BE> + GLWESecretCIUnfold<BE>,
+    for<'a> CIFold<'a, BE, GLWESwitchingKeyPrepared<STD::OwnedBuf, STD>>:
+        CKKSBootstrapFold<STD, Ciphertext = CKKSCiphertextOwned<BE>>,
 {
-    use crate::{CoeffsMeta, layouts::*, polynomial::SplitStrategy};
-    let layers = ci.n().ilog2() as usize;
-    let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
-    let log_delta = 35;
-    let log_msg_ratio = if s2c_first { 13 } else { 8 };
-    let plan = BootstrappingPlan::new(
-        if s2c_first {
-            BootstrappingPipeline::S2CFirst
-        } else {
-            BootstrappingPipeline::C2SFirst
-        },
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 32 }),
-            eval_round_plus: eval_round.then(|| EvalRoundPlus {
-                coeffs_to_slots_bypass: DFTPlan::new(
-                    DFTType::Encode,
-                    vec![(1, 1); layers],
-                    DFTOutputFormat::SplitRealAndImag,
-                    CoeffsMeta::from_delta_budget(96, 4),
-                )
-                .unwrap(),
-            }),
-        },
-        DFTPlan::new(
-            DFTType::Encode,
-            schedule.clone(),
-            DFTOutputFormat::SplitRealAndImag,
-            CoeffsMeta::from_delta_budget(48, 3),
-        )
-        .unwrap(),
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosHKEven,
-            log_msg_ratio,
-            f_mod_degree: 30,
-            f_mod_interval: 16,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: CoeffsMeta::from_delta_budget(42, 4),
-            f_mod_log_delta: 58,
-        },
-        DFTPlan::new(
-            DFTType::Decode,
-            schedule,
-            DFTOutputFormat::SplitRealAndImag,
-            CoeffsMeta::from_delta_budget(28, 2),
-        )
-        .unwrap()
-        .with_scaling(if s2c_first { 0.5 } else { 256.0 })
-        .unwrap(),
-    )
-    .unwrap();
-    let plan = if s2c_first {
-        plan.with_c2s_guard_bits(guard_bits).unwrap()
-    } else {
-        plan
-    };
-    let output_k = 4 * params.base2k - 1;
-    let input_k = plan.input_k(log_delta + log_msg_ratio);
+    use crate::{CoeffsMeta, layouts::*};
     params.n = ci.n();
-    params.k = plan.bootstrap_k(output_k + 1, log_delta);
     params.prec_meta = CKKSMeta {
-        log_delta,
+        log_delta: 0,
         log_sparsity,
         slots: SlotsKind::Real,
     };
-    params.prec_log_budget = 8;
-    params.dsize = if params.base2k < 40 { 7 } else { 3 };
-    params.hw = if encapsulate { 128 } else { 32 };
+    let setup = super::presets::ring_switched_setup(params, standard.n(), s2c_first, encapsulate, eval_round, guard_bits);
+    let (plan, params, log_delta) = (&setup.plan, setup.params, setup.params.prec_meta.log_delta);
+    let ring_switch_layout = setup.ring_switch_layout;
+    let layers = standard.n().ilog2() as usize - 1;
     let standard_params = CKKSTestParams {
-        n: 2 * params.n,
+        n: standard.n(),
         ..params
     };
-    let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: standard_params.atk_layout().layout,
-        tensor_key: standard_params.tsk_layout().layout,
-        encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
-            dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
-            sparse_to_dense: standard_params.ksk_layout(params.k).layout,
-        }),
-    };
-    let ring_switch_layout = RingSwitchKeys {
-        inbound: standard_params.ksk_layout(input_k).layout,
-        outbound: standard_params.ksk_layout(output_k + 1).layout,
-    };
-    let mut run =
-        super::presets::CIBootstrappingRun::setup(ci, standard, &plan, params, keys_layout, ring_switch_layout, output_k);
-    for pair in [false, true] {
-        run.bootstrap(pair);
-        for stats in run.precision(pair) {
+    let mut run = super::presets::CIBootstrappingRun::setup(ci, standard, &setup, 3);
+    // One input, a pair, and a pair with a tail, which merges when the standard degree allows.
+    for count in [1, 2, 3] {
+        run.bootstrap(count);
+        for stats in run.precision(count) {
             assert!(
                 stats.min_log2_prec > 17.0,
-                "CI bootstrap pair={pair} s2c={s2c_first} sparse={log_sparsity}: {stats:?}"
+                "CI bootstrap count={count} s2c={s2c_first} sparse={log_sparsity}: {stats:?}"
             );
         }
     }
@@ -777,8 +723,8 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
     for output in &mut run.outputs {
         *output = run.ci.ckks_ciphertext_alloc((params.base2k - 1).into(), params.k.into());
     }
-    run.bootstrap(true);
-    for stats in run.precision(true) {
+    run.bootstrap(2);
+    for stats in run.precision(2) {
         assert!(stats.min_log2_prec > 17.0, "{stats:?}");
     }
     for output in &mut run.outputs {
@@ -814,8 +760,8 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
         run.standard
             .ckks_bootstrap(
                 &CIFold::new(&run.ci, &run.ring_switch),
-                &mut run.outputs,
-                &run.inputs,
+                &mut run.outputs[..2],
+                &run.inputs[..2],
                 &run.context,
                 &run.keys,
                 &mut run.std_scratch.borrow()
@@ -823,7 +769,9 @@ pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
             .is_err()
     );
     run.inputs[1].set_meta(right_meta);
-    let [left, right] = &mut run.outputs;
+    let [left, right, ..] = &mut run.outputs[..] else {
+        unreachable!()
+    };
     assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
     assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
     assert_eq!(left.k(), before.k());

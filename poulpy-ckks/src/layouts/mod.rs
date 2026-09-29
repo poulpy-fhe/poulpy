@@ -138,7 +138,7 @@ pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
 };
-pub use bootstrapping_fold::{CIFold, CKKSBootstrapFold, StandardFold};
+pub use bootstrapping_fold::{CIFold, CKKSBootstrapFold, MergeFold, StandardFold};
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
     RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,

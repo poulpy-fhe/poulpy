@@ -26,17 +26,18 @@
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 
-use crate::api::CKKSEncodingOps;
+use crate::api::{CKKSEncodingHostOps, CKKSEncodingOps};
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
-use crate::layouts::StandardFold;
+use crate::layouts::{CKKSBootstrapFold, MergeFold, StandardFold};
 use poulpy_hal::AlignedBuf;
 use std::slice;
 use std::time::Instant;
 
+use poulpy_core::EncryptionLayout;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -48,8 +49,8 @@ use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps,
-        CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEncryptOps,
+        CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -62,9 +63,10 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, assert_canonical_at_k,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, assert_canonical_at_k,
             ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
         },
+        presets::{PRECISION_LOG_BUDGET, ring_switched_setup},
     },
 };
 
@@ -1393,6 +1395,125 @@ fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKS
                 want.data().at(col, limb),
                 "bootstrap output col={col} limb={limb}"
             );
+        }
+    }
+}
+
+/// Refreshes ciphertexts of degree `n`, under their own secret, on a bootstrap
+/// module of degree `2n` through [`MergeFold`]: a complex input merged with a real
+/// pair, then a second real pair alone.
+pub fn test_bootstrapping_merge_e2e<BE, F, E>(
+    mut params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    for<'a> MergeFold<'a, GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>>:
+        CKKSBootstrapFold<BE, Ciphertext = CKKSCiphertextOwned<BE>>,
+{
+    let n = module.n();
+    let bootstrap_module = Module::<BE>::new(2 * n as u64);
+    let bootstrap_host = Module::<HostBytesBackend>::new(2 * n as u64);
+    params.prec_meta = CKKSMeta {
+        log_delta: 0,
+        log_sparsity: 0,
+        slots: SlotsKind::Complex,
+    };
+    let setup = ring_switched_setup(params, 2 * n, true, true, false, 6);
+    let params = setup.params;
+    let log_delta = params.prec_meta.log_delta;
+    let bootstrap_params = CKKSTestParams { n: 2 * n, ..params };
+    let mut scratch = alloc_scratch(&params, module);
+    let mut bootstrap_scratch = alloc_scratch(&bootstrap_params, &bootstrap_module);
+    let ctx = BootstrappingContext::<BE, f64>::compile(
+        &bootstrap_module,
+        params.base2k.into(),
+        &setup.plan,
+        &mut bootstrap_scratch.borrow(),
+    )
+    .unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
+    let (bootstrap_sk, _) = gen_sk_with_raw(&bootstrap_params, &bootstrap_module, &bootstrap_host, [32; 32]);
+    let (mut source_xs, mut source_xe, mut source_xa) = (Source::new([33; 32]), Source::new([34; 32]), Source::new([35; 32]));
+    let keys = ctx
+        .generate_keys(
+            &bootstrap_module,
+            &bootstrap_sk,
+            &setup.keys_layout,
+            &mut source_xs,
+            &mut source_xe,
+            &mut source_xa,
+            &mut bootstrap_scratch.borrow(),
+        )
+        .unwrap()
+        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow());
+    let ring_switch = setup
+        .ring_switch_layout
+        .generate(
+            &bootstrap_module,
+            &sk_raw,
+            &bootstrap_sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut bootstrap_scratch.borrow(),
+        )
+        .unwrap()
+        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow())
+        .unwrap();
+
+    let slots = n / 2;
+    let (v0, v1) = test_vector_1::<f64>(slots);
+    let reversed = |v: &[f64]| v.iter().rev().copied().collect::<Vec<_>>();
+    let zero = vec![0.0; slots];
+    let wants = [
+        (v0.clone(), v1.clone(), SlotsKind::Complex),
+        (v1.clone(), zero.clone(), SlotsKind::Real),
+        (reversed(&v0), zero.clone(), SlotsKind::Real),
+        (v0.clone(), zero.clone(), SlotsKind::Real),
+        (reversed(&v1), zero, SlotsKind::Real),
+    ];
+    let input_k = setup.plan.input_k(log_delta + setup.plan.eval_mod().log_msg_ratio);
+    let ins: Vec<_> = wants
+        .iter()
+        .map(|(re, im, slots_kind)| {
+            let mut pt = module.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), input_k.into());
+            pt.set_meta(CKKSMeta {
+                slots: *slots_kind,
+                ..params.prec_meta
+            });
+            module.ckks_encode_reim_into(&mut pt, re, im, &mut scratch.borrow()).unwrap();
+            let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
+            let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
+            module
+                .ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut source_xe, &mut source_xa, &mut scratch.borrow())
+                .unwrap();
+            ct
+        })
+        .collect();
+    let mut outs: Vec<_> = (0..wants.len())
+        .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()))
+        .collect();
+    let fold = MergeFold::new(&ring_switch);
+    let bytes = bootstrap_module.ckks_bootstrap_tmp_bytes(&fold, &outs[0], &ins[0], &ctx, &setup.keys_layout);
+    bootstrap_scratch = ScratchOwned::<BE>::alloc(bytes);
+    bootstrap_module
+        .ckks_bootstrap(&fold, &mut outs, &ins, &ctx, &keys, &mut bootstrap_scratch.borrow())
+        .unwrap();
+    for (index, (ct, (re, im, slots_kind))) in outs.iter().zip(&wants).enumerate() {
+        assert_eq!((ct.slots(), ct.log_delta()), (*slots_kind, log_delta), "output {index}");
+        let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), (log_delta + PRECISION_LOG_BUDGET).into());
+        pt.set_meta(ct.meta());
+        module.ckks_decrypt(&mut pt, ct, &sk, &mut scratch.borrow()).unwrap();
+        let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
+        module
+            .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.borrow())
+            .unwrap();
+        for (got, want) in [(&got_re, re), (&got_im, im)] {
+            let stats = precision_stats(got, want, log_delta);
+            assert!(stats.min_log2_prec > 17.0, "merged output {index}: {stats:?}");
         }
     }
 }

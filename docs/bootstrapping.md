@@ -24,7 +24,7 @@ CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain 
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, refreshes a batch from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
-A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap, two real inputs sharing one, and `CIFold` [conjugate invariant ciphertexts](#conjugate-invariant-ciphertexts).
+A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap, two real inputs sharing one, `MergeFold` [merges smaller ciphertexts](#merging-smaller-ciphertexts), and `CIFold` [conjugate invariant ciphertexts](#conjugate-invariant-ciphertexts).
 Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
@@ -291,9 +291,19 @@ A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message 
 cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```
 
+## Merging smaller ciphertexts
+
+`MergeFold` refreshes standard ciphertexts of degree `n` under their own secret on a bootstrap module of degree `N = g·n`.
+Real inputs are paired first, as in `StandardFold`.
+Each group of `g` inputs or pairs is merged as `Σ_j X^j·ct_j(X^g)`, which only moves coefficients, and switched once to the bootstrap secret.
+After the bootstrap, the result is switched back to the input secret and split into its components at each `X^j`: since the input secret lies in the subring of `X^g`, restricting `X^(-j)·ct` to that subring is a valid ciphertext of degree `n`.
+A group with pairs is also conjugated with the conjugation key of the bootstrap keys and switched back: conjugation moves the conjugate of the component at `X^j` to `X^(g−j)`, times `X^(-g)`, from which the real and imaginary parts of each pair follow.
+`RingSwitchKeysLayout::generate` produces the inbound and outbound keys at degree `N` from the input secret, which the key encryption lifts through `X -> X^g`, and the bootstrap secret.
+With `g > 1` the merged ciphertext fills every coefficient, so the context must use full-slot transforms (`log_slots = log2(N) − 1`); outputs keep the input scale and sparsity, and paired outputs are one bit narrower.
+
 ## Conjugate invariant ciphertexts
 
-A CI ciphertext of degree `N` is a folded element of the standard ring of degree `2N`, so a standard module of degree `2N` bootstraps it through `CIFold`:
+A CI ciphertext of degree `N` is a folded element of the standard ring of degree `2N`, so a standard module of degree `g·2N` bootstraps it through `CIFold`:
 
 ```rust,ignore
 let ci = Module::<NTT4x30CIRef>::new(n);
@@ -309,17 +319,18 @@ The ring maps are also available on their own through `CKKSCIRingMapOps`, on CI 
 `ckks_ci_fold` writes `a(X) + a(X^-1)` back, which doubles the real part (`log_delta + 1`).
 Unfold and fold only move coefficients, so the CI module of degree `N` runs them on the `2N` operand without a transform.
 Switching between the unfolded CI secret and the standard secret is an ordinary key switch of the standard module, which also normalizes the unfolded digits.
-`CIFold` packs each pair of inputs into the real and imaginary parts, switches them once, and folds both parts back after one bootstrap.
-An odd tail is refreshed alone: it unfolds to real slots, so an S2C-first context without EvalRound+ takes the real-slot path and runs one EvalMod.
+`CIFold` packs each pair of inputs into the real and imaginary parts and merges `g` pairs as `MergeFold` does, switches them once, and folds both parts back after one bootstrap.
+The unfolded CI secret is invariant under conjugation, so the split needs no key.
+With `g = 1` an odd tail is refreshed alone: it unfolds to real slots, so an S2C-first context without EvalRound+ takes the real-slot path and runs one EvalMod.
 
 The context is an ordinary `BootstrappingContext` compiled under the standard module, with no knowledge of the CI ring.
-Its plan must use full-slot transforms (`log_slots = log2(N)`), including for sparsely packed inputs, and an identity recipe; `CIFold` checks both, and the CI presets provide such plans.
+Its plan must use full-slot transforms (`log_slots = log2(g·N)`), including for sparsely packed inputs, and an identity recipe; `CIFold` checks both, and the CI presets provide such plans.
 The ordinary C2S-first and S2C-first recipes, scale accounting, and optional sparse-secret encapsulation apply.
 The output allocation uses `plan.bootstrap_k(output_k + 1, input.log_delta())`; evaluation returns `output_k` at the input scale.
 
 Generate independent CI and standard secrets.
 The bootstrap keys come from `BootstrappingContext::generate_keys` under the standard secret, as for standard ciphertexts.
-`RingSwitchKeysLayout::generate_ci` produces the inbound and outbound ring-switch keys, and `prepare` prepares them under the standard module; the CI module unfolds the CI secret (`GLWESecretCIUnfold`), and all keys have degree `2N`.
+`RingSwitchKeysLayout::generate_ci` produces the inbound and outbound ring-switch keys, and `prepare` prepares them under the standard module; the CI module unfolds the CI secret (`GLWESecretCIUnfold`), and all keys have degree `g·2N`.
 Size the inbound key for the input width.
 The outbound key covers `output_k + 1`; the extra bit absorbs the fold's factor of two.
 The return key encrypts under the unfolded CI secret, so its modulus, including auxiliary bits and gadget rounding, must respect the CI secret's bound.

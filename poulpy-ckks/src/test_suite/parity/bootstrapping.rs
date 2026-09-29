@@ -13,7 +13,7 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
         BootstrappingTechniques, CIFold, CKKSBootstrapFold, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
-        RingSwitchKeys, SparseSecretEncapsulation, StandardFold,
+        MergeFold, RingSwitchKeys, SparseSecretEncapsulation, StandardFold,
     },
     oep::{CIBridge, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
@@ -316,7 +316,9 @@ where
         + CyclotomicOrder,
     CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
     FixtureKeys<B>: BootstrappingKeys<B, TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>> + Sync,
+    Module<B>: ModuleNew<B>,
     StandardFold: CKKSBootstrapFold<B, Ciphertext = CKKSCiphertextOwned<B>>,
+    for<'a> MergeFold<'a, FixtureSwitchingKey<B>>: CKKSBootstrapFold<B, Ciphertext = CKKSCiphertextOwned<B>>,
 {
     let (n, b) = (module.n(), params.base2k);
     let log_slots = n.ilog2() as usize - 1;
@@ -445,6 +447,53 @@ where
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
         }
     }
+
+    // Inputs of half the degree under their own secret: a complex input merged with a
+    // real pair, then a real pair alone.
+    let half = Module::<B>::new((n / 2) as u64);
+    let plan = plan(BootstrappingPipeline::S2CFirst, log_slots, true, false);
+    let log_modulus_in = log_delta + LOG_MSG_RATIO;
+    let k_in = plan.input_k(log_modulus_in);
+    let k_boot = plan.bootstrap_k(log_modulus_in + 2 * b + 1, log_delta).next_multiple_of(b);
+    let out_layout = ct_layout(n / 2, b, k_boot, log_delta, SlotsKind::Complex);
+    let atk = key_layout(n, b, k_boot, 2, 1, 1);
+    let d2s = key_layout(n, b, k_in, 1, 1, 1);
+    let s2d = key_layout(n, b, k_boot, 2, 1, 1);
+    let layout = keys_layout(&atk, &d2s, &s2d, true);
+    let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
+    let compile = module
+        .ckks_all_ops_with_atk_tmp_bytes(&ct_layout(n, b, k_boot, log_delta, SlotsKind::Complex), &atk, &atk, &pt)
+        .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
+    let ctx = with_scratch::<B, _>(compile, |scratch| {
+        BootstrappingContext::<B, F>::compile(module, b.into(), &plan, scratch)
+    })
+    .unwrap();
+    let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
+    let ring_switch = RingSwitchKeys {
+        inbound: prepared_gglwe(module, &key_layout(n, b, k_in, 2, 1, 1), 107),
+        outbound: prepared_gglwe(module, &key_layout(n, b, k_boot, 1, 1, 1), 109),
+    };
+    let fold = MergeFold::new(&ring_switch);
+    let ins: Vec<_> = [
+        SlotsKind::Complex,
+        SlotsKind::Real,
+        SlotsKind::Real,
+        SlotsKind::Real,
+        SlotsKind::Real,
+    ]
+    .into_iter()
+    .zip([111, 113, 127, 131, 137])
+    .map(|(slots, seed)| fixture_ciphertext(&half, &ct_layout(n / 2, b, k_in, log_delta, slots), seed))
+    .collect();
+    let mut outs: Vec<_> = [139, 149, 151, 157, 163]
+        .map(|seed| fixture_ciphertext(&half, &out_layout, seed))
+        .into();
+    let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &fold, &outs[0], &ins[0], &ctx, &layout);
+    let result = with_scratch::<B, _>(bytes, |scratch| {
+        B::ckks_bootstrap_impl(module, &fold, &mut outs, &ins, &ctx, &keys, scratch)
+    });
+    assert!(result.is_ok(), "merged: {result:?}");
+    results.push((result.map_err(|e| e.to_string()), outs.iter().map(snapshot::<B, _>).collect()));
     results
 }
 
@@ -485,6 +534,10 @@ where
     FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
     StandardFold:
         CKKSBootstrapFold<BR, Ciphertext = CKKSCiphertextOwned<BR>> + CKKSBootstrapFold<BT, Ciphertext = CKKSCiphertextOwned<BT>>,
+    Module<BR>: ModuleNew<BR>,
+    Module<BT>: ModuleNew<BT>,
+    for<'a> MergeFold<'a, FixtureSwitchingKey<BR>>: CKKSBootstrapFold<BR, Ciphertext = CKKSCiphertextOwned<BR>>,
+    for<'a> MergeFold<'a, FixtureSwitchingKey<BT>>: CKKSBootstrapFold<BT, Ciphertext = CKKSCiphertextOwned<BT>>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(
@@ -515,22 +568,23 @@ where
     for<'a> CIFold<'a, B::CI, FixtureSwitchingKey<B>>: CKKSBootstrapFold<B, Ciphertext = CKKSCiphertextOwned<B::CI>>,
 {
     let (n, b) = (module.n(), params.base2k);
-    let ci = Module::<B::CI>::new((n / 2) as u64);
     let log_delta = 12;
     let mut results = Vec::new();
-    // A batch of three covers a pair and a single tail.
-    for (pipeline, encapsulate, batch) in [
-        (BootstrappingPipeline::S2CFirst, false, 1),
-        (BootstrappingPipeline::S2CFirst, true, 3),
-        (BootstrappingPipeline::C2SFirst, false, 2),
+    // A batch of three covers a pair and a single tail, merged at a quarter of the degree.
+    for (pipeline, encapsulate, batch, ci_n) in [
+        (BootstrappingPipeline::S2CFirst, false, 1, n / 2),
+        (BootstrappingPipeline::S2CFirst, true, 3, n / 2),
+        (BootstrappingPipeline::C2SFirst, false, 2, n / 2),
+        (BootstrappingPipeline::S2CFirst, true, 3, n / 4),
     ] {
+        let ci = Module::<B::CI>::new(ci_n as u64);
         let plan = plan(pipeline, n.ilog2() as usize - 1, encapsulate, false);
         let log_modulus_in = log_delta + LOG_MSG_RATIO;
         let k_in = plan.input_k(log_modulus_in);
         let output_k = log_modulus_in + 2 * b;
         let k_boot = plan.bootstrap_k(output_k + 1, log_delta).next_multiple_of(b);
-        let in_layout = ct_layout(n / 2, b, k_in, log_delta, SlotsKind::Real);
-        let out_layout = ct_layout(n / 2, b, k_boot, log_delta, SlotsKind::Real);
+        let in_layout = ct_layout(ci_n, b, k_in, log_delta, SlotsKind::Real);
+        let out_layout = ct_layout(ci_n, b, k_boot, log_delta, SlotsKind::Real);
         let atk = key_layout(n, b, k_boot, 2, 1, 1);
         let d2s = key_layout(n, b, k_in, 1, 1, 1);
         let s2d = key_layout(n, b, k_boot, 2, 1, 1);

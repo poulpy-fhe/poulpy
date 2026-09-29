@@ -6,12 +6,13 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use crate::layouts::{CIFold, StandardFold};
+use crate::layouts::{CIFold, CKKSBootstrapFold, StandardFold};
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
-        GGLWEInfos, GLWESecretCIUnfold, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWESecretCIUnfold, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling,
+        GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -288,6 +289,120 @@ where
     }
 }
 
+/// Plan, parameters and key layouts of the ring-switched bootstrapping tests.
+pub(crate) struct RingSwitchedSetup {
+    pub(crate) plan: BootstrappingPlan,
+    /// Parameters of the inputs, at the bootstrap width `k`.
+    pub(crate) params: CKKSTestParams,
+    pub(crate) keys_layout: BootstrappingKeysLayout,
+    pub(crate) ring_switch_layout: RingSwitchKeysLayout,
+    pub(crate) output_k: usize,
+}
+
+/// Builds a full-slot plan on a standard module of degree `standard_n` for inputs
+/// of degree `params.n` at scale `2^35`, with the ring-switch key layouts.
+pub(crate) fn ring_switched_setup(
+    mut params: CKKSTestParams,
+    standard_n: usize,
+    s2c_first: bool,
+    encapsulate: bool,
+    eval_round: bool,
+    guard_bits: usize,
+) -> RingSwitchedSetup {
+    use crate::{
+        CoeffsMeta,
+        layouts::{
+            BootstrappingPipeline, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+            EvalModPlan, EvalModType, EvalRoundPlus, RingSwitchKeys, SparseSecretEncapsulation,
+        },
+        polynomial::SplitStrategy,
+    };
+    let layers = standard_n.ilog2() as usize - 1;
+    let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
+    let log_delta = 35;
+    let log_msg_ratio = if s2c_first { 13 } else { 8 };
+    let plan = BootstrappingPlan::new(
+        if s2c_first {
+            BootstrappingPipeline::S2CFirst
+        } else {
+            BootstrappingPipeline::C2SFirst
+        },
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: eval_round.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan::new(
+                    DFTType::Encode,
+                    vec![(1, 1); layers],
+                    DFTOutputFormat::SplitRealAndImag,
+                    CoeffsMeta::from_delta_budget(96, 4),
+                )
+                .unwrap(),
+            }),
+        },
+        DFTPlan::new(
+            DFTType::Encode,
+            schedule.clone(),
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(48, 3),
+        )
+        .unwrap(),
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHKEven,
+            log_msg_ratio,
+            f_mod_degree: 30,
+            f_mod_interval: 16,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(42, 4),
+            f_mod_log_delta: 58,
+        },
+        DFTPlan::new(
+            DFTType::Decode,
+            schedule,
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(28, 2),
+        )
+        .unwrap()
+        .with_scaling(if s2c_first { 0.5 } else { 256.0 })
+        .unwrap(),
+    )
+    .unwrap();
+    let plan = if s2c_first {
+        plan.with_c2s_guard_bits(guard_bits).unwrap()
+    } else {
+        plan
+    };
+    let output_k = 4 * params.base2k - 1;
+    let input_k = plan.input_k(log_delta + log_msg_ratio);
+    params.k = plan.bootstrap_k(output_k + 1, log_delta);
+    params.prec_meta.log_delta = log_delta;
+    params.prec_log_budget = 8;
+    params.dsize = if params.base2k < 40 { 7 } else { 3 };
+    params.hw = if encapsulate { 128 } else { 32 };
+    let standard_params = CKKSTestParams { n: standard_n, ..params };
+    let keys_layout = BootstrappingKeysLayout {
+        automorphism_key: standard_params.atk_layout().layout,
+        tensor_key: standard_params.tsk_layout().layout,
+        encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
+            dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
+            sparse_to_dense: standard_params.ksk_layout(params.k).layout,
+        }),
+    };
+    let ring_switch_layout = RingSwitchKeys {
+        inbound: standard_params.ksk_layout(input_k).layout,
+        outbound: standard_params.ksk_layout(output_k + 1).layout,
+    };
+    RingSwitchedSetup {
+        plan,
+        params,
+        keys_layout,
+        ring_switch_layout,
+        output_k,
+    }
+}
+
 /// End-to-end fixture for CI bootstrapping conformance tests.
 pub(crate) struct CIBootstrappingRun<BE: Backend, STD: Backend> {
     pub(crate) ci: Module<BE>,
@@ -297,10 +412,10 @@ pub(crate) struct CIBootstrappingRun<BE: Backend, STD: Backend> {
     pub(crate) ring_switch: RingSwitchKeysPrepared<STD::OwnedBuf, STD>,
     pub(crate) scratch: ScratchOwned<BE>,
     pub(crate) std_scratch: ScratchOwned<STD>,
-    pub(crate) inputs: [CKKSCiphertextOwned<BE>; 2],
-    pub(crate) outputs: [CKKSCiphertextOwned<BE>; 2],
+    pub(crate) inputs: Vec<CKKSCiphertextOwned<BE>>,
+    pub(crate) outputs: Vec<CKKSCiphertextOwned<BE>>,
     sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
-    want: [Vec<f64>; 2],
+    want: Vec<Vec<f64>>,
     bootstrap_k: usize,
     output_k: usize,
 }
@@ -315,18 +430,20 @@ where
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSCIRingMapOps<BE> + GLWESecretCIUnfold<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
+    for<'a> CIFold<'a, BE, GLWESwitchingKeyPrepared<STD::OwnedBuf, STD>>:
+        CKKSBootstrapFold<STD, Ciphertext = CKKSCiphertextOwned<BE>>,
 {
     /// Compiles a standard context, generates independent CI and standard secrets,
-    /// and encrypts two distinct real vectors for single and pair evaluation.
-    pub fn setup(
-        ci: Module<BE>,
-        standard: Module<STD>,
-        plan: &BootstrappingPlan,
-        params: CKKSTestParams,
-        keys_layout: BootstrappingKeysLayout,
-        ring_switch_layout: RingSwitchKeysLayout,
-        output_k: usize,
-    ) -> Self {
+    /// and encrypts `count` distinct real vectors.
+    pub fn setup(ci: Module<BE>, standard: Module<STD>, setup: &RingSwitchedSetup, count: usize) -> Self {
+        let RingSwitchedSetup {
+            plan,
+            params,
+            keys_layout,
+            ring_switch_layout,
+            output_k,
+        } = setup;
+        let (params, output_k) = (*params, *output_k);
         use super::helpers::{alloc_scratch, gen_sk_with_raw};
         use poulpy_core::layouts::GLWEInfos;
         let standard_host = Module::<HostBytesBackend>::new(standard.n() as u64);
@@ -347,7 +464,7 @@ where
             .generate_keys(
                 &standard,
                 &standard_sk,
-                &keys_layout,
+                keys_layout,
                 &mut source_xs,
                 &mut source_xe,
                 &mut source_xa,
@@ -371,25 +488,34 @@ where
         let input_k = plan.input_k(params.prec_meta.log_delta + plan.eval_mod().log_msg_ratio);
         let slots = ci.n() >> params.prec_meta.log_sparsity;
         let (want0, want1) = test_vector_1::<f64>(slots);
-        let want = [want0, want1];
-        let inputs = std::array::from_fn(|index| {
-            let mut pt = ci.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), input_k.into());
-            pt.set_meta(params.prec_meta);
-            ci.ckks_encode_reim_into(&mut pt, &want[index], &vec![0.0; slots], &mut scratch.borrow())
-                .unwrap();
-            let mut ct = ci.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
-            let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
-            ci.ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut source_xe, &mut source_xa, &mut scratch.borrow())
-                .unwrap();
-            ct
-        });
-        let outputs = std::array::from_fn(|_| ci.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()));
+        let want: Vec<Vec<f64>> = (0..count)
+            .map(|index| {
+                let base = if index % 2 == 0 { &want0 } else { &want1 };
+                (0..slots).map(|j| base[(j + index / 2) % slots]).collect()
+            })
+            .collect();
+        let inputs: Vec<_> = (0..count)
+            .map(|index| {
+                let mut pt = ci.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), input_k.into());
+                pt.set_meta(params.prec_meta);
+                ci.ckks_encode_reim_into(&mut pt, &want[index], &vec![0.0; slots], &mut scratch.borrow())
+                    .unwrap();
+                let mut ct = ci.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
+                let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
+                ci.ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut source_xe, &mut source_xa, &mut scratch.borrow())
+                    .unwrap();
+                ct
+            })
+            .collect();
+        let outputs: Vec<_> = (0..count)
+            .map(|_| ci.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()))
+            .collect();
         let bytes = standard.ckks_bootstrap_tmp_bytes(
             &CIFold::new(&ci, &ring_switch),
             &outputs[0],
             &inputs[0],
             &context,
-            &keys_layout,
+            keys_layout,
         );
         std_scratch = ScratchOwned::<STD>::alloc(bytes);
         Self {
@@ -409,12 +535,11 @@ where
         }
     }
 
-    /// Refreshes the first input alone, or both as one batch.
-    pub fn bootstrap(&mut self, pair: bool) {
+    /// Refreshes the first `count` inputs as one batch.
+    pub fn bootstrap(&mut self, count: usize) {
         for ct in &mut self.outputs {
             ct.set_k(self.bootstrap_k.into());
         }
-        let count = if pair { 2 } else { 1 };
         self.standard
             .ckks_bootstrap(
                 &CIFold::new(&self.ci, &self.ring_switch),
@@ -427,12 +552,12 @@ where
             .unwrap();
     }
 
-    /// Decrypts and measures every output produced by the selected path.
-    pub fn precision(&mut self, pair: bool) -> Vec<PrecisionStats> {
+    /// Decrypts and measures the first `count` outputs.
+    pub fn precision(&mut self, count: usize) -> Vec<PrecisionStats> {
         self.outputs
             .iter()
             .zip(&self.want)
-            .take(if pair { 2 } else { 1 })
+            .take(count)
             .map(|(ct, want)| {
                 assert_eq!(ct.k().as_usize(), self.output_k);
                 assert_eq!(ct.meta(), self.inputs[0].meta());
