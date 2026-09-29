@@ -24,7 +24,7 @@ CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain 
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, refreshes a batch from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
-A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap.
+A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap, and `CIFold` [conjugate invariant ciphertexts](#conjugate-invariant-ciphertexts).
 Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
@@ -249,7 +249,7 @@ let bootstrap_layout = preset.bootstrap_layout();
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
 All output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
-The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
+The standard-ring presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 
 | Constructor | Pipeline | Input `k` | Output `k` | Minimum precision | Net usable bits (levels) | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -289,3 +289,57 @@ A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message 
 ```sh
 cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```
+
+## Conjugate invariant ciphertexts
+
+A CI ciphertext of degree `N` is a folded element of the standard ring of degree `2N`, so a standard module of degree `2N` bootstraps it through `CIFold`:
+
+```rust,ignore
+let ci = Module::<NTT4x30CIRef>::new(n);
+let standard = Module::<NTT4x30Ref>::new(2 * n);
+standard.ckks_bootstrap(&CIFold::new(&ci, &ring_switch), outs, ins, &context, &keys, scratch)?;
+```
+
+The standard backend declares its CI twin with `CIBridge` (`type CI = NTT4x30CIRef`), which also requires both to share coefficient storage and word.
+The fold composes public operations, so backend overrides of the bootstrap and of each step apply, and `test_ci_bootstrapping_parity` compares backends through it.
+
+The ring maps are also available on their own through `CKKSCIRingMapOps`, on CI modules only.
+`ckks_ci_unfold` writes `a_0 + Σ a_i (X^i + X^-i)` into a standard ciphertext of degree `2N`, which decrypts under the unfolded CI secret; its digits are exact but not renormalized.
+`ckks_ci_fold` writes `a(X) + a(X^-1)` back, which doubles the real part (`log_delta + 1`).
+Unfold and fold only move coefficients, so the CI module of degree `N` runs them on the `2N` operand without a transform.
+Switching between the unfolded CI secret and the standard secret is an ordinary key switch of the standard module, which also normalizes the unfolded digits.
+`CIFold` packs each pair of inputs into the real and imaginary parts, switches them once, and folds both parts back after one bootstrap.
+An odd tail is refreshed alone: it unfolds to real slots, so an S2C-first context without EvalRound+ takes the real-slot path and runs one EvalMod.
+
+The context is an ordinary `BootstrappingContext` compiled under the standard module, with no knowledge of the CI ring.
+Its plan must use full-slot transforms (`log_slots = log2(N)`), including for sparsely packed inputs, and an identity recipe; `CIFold` checks both, and the CI presets provide such plans.
+The ordinary C2S-first and S2C-first recipes, scale accounting, and optional sparse-secret encapsulation apply.
+The output allocation uses `plan.bootstrap_k(output_k + 1, input.log_delta())`; evaluation returns `output_k` at the input scale.
+
+Generate independent CI and standard secrets.
+The bootstrap keys come from `BootstrappingContext::generate_keys` under the standard secret, as for standard ciphertexts.
+`RingSwitchKeysLayout::generate_ci` produces the inbound and outbound ring-switch keys, and `prepare` prepares them under the standard module; the CI module unfolds the CI secret (`GLWESecretCIUnfold`), and all keys have degree `2N`.
+Size the inbound key for the input width.
+The outbound key covers `output_k + 1`; the extra bit absorbs the fold's factor of two.
+The return key encrypts under the unfolded CI secret, so its modulus, including auxiliary bits and gadget rounding, must respect the CI secret's bound.
+
+`ckks_bootstrap_tmp_bytes` with the fold sizes the scratch arena of the standard module, which the CI module borrows to fold; the fold allocates its working ciphertexts.
+Inputs must share their layout, scale and sparsity, and outputs their layout; outputs are CI ciphertexts at the input scale and sparsity, with real slots.
+
+### CI presets
+
+`presets::bootstrapping` provides one `CIBootstrappingPreset`, at `log_delta = 35` with a minimum measured precision of 19 bits.
+
+| Constructor | Real slots per ciphertext | Standard degree | Input `k` | Output `k` | Usable bits | Bootstrap `k` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ci_n15_d35_k720_p19_s2c` | `2^15` | `2^16` | 160 | 720 | 560 | 1383 |
+
+`n()` is the CI degree and `standard_n()` is the working degree.
+Compile `preset.plan()` with `BootstrappingContext` under the standard module, and generate keys with `preset.keys_layout()` and `preset.ring_switch_layout()`.
+The input, output, and bootstrap allocation layouts use the CI degree and real-slot metadata; allocate them on the CI module.
+
+It uses independent weight-1024 CI and standard secrets, a weight-32 ephemeral standard secret, radix 52, and six C2S guard bits.
+It has four 28-bit S2C factors, four 48-bit C2S factors, and a 48-bit ModUp modulus.
+The optimized Han–Ki EvalMod uses coefficient scale 42 and working scale 58.
+High-modulus and inbound keys use four-limb digits; dense-to-sparse and return keys use one-limb digits.
+`with_base2k` and `with_dsizes` rebuild and revalidate every key layout.

@@ -89,6 +89,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        ci_bootstrapping => poulpy_ckks::test_suite::parity::test_ci_bootstrapping_parity,
     }
 }
 
@@ -115,6 +116,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        ci_bootstrapping => poulpy_ckks::test_suite::parity::test_ci_bootstrapping_parity,
     }
 }
 
@@ -148,6 +150,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        ci_bootstrapping => poulpy_ckks::test_suite::parity::test_ci_bootstrapping_parity,
     }
 }
 
@@ -174,6 +177,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        ci_bootstrapping => poulpy_ckks::test_suite::parity::test_ci_bootstrapping_parity,
     }
 }
 

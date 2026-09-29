@@ -413,6 +413,11 @@ CI modules unfold their ciphertexts into the standard ring of degree `2N` and fo
 them back (`CKKSCIRingMapOps`), which standard modules do not implement. Unfolded
 ciphertexts decrypt under the unfolded secret (`GLWESecretCIUnfold`); an ordinary key
 switch of the standard module moves them to a standard secret and back.
+A standard module whose backend declares its CI twin (`CIBridge`) bootstraps CI
+ciphertexts through `CIFold` with an ordinary bootstrapping context and an independent
+standard secret: each pair of inputs is packed into one bootstrap, and outputs keep the
+input scale and sparsity, with real slots. See [bootstrapping](../docs/bootstrapping.md#conjugate-invariant-ciphertexts)
+for key and context setup.
 
 ## Where to look next
 

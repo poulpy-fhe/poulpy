@@ -124,24 +124,46 @@ poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::NTT3x42IfmaRayon);
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::NTT3x42IfmaRayon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CIAvx512);
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CIAvx512);
+impl ::poulpy_ckks::oep::CIBridge for super::FFT64Avx512 {
+    type CI = super::FFT64CIAvx512;
+}
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CIAvx512);
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CIAvx512);
+impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30Avx512 {
+    type CI = super::NTT4x30CIAvx512;
+}
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT3x42CIIfma);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT3x42CIIfma);
+#[cfg(feature = "enable-ifma")]
+impl ::poulpy_ckks::oep::CIBridge for super::NTT3x42Ifma {
+    type CI = super::NTT3x42CIIfma;
+}
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
+impl ::poulpy_ckks::oep::CIBridge for super::FFT64Avx512Rayon {
+    type CI = super::FFT64CIAvx512Rayon;
+}
+#[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30Avx512Rayon {
+    type CI = super::NTT4x30CIAvx512Rayon;
+}
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT3x42CIIfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT3x42CIIfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+impl ::poulpy_ckks::oep::CIBridge for super::NTT3x42IfmaRayon {
+    type CI = super::NTT3x42CIIfmaRayon;
+}
 #[cfg(feature = "enable-rayon")]
 select_avx512_encoding_transform!(super::NTT4x30Avx512Rayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]

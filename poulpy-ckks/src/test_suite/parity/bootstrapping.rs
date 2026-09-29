@@ -1,5 +1,5 @@
-//! Encapsulated modulus raising and the bootstrapping pipeline, including
-//! optimized and fallback shapes.
+//! Encapsulated modulus raising, the standard and conjugate-invariant
+//! bootstrapping pipelines, including optimized and fallback shapes.
 use std::{collections::HashMap, slice};
 
 use super::{
@@ -11,10 +11,11 @@ use crate::{
     api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation, StandardFold,
+        BootstrappingTechniques, CIFold, CKKSBootstrapFold, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
+        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
+        RingSwitchKeys, SparseSecretEncapsulation, StandardFold,
     },
-    oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
+    oep::{CIBridge, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
     test_suite::CKKSTestParams,
 };
@@ -28,7 +29,10 @@ use poulpy_core::{
     },
     reference::linear_transformation::DiagonalProd,
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
+use poulpy_hal::{
+    api::ModuleNew,
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module},
+};
 
 fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
@@ -470,5 +474,127 @@ where
         run_bootstrap::<BR, F>(params, reference),
         run_bootstrap::<BT, F>(params, tested),
         "bootstrapping differs"
+    );
+}
+
+fn run_ci_bootstrap<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
+where
+    B: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + CIBridge,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSDFTOps<B>
+        + CKKSDFTMatrixOps<B, F>
+        + CKKSEncodingOps<B, F>
+        + CKKSEncodingHostOps<B, F>
+        + CKKSModuleAlloc<B>
+        + CKKSAllOpsTmpBytes<B>
+        + GLWEAutomorphismKeyPreparedFactory<B>
+        + GLWETensorKeyPreparedFactory<B>
+        + GGLWEPreparedFactory<B>
+        + GLWEMaskFill<B>
+        + CyclotomicOrder,
+    Module<B::CI>: ModuleNew<B::CI> + CKKSModuleAlloc<B::CI> + GLWEMaskFill<B::CI>,
+    CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
+    FixtureKeys<B>: BootstrappingKeys<B, TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>> + Sync,
+    for<'a> CIFold<'a, B::CI, FixtureSwitchingKey<B>>: CKKSBootstrapFold<B, Ciphertext = CKKSCiphertextOwned<B::CI>>,
+{
+    let (n, b) = (module.n(), params.base2k);
+    let ci = Module::<B::CI>::new((n / 2) as u64);
+    let log_delta = 12;
+    let mut results = Vec::new();
+    // A batch of three covers a pair and a single tail.
+    for (pipeline, encapsulate, batch) in [
+        (BootstrappingPipeline::S2CFirst, false, 1),
+        (BootstrappingPipeline::S2CFirst, true, 3),
+        (BootstrappingPipeline::C2SFirst, false, 2),
+    ] {
+        let plan = plan(pipeline, n.ilog2() as usize - 1, encapsulate, false);
+        let log_modulus_in = log_delta + LOG_MSG_RATIO;
+        let k_in = plan.input_k(log_modulus_in);
+        let output_k = log_modulus_in + 2 * b;
+        let k_boot = plan.bootstrap_k(output_k + 1, log_delta).next_multiple_of(b);
+        let in_layout = ct_layout(n / 2, b, k_in, log_delta, SlotsKind::Real);
+        let out_layout = ct_layout(n / 2, b, k_boot, log_delta, SlotsKind::Real);
+        let atk = key_layout(n, b, k_boot, 2, 1, 1);
+        let d2s = key_layout(n, b, k_in, 1, 1, 1);
+        let s2d = key_layout(n, b, k_boot, 2, 1, 1);
+        let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
+        let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
+        let std_out = ct_layout(n, b, k_boot, log_delta, SlotsKind::Complex);
+        let compile = module
+            .ckks_all_ops_with_atk_tmp_bytes(&std_out, &atk, &atk, &pt)
+            .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
+        let ctx = with_scratch::<B, _>(compile, |scratch| {
+            BootstrappingContext::<B, F>::compile(module, b.into(), &plan, scratch)
+        })
+        .unwrap();
+        let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
+        let ring_switch = RingSwitchKeys {
+            inbound: prepared_gglwe(module, &key_layout(n, b, k_in, 2, 1, 1), 107),
+            outbound: prepared_gglwe(module, &key_layout(n, b, k_boot, 1, 1, 1), 109),
+        };
+        let fold = CIFold::new(&ci, &ring_switch);
+        let inputs: Vec<_> = (0..batch)
+            .map(|i| fixture_ciphertext(&ci, &in_layout, 113 + 2 * i as u8))
+            .collect();
+        let mut outputs: Vec<_> = (0..batch)
+            .map(|i| fixture_ciphertext(&ci, &out_layout, 131 + 2 * i as u8))
+            .collect();
+        let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &fold, &outputs[0], &inputs[0], &ctx, &layout);
+        let result = with_scratch::<B, _>(bytes, |scratch| {
+            B::ckks_bootstrap_impl(module, &fold, &mut outputs, &inputs, &ctx, &keys, scratch)
+        });
+        assert!(result.is_ok(), "{pipeline:?}: {result:?}");
+        results.push((
+            result.map_err(|e| e.to_string()),
+            outputs.iter().map(snapshot::<B::CI, _>).collect(),
+        ));
+    }
+    results
+}
+
+/// Compare selected bootstrapping implementations through [`CIFold`] on the
+/// same fixture CI inputs and key coefficients, for single, paired and odd
+/// batches, each within its own exact guarded scratch budget.
+pub fn test_ci_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + CIBridge,
+    BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + CIBridge,
+    F: CKKSEncodingScalar,
+    Module<BR>: CKKSDFTOps<BR>
+        + CKKSDFTMatrixOps<BR, F>
+        + CKKSEncodingOps<BR, F>
+        + CKKSEncodingHostOps<BR, F>
+        + CKKSModuleAlloc<BR>
+        + CKKSAllOpsTmpBytes<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + GGLWEPreparedFactory<BR>
+        + GLWEMaskFill<BR>
+        + CyclotomicOrder,
+    Module<BT>: CKKSDFTOps<BT>
+        + CKKSDFTMatrixOps<BT, F>
+        + CKKSEncodingOps<BT, F>
+        + CKKSEncodingHostOps<BT, F>
+        + CKKSModuleAlloc<BT>
+        + CKKSAllOpsTmpBytes<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + GGLWEPreparedFactory<BT>
+        + GLWEMaskFill<BT>
+        + CyclotomicOrder,
+    Module<BR::CI>: ModuleNew<BR::CI> + CKKSModuleAlloc<BR::CI> + GLWEMaskFill<BR::CI>,
+    Module<BT::CI>: ModuleNew<BT::CI> + CKKSModuleAlloc<BT::CI> + GLWEMaskFill<BT::CI>,
+    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + DiagonalProd<BR>,
+    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
+    FixtureKeys<BR>: BootstrappingKeys<BR, TensorKey = GLWETensorKeyPrepared<BR::OwnedBuf, BR>> + Sync,
+    FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
+    for<'a> CIFold<'a, BR::CI, FixtureSwitchingKey<BR>>: CKKSBootstrapFold<BR, Ciphertext = CKKSCiphertextOwned<BR::CI>>,
+    for<'a> CIFold<'a, BT::CI, FixtureSwitchingKey<BT>>: CKKSBootstrapFold<BT, Ciphertext = CKKSCiphertextOwned<BT::CI>>,
+{
+    assert_eq!(reference.n(), tested.n());
+    assert_eq!(
+        run_ci_bootstrap::<BR, F>(params, reference),
+        run_ci_bootstrap::<BT, F>(params, tested),
+        "CI bootstrapping differs"
     );
 }
