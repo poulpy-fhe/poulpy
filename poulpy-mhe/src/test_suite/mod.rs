@@ -4,6 +4,7 @@
 pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod ggsw;
+pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
 pub mod tensor_key;
@@ -167,6 +168,39 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn glwe_keyswitch_flood_bound_guards() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch_flood_bound_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: layouts differ")]
+            fn glwe_keyswitch_aggregate_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch_aggregate_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_public_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext and output layouts differ")]
+            fn glwe_public_keyswitch_finalize_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: public key less precise than the share")]
+            fn glwe_public_keyswitch_pk_precision() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_pk_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_public_key_gen_shape_guards() {
                 $crate::test_suite::public_key::test_glwe_public_key_gen_shape_guards(&Module::<$backend>::new(64));
             }
@@ -184,6 +218,21 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_evaluation_key_share_shape_guards() {
                 $crate::test_suite::evaluation_key::test_glwe_evaluation_key_share_shape_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_keyswitch_share_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_public_keyswitch_share_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_keyswitch_finalize_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
             }
 
             #[test]

@@ -10,7 +10,7 @@ Parties exchange public aggregatable transcripts (PATs), one type per shape:
 - `GLWEPatCompressed`: seeded GLWE body (collective public key).
 - `GGLWEPatCompressed`: seeded GGLWE bodies (switching and automorphism keys).
 - `GGLWEPat`: unseeded full GGLWE (public-key based tensor key).
-- Unseeded GLWE transcripts are core `GLWE`s.
+- Unseeded GLWE transcripts (collective key switching) are core `GLWE`s.
 
 Each protocol has its own share type, a wrapper of these PATs:
 
@@ -22,6 +22,8 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GGSWShare`: seeded `GGLWEPatCompressed`s for column 0 and the two halves of
   the circular product of every other column, over one `r x r` mask matrix
   per gadget row.
+- `GLWEKeyswitchShare`, `GLWEPublicKeyswitchShare`: a core `GLWE`, the share of
+  a collective key switch to a secret key (rank 0) or to a public key.
 
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
@@ -42,6 +44,16 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   `GLWEPublicKey`, `GLWESwitchingKey`, `GLWEAutomorphismKey`, `GLWETensorKey`
   or `GGSW` of the ideal secrets. The GGSW finalizes with an ephemeral key, in
   one round.
+- `GLWEKeyswitchMHEProtocol`, `GLWEPublicKeyswitchMHEProtocol`: collective key
+  switching of a ciphertext to the ideal output secret or to a public key.
+
+## Smudging
+
+Key switching takes a caller-selected `SmudgingNoise` flood, a discrete
+Gaussian or a uniform distribution on consecutive integers, sampled on the
+share's own precision grid. Size it with the
+[smudging contract](docs/mhe-contracts.md#smudging); small test parameters do
+not establish security.
 
 ## Security
 
