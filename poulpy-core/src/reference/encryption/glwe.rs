@@ -404,7 +404,7 @@ where
             Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
                 panic!("invalid public key: zero ephemeral distribution")
             }
-            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if *p <= 0.0 => {
+            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if p.is_nan() || *p <= 0.0 => {
                 panic!("invalid public key: zero ephemeral distribution")
             }
             dist => *dist,

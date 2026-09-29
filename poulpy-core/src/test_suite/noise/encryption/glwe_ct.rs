@@ -701,6 +701,32 @@ where
     Module<BE>: GLWEEncryptPk<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
+    encrypt_zero_pk_with_ephemeral(params, module, Distribution::TernaryProb(0.0));
+}
+
+/// A NaN probability draws only zero ephemerals.
+pub fn test_glwe_encrypt_pk_nan_ephemeral<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptPk<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    encrypt_zero_pk_with_ephemeral(params, module, Distribution::BinaryProb(f64::NAN));
+}
+
+fn encrypt_zero_pk_with_ephemeral<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+    dist: Distribution,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptPk<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
     let infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
         n: module.n().into(),
         base2k: params.base2k.into(),
@@ -710,7 +736,7 @@ where
     .unwrap();
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let mut pk: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
-    *pk.dist_mut() = Distribution::TernaryProb(0.0);
+    *pk.dist_mut() = dist;
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos));
     module.glwe_encrypt_zero_pk(
         &mut ct,
