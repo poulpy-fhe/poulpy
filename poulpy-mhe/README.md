@@ -61,10 +61,13 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 - `GLWEShamirMHEProtocol`: t-out-of-N Shamir sharing of the parties' secrets
   over a Galois ring, finalized by any active set into additive shares
   (`GLWEWideSecret`).
+- `GLWEWideSecretPrepare`, `GLWEThresholdKeyswitchMHEProtocol`,
+  `GLWEThresholdPublicKeyswitchMHEProtocol`: threshold key switching and
+  decryption with the finalized additive shares.
 
 ## Smudging
 
-Key switching, encryption-to-shares and refresh take
+Key switching, threshold decryption, encryption-to-shares and refresh take
 caller-selected `SmudgingNoise` parameters: exact discrete Gaussian
 (`gaussian(k, log_sigma, cutoff)`) or contiguous uniform (`uniform(k, bits)`).
 Both preserve the full integer grid across multiple limbs. E2S also takes a
@@ -74,7 +77,8 @@ for the statistical margin, sampling lattice, Gaussian tail budget and
 correctness headroom. The exact CPU Gaussian sampler uses integer rejection
 sampling and has variable runtime. Ordinary encryption still uses `NoiseInfos`;
 existing flood call sites must migrate to `SmudgingNoise`. Small test parameters do not establish production
-security.
+security. Threshold switching additionally takes a positive `failure_bits`
+for its backend numerical product budget; this is distinct from smudging.
 
 ## Randomness
 

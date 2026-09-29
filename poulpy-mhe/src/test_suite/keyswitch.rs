@@ -480,7 +480,7 @@ fn glwe_layout<BE: poulpy_hal::layouts::Backend>(module: &Module<BE>) -> GLWELay
     }
 }
 
-fn flood_infos(layout: GLWELayout) -> SmudgingNoise {
+pub(crate) fn flood_infos(layout: GLWELayout) -> SmudgingNoise {
     SmudgingNoise::gaussian(layout.k.as_usize(), 10, 6)
 }
 
@@ -529,7 +529,7 @@ where
 
 /// The noise of `ct` lies between the parties' flood noise and the sum of the
 /// fresh, flood and `other` variances.
-fn assert_flooded_noise<BE>(
+pub(crate) fn assert_flooded_noise<BE>(
     module: &Module<BE>,
     ct: &GLWE<AlignedBuf, i64>,
     pt: &GLWEPlaintext<AlignedBuf, i64>,

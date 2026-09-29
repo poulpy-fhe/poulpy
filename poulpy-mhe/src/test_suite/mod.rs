@@ -9,6 +9,7 @@ pub mod pat;
 pub mod public_key;
 pub mod refresh;
 pub mod sharing;
+pub mod smudging;
 pub mod tensor_key;
 pub mod threshold;
 
@@ -56,6 +57,16 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid finalization: layouts differ")]
             fn pat_finalize_layout_mismatch() {
                 $crate::test_suite::pat::test_pat_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn wide_smudging_gaussian() {
+                $crate::test_suite::smudging::test_wide_smudging(&Module::<$backend>::new(64), true);
+            }
+
+            #[test]
+            fn wide_smudging_uniform() {
+                $crate::test_suite::smudging::test_wide_smudging(&Module::<$backend>::new(64), false);
             }
 
             #[test]
@@ -224,6 +235,24 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            #[should_panic(expected = "invalid share: wide-secret digit products exceed the backend budget")]
+            fn glwe_threshold_keyswitch_digit_budget() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_digit_budget(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: wide-secret digit products exceed the backend budget")]
+            fn glwe_threshold_public_keyswitch_digit_budget() {
+                $crate::test_suite::threshold::test_glwe_threshold_public_keyswitch_digit_budget(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: numerical failure target must be positive")]
+            fn glwe_threshold_keyswitch_failure_bits() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_failure_bits(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_keyswitch_share_layout_guards() {
                 $crate::test_suite::keyswitch::test_glwe_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
             }
@@ -246,6 +275,12 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_sharing_layout_guards() {
                 $crate::test_suite::sharing::test_glwe_sharing_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: output secret rank differs from the ciphertext's")]
+            fn glwe_threshold_keyswitch_output_rank() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_output_rank(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -317,6 +352,18 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            #[should_panic(expected = "invalid share: wide-secret accumulation exceeds coefficient headroom")]
+            fn glwe_threshold_keyswitch_headroom() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_headroom(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: flood precision outside the ciphertext precision")]
+            fn glwe_threshold_keyswitch_flood_precision() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_flood_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_threshold() {
                 $crate::test_suite::threshold::test_glwe_threshold(&Module::<$backend>::new(1024));
             }
@@ -342,6 +389,27 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid aggregation: shares differ")]
             fn glwe_threshold_aggregate_mismatch() {
                 $crate::test_suite::threshold::test_glwe_threshold_aggregate_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_threshold_decrypt() {
+                $crate::test_suite::threshold::test_glwe_threshold_decrypt(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_threshold_keyswitch() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_threshold_public_keyswitch() {
+                $crate::test_suite::threshold::test_glwe_threshold_public_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: wide secret less precise than the ciphertext")]
+            fn glwe_threshold_keyswitch_precision() {
+                $crate::test_suite::threshold::test_glwe_threshold_keyswitch_precision(&Module::<$backend>::new(64));
             }
         }
     };
