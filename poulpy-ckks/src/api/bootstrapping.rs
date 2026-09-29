@@ -124,7 +124,7 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// `fold` merges `ins` into the standard ciphertexts each bootstrap refreshes
     /// and splits the results into `outs`, which must have the length of `ins`;
     /// [`StandardFold`](crate::layouts::StandardFold) refreshes standard
-    /// ciphertexts one per bootstrap.
+    /// ciphertexts one per bootstrap, two real inputs sharing one.
     ///
     /// Inputs are at the input ("level 0") modulus; outputs must be allocated at
     /// the bootstrap modulus (their `k()` sets the working width). When the compiled

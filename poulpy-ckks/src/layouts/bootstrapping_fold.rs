@@ -13,8 +13,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSCIRingMapOps, CKKSImagOps},
+    CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    api::{CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
         CKKSModuleAlloc, RingSwitchKeys,
@@ -74,13 +74,21 @@ pub trait CKKSBootstrapFold<BE: Backend> {
         B: FnMut(&mut CKKSCiphertextOwned<BE>, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>;
 }
 
-/// Refreshes standard ciphertexts one per bootstrap.
+/// Refreshes standard ciphertexts, pairing real inputs.
+///
+/// Consecutive real-slot inputs sharing their layout, scale and sparsity, into
+/// outputs sharing their layout, are packed as `left + i·right` into one bootstrap
+/// and split back with its conjugation key: `2·Re = z + conj(z)` and
+/// `2·Im = (z − conj(z))/i`. Halving drops one bit, so paired outputs carry one bit
+/// less than a single bootstrap: allocate them at `plan.bootstrap_k(output_k + 1, log_delta)`
+/// to keep `output_k`. Other inputs are refreshed one per bootstrap.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StandardFold;
 
 impl<BE: Backend> CKKSBootstrapFold<BE> for StandardFold
 where
-    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+    Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE> + CKKSConjugateOps<BE> + CKKSModuleAlloc<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     type Ciphertext = CKKSCiphertextOwned<BE>;
 
@@ -103,26 +111,32 @@ where
 
     fn tmp_bytes<C1, C2>(
         &self,
-        _module: &Module<BE>,
-        _ct_out: &C1,
-        _ct_in: &C2,
-        _keys_layout: &BootstrappingKeysLayout,
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        keys_layout: &BootstrappingKeysLayout,
         bootstrap_bytes: usize,
     ) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
+        let size = ct_out.size().max(ct_in.size());
         bootstrap_bytes
+            .max(module.ckks_mul_i_tmp_bytes(size))
+            .max(module.ckks_add_tmp_bytes(size))
+            .max(module.ckks_conjugate_tmp_bytes(ct_out, &keys_layout.automorphism_key))
+            .max(module.ckks_sub_tmp_bytes(size))
+            .max(module.ckks_div_i_tmp_bytes(size))
     }
 
     fn refresh<F, K, B>(
         &self,
-        _module: &Module<BE>,
+        module: &Module<BE>,
         outs: &mut [Self::Ciphertext],
         ins: &[Self::Ciphertext],
         _ctx: &BootstrappingContext<BE, F>,
-        _keys: &K,
+        keys: &K,
         mut bootstrap: B,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -130,8 +144,42 @@ where
         K: BootstrappingKeys<BE>,
         B: FnMut(&mut CKKSCiphertextOwned<BE>, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
     {
-        for (out, input) in outs.iter_mut().zip(ins) {
-            bootstrap(out, input, scratch)?;
+        let mut i = 0;
+        while i < ins.len() {
+            let left_in = &ins[i];
+            let paired = ins.get(i + 1).filter(|right_in| {
+                left_in.slots() == SlotsKind::Real
+                    && right_in.meta() == left_in.meta()
+                    && right_in.glwe_layout() == left_in.glwe_layout()
+                    && outs[i + 1].glwe_layout() == outs[i].glwe_layout()
+            });
+            let Some(right_in) = paired else {
+                bootstrap(&mut outs[i], left_in, scratch)?;
+                i += 1;
+                continue;
+            };
+            let mut packed = module.ckks_ciphertext_alloc_from_glwe_infos(left_in);
+            module.ckks_mul_i_into(&mut packed, right_in, scratch)?;
+            module.ckks_add_assign(&mut packed, left_in, scratch)?;
+            packed.set_slots(SlotsKind::Complex);
+            let [left, right] = &mut outs[i..i + 2] else { unreachable!() };
+            bootstrap(left, &packed, scratch)?;
+            let mut conj = module.ckks_ciphertext_alloc_from_glwe_infos(left);
+            module.ckks_conjugate_into(&mut conj, left, keys.rotation_keys(), scratch)?;
+            module.ckks_sub_into(right, left, &conj, scratch)?;
+            module.ckks_div_i_assign(right, scratch)?;
+            module.ckks_add_assign(left, &conj, scratch)?;
+            // Both hold twice their part; relabeling at the input scale drops that bit.
+            for out in [left, right] {
+                let meta = out.meta();
+                out.set_meta(CKKSMeta {
+                    log_delta: meta.log_delta + 1,
+                    slots: SlotsKind::Real,
+                    ..meta
+                });
+                out.set_log_delta(left_in.log_delta());
+            }
+            i += 2;
         }
         Ok(())
     }

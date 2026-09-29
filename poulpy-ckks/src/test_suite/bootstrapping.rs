@@ -369,6 +369,39 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
         assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
         assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
+
+        // Two real inputs share one bootstrap and come back one bit narrower.
+        let mut ct_real_im = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            log_modulus_in,
+            &im,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real_im.set_slots(SlotsKind::Real);
+        let mut pair = [(); 2].map(|_| module.ckks_ciphertext_alloc(base2k.into(), k_boot.into()));
+        module
+            .ckks_bootstrap(
+                &StandardFold,
+                &mut pair,
+                &[ct_real, ct_real_im],
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
+            .unwrap();
+        for (ct, want) in pair.iter().zip([&re, &im]) {
+            assert_eq!((ct.slots(), ct.log_delta()), (SlotsKind::Real, log_delta));
+            assert_eq!(ct.k(), ct_bs.k() - 1);
+            let (got_re, got_im) = decrypt(&module, &encoder, ct, &sk, &mut scratch.borrow());
+            assert!(precision_stats(&got_re, want, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+            assert!(precision_stats(&got_im, &im_zero, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+        }
     }
 
     let now = Instant::now();
@@ -1189,6 +1222,41 @@ where
         for (got, want) in [(&real_bs_re, &re), (&real_bs_im, &im_zero)] {
             let avg = precision_stats(got, want, log_delta).avg_log2_prec;
             assert!(avg >= 24.0, "real-slot S2C precision: {avg:.1} bits < 24.0");
+        }
+
+        // Two real inputs share one bootstrap and come back one bit narrower.
+        let mut ct_real_im = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            k_in,
+            &im,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, k_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real_im.set_slots(SlotsKind::Real);
+        let mut pair = [(); 2].map(|_| module.ckks_ciphertext_alloc(base2k.into(), k_boot.into()));
+        module
+            .ckks_bootstrap(
+                &StandardFold,
+                &mut pair,
+                &[ct_real, ct_real_im],
+                &ctx,
+                &bsk,
+                &mut scratch.borrow(),
+            )
+            .unwrap();
+        for (ct, want) in pair.iter().zip([&re, &im]) {
+            assert_eq!((ct.slots(), ct.log_delta()), (SlotsKind::Real, log_delta));
+            assert_eq!(ct.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits() - 1);
+            let (got_re, got_im) = decrypt(&module, &encoder, ct, &sk, &mut scratch.borrow());
+            for (got, want) in [(&got_re, want), (&got_im, &im_zero)] {
+                let avg = precision_stats(got, want, log_delta).avg_log2_prec;
+                assert!(avg >= 24.0, "paired real S2C precision: {avg:.1} bits < 24.0");
+            }
         }
     }
 

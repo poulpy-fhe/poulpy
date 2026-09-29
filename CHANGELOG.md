@@ -100,7 +100,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- **Breaking:** `ckks_bootstrap` and `ckks_bootstrap_tmp_bytes` refresh a batch through a `CKKSBootstrapFold`, taking `fold`, `outs` and `ins`; `StandardFold` refreshes standard ciphertexts one per bootstrap.
+- **Breaking:** `ckks_bootstrap` and `ckks_bootstrap_tmp_bytes` refresh a batch through a `CKKSBootstrapFold`, taking `fold`, `outs` and `ins`; `StandardFold` refreshes standard ciphertexts one per bootstrap, except that consecutive real-slot inputs share one bootstrap as the real and imaginary parts, split back with its conjugation key into outputs one bit narrower.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; `BootstrappingReference` is public. `test_bootstrapping_parity` compares it across backends.
 - Add `CKKSCIRingMapOps` (`ckks_ci_unfold`, `ckks_ci_fold`) behind `CKKSCIRingMapImpl`, implemented by conjugate-invariant modules only.
 - Add `CIFold`, which bootstraps conjugate-invariant ciphertexts of degree `N` on a standard module of degree `2N` whose backend declares that twin with `CIBridge`, one bootstrap per pair of inputs; `RingSwitchKeysLayout::generate_ci` produces its ring-switch keys and `test_ci_bootstrapping_parity` compares it across backends.

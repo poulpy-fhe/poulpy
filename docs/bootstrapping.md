@@ -24,7 +24,7 @@ CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain 
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, refreshes a batch from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
-A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap, and `CIFold` [conjugate invariant ciphertexts](#conjugate-invariant-ciphertexts).
+A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap, two real inputs sharing one, and `CIFold` [conjugate invariant ciphertexts](#conjugate-invariant-ciphertexts).
 Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
@@ -152,6 +152,8 @@ General LUTs use trigonometric Hermite interpolation on the unit circle.
 They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
 `ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Every LUT in a batch must have the same table length. Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
 Real slots are selected by the input's metadata rather than by a separate entry point: with an S2C-first context, `ct.set_slots(SlotsKind::Real)` makes `ckks_functional_bootstrap`, and `ckks_bootstrap` without EvalRound+, skip the imaginary branch.
+`StandardFold` instead packs two consecutive real inputs of matching layout, scale and sparsity into the real and imaginary parts of one bootstrap, and splits the result with the conjugation key of the bootstrap keys as `z + conj(z)` and `(z − conj(z))/i`.
+The halving drops one bit, so a paired output is one bit narrower than a single one: allocate it at `bootstrap_k(output_k + 1, log_delta)` to keep `output_k`.
 
 `EncodedLut::binary` is specialized for two entries.
 Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.

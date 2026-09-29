@@ -316,6 +316,7 @@ where
         + CyclotomicOrder,
     CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
     FixtureKeys<B>: BootstrappingKeys<B, TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>> + Sync,
+    StandardFold: CKKSBootstrapFold<B, Ciphertext = CKKSCiphertextOwned<B>>,
 {
     let (n, b) = (module.n(), params.base2k);
     let log_slots = n.ilog2() as usize - 1;
@@ -398,6 +399,20 @@ where
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&out)]));
+        if slots == SlotsKind::Real {
+            // A pair shares one bootstrap; the tail, the single input above, is refreshed alone.
+            let batch_in = [91, 87, 89].map(|seed| fixture_ciphertext(module, &in_layout, seed));
+            let mut batch_out = [93, 95, 97].map(|seed| fixture_ciphertext(module, &out_layout, seed));
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_bootstrap_impl(module, &StandardFold, &mut batch_out, &batch_in, &ctx, &keys, scratch)
+            });
+            assert!(result.is_ok(), "{pipeline:?} real batch: {result:?}");
+            assert_eq!(snapshot::<B, _>(&batch_out[2]), snapshot::<B, _>(&out));
+            results.push((
+                result.map_err(|e| e.to_string()),
+                batch_out.iter().map(snapshot::<B, _>).collect(),
+            ));
+        }
         if pipeline == BootstrappingPipeline::C2SFirst {
             let batch_in = [
                 fixture_ciphertext(module, &in_layout, 91),
@@ -468,6 +483,8 @@ where
     CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
     FixtureKeys<BR>: BootstrappingKeys<BR, TensorKey = GLWETensorKeyPrepared<BR::OwnedBuf, BR>> + Sync,
     FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
+    StandardFold:
+        CKKSBootstrapFold<BR, Ciphertext = CKKSCiphertextOwned<BR>> + CKKSBootstrapFold<BT, Ciphertext = CKKSCiphertextOwned<BT>>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(
