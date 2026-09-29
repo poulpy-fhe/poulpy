@@ -409,6 +409,11 @@ compile error. Real linear transformations reject nonzero imaginary diagonals.
 Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
 producing ring and backend.
 
+CI modules unfold their ciphertexts into the standard ring of degree `2N` and fold
+them back (`CKKSCIRingMapOps`), which standard modules do not implement. Unfolded
+ciphertexts decrypt under the unfolded secret (`GLWESecretCIUnfold`); an ordinary key
+switch of the standard module moves them to a standard secret and back.
+
 ## Where to look next
 
 - [Implementing CKKS operations](docs/ckks-contracts.md) for reference ownership, overrides, scratch, and parity.

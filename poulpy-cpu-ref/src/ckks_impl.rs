@@ -41,4 +41,6 @@ crate::impl_cpu_ckks_defaults!(super::NTT4x30Ref);
 crate::impl_ckks_paco_coeff_encoding!(super::NTT4x30Ref);
 crate::impl_ckks_ship_coeff_encoding!(super::NTT4x30Ref);
 crate::impl_cpu_ckks_defaults!(super::FFT64CIRef);
+::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CIRef);
 crate::impl_cpu_ckks_defaults!(super::NTT4x30CIRef);
+::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CIRef);

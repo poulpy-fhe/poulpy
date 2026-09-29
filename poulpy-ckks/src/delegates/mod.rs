@@ -15,6 +15,7 @@ pub(crate) mod paco;
 pub(crate) mod plaintext;
 pub(crate) mod polynomial_evaluation;
 pub(crate) mod pow2;
+pub(crate) mod ring_map;
 pub(crate) mod rotate;
 pub(crate) mod ship;
 pub(crate) mod sub;

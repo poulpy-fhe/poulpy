@@ -16,6 +16,10 @@ unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Ref {
     crate::hal_impl_vec_znx_monomial!();
 }
 
+unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Ref<poulpy_hal::layouts::ConjugateInvariant> {
+    crate::hal_impl_vec_znx_ci!();
+}
+
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Ref<R>
 where
     Self: crate::reference::znx::ZnxAutomorphism,
@@ -67,6 +71,10 @@ where
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Ref {
     crate::hal_impl_vec_znx_monomial!();
+}
+
+unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Ref<poulpy_hal::layouts::ConjugateInvariant> {
+    crate::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Ref<R>

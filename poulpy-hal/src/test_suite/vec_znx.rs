@@ -7,9 +7,9 @@ use rand_core::Rng;
 
 use crate::{
     api::{
-        ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
-        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource,
-        VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        ScalarZnxAutomorphism, ScalarZnxCIUnfold, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIFold, VecZnxCIUnfold, VecZnxCopy,
+        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
         VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
@@ -1904,6 +1904,165 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
                 download_vec_znx::<BR>(&res_ref_backend),
                 download_vec_znx::<BT>(&res_test_backend)
             );
+        }
+    }
+}
+
+pub fn test_vec_znx_ci_unfold_fold<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    _module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxCIUnfold<BR> + VecZnxCIFold<BR>,
+    Module<BT>: VecZnxCIUnfold<BT> + VecZnxCIFold<BT>,
+{
+    let base2k = params.base2k;
+    let n: usize = params.n;
+    let half: usize = n >> 1;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    for a_size in [1, 2, 3] {
+        for res_size in [1, 2, 4] {
+            let mut a_ref = module_ref.vec_znx_alloc(half, cols, a_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+            let a = download_vec_znx::<BR>(&a_ref);
+            let a_test = upload_vec_znx::<BT>(&a);
+            let mut unfolded_ref = module_ref.vec_znx_alloc(n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut unfolded_ref, &mut source);
+            let mut unfolded_test = upload_vec_znx::<BT>(&download_vec_znx::<BR>(&unfolded_ref));
+            for col in 0..cols {
+                module_ref.vec_znx_ci_unfold(
+                    &mut vec_znx_backend_mut::<BR>(&mut unfolded_ref),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&a_ref),
+                    col,
+                );
+                module_test.vec_znx_ci_unfold(
+                    &mut vec_znx_backend_mut::<BT>(&mut unfolded_test),
+                    col,
+                    &vec_znx_backend_ref::<BT>(&a_test),
+                    col,
+                );
+            }
+            let unfolded = download_vec_znx::<BR>(&unfolded_ref);
+            assert_eq!(unfolded, download_vec_znx::<BT>(&unfolded_test));
+            for col in 0..cols {
+                for limb in 0..res_size {
+                    let res = unfolded.at(col, limb);
+                    if limb >= a_size {
+                        assert!(res.iter().all(|&x| x == 0));
+                        continue;
+                    }
+                    let a = a.at(col, limb);
+                    assert_eq!((res[0], res[half]), (a[0], 0));
+                    for i in 1..half {
+                        assert_eq!((res[i], res[n - i]), (a[i], a[i].wrapping_neg()));
+                    }
+                }
+            }
+
+            let mut b_ref = module_ref.vec_znx_alloc(n, cols, a_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut b_ref, &mut source);
+            let b = download_vec_znx::<BR>(&b_ref);
+            let b_test = upload_vec_znx::<BT>(&b);
+            let mut folded_ref = module_ref.vec_znx_alloc(half, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut folded_ref, &mut source);
+            let mut folded_test = upload_vec_znx::<BT>(&download_vec_znx::<BR>(&folded_ref));
+            let mut round_trip = module_ref.vec_znx_alloc(half, cols, res_size);
+            for col in 0..cols {
+                module_ref.vec_znx_ci_fold(
+                    &mut vec_znx_backend_mut::<BR>(&mut folded_ref),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&b_ref),
+                    col,
+                );
+                module_test.vec_znx_ci_fold(
+                    &mut vec_znx_backend_mut::<BT>(&mut folded_test),
+                    col,
+                    &vec_znx_backend_ref::<BT>(&b_test),
+                    col,
+                );
+                module_ref.vec_znx_ci_fold(
+                    &mut vec_znx_backend_mut::<BR>(&mut round_trip),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&unfolded_ref),
+                    col,
+                );
+            }
+            let folded = download_vec_znx::<BR>(&folded_ref);
+            let round_trip = download_vec_znx::<BR>(&round_trip);
+            assert_eq!(folded, download_vec_znx::<BT>(&folded_test));
+            for col in 0..cols {
+                for limb in 0..res_size {
+                    let (res, twice) = (folded.at(col, limb), round_trip.at(col, limb));
+                    if limb >= a_size {
+                        assert!(res.iter().chain(twice).all(|&x| x == 0));
+                        continue;
+                    }
+                    let (b, a) = (b.at(col, limb), a.at(col, limb));
+                    assert_eq!(res[0], b[0].wrapping_mul(2));
+                    for i in 1..half {
+                        assert_eq!(res[i], b[i].wrapping_sub(b[n - i]));
+                    }
+                    assert!(twice.iter().zip(a).all(|(&t, &a)| t == a.wrapping_mul(2)));
+                }
+            }
+        }
+    }
+}
+
+pub fn test_scalar_znx_ci_unfold<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    _module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: ScalarZnxCIUnfold<BR>,
+    Module<BT>: ScalarZnxCIUnfold<BT>,
+{
+    let base2k = params.base2k;
+    let n: usize = params.n;
+    let half: usize = n >> 1;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a_ref = module_ref.scalar_znx_alloc(half, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut a_ref),
+            col,
+            &mut source,
+        );
+    }
+    let a = download_scalar_znx::<BR>(&a_ref);
+    let a_test = upload_scalar_znx::<BT>(&a);
+    let mut res_ref = module_ref.scalar_znx_alloc(n, cols);
+    let mut res_test = module_test.scalar_znx_alloc(n, cols);
+    for col in 0..cols {
+        module_ref.scalar_znx_ci_unfold(
+            &mut scalar_znx_backend_mut::<BR>(&mut res_ref),
+            col,
+            &scalar_znx_backend_ref::<BR>(&a_ref),
+            col,
+        );
+        module_test.scalar_znx_ci_unfold(
+            &mut scalar_znx_backend_mut::<BT>(&mut res_test),
+            col,
+            &scalar_znx_backend_ref::<BT>(&a_test),
+            col,
+        );
+    }
+    let res = download_scalar_znx::<BR>(&res_ref);
+    assert_eq!(res, download_scalar_znx::<BT>(&res_test));
+    for col in 0..cols {
+        let (res, a) = (res.at(col, 0), a.at(col, 0));
+        assert_eq!((res[0], res[half]), (a[0], 0));
+        for i in 1..half {
+            assert_eq!((res[i], res[n - i]), (a[i], a[i].wrapping_neg()));
         }
     }
 }

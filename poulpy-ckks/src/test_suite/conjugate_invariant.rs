@@ -3,16 +3,23 @@ use std::collections::HashMap;
 use crate::{
     CKKSInfos, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
+        CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
         CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::{GLWEAutomorphismKeyPrepared, LWEInfos};
+use poulpy_core::{
+    GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
+    layouts::{
+        GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWESecretCIUnfold, GLWESwitchingKeyPreparedFactory, LWEInfos,
+        ModuleCoreAlloc,
+    },
+};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module},
+    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
+    source::Source,
 };
 
 use super::{
@@ -423,7 +430,7 @@ where
 /// Instantiates conjugate invariant encoding and leveled-operation tests.
 #[macro_export]
 macro_rules! conjugate_invariant_ckks_test_suite {
-    ($name:ident, $backend:ty, $params:expr) => {
+    ($name:ident, $backend:ty, $standard:ty, $params:expr) => {
         mod $name {
             use poulpy_hal::{
                 api::ModuleNew,
@@ -442,6 +449,15 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_ring_map() {
+                let params = $params;
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
+                    params,
+                    Module::<$backend>::new(params.n as u64),
+                    Module::<$standard>::new((2 * params.n) as u64),
+                );
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
@@ -450,4 +466,101 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             }
         }
     };
+}
+
+/// Unfolds a CI ciphertext into the standard ring of twice its degree, switches
+/// it to the standard secret and decrypts it there, then switches and folds it back.
+pub fn test_conjugate_invariant_ring_map<BE, STD>(mut params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>)
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    STD: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSCIRingMapOps<BE> + GLWESecretCIUnfold<BE>,
+    Module<STD>: TestContextSharedModule<STD> + CKKSEncodingOps<STD, f64>,
+{
+    params.prec_meta.slots = SlotsKind::Real;
+    let standard_params = CKKSTestParams {
+        n: 2 * params.n,
+        ..params
+    };
+    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64);
+    let standard_host = Module::<HostBytesBackend>::new(standard_params.n as u64);
+    let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&params, &ci, &ci_host, [21; 32]);
+    let (standard_sk_raw, standard_sk) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [22; 32]);
+    let mut scratch = alloc_scratch(&params, &ci);
+    let mut standard_scratch = alloc_scratch(&standard_params, &standard);
+
+    let unfolded = ci.glwe_secret_ci_unfold(&ci_sk_raw);
+    let layout = standard_params.ksk_layout(params.k);
+    let (mut source_xe, mut source_xa) = (Source::new([23; 32]), Source::new([24; 32]));
+    let mut switching_key = |sk_in, sk_out| {
+        let mut key = standard.glwe_switching_key_alloc_from_infos(&layout);
+        standard.glwe_switching_key_encrypt_sk(
+            &mut key,
+            sk_in,
+            sk_out,
+            &layout,
+            &mut source_xe,
+            &mut source_xa,
+            &mut standard_scratch.borrow(),
+        );
+        let mut prepared = standard.glwe_switching_key_prepared_alloc_from_infos(&layout.layout);
+        standard.glwe_switching_key_prepare(&mut prepared, &key, &mut standard_scratch.borrow());
+        prepared
+    };
+    let ci_to_standard = switching_key(&unfolded, &standard_sk_raw);
+    let standard_to_ci = switching_key(&standard_sk_raw, &unfolded);
+
+    let slots = params.n;
+    let want = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
+    let mut pt = ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    ci.ckks_encode_reim_into(&mut pt, &want, &vec![0.0; slots], &mut scratch.borrow())
+        .unwrap();
+    let ct = ckks_encrypt_pt(
+        &params,
+        &ci,
+        &ci_sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+
+    let mut extended = alloc_ct(&standard_params, &standard, params.k);
+    ci.ckks_ci_unfold(&mut extended, &ct).unwrap();
+    assert_eq!((extended.meta(), extended.k()), (ct.meta(), ct.k()));
+    assert!(!extended.is_canonical());
+    standard.glwe_keyswitch_assign(
+        &mut extended,
+        &ci_to_standard.to_backend_ref(),
+        &mut standard_scratch.borrow(),
+    );
+    let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+    let mut decrypted = standard.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    decrypted.set_meta(extended.meta());
+    standard
+        .ckks_decrypt(&mut decrypted, &extended, &standard_sk, &mut standard_scratch.borrow())
+        .unwrap();
+    standard
+        .ckks_decode_reim_into(&decrypted, &mut re, &mut im, &mut standard_scratch.borrow())
+        .unwrap();
+    assert_reim_close(&re, &vec![0.0; slots], &want);
+    assert!(im.iter().all(|value| value.abs() < 1e-5));
+
+    standard.glwe_keyswitch_assign(
+        &mut extended,
+        &standard_to_ci.to_backend_ref(),
+        &mut standard_scratch.borrow(),
+    );
+    let mut back = alloc_ct(&params, &ci, params.k);
+    ci.ckks_ci_fold(&mut back, &extended, &mut scratch.borrow()).unwrap();
+    assert_eq!((back.log_delta(), back.slots()), (ct.log_delta() + 1, SlotsKind::Real));
+    let mut decrypted = ci.ckks_pt_vec_alloc(params.base2k.into(), (back.log_delta() + params.prec_log_budget).into());
+    decrypted.set_meta(back.meta());
+    ci.ckks_decrypt(&mut decrypted, &back, &ci_sk, &mut scratch.borrow()).unwrap();
+    ci.ckks_decode_reim_into(&decrypted, &mut re, &mut im, &mut scratch.borrow())
+        .unwrap();
+    assert_reim_close(&re, &im, &want);
+
+    let mut wrong_degree = alloc_ct(&params, &standard, params.k);
+    assert!(ci.ckks_ci_unfold(&mut wrong_degree, &ct).is_err());
 }
