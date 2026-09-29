@@ -10,6 +10,7 @@ pub mod public_key;
 pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
+pub mod threshold;
 
 /// Runs every `poulpy-mhe` test against `$backend`.
 #[macro_export]
@@ -313,6 +314,34 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid share: secret degree differs from the key's")]
             fn glwe_tensor_key_secret_degree() {
                 $crate::test_suite::tensor_key::test_glwe_tensor_key_secret_degree(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_threshold() {
+                $crate::test_suite::threshold::test_glwe_threshold(&Module::<$backend>::new(1024));
+            }
+
+            #[test]
+            fn glwe_threshold_all_active() {
+                $crate::test_suite::threshold::test_glwe_threshold_all_active(&Module::<$backend>::new(128));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid combination: fewer active parties than the threshold")]
+            fn glwe_threshold_too_few_actives() {
+                $crate::test_suite::threshold::test_glwe_threshold_too_few_actives(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid combination: own point not among the active parties")]
+            fn glwe_threshold_own_not_active() {
+                $crate::test_suite::threshold::test_glwe_threshold_own_not_active(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: shares differ")]
+            fn glwe_threshold_aggregate_mismatch() {
+                $crate::test_suite::threshold::test_glwe_threshold_aggregate_mismatch(&Module::<$backend>::new(64));
             }
         }
     };

@@ -13,6 +13,7 @@ pub mod public_key;
 pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
+pub mod threshold;
 pub use evaluation_key::*;
 pub use ggsw::*;
 pub use keyswitch::*;
@@ -21,8 +22,10 @@ pub use public_key::*;
 pub use refresh::*;
 pub use sharing::*;
 pub use tensor_key::*;
+pub use threshold::*;
 
-/// Selects every reference multiparty implementation for `$be`.
+/// Selects every reference multiparty implementation for `$be`, which needs
+/// `i64` words and host-readable buffers for the threshold combiner.
 #[macro_export]
 macro_rules! impl_mhe_reference_full {
     ($be:ty) => {
@@ -34,5 +37,6 @@ macro_rules! impl_mhe_reference_full {
         $crate::impl_mhe_refresh_reference!($be);
         $crate::impl_mhe_sharing_reference!($be);
         $crate::impl_mhe_tensor_key_reference!($be);
+        $crate::impl_mhe_threshold_reference!($be);
     };
 }

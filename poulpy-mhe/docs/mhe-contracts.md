@@ -13,8 +13,8 @@ the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
 switching protocols, `api::tensor_key` the collective tensor key protocol,
 `api::ggsw` the collective GGSW protocol, `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols and `api::refresh` the
-collective refresh protocol. A protocol
+encryption-to-shares and shares-to-encryption protocols, `api::refresh` the
+collective refresh protocol and `api::threshold` Shamir thresholdization. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -39,6 +39,7 @@ same trait.
 | `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
 | `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
 | `GLWERefreshMHEProtocol` | `GLWERefreshMHEProtocolImpl` | `reference::GLWERefreshMHEProtocolReference` |
+| `GLWEShamirMHEProtocol` | `GLWEShamirMHEProtocolImpl` | `reference::GLWEShamirMHEProtocolReference`; finalization runs on the host |
 
 ## Normalization
 
@@ -214,6 +215,29 @@ difference of their plaintexts. Bounded masks hide the additive shares;
 independent flooding hides the input-dependent decryption noise when those
 shares are reconstructed.
 
+## Threshold sharing
+
+A secret of precision `k` acts modulo `2^k`, where integer Lagrange
+coefficients do not invert: Shamir sharing runs over the Galois ring
+`GR(2^k, d) = Z_{2^k}[y] / (f(y))`, `f` of degree `d` (`1 <= d <= 8`)
+irreducible modulo 2. Party `i`, `1 <= i < 2^d`, has the point whose
+coefficients are the bits of `i`; two distinct points differ by a unit. A
+`GLWEShamirShare` holds one torus polynomial of precision `k` and base
+`2^base2k` per GR component; `base2k` need not divide `k`.
+
+Every party generates a `GLWEShamirPolynomial` from its secret, sends its
+evaluation at every party's point, and aggregates the shares it receives into
+a t-out-of-N share of the sum of the secrets. Any active set of at least `t`
+parties finalizes: each active party multiplies its share by its Lagrange
+coefficient in the Galois ring and keeps the constant component, a
+`GLWEWideSecret` whose coefficients are integers modulo `2^k`; the active
+parties' wide secrets sum to the secret. Finalization normalizes the share
+first, then does its Galois ring arithmetic and digit products on the host, so
+its reference needs host-readable buffers; a device backend replaces
+`GLWEShamirMHEProtocolImpl`. The polynomial's randomness `source_xm` must stay
+secret to the party and never be replayed, and shares travel over private
+channels: any `t` shares reveal the aggregate secret.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
@@ -223,8 +247,8 @@ parity suite arrives with the first override.
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
 `impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!`,
-`impl_mhe_sharing_reference!` or `impl_mhe_refresh_reference!` alone when
-replacing another one. The
+`impl_mhe_sharing_reference!`, `impl_mhe_refresh_reference!` or
+`impl_mhe_threshold_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
