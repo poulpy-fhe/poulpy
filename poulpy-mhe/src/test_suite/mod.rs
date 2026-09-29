@@ -7,6 +7,7 @@ pub mod ggsw;
 pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
+pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
 
@@ -274,6 +275,29 @@ macro_rules! mhe_backend_test_suite {
             #[should_panic(expected = "invalid finalization: ciphertext and share layouts differ")]
             fn glwe_enc_to_share_finalize_layout_mismatch() {
                 $crate::test_suite::sharing::test_glwe_enc_to_share_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_refresh() {
+                $crate::test_suite::refresh::test_glwe_refresh(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: bound outside the ciphertext precision")]
+            fn glwe_refresh_bound() {
+                $crate::test_suite::refresh::test_glwe_refresh_bound(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext, share and output layouts differ")]
+            fn glwe_refresh_finalize_layout_mismatch() {
+                $crate::test_suite::refresh::test_glwe_refresh_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext more precise than the output")]
+            fn glwe_refresh_finalize_precision() {
+                $crate::test_suite::refresh::test_glwe_refresh_finalize_precision(&Module::<$backend>::new(64));
             }
 
             #[test]

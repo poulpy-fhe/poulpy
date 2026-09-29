@@ -10,6 +10,7 @@ pub mod ggsw;
 pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
+pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
 pub use evaluation_key::*;
@@ -17,6 +18,7 @@ pub use ggsw::*;
 pub use keyswitch::*;
 pub use pat::*;
 pub use public_key::*;
+pub use refresh::*;
 pub use sharing::*;
 pub use tensor_key::*;
 
@@ -29,6 +31,7 @@ macro_rules! impl_mhe_reference_full {
         $crate::impl_mhe_ggsw_reference!($be);
         $crate::impl_mhe_keyswitch_reference!($be);
         $crate::impl_mhe_public_key_reference!($be);
+        $crate::impl_mhe_refresh_reference!($be);
         $crate::impl_mhe_sharing_reference!($be);
         $crate::impl_mhe_tensor_key_reference!($be);
     };

@@ -29,9 +29,12 @@ pub(crate) const PARTIES: usize = 3;
 /// Galois element of the automorphism key tests.
 pub(crate) const P: i64 = -5;
 
-/// Bits of the integer plaintexts of the sharing tests.
+/// Bits of the integer plaintexts of the sharing and refresh tests.
 pub(crate) const LOG_MESSAGE: usize = 10;
-/// Output precision of the shares-to-encryption tests.
+/// Bits of the refresh masks: `LOG_MESSAGE` plus a hiding margin, with room
+/// for the parties' sum below `K`.
+pub(crate) const LOG_BOUND: usize = 28;
+/// Output precision of the shares-to-encryption and refresh tests.
 pub(crate) const K_OUT: TorusPrecision = TorusPrecision(K.0 + 2 * BASE2K.0);
 
 pub(crate) type Secret<BE> = (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>);
