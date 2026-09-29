@@ -25,6 +25,9 @@ pub(crate) const DSIZE: Dsize = Dsize(1);
 pub(crate) const SEEDS: [[u8; 32]; 2] = [[1u8; 32], [2u8; 32]];
 pub(crate) const PARTIES: usize = 3;
 
+/// Galois element of the automorphism key tests.
+pub(crate) const P: i64 = -5;
+
 pub(crate) type Secret<BE> = (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>);
 
 pub(crate) fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {

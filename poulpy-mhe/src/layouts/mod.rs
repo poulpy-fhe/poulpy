@@ -8,9 +8,13 @@
 mod alloc;
 mod gglwe_pat;
 mod gglwe_pat_compressed;
+mod glwe_automorphism_key_pat_compressed;
 mod glwe_pat_compressed;
+mod glwe_switching_key_pat_compressed;
 
 pub use alloc::*;
 pub use gglwe_pat::*;
 pub use gglwe_pat_compressed::*;
+pub use glwe_automorphism_key_pat_compressed::*;
 pub use glwe_pat_compressed::*;
+pub use glwe_switching_key_pat_compressed::*;
