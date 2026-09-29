@@ -80,6 +80,7 @@ pub mod error;
 pub mod oep;
 pub mod reference;
 mod scratch;
+mod smudging;
 mod utils;
 
 pub mod layouts;
@@ -92,6 +93,7 @@ pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glw
 pub use reference::operations::*;
 pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use scratch::*;
+pub use smudging::*;
 
 pub(crate) mod decryption {
     pub(crate) use crate::reference::decryption::*;

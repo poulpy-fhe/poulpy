@@ -8,6 +8,7 @@
 pub mod fft64;
 pub mod normalization;
 pub mod ntt4x30;
+pub mod smudging;
 pub mod vec_znx;
 pub mod vmp_select;
 
