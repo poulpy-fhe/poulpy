@@ -7,6 +7,7 @@ pub mod ggsw;
 pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
+pub mod sharing;
 pub mod tensor_key;
 
 /// Runs every `poulpy-mhe` test against `$backend`.
@@ -235,6 +236,50 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_private_keyswitch_finalize_layout_guards() {
                 $crate::test_suite::keyswitch::test_glwe_private_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_enc_to_share_flood_guards() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_flood_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_sharing_layout_guards() {
+                $crate::test_suite::sharing::test_glwe_sharing_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_enc_to_share() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_share_to_enc() {
+                $crate::test_suite::sharing::test_glwe_share_to_enc(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: mask bound outside the ciphertext precision")]
+            fn glwe_enc_to_share_bound() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_bound(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: secret share more precise than the output")]
+            fn glwe_share_to_enc_precision() {
+                $crate::test_suite::sharing::test_glwe_share_to_enc_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: share and mask layouts differ")]
+            fn glwe_enc_to_share_precision() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext and share layouts differ")]
+            fn glwe_enc_to_share_finalize_layout_mismatch() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_finalize_layout_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
