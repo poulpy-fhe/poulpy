@@ -23,9 +23,11 @@ ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrapp
 CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
-A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
+A ready-made orchestrator, `ckks_bootstrap`, refreshes a batch from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
+A fold (`CKKSBootstrapFold`) merges the inputs into the standard ciphertexts each bootstrap refreshes and splits the results back; `StandardFold` refreshes standard ciphertexts one per bootstrap.
+Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
-The end-to-end test is exactly such a hand-composed reference.
+The end-to-end tests drive the orchestrator through every pipeline.
 
 ## The integer wrap-around
 
@@ -41,11 +43,12 @@ The homomorphic DFT bridges the two: CoeffsToSlots moves the coefficients into t
 ## ModUp
 
 ModUp raises the ciphertext modulus from `q = 2^k_small` to the wider bootstrap modulus `2^k_large`.
-In the base-`2^K` representation this is a digit shift with no arithmetic: it MSB-aligns the source into the wide ciphertext (`glwe_copy`, leaving the new low-order limbs zero), then shifts the digits down to their natural integer magnitude (`glwe_rsh` by `k_large − k_small`).
+In the base-`2^K` representation this is a digit shift with no arithmetic: it MSB-aligns the source into the wide ciphertext (`glwe_copy`, leaving the new low-order limbs zero), then shifts the digits down (`glwe_rsh`).
 The raised-from modulus `q` becomes an explicit, un-reduced multiple `I(X)·q` in the `[0, 2^k_large)` window, which EvalMod later removes.
-The encoding scale `log_delta` is unchanged: the headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
+The shift stops `scale_up` bits short of the natural magnitude `k_large − k_small`, a lift fused into the raise: the value is multiplied by `2^scale_up` and `log_delta` grows by `scale_up`, so the message lands at the plan's working scale while the encoded value is unchanged.
+The headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
 
-Right after ModUp the ciphertext is relabeled at the input-modulus scale, a free division by the message ratio: setting `log_delta := log_modulus_in` reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
+`ckks_mod_up_into` then relabels the ciphertext by the message ratio, adding `log_msg_ratio` to `log_delta`: this free division reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
 The message ratio is `q/Δ = 2^log_msg_ratio`, the bit gap between the payload and the integer part.
 
 ### Sparse-secret encapsulation
@@ -71,7 +74,7 @@ The factorization schedule is caller-chosen: each entry is one factor matrix and
 
 Bootstrapping uses the **split real/imaginary** format.
 CoeffsToSlots returns the real and imaginary coefficient halves as two separate real-slot ciphertexts, so EvalMod can reduce each one independently, and SlotsToCoeffs recombines them.
-The split forward transform needs a conjugation key — the automorphism for Galois element `−1` — in addition to the rotation keys, to separate the two halves.
+The split forward transform also applies the automorphism for Galois element `−1` (conjugation) to separate the two halves; key generation includes it among the rotation keys.
 
 Scale accounting is implicit.
 Poulpy's torus plaintext-multiply already realigns its result to the input `log_delta` through its `cnv_offset`, so the rescale is folded into each linear-transform evaluation: the transform is simply one prepared linear transformation per factor, chained, with no explicit rescale between factors.
@@ -84,8 +87,8 @@ EvalMod is the homomorphic `x mod 1`, the pipeline's only non-linear stage.
 No low-degree polynomial computes `mod`, so EvalMod approximates it with a **periodic** function `f` whose period matches `q`: periodicity collapses every `I·q`, so `f(I·q + Δ·m)` depends on `m` alone.
 Because `f` is only locally linear in `m`, it can be post-composed with its inverse `f⁻¹` (the arcsine for the trigonometric families) to recover a value linear in `m` across the whole interval.
 
-Four approximation families are available, selected by `EvalModType`.
-`CosHK` is a discrete cosine fit (the Han & Ki method) that is best for a small interval `K`; `SinCheby` and `CosCheby` are continuous Chebyshev fits, with `CosCheby` overtaking `CosHK` as `K` grows; `ExpCmplx` is the complex exponential.
+Five approximation families are available, selected by `EvalModType`.
+`CosHK` is a discrete cosine fit (the Han & Ki method) that is best for a small interval `K`; `CosHKEven` fits it in a centred variable so the base polynomial is even, and is the variant the presets use; `SinCheby` and `CosCheby` are continuous Chebyshev fits, with `CosCheby` overtaking `CosHK` as `K` grows; `ExpCmplx` is the complex exponential.
 
 The evaluation has up to three sub-stages.
 
@@ -148,7 +151,7 @@ LUTs are encoded on the host and uploaded once with `EncodedLut::transfer_to`.
 General LUTs use trigonometric Hermite interpolation on the unit circle.
 They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
 `ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Every LUT in a batch must have the same table length. Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
-Real slots are selected by the input's metadata rather than by a separate entry point: `ct.set_slots(SlotsKind::Real)` makes both `ckks_bootstrap` and `ckks_functional_bootstrap` skip the imaginary branch.
+Real slots are selected by the input's metadata rather than by a separate entry point: with an S2C-first context, `ct.set_slots(SlotsKind::Real)` makes `ckks_functional_bootstrap`, and `ckks_bootstrap` without EvalRound+, skip the imaginary branch.
 
 `EncodedLut::binary` is specialized for two entries.
 Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.
@@ -266,12 +269,11 @@ The key digit counts come from `GGLWELayout::dnum_for_input` (`⌈k / (dsize · 
 The advertised precision is the minimum slot-wise precision measured on the reference vector at the nominal shape with `f64` DFT matrices; `test_suite::presets::bootstrapping_presets_meet_precision` (registered as an ignored test by the backend crates) and the `ckks_bootstrapping` benchmark assert the measurement against it on exact backends.
 
 The keys are generated by `generate_keys`, which returns the unprepared `BootstrappingKeySet` — the serializable, GPU-resident form — and a `prepare` step preprocesses the whole set for evaluation.
-Four key roles are used:
+Three key roles are used:
 
 | Key | Role |
 | --- | --- |
-| `rotation_keys` | Automorphism keys for the DFT rotations, read off the compiled matrices |
-| `conjugation_key` | The Galois `−1` automorphism, for the split real/imaginary transform |
+| `rotation_keys` | Automorphism keys for the DFT rotations, read off the compiled matrices, and the Galois `−1` automorphism of the split real/imaginary transform |
 | `tensor_key` | Relinearization key for the EvalMod range-extension squarings |
 | `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation |
 
@@ -280,7 +282,7 @@ Four key roles are used:
 The total arithmetic cost is `consumed_bits`; its placement around ModUp is given by the pre- and post-ModUp costs.
 A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message ratio `2^11`, `log_delta = 45`, a degree-30 `CosHK` EvalMod) recovers the slots to a few bits of precision on the reference backend, which is the floor the end-to-end test asserts; wider parameters recover proportionally more.
 
-- `poulpy-ckks/src/test_suite/bootstrapping.rs` contains the C2S-first, EvalRound+, and S2C-first reference compositions.
+- `poulpy-ckks/src/test_suite/bootstrapping.rs` runs `ckks_bootstrap` end to end for the C2S-first, EvalRound+, and S2C-first pipelines.
 - `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh

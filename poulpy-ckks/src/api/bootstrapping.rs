@@ -7,7 +7,8 @@ use crate::{
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSBootstrapFold, CKKSCiphertextOwned,
+        CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -25,7 +26,8 @@ use crate::{
 ///   ([`ckks_eval_mod`](CKKSEvalModOps::ckks_eval_mod)).
 ///
 /// The composable stages stay public so callers can assemble custom pipelines,
-/// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
+/// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap),
+/// which refreshes a batch through a [`CKKSBootstrapFold`].
 /// It consumes a compiled [`BootstrappingContext`] and a prepared
 /// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
 /// EvalRound+ is selected separately by either recipe's optional bypass.
@@ -36,20 +38,23 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
 
-    /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
-    /// pipeline working ciphertexts it carves from scratch plus the largest
-    /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
-    /// `ctx` selects the pipeline, optional EvalRound+ variant, and EvalMod
-    /// parameters; `keys_layout` sizes the key-dependent stages
-    /// (rotations, tensor key, optional encapsulation switches).
-    fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
+    /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call through
+    /// `fold`: the pipeline working ciphertexts it carves from scratch plus the
+    /// largest nested stage. `ct_out`/`ct_in` provide the bootstrap and input
+    /// widths of any element of the batch, `ctx` selects the pipeline, optional
+    /// EvalRound+ variant, and EvalMod parameters; `keys_layout` sizes the
+    /// key-dependent stages (rotations, tensor key, optional encapsulation
+    /// switches). The bound does not grow with the batch size.
+    fn ckks_bootstrap_tmp_bytes<P, C1, C2, F>(
         &self,
+        fold: &P,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
+        P: CKKSBootstrapFold<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
@@ -114,10 +119,15 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
 
-    /// One-shot CKKS bootstrap, driven by the compiled context.
+    /// CKKS bootstrap of a batch, driven by the compiled context.
     ///
-    /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
-    /// the bootstrap modulus (its `k()` sets the working width). When the compiled
+    /// `fold` merges `ins` into the standard ciphertexts each bootstrap refreshes
+    /// and splits the results into `outs`, which must have the length of `ins`;
+    /// [`StandardFold`](crate::layouts::StandardFold) refreshes standard
+    /// ciphertexts one per bootstrap.
+    ///
+    /// Inputs are at the input ("level 0") modulus; outputs must be allocated at
+    /// the bootstrap modulus (their `k()` sets the working width). When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
     /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), which wrap ModUp
     /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
@@ -137,15 +147,17 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
     /// to place the pre- and post-ModUp costs correctly. Pass the input `log_delta`
     /// to `bootstrap_k` so it accounts for C2S-first's output scale restoration.
-    fn ckks_bootstrap<F, K>(
+    fn ckks_bootstrap<P, F, K>(
         &self,
-        ct_out: &mut CKKSCiphertextOwned<BE>,
-        ct_in: &CKKSCiphertextOwned<BE>,
+        fold: &P,
+        outs: &mut [P::Ciphertext],
+        ins: &[P::Ciphertext],
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        P: CKKSBootstrapFold<BE>,
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync;
 

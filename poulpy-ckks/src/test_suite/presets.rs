@@ -6,6 +6,7 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
+use crate::layouts::StandardFold;
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
@@ -18,6 +19,7 @@ use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
+use std::slice;
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
@@ -110,7 +112,8 @@ where
         };
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
         let context = BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
-        let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
+        let boot_scratch =
+            module.ckks_bootstrap_tmp_bytes(&StandardFold, &bootstrap_layout, &input_layout, &context, &keys_layout);
         if boot_scratch > scratch_size {
             scratch = ScratchOwned::<BE>::alloc(boot_scratch);
         }
@@ -191,8 +194,9 @@ where
         self.output.set_k(self.preset.bootstrap_k().into());
         self.module
             .ckks_bootstrap(
-                &mut self.output,
-                &self.input,
+                &StandardFold,
+                slice::from_mut(&mut self.output),
+                slice::from_ref(&self.input),
                 &self.context,
                 &self.keys,
                 &mut self.scratch.borrow(),

@@ -1,70 +1,39 @@
 use crate::CKKSResult as Result;
-use poulpy_core::GLWENormalize;
-use poulpy_core::{
-    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEShift,
-    layouts::{
-        BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
-    },
-};
+use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSComplexPolynomialEvaluationOps,
-        CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps,
-    },
-    layouts::EvalModPlan,
+    api::{CKKSBootstrappingOps, CKKSDFTOps, CKKSEvalModOps},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,
-        CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSBootstrapFold, CKKSCiphertextOwned,
+        CKKSPlaintextOwned, EncodedLut, EvalModPlan,
     },
-    oep::CKKSEncapsulatedModUpImpl,
-    reference::bootstrapping::BootstrappingReference,
+    oep::CKKSBootstrappingImpl,
 };
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingOps<BE> for Module<BE>
+impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE>
 where
-    Module<BE>: GLWEBytesOf<BE>
-        + GLWECopy<BE>
-        + GLWEShift<BE>
-        + GLWEKeyswitch<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSCopyOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSDFTOps<BE>
-        + CKKSEvalModOps<BE>
-        + CKKSAllOpsTmpBytes<BE>
-        + CKKSMulOps<BE>
-        + CKKSAffineOps<BE>
-        + CKKSPolynomialEvaluationOps<BE>
-        + CKKSComplexPolynomialEvaluationOps<BE>
-        + GLWENormalize<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>,
 {
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize {
-        BootstrappingReference::new(self).ckks_mod_up_tmp_bytes_reference(res_size)
+        BE::ckks_mod_up_tmp_bytes_impl(self, res_size)
     }
 
-    fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
+    fn ckks_bootstrap_tmp_bytes<P, C1, C2, F>(
         &self,
+        fold: &P,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
+        P: CKKSBootstrapFold<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BootstrappingReference::new(self).ckks_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_tmp_bytes_impl(self, fold, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
@@ -79,7 +48,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BootstrappingReference::new(self).ckks_functional_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, luts, keys_layout)
+        BE::ckks_functional_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, luts, keys_layout)
     }
 
     fn ckks_mod_up_into<Dst, Src>(
@@ -93,14 +62,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
-        BootstrappingReference::new(self).ckks_mod_up_into_reference(dst, src, scale_up, scratch)?;
-        // Relabel by the message ratio here, so callers never have to stamp
-        // metadata by hand after the call.
-        let mut meta = dst.meta();
-        meta.log_delta += eval_mod.log_msg_ratio;
-        dst.set_meta(meta);
-        Ok(())
+        BE::ckks_mod_up_into_impl(self, dst, src, eval_mod, scratch)
     }
 
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
@@ -116,22 +78,30 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
-        BootstrappingReference::new(self).ckks_bootstrap_mod_up_reference(dst, src, eval_mod, keys, scratch)
+        BE::ckks_bootstrap_mod_up_impl(self, dst, src, eval_mod, keys, scratch)
     }
 
-    fn ckks_bootstrap<F, K>(
+    fn ckks_bootstrap<P, F, K>(
         &self,
-        ct_out: &mut CKKSCiphertextOwned<BE>,
-        ct_in: &CKKSCiphertextOwned<BE>,
+        fold: &P,
+        outs: &mut [P::Ciphertext],
+        ins: &[P::Ciphertext],
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        P: CKKSBootstrapFold<BE>,
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
-        BootstrappingReference::new(self).ckks_bootstrap_reference(ct_out, ct_in, ctx, keys, scratch)
+        crate::ckks_ensure!(
+            outs.len() == ins.len(),
+            "ckks_bootstrap requires one output per input, got {} outputs for {} inputs",
+            outs.len(),
+            ins.len()
+        );
+        BE::ckks_bootstrap_impl(self, fold, outs, ins, ctx, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(
@@ -146,6 +116,6 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BootstrappingReference::new(self).ckks_functional_bootstrap_reference(ct_outs, ct_in, ctx, luts, keys, scratch)
+        BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

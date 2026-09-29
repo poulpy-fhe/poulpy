@@ -31,12 +31,12 @@ operations, so their overrides remain effective.
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs). |
+| `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the batched identity and functional pipelines; folds are strategies whose steps dispatch through their own families. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
-implementations. Affine operations, dot products, linear transformations, and
-complete bootstrap pipelines are API compositions with integration tests, not
-additional OEP families.
+implementations. Affine operations, dot products, and linear transformations are
+API compositions with integration tests, not additional OEP families.
 
 ## What an override must preserve
 
