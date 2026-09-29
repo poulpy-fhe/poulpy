@@ -16,6 +16,10 @@ mod standard {
         poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
     }
 
+    unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64AvxRayon<poulpy_hal::layouts::ConjugateInvariant> {
+        poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    }
+
     impl ZnxAutomorphismRotate for FFT64AvxRayon {
         #[inline(always)]
         fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {

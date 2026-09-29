@@ -248,6 +248,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avxrayon, cr
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64avx,
     crate::FFT64CIAvx,
+    crate::FFT64Avx,
     poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
 
@@ -255,6 +256,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30avx,
     crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
 
@@ -262,6 +264,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64avxrayon,
     crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
     poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
 
@@ -269,6 +272,7 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30avxrayon,
     crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
 

@@ -1,6 +1,7 @@
 mod add;
 mod automorphism;
 mod automorphism_rotate;
+mod ci;
 mod copy;
 mod mul_xp_minus_one;
 mod negate;
@@ -17,6 +18,7 @@ mod zero;
 pub use add::*;
 pub use automorphism::*;
 pub use automorphism_rotate::*;
+pub use ci::*;
 pub use copy::*;
 pub use mul_xp_minus_one::*;
 pub use negate::*;

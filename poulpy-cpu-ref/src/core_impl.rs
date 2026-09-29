@@ -25,4 +25,6 @@ crate::impl_cpu_core_defaults!(super::NTT4x30Ref, ntt4x30);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Ref);
 ::poulpy_core::impl_glwe_trace_derived_full!(super::NTT4x30Ref);
 crate::impl_cpu_core_defaults!(super::FFT64CIRef, fft64);
+::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64CIRef);
 crate::impl_cpu_core_defaults!(super::NTT4x30CIRef, ntt4x30);
+::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30CIRef);

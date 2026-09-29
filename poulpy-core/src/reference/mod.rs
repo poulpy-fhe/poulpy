@@ -10,6 +10,7 @@
 //! inputs; randomized operations additionally control the sampled values.
 
 pub mod automorphism;
+pub mod ci_conversion;
 pub mod conversion;
 pub mod decryption;
 pub mod encryption;
