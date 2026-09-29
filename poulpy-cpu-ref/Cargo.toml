@@ -13,6 +13,7 @@ documentation = "https://docs.rs/poulpy-cpu-ref"
 enable-bin-fhe = ["dep:poulpy-bin-fhe", "enable-core"]
 enable-core = []
 enable-ckks = ["dep:poulpy-ckks", "enable-core"]
+enable-mhe = ["dep:poulpy-mhe", "enable-core"]
 # Ships the portable comparison adapters other backend crates test against.
 # They panic outside a controlled-sampling scope, so keep this out of a build
 # that is not running tests: enable it from `[dev-dependencies]` only.
@@ -22,6 +23,7 @@ enable-test-suite = ["enable-core"]
 poulpy-bin-fhe = {workspace = true, optional = true}
 anyhow = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
+poulpy-mhe = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
 #poulpy-bench = {workspace = true}

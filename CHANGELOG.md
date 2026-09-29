@@ -160,6 +160,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
 - CMux, Cswap and the standard CGGI blind rotation flag the differences and the lazy accumulator they feed to the external product as canonical, and `FheUint::get_bit_lwe` flags the view of the integer it keyswitches (a lazy sum after `splice_u8`, `zero_byte` or a sign extension), which the FFT margin tolerates, so their outputs stay bit-identical under the `poulpy-core` canonical flag; outputs they big-normalize by hand are flagged canonical.
 
+### `poulpy-mhe`
+
+- New crate for backend-agnostic multiparty homomorphic encryption. It starts with the public aggregatable transcript (PAT) layouts: `GLWEPatCompressed` and `GGLWEPatCompressed`, seeded bodies over core compressed layouts, and `GGLWEPat`, an unseeded full GGLWE. Each carries a canonical flag that `write_to` requires, and is allocated through `MHEModuleAlloc`. `poulpy-cpu-ref` runs their tests behind the new `enable-mhe` feature.
+
 ### CPU backends
 
 - Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend, and the standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate, `mul_xp_minus_one`, GLWE trace) and CKKS families (conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP coefficient encodings) by each standard-ring backend.
