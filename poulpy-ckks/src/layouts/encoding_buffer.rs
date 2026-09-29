@@ -8,7 +8,9 @@ use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use bytemuck::Pod;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module};
+
+use crate::api::CKKSModuleInfos;
 
 /// Shape information shared by owned and borrowed encoding buffers.
 pub trait CKKSEncodingBufferInfos {
@@ -91,6 +93,11 @@ impl<D: Data, F: Pod> CKKSEncodingBuffer<D, F> {
         assert_eq!(values.len(), self.len);
         BE::copy_from_host(&mut self.data, bytemuck::cast_slice(values));
     }
+}
+
+/// Coefficients a transformed `len`-scalar slot buffer holds: `len` on the standard ring, `len / 2` on the invariant ring.
+pub(crate) fn slot_coeff_count<BE: Backend>(module: &Module<BE>, len: usize) -> usize {
+    len / 2 * (module.n() / module.ckks_max_slots())
 }
 
 pub type CKKSEncodingBufferBackendRef<'a, BE, F> = CKKSEncodingBuffer<<BE as Backend>::BufRef<'a>, F>;

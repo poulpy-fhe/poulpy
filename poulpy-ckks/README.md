@@ -100,8 +100,8 @@ The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
 backend (`Backend::Ring`): a module only accepts operands of its own ring, so
 mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
 ciphertext with real slots still belongs to the standard ring; CI encoding
-marks its plaintexts real, arithmetic propagates that claim, and linear
-transformations reset it to complex.
+marks its plaintexts real, and arithmetic and linear transformations
+propagate that claim.
 Compact plaintexts must have a degree that embeds in the module; scalar
 coefficient banks need the same ring kind but may have arbitrary lengths.
 

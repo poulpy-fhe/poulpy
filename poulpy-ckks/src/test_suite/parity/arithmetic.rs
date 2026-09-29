@@ -1,22 +1,15 @@
 //! Exact arithmetic parity on canonical coefficients, independent of encryption.
 use super::helpers::*;
-use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, oep::*, test_suite::CKKSTestParams};
+use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
 use poulpy_hal::layouts::{Backend, Module};
 
 pub trait ArithmeticParityBackend:
-    Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + CKKSImagImpl + GLWENormalizeImpl
+    Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
 {
 }
 impl<B> ArithmeticParityBackend for B where
-    B: Backend<ZnxWord = i64>
-        + CKKSAddImpl
-        + CKKSSubImpl
-        + CKKSCopyImpl
-        + CKKSNegImpl
-        + CKKSPow2Impl
-        + CKKSImagImpl
-        + GLWENormalizeImpl
+    B: Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
 {
 }
 
@@ -161,10 +154,6 @@ where
                         B::ckks_div_pow2_assign_impl(module, &mut div, bits).unwrap();
                         results.push(("div_pow2_assign", snapshot::<B, _>(&div)));
                     }
-                    run!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl, out_layout, [&a]);
-                    run!(ckks_mul_i_assign_impl, ckks_mul_i_tmp_bytes_impl, la, []);
-                    run!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl, out_layout, [&a]);
-                    run!(ckks_div_i_assign_impl, ckks_div_i_tmp_bytes_impl, la, []);
                     assert_eq!(before_a, snapshot::<B, _>(&a), "arithmetic changed source a");
                     assert_eq!(before_b, snapshot::<B, _>(&rhs), "arithmetic changed source b");
                     assert_eq!(before_pt, snapshot::<B, _>(&pt), "arithmetic changed plaintext");
@@ -202,15 +191,13 @@ where
         assert_eq!(unchanged, snapshot::<B, _>(&out), "failed copy mutated its destination");
     }
     rejects!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, [&source]);
-    rejects!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl, [&source]);
-    rejects!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl, [&source]);
     rejects!(ckks_mul_pow2_into_impl, ckks_mul_pow2_tmp_bytes_impl, [&source, 0]);
     rejects!(ckks_div_pow2_into_impl, ckks_div_pow2_tmp_bytes_impl, [&source, 0]);
     results
 }
 
-/// All add/sub carry variants, copy, negation, powers of two and imaginary-unit
-/// multiplication, with unequal widths, rank, sparsity and slot metadata.
+/// All add/sub carry variants, copy, negation and powers of two, with unequal
+/// widths, rank, sparsity and slot metadata.
 pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityBackend, F>(
     params: CKKSTestParams,
     r: &Module<BR>,
@@ -221,6 +208,78 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
 {
     let _scalar = std::marker::PhantomData::<F>;
     assert_eq!(arithmetic(params, r), arithmetic(params, t));
+}
+
+fn imaginary<B: Backend<ZnxWord = i64> + CKKSImagImpl>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+) -> Vec<(&'static str, Snapshot)>
+where
+    Module<B>: GLWEMaskFill<B>,
+{
+    let b = params.base2k;
+    let rank = params.rank;
+    let mut results = Vec::new();
+    for (sparse, slots) in [(0, SlotsKind::Complex), (2, SlotsKind::Real)] {
+        let la = layout(params, rank, 3 * b + 5, b - 1, sparse, slots);
+        let a = fixture_ciphertext(module, &la, 31);
+        let before = snapshot::<B, _>(&a);
+        for width in [2 * b + 3, 4 * b + 1] {
+            let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
+            macro_rules! run {
+                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
+                    let mut out = fixture_ciphertext(module, &$initial, 31);
+                    let bytes = B::$query(module, out.max_size());
+                    with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
+                    results.push((stringify!($method), snapshot::<B, _>(&out)));
+                }};
+            }
+            run!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl, out_layout, [&a]);
+            run!(ckks_mul_i_assign_impl, ckks_mul_i_tmp_bytes_impl, la, []);
+            run!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl, out_layout, [&a]);
+            run!(ckks_div_i_assign_impl, ckks_div_i_tmp_bytes_impl, la, []);
+        }
+        assert_eq!(
+            before,
+            snapshot::<B, _>(&a),
+            "imaginary-unit multiplication changed its source"
+        );
+    }
+    // Both reject a result too narrow for its scale before mutating it.
+    let source = fixture_ciphertext(module, &layout(params, 1, 3 * b + 5, 2 * b + 1, 0, SlotsKind::Complex), 71);
+    let narrow = layout(params, 1, 1, 0, 0, SlotsKind::Real);
+    macro_rules! rejects {
+        ($method:ident, $query:ident) => {{
+            let mut out = fixture_ciphertext(module, &narrow, 72);
+            let unchanged = snapshot::<B, _>(&out);
+            let bytes = B::$query(module, out.max_size());
+            assert!(
+                with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, &source, scratch)).is_err(),
+                stringify!($method)
+            );
+            assert_eq!(
+                unchanged,
+                snapshot::<B, _>(&out),
+                "failed {} mutated its destination",
+                stringify!($method)
+            );
+        }};
+    }
+    rejects!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl);
+    rejects!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl);
+    results
+}
+
+/// Multiplication and division by the imaginary unit, standard ring only.
+pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSImagImpl,
+    BT: Backend<ZnxWord = i64> + CKKSImagImpl,
+    Module<BR>: GLWEMaskFill<BR>,
+    Module<BT>: GLWEMaskFill<BT>,
+{
+    let _scalar = std::marker::PhantomData::<F>;
+    assert_eq!(imaginary(params, r), imaginary(params, t));
 }
 
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -354,94 +413,142 @@ where
     assert_eq!(products(params, r), products(params, t));
 }
 
-fn automorphisms<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
+    B: Backend<ZnxWord = i64> + CKKSRotateImpl,
     Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
+    let rank = params.rank;
+    // One slot needs the key of `ckks_galois_element(1) = 5`; a full turn is the identity copy.
+    let shifts = [1, module.ckks_max_slots() as i64];
     let mut results = Vec::new();
-    {
-        let rank = params.rank;
-        for (dsize, lazy) in [(1, false), (2, true)] {
-            for p in [5, -1] {
-                let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
-                let input = fixture_operand(module, &la, 61, lazy);
-                let before = snapshot::<B, _>(&input);
-                let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
-                let key = prepared_automorphism_key(module, &key_infos, p, 62);
-                for width in [2 * b + 3, 4 * b + 1] {
-                    let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Real);
-                    let mut out = fixture_ciphertext(module, &lr, 99);
-                    let bytes = B::ckks_rotate_tmp_bytes_impl(module, &input, &key);
-                    if p == 5 {
-                        with_scratch::<B, _>(bytes, |scratch| {
-                            B::ckks_rotate_into_impl(
-                                module,
-                                &mut out,
-                                &input,
-                                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
-                                scratch,
-                            )
-                        })
-                        .unwrap();
-                        results.push(("rotate_into", snapshot::<B, _>(&out)));
-                    } else {
-                        let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &input, &key);
-                        with_scratch::<B, _>(bytes, |scratch| {
-                            B::ckks_conjugate_into_impl(
-                                module,
-                                &mut out,
-                                &input,
-                                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
-                                scratch,
-                            )
-                        })
-                        .unwrap();
-                        results.push(("conjugate_into", snapshot::<B, _>(&out)));
-                    }
-                }
-                let mut out = fixture_operand(module, &la, 61, lazy);
-                if p == 5 {
-                    let bytes = B::ckks_rotate_tmp_bytes_impl(module, &out, &key);
-                    with_scratch::<B, _>(bytes, |scratch| {
-                        B::ckks_rotate_assign_impl(
-                            module,
-                            &mut out,
-                            &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
-                            scratch,
-                        )
-                    })
-                    .unwrap();
-                    results.push(("rotate_assign", snapshot::<B, _>(&out)));
-                } else {
-                    let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &out, &key);
-                    with_scratch::<B, _>(bytes, |scratch| {
-                        B::ckks_conjugate_assign_impl(
-                            module,
-                            &mut out,
-                            &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
-                            scratch,
-                        )
-                    })
-                    .unwrap();
-                    results.push(("conjugate_assign", snapshot::<B, _>(&out)));
-                }
-                assert_eq!(before, snapshot::<B, _>(&input));
+    for (dsize, lazy) in [(1, false), (2, true)] {
+        let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
+        let input = fixture_operand(module, &la, 61, lazy);
+        let before = snapshot::<B, _>(&input);
+        let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
+        let key = prepared_automorphism_key(module, &key_infos, 5, 62);
+        for width in [2 * b + 3, 4 * b + 1] {
+            let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Real);
+            let mut out = fixture_ciphertext(module, &lr, 99);
+            let bytes = B::ckks_rotate_tmp_bytes_impl(module, &input, &key);
+            with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_rotate_into_impl(
+                    module,
+                    &mut out,
+                    &input,
+                    &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                    scratch,
+                )
+            })
+            .unwrap();
+            results.push(("rotate_into", snapshot::<B, _>(&out)));
+            for k in shifts {
+                let mut out = fixture_ciphertext(module, &lr, 99);
+                let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &input, &key);
+                with_scratch::<B, _>(bytes, |scratch| {
+                    B::ckks_rotate_by_into_impl(module, &mut out, &input, k, &key, scratch)
+                })
+                .unwrap();
+                results.push(("rotate_by_into", snapshot::<B, _>(&out)));
             }
         }
+        let mut out = fixture_operand(module, &la, 61, lazy);
+        let bytes = B::ckks_rotate_tmp_bytes_impl(module, &out, &key);
+        with_scratch::<B, _>(bytes, |scratch| {
+            B::ckks_rotate_assign_impl(
+                module,
+                &mut out,
+                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                scratch,
+            )
+        })
+        .unwrap();
+        results.push(("rotate_assign", snapshot::<B, _>(&out)));
+        for k in shifts {
+            let mut out = fixture_operand(module, &la, 61, lazy);
+            let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &out, &key);
+            with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_rotate_by_assign_impl(module, &mut out, k, &key, scratch)
+            })
+            .unwrap();
+            results.push(("rotate_by_assign", snapshot::<B, _>(&out)));
+        }
+        assert_eq!(before, snapshot::<B, _>(&input));
     }
     results
 }
 
-pub fn test_automorphism_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+/// Keyed rotation and rotation by a slot shift, including the identity copy.
+pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
 where
-    BR: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
-    BT: Backend<ZnxWord = i64> + CKKSRotateImpl + CKKSConjugateImpl,
+    BR: Backend<ZnxWord = i64> + CKKSRotateImpl,
+    BT: Backend<ZnxWord = i64> + CKKSRotateImpl,
     Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(automorphisms(params, r), automorphisms(params, t));
+    assert_eq!(rotations(params, r), rotations(params, t));
+}
+
+fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+where
+    B: Backend<ZnxWord = i64> + CKKSConjugateImpl,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+{
+    use super::keys::{key_layout, prepared_automorphism_key};
+    let b = params.base2k;
+    let rank = params.rank;
+    let mut results = Vec::new();
+    for (dsize, lazy) in [(1, false), (2, true)] {
+        let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
+        let input = fixture_operand(module, &la, 61, lazy);
+        let before = snapshot::<B, _>(&input);
+        let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
+        let key = prepared_automorphism_key(module, &key_infos, -1, 62);
+        for width in [2 * b + 3, 4 * b + 1] {
+            let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Real);
+            let mut out = fixture_ciphertext(module, &lr, 99);
+            let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &input, &key);
+            with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_conjugate_into_impl(
+                    module,
+                    &mut out,
+                    &input,
+                    &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                    scratch,
+                )
+            })
+            .unwrap();
+            results.push(("conjugate_into", snapshot::<B, _>(&out)));
+        }
+        let mut out = fixture_operand(module, &la, 61, lazy);
+        let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &out, &key);
+        with_scratch::<B, _>(bytes, |scratch| {
+            B::ckks_conjugate_assign_impl(
+                module,
+                &mut out,
+                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                scratch,
+            )
+        })
+        .unwrap();
+        results.push(("conjugate_assign", snapshot::<B, _>(&out)));
+        assert_eq!(before, snapshot::<B, _>(&input));
+    }
+    results
+}
+
+/// Conjugation, standard ring only.
+pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSConjugateImpl,
+    BT: Backend<ZnxWord = i64> + CKKSConjugateImpl,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+{
+    let _scalar = std::marker::PhantomData::<F>;
+    assert_eq!(conjugations(params, r), conjugations(params, t));
 }

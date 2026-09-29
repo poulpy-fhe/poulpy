@@ -40,7 +40,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos};
+use crate::{CKKSCtBounds, SetCKKSInfos, SlotsKind};
 
 pub use poulpy_core::{
     LinearTransformation, LinearTransformationBabySteps, LinearTransformationDiagonal as Diagonal,
@@ -48,23 +48,27 @@ pub use poulpy_core::{
     LinearTransformationPrepared, LinearTransformationStrategy, layouts::prepared::PreparedDiagonal, optimal_bsgs_giant_step,
 };
 
-/// The CKKS encoding scale (`log_delta`) of a linear-transformation diagonal.
+/// The CKKS metadata of a linear-transformation diagonal: its encoding scale
+/// (`log_delta`) and slot kind.
 ///
-/// The CKKS scale / key-size bookkeeping reads it (together with the
-/// scheme-agnostic [`LWEInfos::k`]) off the transform's first diagonal,
-/// uniformly across the resident and streamed representations. Keeping it here —
-/// rather than on `poulpy-core`'s `DiagonalProd` engine trait — is deliberate:
-/// the core engine is scheme-agnostic (a scheme encoding values mod `P` has no
-/// `log_delta`), so it treats a prepared diagonal's scale as an *opaque* integer
-/// (stashed via [`PreparedDiagonal::set_log_scale`] during preparation) and
-/// carries no scale concept of its own.
+/// The CKKS scale / key-size bookkeeping and the result's slot kind read both
+/// (together with the scheme-agnostic [`LWEInfos::k`]) off the transform's first
+/// diagonal, which every diagonal shares, uniformly across the resident and
+/// streamed representations. Keeping it here, rather than on `poulpy-core`'s
+/// `DiagonalProd` engine trait, is deliberate: the core engine is scheme-agnostic
+/// (a scheme encoding values mod `P` has neither), so it treats a prepared
+/// diagonal's scale and real-slot claim as *opaque* values (stashed via
+/// [`PreparedDiagonal::set_log_scale`] and [`PreparedDiagonal::set_real_slots`]
+/// during preparation).
 ///
 /// Implemented for the two diagonal representations: [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) (streamed)
-/// via its `log_delta`, and the core [`PreparedDiagonal`] (resident) via that
-/// stashed scale.
-pub trait LtDiagonalScale {
+/// via its metadata, and the core [`PreparedDiagonal`] (resident) via those stashes.
+pub trait LtDiagonalMeta {
     /// `log2` of the diagonal plaintext's scaling factor.
     fn lt_log_scale(&self) -> usize;
+
+    /// Slot kind of the diagonal plaintext.
+    fn lt_slots(&self) -> SlotsKind;
 }
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
@@ -169,7 +173,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
@@ -184,7 +188,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----
@@ -207,7 +211,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
@@ -221,6 +225,6 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 }

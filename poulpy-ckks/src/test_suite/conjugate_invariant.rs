@@ -312,9 +312,6 @@ pub fn test_conjugate_invariant_leveled<BE>(
             module
                 .ckks_eval_linear_transformation_self_into(&mut result, input, &lt, &keys, &mut lt_scratch.arena())
                 .unwrap();
-            // Linear transformations claim complex slots; the invariant ring's are real.
-            assert_eq!(result.slots(), SlotsKind::Complex);
-            result.set_slots(SlotsKind::Real);
             assert_output!(&result, &want);
             let first = lt.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
@@ -322,7 +319,6 @@ pub fn test_conjugate_invariant_leveled<BE>(
             module
                 .ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, &mut lt_scratch.arena())
                 .unwrap();
-            result.set_slots(SlotsKind::Real);
             assert_output!(&result, &want);
         }
     }
