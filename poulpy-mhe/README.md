@@ -27,6 +27,7 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GLWEEncToShareShare`: a rank-0 core `GLWE`, the public share of an
   encryption-to-shares conversion; `GLWEShareToEncShare`: a
   `GLWEPatCompressed`, the share of a shares-to-encryption conversion.
+- `GLWERefreshShare`: both conversion shares of one mask, for a refresh.
 
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
@@ -51,14 +52,17 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   switching of a ciphertext to the ideal output secret or to a public key.
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext, read as bounded integers.
+- `GLWERefreshMHEProtocol`: the collective refresh of a ciphertext to a larger
+  precision, in one round.
 
 ## Smudging
 
-Key switching and encryption-to-shares take
+Key switching, encryption-to-shares and refresh take
 caller-selected `SmudgingNoise` parameters: exact discrete Gaussian
 (`gaussian(k, log_sigma, cutoff)`) or contiguous uniform (`uniform(k, bits)`).
 Both preserve the full integer grid across multiple limbs. E2S also takes a
-private `source_xe`. Follow the [smudging parameter contract](docs/mhe-contracts.md#smudging-parameters)
+private `source_xe`; refresh keeps its input-frame flood separate from
+output-frame encryption noise. Follow the [smudging parameter contract](docs/mhe-contracts.md#smudging-parameters)
 for the statistical margin, sampling lattice, Gaussian tail budget and
 correctness headroom. The exact CPU Gaussian sampler uses integer rejection
 sampling and has variable runtime. Ordinary encryption still uses `NoiseInfos`;
