@@ -138,9 +138,10 @@ pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
 };
-pub use bootstrapping_fold::{CKKSBootstrapFold, StandardFold};
+pub use bootstrapping_fold::{CIFold, CKKSBootstrapFold, StandardFold};
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+    RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;

@@ -7,7 +7,7 @@
 use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
@@ -143,6 +143,13 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos;
+}
+
+/// Pairs a standard backend with the conjugate-invariant backend of half its
+/// degree whose coefficient storage it shares, whose ciphertexts
+/// [`CIFold`](crate::layouts::CIFold) bootstraps.
+pub trait CIBridge: Backend<Ring = Standard> {
+    type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>;
 }
 
 /// Opts a standard backend into the CKKS reference bootstrapping pipeline.

@@ -6,17 +6,17 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use crate::layouts::StandardFold;
+use crate::layouts::{CIFold, StandardFold};
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
-        GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWESecretCIUnfold, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
 use std::slice;
@@ -24,14 +24,19 @@ use std::slice;
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCIRingMapOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps,
+        CKKSEncodingOps, CKKSEncryptOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    },
+    oep::CIBridge,
     presets::bootstrapping::{BootstrappingPreset, all},
+    test_suite::CKKSTestParams,
     test_suite::helpers::{
-        PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, assert_canonical_at_k, ckks_spec,
-        precision_stats, test_vector_1,
+        PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, TestContextSharedModule,
+        assert_canonical_at_k, ckks_spec, precision_stats, test_vector_1,
     },
 };
 
@@ -256,7 +261,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let backend = std::any::type_name::<BE>();
     for preset in all().unwrap() {
         let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup(preset);
@@ -280,5 +285,187 @@ where
             re.min_log2_prec,
             im.min_log2_prec
         );
+    }
+}
+
+/// End-to-end fixture for CI bootstrapping conformance tests.
+pub(crate) struct CIBootstrappingRun<BE: Backend, STD: Backend> {
+    pub(crate) ci: Module<BE>,
+    pub(crate) standard: Module<STD>,
+    pub(crate) context: BootstrappingContext<STD, f64>,
+    pub(crate) keys: BootstrappingKeysPrepared<STD::OwnedBuf, STD>,
+    pub(crate) ring_switch: RingSwitchKeysPrepared<STD::OwnedBuf, STD>,
+    pub(crate) scratch: ScratchOwned<BE>,
+    pub(crate) std_scratch: ScratchOwned<STD>,
+    pub(crate) inputs: [CKKSCiphertextOwned<BE>; 2],
+    pub(crate) outputs: [CKKSCiphertextOwned<BE>; 2],
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    want: [Vec<f64>; 2],
+    bootstrap_k: usize,
+    output_k: usize,
+}
+
+impl<BE, STD> CIBootstrappingRun<BE, STD>
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    STD: TestContextBackend<Ring = Standard> + CIBridge<CI = BE>,
+    Module<STD>: TestContextModule<STD> + CKKSEncodingOps<STD, f64> + CKKSBootstrappingOps<STD> + CKKSDFTMatrixOps<STD, f64>,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSCIRingMapOps<BE> + GLWESecretCIUnfold<BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    /// Compiles a standard context, generates independent CI and standard secrets,
+    /// and encrypts two distinct real vectors for single and pair evaluation.
+    pub fn setup(
+        ci: Module<BE>,
+        standard: Module<STD>,
+        plan: &BootstrappingPlan,
+        params: CKKSTestParams,
+        keys_layout: BootstrappingKeysLayout,
+        ring_switch_layout: RingSwitchKeysLayout,
+        output_k: usize,
+    ) -> Self {
+        use super::helpers::{alloc_scratch, gen_sk_with_raw};
+        use poulpy_core::layouts::GLWEInfos;
+        let standard_host = Module::<HostBytesBackend>::new(standard.n() as u64);
+        let ci_host = Module::<HostBytesBackend<BE::Ring>>::new(ci.n() as u64);
+        let standard_params = CKKSTestParams {
+            n: standard.n(),
+            ..params
+        };
+        let mut std_scratch = alloc_scratch(&standard_params, &standard);
+        let mut scratch = alloc_scratch(&params, &ci);
+        let context = BootstrappingContext::compile(&standard, params.base2k.into(), plan, &mut std_scratch.borrow()).unwrap();
+        let (standard_sk, _) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [11; 32]);
+        let (ci_sk, sk) = gen_sk_with_raw(&params, &ci, &ci_host, [12; 32]);
+        let mut source_xs = Source::new([13; 32]);
+        let mut source_xe = Source::new([14; 32]);
+        let mut source_xa = Source::new([15; 32]);
+        let keys = context
+            .generate_keys(
+                &standard,
+                &standard_sk,
+                &keys_layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut std_scratch.borrow(),
+            )
+            .unwrap()
+            .prepare(&standard, &mut std_scratch.borrow());
+        let ring_switch = ring_switch_layout
+            .generate_ci(
+                &standard,
+                &ci,
+                &ci_sk,
+                &standard_sk,
+                &mut source_xe,
+                &mut source_xa,
+                &mut std_scratch.borrow(),
+            )
+            .unwrap()
+            .prepare(&standard, &mut std_scratch.borrow())
+            .unwrap();
+        let input_k = plan.input_k(params.prec_meta.log_delta + plan.eval_mod().log_msg_ratio);
+        let slots = ci.n() >> params.prec_meta.log_sparsity;
+        let (want0, want1) = test_vector_1::<f64>(slots);
+        let want = [want0, want1];
+        let inputs = std::array::from_fn(|index| {
+            let mut pt = ci.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), input_k.into());
+            pt.set_meta(params.prec_meta);
+            ci.ckks_encode_reim_into(&mut pt, &want[index], &vec![0.0; slots], &mut scratch.borrow())
+                .unwrap();
+            let mut ct = ci.ckks_ciphertext_alloc(params.base2k.into(), input_k.into());
+            let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
+            ci.ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut source_xe, &mut source_xa, &mut scratch.borrow())
+                .unwrap();
+            ct
+        });
+        let outputs = std::array::from_fn(|_| ci.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()));
+        let bytes = standard.ckks_bootstrap_tmp_bytes(
+            &CIFold::new(&ci, &ring_switch),
+            &outputs[0],
+            &inputs[0],
+            &context,
+            &keys_layout,
+        );
+        std_scratch = ScratchOwned::<STD>::alloc(bytes);
+        Self {
+            ci,
+            standard,
+            context,
+            keys,
+            ring_switch,
+            scratch,
+            std_scratch,
+            inputs,
+            outputs,
+            sk,
+            want,
+            bootstrap_k: params.k,
+            output_k,
+        }
+    }
+
+    /// Refreshes the first input alone, or both as one batch.
+    pub fn bootstrap(&mut self, pair: bool) {
+        for ct in &mut self.outputs {
+            ct.set_k(self.bootstrap_k.into());
+        }
+        let count = if pair { 2 } else { 1 };
+        self.standard
+            .ckks_bootstrap(
+                &CIFold::new(&self.ci, &self.ring_switch),
+                &mut self.outputs[..count],
+                &self.inputs[..count],
+                &self.context,
+                &self.keys,
+                &mut self.std_scratch.borrow(),
+            )
+            .unwrap();
+    }
+
+    /// Decrypts and measures every output produced by the selected path.
+    pub fn precision(&mut self, pair: bool) -> Vec<PrecisionStats> {
+        self.outputs
+            .iter()
+            .zip(&self.want)
+            .take(if pair { 2 } else { 1 })
+            .map(|(ct, want)| {
+                assert_eq!(ct.k().as_usize(), self.output_k);
+                assert_eq!(ct.meta(), self.inputs[0].meta());
+                assert_canonical_at_k::<BE>("CI bootstrap", ct);
+                let mut pt = self.ci.ckks_pt_vec_alloc(ct.base2k(), ct.k());
+                pt.set_meta(ct.meta());
+                self.ci
+                    .ckks_decrypt(&mut pt, ct, &self.sk, &mut self.scratch.borrow())
+                    .unwrap();
+                use poulpy_hal::layouts::ZnxView;
+                let view = GLWEToBackendRef::<BE>::to_backend_ref(&pt);
+                let high_limbs = ct.log_budget().saturating_sub(PRECISION_LOG_BUDGET) / ct.base2k().as_usize();
+                for limb in 0..high_limbs {
+                    assert!(
+                        view.data().at(0, limb).iter().all(|&x| x == 0),
+                        "CI bootstrap has a high-modulus alias"
+                    );
+                }
+                let mut pt = self
+                    .ci
+                    .ckks_pt_vec_alloc(ct.base2k(), (ct.log_delta() + PRECISION_LOG_BUDGET).into());
+                pt.set_meta(ct.meta());
+                self.ci
+                    .ckks_decrypt(&mut pt, ct, &self.sk, &mut self.scratch.borrow())
+                    .unwrap();
+                let (mut re, mut im) = (vec![0.0; want.len()], vec![0.0; want.len()]);
+                self.ci
+                    .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.scratch.borrow())
+                    .unwrap();
+                assert!(im.iter().all(|&v| v == 0.0));
+                assert!(re.iter().all(|v| v.is_finite()));
+                precision_stats(&re, want, ct.log_delta())
+            })
+            .collect()
     }
 }

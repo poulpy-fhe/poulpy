@@ -362,6 +362,25 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    pub(crate) fn output_scale_drop(&self, input_log_delta: usize) -> usize {
+        match self.pipeline() {
+            BootstrappingPipeline::C2SFirst => self.eval_mod().plan.f_mod_log_delta.saturating_sub(input_log_delta),
+            BootstrappingPipeline::S2CFirst => self.c2s_guard_bits(),
+        }
+    }
+
+    pub(crate) fn output_consumed_bits(&self, input_log_delta: usize) -> usize {
+        let main = self.coeffs_to_slots().consumed_bits() + self.eval_mod().plan.consumed_bits();
+        let post = self
+            .coeffs_to_slots_bypass()
+            .map_or(main, |bypass| main.max(bypass.consumed_bits()));
+        let s2c = match self.pipeline() {
+            BootstrappingPipeline::C2SFirst => self.slots_to_coeffs().consumed_bits(),
+            BootstrappingPipeline::S2CFirst => 0,
+        };
+        post + s2c + self.output_scale_drop(input_log_delta)
+    }
+
     pub(crate) fn functional_message_modulus(&self) -> Option<usize> {
         self.functional_message_modulus
     }
