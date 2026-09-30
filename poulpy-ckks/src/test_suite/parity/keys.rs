@@ -3,7 +3,7 @@ use super::helpers::with_scratch;
 use poulpy_core::{
     GLWEMaskFill,
     layouts::{
-        GGLWE, GGLWELayout, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GGLWE, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, SetGaloisElement,
     },
     test_suite::keys::fill_by_digit,
@@ -68,5 +68,18 @@ where
         module.gglwe_prepare(&mut prepared, &coefficients, scratch);
     });
     prepared.set_p(p);
+    prepared
+}
+
+pub(crate) fn prepared_gglwe<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<B::OwnedBuf, B>
+where
+    B: Backend<ZnxWord = i64>,
+    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B>,
+{
+    let coefficients = fixture_gglwe(module, layout, seed);
+    let mut prepared = module.gglwe_prepared_alloc_from_infos(layout);
+    with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+        module.gglwe_prepare(&mut prepared, &coefficients, scratch)
+    });
     prepared
 }
