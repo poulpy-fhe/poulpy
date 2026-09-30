@@ -28,6 +28,7 @@ use poulpy_core::layouts::{
 };
 
 use crate::layouts::{RingSwitchKeys, RingSwitchKeysLayout};
+use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
     layouts::{
@@ -506,7 +507,7 @@ fn build_reserved(spec: PresetSpec, output_reserve_bits: usize) -> Result<Bootst
         CoeffsMeta::from_delta_budget(spec.s2c_log_delta, spec.s2c_log_budget),
     )?
     .with_scaling(match spec.pipeline {
-        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).exp2(),
+        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
         BootstrappingPipeline::S2CFirst => 0.5,
     })?;
     let coeffs_to_slots = DFTPlan::new(

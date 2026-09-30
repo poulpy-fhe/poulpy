@@ -60,6 +60,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- `Polynomial::chebyshev_interpolate_with_cos` interpolates with a caller-supplied cosine for the Chebyshev nodes, so that `poulpy-ckks` can make the nodes independent of the platform libm.
 - `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
@@ -103,6 +104,16 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on every platform, as a first step towards encodings that are byte identical on every backend.
+  The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through soft-float `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
+  `libm` and `astro-float-num` are pinned to exact versions because these results are not correctly rounded.
+  DFT matrices, EvalMod, the Remez, sign and LUT approximations, the PaCo and SHIP coefficient encodings and the bootstrapping presets use it.
+  Setup constants can differ in the last bit from earlier versions, so cached bootstrap parameters must be rebuilt.
+- Add `CKKSFloat::ckks_root_of_unity`, the correctly rounded `(cos, sin)` of `2*pi*k / 2^log_order`.
+  Orders up to `2^17` read checked-in binary64 and binary128 quadrant tables, and larger orders evaluate the same definition on demand.
+  The DFT matrices use these roots.
+- Add `CKKSFloat::ckks_quantize` and `ckks_dequantize`, exact conversions between scalars and plaintext integers at a power-of-two scale, which reject non-finite values and integer overflow.
+  Encoding and decoding use them in place of a multiplication by a computed scale factor.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; its reference is the trait `CKKSBootstrappingReference`, implemented for `Module`, in place of the crate-private `BootstrappingReference` driver. `test_bootstrapping_parity` compares it across backends.
 - **Breaking:** remove the test-suite `TestContextHostModule` trait; host modules need no bound.
 - **Breaking:** `test_bootstrapping_{standard,evalround,s2c_first,batch}_e2e` take only their parameters; they build their own modules.
