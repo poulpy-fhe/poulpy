@@ -206,6 +206,36 @@ where
             noise_have <= noise_want,
             "noise_have: {noise_have} > noise_want: {noise_want}"
         );
+
+        let pt_zero: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut source_xe_want: Source = Source::new([2u8; 32]);
+        module.glwe_compressed_encrypt_sk(
+            &mut ct_compressed,
+            &pt_zero,
+            &sk_prepared,
+            seed_xa,
+            &glwe_infos,
+            &mut source_xe_want,
+            &mut scratch.borrow(),
+        );
+        let mut ct_zero: GLWECompressed<BE::OwnedBuf, BE::ZnxWord> = module.glwe_compressed_alloc_from_infos(&glwe_infos);
+        let mut source_xe_have: Source = Source::new([2u8; 32]);
+        module.glwe_compressed_encrypt_zero_sk(
+            &mut ct_zero,
+            &sk_prepared,
+            seed_xa,
+            &glwe_infos,
+            &mut source_xe_have,
+            &mut scratch.borrow(),
+        );
+        let (mut bytes_want, mut bytes_have) = (Vec::new(), Vec::new());
+        ct_compressed.write_to(&mut bytes_want).unwrap();
+        ct_zero.write_to(&mut bytes_have).unwrap();
+        assert_eq!(
+            bytes_have, bytes_want,
+            "zero encryption differs from encrypting a zero plaintext"
+        );
+        assert_eq!(source_xe_have.new_seed(), source_xe_want.new_seed());
     }
 }
 

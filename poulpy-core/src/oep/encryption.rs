@@ -351,6 +351,19 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWECompressedToBackendMut<Self> + GLWECompressedSeedMut,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<Self>;
+
     fn gglwe_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -829,6 +842,21 @@ macro_rules! impl_encryption_reference_full {
         E: $crate::api::EncryptionInfos,
         S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWECompressedEncryptSkReference<$be>>::glwe_compressed_encrypt_sk_reference::<R, P, S, E>(module, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+        }
+
+    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+        module: &::poulpy_hal::layouts::Module<$be>,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWECompressedToBackendMut<$be> + $crate::layouts::GLWECompressedSeedMut,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWECompressedEncryptSkReference<$be>>::glwe_compressed_encrypt_zero_sk_reference::<R, S, E>(module, res, sk, seed_xa, enc_infos, source_xe, scratch)
         }
 
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

@@ -489,6 +489,21 @@ impl_encryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         BE::glwe_compressed_encrypt_sk(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+    },
+    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<BE>,
+    ) where
+        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>,
+    {
+        BE::glwe_compressed_encrypt_zero_sk(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 );
 
