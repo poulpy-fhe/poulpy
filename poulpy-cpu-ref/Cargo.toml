@@ -68,7 +68,7 @@ name = "max_array"
 required-features = ["enable-bin-fhe"]
 
 [dev-dependencies]
-poulpy-cpu-oracle = {workspace = true, features = ["enable-core"]}
+poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe"]}
 paste = {workspace = true}
 dashu-int = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
