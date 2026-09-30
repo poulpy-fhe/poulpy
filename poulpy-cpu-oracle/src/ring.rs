@@ -81,15 +81,14 @@ pub fn inverse<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mu
     res.copy_from_slice(&coeffs[..n]);
 }
 
-/// `res += a * b` on stored spectra.
+/// `res += a * b` on stored spectra. Products act slot by slot, so a
+/// conjugate-invariant product needs only its stored slots.
 pub fn mul_acc<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft], b: &[F::Dft]) {
     let n = res.len();
     if is_standard::<R>(n) {
         return F::mul_acc(res, a, b);
     }
-    let mut spectrum = expand::<F>(res);
-    F::mul_acc(&mut spectrum, &expand::<F>(a), &expand::<F>(b));
-    res.copy_from_slice(&spectrum[..n]);
+    F::ci_mul_acc(res, a, b);
 }
 
 /// `res *= a` on stored spectra.
@@ -98,9 +97,7 @@ pub fn mul_assign<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft]) {
     if is_standard::<R>(n) {
         return F::mul_assign(res, a);
     }
-    let mut spectrum = expand::<F>(res);
-    F::mul_assign(&mut spectrum, &expand::<F>(a));
-    res.copy_from_slice(&spectrum[..n]);
+    F::ci_mul_assign(res, a);
 }
 
 /// `res = DFT(sigma_p(IDFT(a)))` on stored spectra.

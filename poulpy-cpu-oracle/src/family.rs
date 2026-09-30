@@ -73,6 +73,12 @@ pub trait Family: Copy + Eq + Hash + Debug + Send + Sync + 'static {
     /// element whose first `n` slots are `a`: its values on the other root of
     /// each conjugate pair.
     fn ci_expand(res: &mut [Self::Dft], a: &[Self::Dft]);
+
+    /// `res += a * b` on conjugate-invariant spectra, slot by slot.
+    fn ci_mul_acc(res: &mut [Self::Dft], a: &[Self::Dft], b: &[Self::Dft]);
+
+    /// `res *= a` on conjugate-invariant spectra, slot by slot.
+    fn ci_mul_assign(res: &mut [Self::Dft], a: &[Self::Dft]);
 }
 
 /// `bitrev(i)` over `bits` bits.

@@ -221,28 +221,68 @@ pub type FFT64CIAvxRayon = FFT64AvxRayon<poulpy_hal::layouts::ConjugateInvariant
 pub type NTT4x30CIAvxRayon = NTT4x30AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avx, crate::FFT64CIAvx, crate::FFT64Avx);
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64avx,
+    crate::FFT64CIAvx,
+    crate::FFT64Avx,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avx, crate::NTT4x30CIAvx, crate::NTT4x30Avx);
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_fft64avxrayon, crate::FFT64CIAvxRayon, crate::FFT64AvxRayon);
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(ci_ntt4x30avxrayon, crate::NTT4x30CIAvxRayon, crate::NTT4x30AvxRayon);
+poulpy_cpu_ref::conjugate_invariant_test_suite!(
+    ci_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avx, crate::FFT64CIAvx, crate::FFT64Avx);
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avx,
+    crate::FFT64CIAvx,
+    crate::FFT64Avx,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avx, crate::NTT4x30CIAvx, crate::NTT4x30Avx);
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_fft64avxrayon, crate::FFT64CIAvxRayon, crate::FFT64AvxRayon);
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(ci_core_ntt4x30avxrayon, crate::NTT4x30CIAvxRayon, crate::NTT4x30AvxRayon);
+poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
