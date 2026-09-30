@@ -3,7 +3,7 @@
 //! Pi comes from Machin's formula and the cosine from its Taylor series, both
 //! evaluated on scaled integers with a bounded truncation error. The
 //! production tables of `poulpy-ckks` are checked against these values, not
-//! derived from them.
+//! derived from them, and the oracle encoding transform uses them.
 
 use std::sync::OnceLock;
 

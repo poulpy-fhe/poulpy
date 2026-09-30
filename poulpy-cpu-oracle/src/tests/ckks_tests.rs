@@ -15,7 +15,7 @@ ckks_backend_test_suite!(
     mod fft64_f64,
     backend = crate::FFT64Oracle,
     scalar = f64,
-    encoder = crate::ComplexFft<f64>,
+    encoder = crate::EncodingFft<f64>,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -24,7 +24,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_f64,
     backend = crate::NTT4x30Oracle,
     scalar = f64,
-    encoder = crate::ComplexFft<f64>,
+    encoder = crate::EncodingFft<f64>,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -33,7 +33,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_f128,
     backend = crate::NTT4x30Oracle,
     scalar = poulpy_ckks::Quad,
-    encoder = crate::ComplexFft<poulpy_ckks::Quad>,
+    encoder = crate::EncodingFft<poulpy_ckks::Quad>,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
     rotations = super::ATK_ROTATIONS,
 );
@@ -44,7 +44,7 @@ ckks_backend_rank2_test_suite!(
     mod ntt4x30_f64_rank2,
     backend = crate::NTT4x30Oracle,
     scalar = f64,
-    encoder = crate::ComplexFft<f64>,
+    encoder = crate::EncodingFft<f64>,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64_RANK2,
     rotations = super::ATK_ROTATIONS,
 );

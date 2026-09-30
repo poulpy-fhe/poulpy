@@ -13,7 +13,9 @@ mod backend;
 mod bin_fhe;
 #[cfg(feature = "enable-ckks")]
 mod ckks;
-#[cfg(all(test, feature = "enable-ckks"))]
+#[cfg(feature = "enable-ckks")]
+mod ckks_fft;
+#[cfg(feature = "enable-ckks")]
 mod ckks_roots;
 #[cfg(feature = "enable-core")]
 mod core_impl;
@@ -38,6 +40,9 @@ pub use family::Family;
 pub use fft::{ComplexFft, Fft64};
 pub use ntt::{Ntt4x30, Primes30};
 pub use ring::OracleRing;
+
+#[cfg(feature = "enable-ckks")]
+pub use ckks_fft::EncodingFft;
 
 #[cfg(feature = "enable-core")]
 pub(crate) use scalar_znx_fill::ScalarZnxFill;
