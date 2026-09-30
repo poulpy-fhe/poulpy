@@ -877,6 +877,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
             );
             run_test!(
+                bootstrapping_fold_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_fold_e2e
+            );
+            run_test!(
                 functional_bootstrapping_e2e,
                 $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e
             );
