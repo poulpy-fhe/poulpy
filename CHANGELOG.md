@@ -60,6 +60,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
 - **Breaking:** the GGSW methods of `ConversionImpl` and `ConversionReference` move to `GGSWConversionImpl` (registered by `impl_ggsw_conversion_reference_full!`) and `GGSWConversionReference`; `AutomorphismImpl` requires `GLWEKeyswitchImpl` and `GGSWConversionImpl`, and `GGSWKeyswitchImpl` requires `GGSWConversionImpl`, instead of `ConversionImpl`; `impl_core_reference_full!` and `impl_operations_reference_full!` no longer register LWE conversion, packing, GLWE/GGSW rotate, or `mul_xp_minus_one`, and `impl_core_reference_full!` no longer registers the GLWE trace, whose Galois elements are the standard ring's.
