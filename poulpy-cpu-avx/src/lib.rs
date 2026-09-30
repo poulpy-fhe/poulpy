@@ -195,6 +195,8 @@ mod ntt4x30;
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+pub use fft64::FFT64AvxEncodingTable;
 #[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
 pub use fft64::FFT64AvxRayon;
 #[cfg(feature = "enable-avx")]

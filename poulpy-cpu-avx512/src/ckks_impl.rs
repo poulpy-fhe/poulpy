@@ -13,17 +13,17 @@ impl_ckks_encapsulated_mod_up_reference!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx512Rayon);
 
-// `f64` encodes through the AVX-512 kernels; `Quad` has no accelerated
-// transform and falls back to the generic scalar table. Rust has no
-// specialization, so accelerated backends list their precisions explicitly.
+// `f64` encodes through the AVX-512 kernels and `Quad` through the portable
+// kernels, both on the canonical twiddles. Rust has no specialization, so
+// accelerated backends list their precisions explicitly.
 macro_rules! select_avx512_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = super::FFT64Avx512ReimTable;
+            type Fft = super::FFT64Avx512EncodingTable;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>;
         }
     };
 }

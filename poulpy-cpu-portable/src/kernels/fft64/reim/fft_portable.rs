@@ -21,8 +21,31 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::kernels::fft64::reim::{as_arr, as_arr_mut};
 
+/// Forward negacyclic FFT in reim layout.
+///
+/// Every butterfly rounds one product and fuses the other into a
+/// multiply-add, at the positions the AVX2, AVX-512 and NEON kernels use, so
+/// all CPU backends return the same bits. On `x86_64` builds without the `fma`
+/// target feature, the multiply-adds run on the FMA unit when the CPU has one
+/// and in software otherwise, with the same results.
 #[inline(always)]
 pub fn fft_portable<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "fma")))]
+    if std::arch::is_x86_feature_detected!("fma") {
+        // SAFETY: the CPU supports FMA.
+        return unsafe { fft_portable_fma(m, omg, data) };
+    }
+    fft_portable_body(m, omg, data)
+}
+
+#[cfg(all(target_arch = "x86_64", not(target_feature = "fma")))]
+#[target_feature(enable = "fma")]
+fn fft_portable_fma<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
+    fft_portable_body(m, omg, data)
+}
+
+#[inline(always)]
+fn fft_portable_body<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
     assert!(data.len() == 2 * m);
     let (re, im) = data.split_at_mut(m);
 
@@ -42,38 +65,57 @@ pub fn fft_portable<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &m
     }
 }
 
+/// Splits blocks larger than 2048 with one twiddle layer each, then runs the
+/// breadth-first transform on every leaf, visiting the blocks in depth-first
+/// preorder as the twiddle table lays them out. It is a loop rather than a
+/// recursion so that it inlines into the FMA-enabled entry point.
 #[inline(always)]
 fn fft_rec_16_portable<R: Float + FloatConst + Debug>(m: usize, re: &mut [R], im: &mut [R], omg: &[R], mut pos: usize) -> usize {
-    if m <= 2048 {
-        return fft_bfs_16_portable(m, re, im, omg, pos);
-    };
-
-    let h = m >> 1;
-    twiddle_fft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
-    pos += 2;
-    pos = fft_rec_16_portable(h, re, im, omg, pos);
-    pos = fft_rec_16_portable(h, &mut re[h..], &mut im[h..], omg, pos);
+    // The stack holds at most one pending right sibling per level, plus the
+    // current block.
+    let mut blocks = [(0usize, 0usize); usize::BITS as usize + 1];
+    blocks[0] = (0, m);
+    let mut len = 1;
+    while len > 0 {
+        len -= 1;
+        let (off, size) = blocks[len];
+        let (re, im) = (&mut re[off..off + size], &mut im[off..off + size]);
+        if size <= 2048 {
+            pos = fft_bfs_16_portable(size, re, im, omg, pos);
+            continue;
+        }
+        let h = size >> 1;
+        twiddle_fft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
+        pos += 2;
+        blocks[len] = (off + h, h);
+        blocks[len + 1] = (off, h);
+        len += 2;
+    }
     pos
 }
 
+/// `(a, b) <- (a + b * w, a - b * w)`, rounding the products by `Im(w)`.
 #[inline(always)]
 fn cplx_twiddle<R: Float + FloatConst>(ra: &mut R, ia: &mut R, rb: &mut R, ib: &mut R, omg_re: R, omg_im: R) {
-    let dr: R = *rb * omg_re - *ib * omg_im;
-    let di: R = *rb * omg_im + *ib * omg_re;
+    let dr: R = rb.mul_add(omg_re, -(*ib * omg_im));
+    let di: R = ib.mul_add(omg_re, *rb * omg_im);
     *rb = *ra - dr;
     *ib = *ia - di;
     *ra = *ra + dr;
     *ia = *ia + di;
 }
 
+/// `(a, b) <- (a - b * i * w, a + b * i * w)`, rounding the products by
+/// `Re(w)`. The imaginary part is computed negated, as the SIMD kernels do,
+/// which also fixes the sign of exact zeros.
 #[inline(always)]
 fn cplx_i_twiddle<R: Float + FloatConst>(ra: &mut R, ia: &mut R, rb: &mut R, ib: &mut R, omg_re: R, omg_im: R) {
-    let dr: R = *rb * omg_im + *ib * omg_re;
-    let di: R = *rb * omg_re - *ib * omg_im;
+    let dr: R = rb.mul_add(omg_im, *ib * omg_re);
+    let neg_di: R = ib.mul_add(omg_im, -(*rb * omg_re));
     *rb = *ra + dr;
-    *ib = *ia - di;
+    *ib = *ia + neg_di;
     *ra = *ra - dr;
-    *ia = *ia + di;
+    *ia = *ia - neg_di;
 }
 
 #[inline(always)]

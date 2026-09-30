@@ -21,7 +21,27 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::kernels::fft64::reim::{as_arr, as_arr_mut};
 
+/// Inverse negacyclic FFT in reim layout, unscaled.
+///
+/// The butterflies follow the same fused multiply-add convention as
+/// [`fft_portable`](super::fft_portable), with the same dispatch on `x86_64`.
 pub fn ifft_portable<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "fma")))]
+    if std::arch::is_x86_feature_detected!("fma") {
+        // SAFETY: the CPU supports FMA.
+        return unsafe { ifft_portable_fma(m, omg, data) };
+    }
+    ifft_portable_body(m, omg, data)
+}
+
+#[cfg(all(target_arch = "x86_64", not(target_feature = "fma")))]
+#[target_feature(enable = "fma")]
+fn ifft_portable_fma<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
+    ifft_portable_body(m, omg, data)
+}
+
+#[inline(always)]
+fn ifft_portable_body<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &mut [R]) {
     assert!(data.len() == 2 * m);
     let (re, im) = data.split_at_mut(m);
 
@@ -41,16 +61,36 @@ pub fn ifft_portable<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &
     }
 }
 
+/// Runs the breadth-first inverse on every leaf of at most 2048, then merges
+/// the halves of each larger block with one twiddle layer, visiting the blocks
+/// in depth-first postorder as the twiddle table lays them out. It is a loop
+/// rather than a recursion so that it inlines into the FMA-enabled entry point.
 #[inline(always)]
 fn ifft_rec_16_portable<R: Float + FloatConst>(m: usize, re: &mut [R], im: &mut [R], omg: &[R], mut pos: usize) -> usize {
-    if m <= 2048 {
-        return ifft_bfs_16_portable(m, re, im, omg, pos);
-    };
-    let h: usize = m >> 1;
-    pos = ifft_rec_16_portable(h, re, im, omg, pos);
-    pos = ifft_rec_16_portable(h, &mut re[h..], &mut im[h..], omg, pos);
-    inv_twiddle_ifft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
-    pos += 2;
+    // `(offset, size, children_done)`. The stack holds at most one finished
+    // parent and one pending right sibling per level, plus the current block.
+    let mut blocks = [(0usize, 0usize, false); 2 * usize::BITS as usize + 1];
+    blocks[0] = (0, m, false);
+    let mut len = 1;
+    while len > 0 {
+        len -= 1;
+        let (off, size, children_done) = blocks[len];
+        let (re, im) = (&mut re[off..off + size], &mut im[off..off + size]);
+        if size <= 2048 {
+            pos = ifft_bfs_16_portable(size, re, im, omg, pos);
+            continue;
+        }
+        let h = size >> 1;
+        if children_done {
+            inv_twiddle_ifft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
+            pos += 2;
+        } else {
+            blocks[len] = (off, size, true);
+            blocks[len + 1] = (off + h, h, false);
+            blocks[len + 2] = (off, h, false);
+            len += 3;
+        }
+    }
     pos
 }
 
@@ -87,24 +127,26 @@ fn ifft_bfs_16_portable<R: Float + FloatConst>(m: usize, re: &mut [R], im: &mut 
     pos
 }
 
+/// `(a, b) <- (a + b, (a - b) * w)`, rounding the products by `Im(w)`.
 #[inline(always)]
 fn inv_twiddle<R: Float + FloatConst>(ra: &mut R, ia: &mut R, rb: &mut R, ib: &mut R, omg_re: R, omg_im: R) {
     let r_diff: R = *ra - *rb;
     let i_diff: R = *ia - *ib;
     *ra = *ra + *rb;
     *ia = *ia + *ib;
-    *rb = r_diff * omg_re - i_diff * omg_im;
-    *ib = r_diff * omg_im + i_diff * omg_re;
+    *rb = r_diff.mul_add(omg_re, -(i_diff * omg_im));
+    *ib = i_diff.mul_add(omg_re, r_diff * omg_im);
 }
 
+/// `(a, b) <- (a + b, -(a - b) * i * w)`, rounding the products by `Re(w)`.
 #[inline(always)]
 fn inv_itwiddle<R: Float + FloatConst>(ra: &mut R, ia: &mut R, rb: &mut R, ib: &mut R, omg_re: R, omg_im: R) {
     let r_diff: R = *ra - *rb;
     let i_diff: R = *ia - *ib;
     *ra = *ra + *rb;
     *ia = *ia + *ib;
-    *rb = r_diff * omg_im + i_diff * omg_re;
-    *ib = -r_diff * omg_re + i_diff * omg_im;
+    *rb = r_diff.mul_add(omg_im, i_diff * omg_re);
+    *ib = i_diff.mul_add(omg_im, -(r_diff * omg_re));
 }
 
 #[inline(always)]

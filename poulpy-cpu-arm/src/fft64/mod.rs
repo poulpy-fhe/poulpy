@@ -17,6 +17,8 @@ mod tests;
 
 #[allow(unused_imports)]
 pub use poulpy_cpu_portable::kernels::fft64::module::FFTModuleHandle;
+#[cfg(feature = "enable-ckks")]
+pub use reim::FFT64NeonEncodingTable;
 pub use reim::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 
 /// NEON-accelerated CPU backend for Poulpy HAL.
