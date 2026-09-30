@@ -4,7 +4,7 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEEncryptPk, GLWENoise,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
         GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
     },
 };
@@ -16,7 +16,7 @@ use poulpy_hal::{
     test_suite::vec_znx_backend_mut,
 };
 
-use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, ideal_secret, party_secrets, pk_entry_seed};
+use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, ideal_secret, party_secrets};
 use crate::{
     api::{GLWEPatCompressedOps, GLWEPublicKeyShare},
     layouts::MHEModuleAlloc,
@@ -48,42 +48,12 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
+    let pk_prepared = collective_public_key(module, &parties, &layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .glwe_public_key_share_tmp_bytes(&layout)
-            .max(module.glwe_public_key_finalize_tmp_bytes())
-            .max(module.glwe_public_key_prepare_tmp_bytes(&layout))
-            .max(module.glwe_encrypt_pk_tmp_bytes(&layout, &layout))
+            .glwe_encrypt_pk_tmp_bytes(&layout, &layout)
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
-
-    let pats: Vec<_> = (0..RANK.as_usize())
-        .map(|entry| {
-            let mut acc = module.glwe_pat_compressed_alloc_from_infos(&layout);
-            let mut share = module.glwe_pat_compressed_alloc_from_infos(&layout);
-            for (i, (_, sk)) in parties.iter().enumerate() {
-                let dst = if i == 0 { &mut acc } else { &mut share };
-                let mut source_xe = Source::new([10 + (i + PARTIES * entry) as u8; 32]);
-                module.glwe_public_key_share(
-                    dst,
-                    sk,
-                    pk_entry_seed(entry),
-                    &enc_infos,
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
-                if i > 0 {
-                    module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
-                }
-            }
-            acc
-        })
-        .collect();
-
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    module.glwe_public_key_finalize(&mut pk, &pats, Distribution::TernaryProb(0.5), &mut scratch.borrow());
-    let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&layout);
-    module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
 
     let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
     module.vec_znx_fill_uniform_source(
