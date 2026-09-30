@@ -5,11 +5,20 @@ use super::helpers::{
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
     gen_sk, quantized_slots, test_vector_1,
 };
-use crate::{CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, api::CKKSDecryptOps, layouts::CKKSModuleAlloc};
-use poulpy_core::layouts::LWEInfos;
+use super::parity::helpers::snapshot;
+use crate::{
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    api::{CKKSDecryptOps, CKKSEncryptOps},
+    layouts::CKKSModuleAlloc,
+};
+use poulpy_core::{
+    EncryptionLayout,
+    layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos},
+};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
+    source::Source,
 };
 
 use crate::SlotsKind;
@@ -112,6 +121,55 @@ where
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     assert_precision_for_log_delta("encrypt_decrypt re", &re_out, &re1, ct.log_delta(), params.n);
     assert_precision_for_log_delta("encrypt_decrypt im", &im_out, &im1, ct.log_delta(), params.n);
+}
+
+/// Encryption and decryption reject mismatched degrees without changing outputs or random sources.
+pub fn test_encryption_degree_mismatch_error<BE>()
+where
+    BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl,
+    Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE>,
+{
+    let n = 2 * BE::MIN_DEGREE.max(16);
+    let module = Module::<BE>::new(n as u64);
+    let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: 8usize.into(),
+        k: 8usize.into(),
+        rank: 1usize.into(),
+    })
+    .unwrap();
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
+    let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
+    let sk = module.glwe_secret_prepared_alloc(1usize.into());
+    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let ct_before = snapshot::<BE, _>(&ct);
+    let pt_before = snapshot::<BE, _>(&pt);
+    let mut xe = Source::new([1; 32]);
+    let mut xa = Source::new([2; 32]);
+
+    for other_n in [n / 2, n * 2] {
+        let other_module = Module::<BE>::new(other_n as u64);
+        let other_sk = other_module.glwe_secret_prepared_alloc(1usize.into());
+        for (call_module, key) in [(&module, &other_sk), (&other_module, &sk), (&other_module, &other_sk)] {
+            let expected = |op| CKKSCompositionError::EncryptionDegreeMismatch {
+                op,
+                module_n: call_module.n(),
+                ct_n: n,
+                sk_n: key.n().as_usize(),
+            };
+            let err = call_module.ckks_decrypt(&mut pt, &ct, key, &mut scratch.arena()).unwrap_err();
+            assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
+            assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+
+            let err = call_module
+                .ckks_encrypt_sk(&mut ct, &pt, key, &enc, &mut xe, &mut xa, &mut scratch.arena())
+                .unwrap_err();
+            assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
+            assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+        }
+    }
+    assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
+    assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }
 
 pub fn test_decrypt_extract_same_meta<BE, F, E>(

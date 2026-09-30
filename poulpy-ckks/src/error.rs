@@ -122,6 +122,13 @@ pub enum CKKSCompositionError {
     },
     /// A full plaintext-vector operation received a plaintext with the wrong degree.
     PlaintextDegreeMismatch { op: &'static str, ct_n: usize, pt_n: usize },
+    /// Encryption or decryption received a ciphertext or secret key of a different degree than the module.
+    EncryptionDegreeMismatch {
+        op: &'static str,
+        module_n: usize,
+        ct_n: usize,
+        sk_n: usize,
+    },
     /// A plaintext-coefficient operation requested a coefficient outside the source or destination layout.
     PlaintextCoefficientOutOfRange {
         op: &'static str,
@@ -207,6 +214,15 @@ impl fmt::Display for CKKSCompositionError {
                      the degree must be the ciphertext's or a power-of-two divisor of it from the backend's minimum degree"
                 )
             }
+            Self::EncryptionDegreeMismatch {
+                op,
+                module_n,
+                ct_n,
+                sk_n,
+            } => write!(
+                f,
+                "{op} requires ciphertext and secret key degrees to match module degree {module_n}, got ciphertext degree {ct_n} and secret key degree {sk_n}"
+            ),
             Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
                 write!(f, "{op} coefficient index {coeff} is out of range for {role} degree {n}")
             }
@@ -285,6 +301,19 @@ pub(crate) fn ensure_base2k_match(op: &'static str, ct_base2k: usize, pt_base2k:
             op,
             ct_base2k,
             pt_base2k,
+        }
+        .into());
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_encryption_degrees(op: &'static str, module_n: usize, ct_n: usize, sk_n: usize) -> Result<()> {
+    if ct_n != module_n || sk_n != module_n {
+        return Err(CKKSCompositionError::EncryptionDegreeMismatch {
+            op,
+            module_n,
+            ct_n,
+            sk_n,
         }
         .into());
     }

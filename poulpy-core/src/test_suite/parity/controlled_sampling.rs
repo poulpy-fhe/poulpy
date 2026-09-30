@@ -162,6 +162,11 @@ macro_rules! core_encryption_parity_test_suite {
     ) => {
         mod $name {
             #[test]
+            fn glwe_decrypt_degree_mismatch() {
+                $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<$backend_test>();
+            }
+
+            #[test]
             fn glwe_encryption() {
                 use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};

@@ -14,6 +14,7 @@
 //! parity alone cannot tell you the reference is right.
 
 pub mod copy;
+pub mod decryption;
 pub mod keys;
 pub mod noise;
 pub mod parity;

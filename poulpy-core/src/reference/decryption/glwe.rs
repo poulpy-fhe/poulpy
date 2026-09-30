@@ -100,12 +100,9 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    #[cfg(debug_assertions)]
-    {
-        assert_eq!(res.rank(), sk.rank());
-        assert_eq!(res.n(), sk.n());
-        assert_eq!(pt.n(), sk.n());
-    }
+    debug_assert_eq!(res.rank(), sk.rank());
+    assert_eq!(res.n(), sk.n(), "GLWE ciphertext and secret key degrees must match");
+    assert_eq!(pt.n(), sk.n(), "GLWE plaintext and secret key degrees must match");
     assert!(
         scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),
         "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
