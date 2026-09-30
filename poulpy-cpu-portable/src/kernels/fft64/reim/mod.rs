@@ -63,6 +63,13 @@ pub(crate) fn frac_rev_bits<R: Float + FloatConst>(x: usize) -> R {
     }
 }
 
+/// `(cos 2 pi t, sin 2 pi t)` from the platform trigonometry of the scalar.
+#[inline(always)]
+pub(crate) fn platform_root<R: Float + FloatConst>(turn: R) -> (R, R) {
+    let angle = R::from(2).unwrap() * R::PI() * turn;
+    (angle.cos(), angle.sin())
+}
+
 pub trait ReimFFTExecute<D, T> {
     fn reim_dft_execute(table: &D, data: &mut [T]);
 }
