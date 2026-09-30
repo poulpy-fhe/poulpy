@@ -46,8 +46,8 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::BootstrappingContext;
-use poulpy_core::layouts::GLWESecretSampling;
+use crate::{layouts::BootstrappingContext, oep::CIBridge};
+use poulpy_core::layouts::{GLWESecretCIUnfold, GLWESecretSampling};
 use poulpy_core::{Distribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
@@ -425,6 +425,35 @@ impl RingSwitchKeysLayout {
             inbound: encrypt(self.inbound, sk_in, sk)?,
             outbound: encrypt(self.outbound, sk, sk_in)?,
         })
+    }
+
+    /// Generates both keys for the conjugate-invariant secret `ci_sk` of
+    /// `ci_module`, which unfolds it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_ci<BE: CIBridge>(
+        &self,
+        module: &Module<BE>,
+        ci_module: &Module<BE::CI>,
+        ci_sk: &BackendGLWESecret<BE::CI>,
+        sk: &BackendGLWESecret<BE>,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RingSwitchKeySet<BE::OwnedBuf, BE::ZnxWord>>
+    where
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWESwitchingKeyEncryptSk<BE>,
+        Module<BE::CI>: GLWESecretCIUnfold<BE::CI>,
+    {
+        anyhow::ensure!(ci_sk.n().as_usize() == ci_module.n(), "invalid CI secret degree");
+        self.generate(
+            module,
+            &ci_module.glwe_secret_ci_unfold(ci_sk),
+            sk,
+            source_xe,
+            source_xa,
+            scratch,
+        )
     }
 }
 

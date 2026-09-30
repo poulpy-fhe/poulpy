@@ -6,7 +6,7 @@ use super::{
 use crate::{
     CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
     layouts::{CKKSCiphertextOwned, CKKSFoldKeySet, CKKSFoldKeys, CKKSModuleAlloc, RingSwitchKeys},
-    oep::CKKSFoldImpl,
+    oep::{CIBridge, CKKSFoldImpl},
     reference::fold::CKKSFoldRing,
     test_suite::CKKSTestParams,
 };
@@ -16,7 +16,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleNew,
-    layouts::{Backend, Module, Standard},
+    layouts::{Backend, ConjugateInvariant, Module, Standard},
 };
 
 type Outcome = (Result<(), String>, Vec<Snapshot>);
@@ -55,19 +55,21 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
 
 /// Folds `ins` and unfolds fixture refreshed ciphertexts of width `k_refreshed`
 /// into outputs like `out`, each within its exact guarded scratch.
-fn run_case<B, K>(
+fn run_case<B, IN, K>(
     module: &Module<B>,
-    input_module: &Module<B>,
-    ins: &[CKKSCiphertextOwned<B>],
+    input_module: &Module<IN>,
+    ins: &[CKKSCiphertextOwned<IN>],
     out: &CKKSLayout,
     k_refreshed: usize,
     keys: &K,
 ) -> Vec<Outcome>
 where
     B: Backend<ZnxWord = i64> + CKKSFoldImpl,
+    IN: Backend<ZnxWord = i64>,
+    IN::Ring: CKKSFoldRing<B, IN>,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
-    Standard: CKKSFoldRing<B, B>,
-    K: CKKSFoldKeys<B, B>,
+    Module<IN>: CKKSModuleAlloc<IN> + GLWEMaskFill<IN>,
+    K: CKKSFoldKeys<B, IN>,
 {
     let bytes = B::ckks_fold_tmp_bytes_impl(module, input_module, out, &ins[0], keys);
     let folded_layout = B::ckks_fold_layout_impl(module, input_module, &ins[0], keys);
@@ -103,16 +105,21 @@ where
         B::ckks_unfold_impl(module, input_module, &mut outs, &refreshed, ins, keys, scratch)
     });
     assert!(result.is_ok(), "unfold: {result:?}");
-    outcomes.push((result.map_err(|e| e.to_string()), outs.iter().map(snapshot::<B, _>).collect()));
+    outcomes.push((
+        result.map_err(|e| e.to_string()),
+        outs.iter().map(snapshot::<IN, _>).collect(),
+    ));
     outcomes
 }
 
 fn run_fold<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
 where
-    B: Backend<ZnxWord = i64> + CKKSFoldImpl,
+    B: Backend<ZnxWord = i64> + CKKSFoldImpl + CIBridge,
     Module<B>:
         ModuleNew<B> + CKKSModuleAlloc<B> + GLWEMaskFill<B> + GLWEAutomorphismKeyPreparedFactory<B> + GGLWEPreparedFactory<B>,
+    Module<B::CI>: ModuleNew<B::CI> + CKKSModuleAlloc<B::CI> + GLWEMaskFill<B::CI>,
     Standard: CKKSFoldRing<B, B>,
+    ConjugateInvariant: CKKSFoldRing<B, B::CI>,
 {
     let (n, b) = (module.n(), params.base2k);
     let (log_delta, k_in, k_refreshed, k_out) = (12, 3 * b, 4 * b, 6 * b);
@@ -159,16 +166,32 @@ where
         k_refreshed,
         &keys,
     ));
+    // Conjugate-invariant inputs, at half the degree and merged two per bootstrap at a quarter.
+    for degree in [n / 2, n / 4] {
+        let ci = Module::<B::CI>::new(degree as u64);
+        let ins: Vec<_> = [199u8, 211, 223]
+            .map(|seed| fixture_ciphertext(&ci, &layout(degree, b, k_in, log_delta, SlotsKind::Real), seed))
+            .into();
+        outcomes.extend(run_case(
+            module,
+            &ci,
+            &ins,
+            &layout(degree, b, k_out, log_delta, SlotsKind::Real),
+            k_refreshed,
+            &ring_switch,
+        ));
+    }
     outcomes
 }
 
 /// Compare selected fold implementations on the same fixture inputs and keys:
-/// a complex input and real pairs under the bootstrap secret at its degree, and
-/// merged from half the degree under their own secret.
+/// a complex input and real pairs under the bootstrap secret at its degree and
+/// merged from half the degree under their own secret, and conjugate-invariant
+/// batches alone and merged.
 pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
-    BR: Backend<ZnxWord = i64> + CKKSFoldImpl,
-    BT: Backend<ZnxWord = i64> + CKKSFoldImpl,
+    BR: Backend<ZnxWord = i64> + CKKSFoldImpl + CIBridge,
+    BT: Backend<ZnxWord = i64> + CKKSFoldImpl + CIBridge,
     Module<BR>: ModuleNew<BR>
         + CKKSModuleAlloc<BR>
         + GLWEMaskFill<BR>
@@ -179,7 +202,10 @@ where
         + GLWEMaskFill<BT>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>,
+    Module<BR::CI>: ModuleNew<BR::CI> + CKKSModuleAlloc<BR::CI> + GLWEMaskFill<BR::CI>,
+    Module<BT::CI>: ModuleNew<BT::CI> + CKKSModuleAlloc<BT::CI> + GLWEMaskFill<BT::CI>,
     Standard: CKKSFoldRing<BR, BR> + CKKSFoldRing<BT, BT>,
+    ConjugateInvariant: CKKSFoldRing<BR, BR::CI> + CKKSFoldRing<BT, BT::CI>,
 {
     assert_eq!(reference.n(), tested.n());
     assert_eq!(run_fold(params, reference), run_fold(params, tested), "fold differs");

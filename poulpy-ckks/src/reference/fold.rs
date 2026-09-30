@@ -17,12 +17,12 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleN, VecZnxSwitchRing},
-    layouts::{Backend, Module, Ring, ScratchArena, Standard, ZnxWord},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard, ZnxWord},
 };
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     layouts::{
         CKKSCiphertextOwned, CKKSFoldKeys, CKKSModuleAlloc,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
@@ -194,6 +194,95 @@ where
                 }
             }
             _ => unreachable!("a unit has one or two ciphertexts"),
+        }
+        Ok(())
+    }
+}
+
+/// Conjugate-invariant inputs of degree `n`: unfolded to the standard ring of degree
+/// `2n` and paired, then folded back. The unfolded secret is invariant under
+/// conjugation, so the split is keyless: the real part at `X^j` and the imaginary
+/// part at `X^(j + N/2)` fold into their outputs. The fold's factor of two drops one
+/// bit of every output.
+impl<BE, CI> CKKSFoldRing<BE, CI> for ConjugateInvariant
+where
+    BE: Backend<Ring = Standard>,
+    CI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Module<BE>: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + VecZnxSwitchRing<BE>
+        + GLWERotate<BE>
+        + CKKSModuleAlloc<BE>,
+    Module<CI>: ModuleN + CKKSCIRingMapOps<CI>,
+    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEToBackendMut<CI> + GLWEToBackendRef<CI>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<CI>: GLWEToBackendMut<CI> + GLWEToBackendRef<CI> + CKKSCtBounds + SetCKKSInfos,
+{
+    fn units(ins: &[CKKSCiphertextOwned<CI>]) -> Vec<Unit> {
+        (0..ins.len())
+            .step_by(2)
+            .map(|i| (i, (i + 1 < ins.len()).then_some(i + 1)))
+            .collect()
+    }
+
+    fn packed_degree(input_module: &Module<CI>) -> usize {
+        2 * input_module.n()
+    }
+
+    fn packed_meta(meta: CKKSMeta) -> CKKSMeta {
+        CKKSMeta {
+            log_sparsity: 0,
+            slots: SlotsKind::Real,
+            ..meta
+        }
+    }
+
+    fn tmp_bytes<C1, C2, K>(_module: &Module<BE>, input_module: &Module<CI>, ct_out: &C1, part: &C2, _keys: &K) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+        K: CKKSFoldKeys<BE, CI>,
+    {
+        input_module.ckks_ci_fold_tmp_bytes(ct_out, part)
+    }
+
+    fn to_standard(
+        _module: &Module<BE>,
+        input_module: &Module<CI>,
+        dst: &mut CKKSCiphertextOwned<BE>,
+        src: &CKKSCiphertextOwned<CI>,
+        _scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        input_module.ckks_ci_unfold(dst, src)?;
+        dst.set_meta(<Self as CKKSFoldRing<BE, CI>>::packed_meta(src.meta()));
+        Ok(())
+    }
+
+    fn from_standard<K>(
+        module: &Module<BE>,
+        input_module: &Module<CI>,
+        outs: &mut [CKKSCiphertextOwned<CI>],
+        ins: &[CKKSCiphertextOwned<CI>],
+        unpacked: &CKKSCiphertextOwned<BE>,
+        j: usize,
+        _keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: CKKSFoldKeys<BE, CI>,
+    {
+        let meta = ins[0].meta();
+        let mut part =
+            module.ckks_ciphertext_alloc_from_glwe_infos(&layout(2 * input_module.n(), unpacked.base2k(), unpacked.k()));
+        for (out, offset) in outs.iter_mut().zip([j, j + module.n() / 2]) {
+            extract(module, &mut part, unpacked, offset);
+            part.set_meta(CKKSMeta {
+                log_sparsity: meta.log_sparsity,
+                ..unpacked.meta()
+            });
+            input_module.ckks_ci_fold(out, &part, &mut scratch.borrow().into_backend())?;
+            // The fold doubles the real part; relabeling at the input scale drops that bit.
+            out.set_log_delta(meta.log_delta);
         }
         Ok(())
     }

@@ -85,16 +85,30 @@ poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::NTT4x30NeonRayon);
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::NTT4x30NeonRayon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CINeon);
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CINeon);
+impl ::poulpy_ckks::oep::CIBridge for super::FFT64Neon {
+    type CI = super::FFT64CINeon;
+}
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CINeon);
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeon);
+impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30Neon {
+    type CI = super::NTT4x30CINeon;
+}
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
+impl ::poulpy_ckks::oep::CIBridge for super::FFT64NeonRayon {
+    type CI = super::FFT64CINeonRayon;
+}
+#[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_ci_ring_map_reference!(super::NTT4x30CINeonRayon);
+#[cfg(feature = "enable-rayon")]
+impl ::poulpy_ckks::oep::CIBridge for super::NTT4x30NeonRayon {
+    type CI = super::NTT4x30CINeonRayon;
+}
 #[cfg(feature = "enable-rayon")]
 select_neon_encoding_transform!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]

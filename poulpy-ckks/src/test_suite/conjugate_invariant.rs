@@ -1,19 +1,21 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, slice};
 
 use crate::{
-    CKKSInfos, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
-        CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
+        CKKSAddOps, CKKSBootstrapBatchOps, CKKSBootstrappingOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDecryptOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps,
+        CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
     layouts::CKKSModuleAlloc,
+    oep::CIBridge,
+    reference::fold::CKKSFoldRing,
 };
 use poulpy_core::{
     GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     layouts::{
-        GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWESecretCIUnfold, GLWESwitchingKeyPreparedFactory, LWEInfos,
-        ModuleCoreAlloc,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWESecretCIUnfold, GLWESwitchingKeyLayout,
+        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -25,8 +27,8 @@ use poulpy_hal::{
 use super::{
     CKKSTestParams,
     helpers::{
-        TestContextBackend, TestContextHostModule, TestContextSharedModule, alloc_ct, alloc_scratch, ckks_encrypt_pt, gen_atk,
-        gen_sk_with_raw, gen_tsk,
+        TestContextBackend, TestContextHostModule, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch,
+        ckks_encrypt_pt, gen_atk, gen_sk_with_raw, gen_tsk,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -458,6 +460,111 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_bootstrap_s2c() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    6,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_merge() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((4 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    6,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_without_guards() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    false,
+                    0,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_sparse() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    2,
+                    false,
+                    6,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_s2c_without_encapsulation() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    false,
+                    0,
+                    false,
+                    6,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_c2s() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    false,
+                    true,
+                    0,
+                    false,
+                    0,
+                );
+            }
+            #[test]
+            fn ckks_ci_bootstrap_eval_round() {
+                let params = $params;
+                let ci = Module::<$backend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_bootstrapping(
+                    params,
+                    ci,
+                    Module::<$standard>::new((2 * params.n) as u64),
+                    true,
+                    true,
+                    0,
+                    true,
+                    6,
+                );
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
@@ -563,4 +670,189 @@ where
 
     let mut wrong_degree = alloc_ct(&params, &standard, params.k);
     assert!(ci.ckks_ci_unfold(&mut wrong_degree, &ct).is_err());
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn test_conjugate_invariant_bootstrapping<BE, STD>(
+    mut params: CKKSTestParams,
+    ci: Module<BE>,
+    standard: Module<STD>,
+    s2c_first: bool,
+    encapsulate: bool,
+    log_sparsity: usize,
+    eval_round: bool,
+    guard_bits: usize,
+) where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    STD: TestContextBackend<Ring = Standard> + CIBridge<CI = BE>,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
+    Module<STD>: TestContextModule<STD>
+        + CKKSEncodingOps<STD, f64>
+        + CKKSBootstrappingOps<STD>
+        + CKKSBootstrapBatchOps<STD>
+        + CKKSDFTMatrixOps<STD, f64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSCIRingMapOps<BE> + GLWESecretCIUnfold<BE>,
+    ConjugateInvariant: CKKSFoldRing<STD, BE>,
+{
+    use crate::{CoeffsMeta, layouts::*};
+    params.n = ci.n();
+    params.prec_meta = CKKSMeta {
+        log_delta: 0,
+        log_sparsity,
+        slots: SlotsKind::Real,
+    };
+    let setup = super::presets::ring_switched_setup(params, standard.n(), s2c_first, encapsulate, eval_round, guard_bits);
+    let (plan, params) = (&setup.plan, setup.params);
+    let ring_switch_layout = setup.ring_switch_layout;
+    let layers = standard.n().ilog2() as usize - 1;
+    let standard_params = CKKSTestParams {
+        n: standard.n(),
+        ..params
+    };
+    let mut run = super::presets::CIBootstrappingRun::setup(ci, standard, &setup, 3);
+    // One input, a pair, and a pair with a tail, which merges when the standard degree allows.
+    for count in [1, 2, 3] {
+        run.bootstrap(count);
+        for stats in run.precision(count) {
+            assert!(
+                stats.min_log2_prec > 17.0,
+                "CI bootstrap count={count} s2c={s2c_first} sparse={log_sparsity}: {stats:?}"
+            );
+        }
+    }
+    use poulpy_core::{GLWENormalize, layouts::GLWESwitchingKeyPreparedFactory};
+    for input in &mut run.inputs {
+        let mut converted = run.ci.ckks_ciphertext_alloc((params.base2k - 1).into(), input.k());
+        converted.set_meta(input.meta());
+        run.ci.glwe_normalize(&mut converted, input, &mut run.scratch.borrow());
+        *input = converted;
+    }
+    // Input slot kinds are ignored: a mixed pair is accepted and both outputs report real slots.
+    run.inputs[1].set_slots(SlotsKind::Complex);
+    for output in &mut run.outputs {
+        *output = run.ci.ckks_ciphertext_alloc((params.base2k - 1).into(), params.k.into());
+    }
+    run.bootstrap(2);
+    for stats in run.precision(2) {
+        assert!(stats.min_log2_prec > 17.0, "{stats:?}");
+    }
+    for output in &mut run.outputs {
+        output.set_k(params.k.into());
+    }
+    let return_key = &run.ring_switch.outbound;
+    let return_capacity = return_key.gglwe_layout().gadget_k().as_usize();
+    let mut too_wide = run.ci.ckks_ciphertext_alloc(
+        params.base2k.into(),
+        (return_capacity + 1 + params.k - (setup.output_k + 1)).into(),
+    );
+    let before_too_wide = too_wide.to_host_owned::<BE>();
+    let err = run
+        .standard
+        .ckks_bootstrap_batch(
+            &run.ci,
+            slice::from_mut(&mut too_wide),
+            slice::from_ref(&run.inputs[0]),
+            &run.context,
+            &run.keys,
+            &run.ring_switch,
+            &mut run.std_scratch.borrow(),
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("outbound"), "{err}");
+    assert_eq!(too_wide.data().data().as_ref(), before_too_wide.data().data().as_ref());
+    assert_eq!(too_wide.meta(), before_too_wide.meta());
+    assert_eq!(too_wide.k(), before_too_wide.k());
+    let before = run.outputs[0].to_host_owned::<BE>();
+    let before_right = run.outputs[1].to_host_owned::<BE>();
+    let right_meta = run.inputs[1].meta();
+    run.inputs[1].set_log_delta(right_meta.log_delta + 1);
+    assert!(
+        run.standard
+            .ckks_bootstrap_batch(
+                &run.ci,
+                &mut run.outputs[..2],
+                &run.inputs[..2],
+                &run.context,
+                &run.keys,
+                &run.ring_switch,
+                &mut run.std_scratch.borrow()
+            )
+            .is_err()
+    );
+    run.inputs[1].set_meta(right_meta);
+    let [left, right, ..] = &mut run.outputs[..] else {
+        unreachable!()
+    };
+    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
+    assert_eq!(right.data().data().as_ref(), before_right.data().data().as_ref());
+    assert_eq!(left.k(), before.k());
+    assert_eq!(right.k(), before_right.k());
+    let short_schedule: Vec<_> = (0..layers - 1).step_by(2).map(|i| ((layers - 1 - i).min(2), 2)).collect();
+    let short_plan = BootstrappingPlan::new(
+        plan.pipeline(),
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: plan.techniques().sparse_secret_encapsulation,
+            eval_round_plus: None,
+        },
+        DFTPlan::new(
+            DFTType::Encode,
+            short_schedule.clone(),
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(48, 3),
+        )
+        .unwrap(),
+        *plan.eval_mod(),
+        DFTPlan::new(
+            DFTType::Decode,
+            short_schedule,
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(28, 2),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let short_context = BootstrappingContext::<STD, f64>::compile(
+        &run.standard,
+        params.base2k.into(),
+        &short_plan,
+        &mut alloc_scratch(&standard_params, &run.standard).borrow(),
+    )
+    .unwrap();
+    assert!(
+        run.standard
+            .ckks_bootstrap_batch(
+                &run.ci,
+                slice::from_mut(left),
+                slice::from_ref(&run.inputs[0]),
+                &short_context,
+                &run.keys,
+                &run.ring_switch,
+                &mut run.std_scratch.borrow()
+            )
+            .is_err()
+    );
+    let smaller_standard = Module::<STD>::new(params.n as u64);
+    run.ring_switch.outbound = smaller_standard.glwe_switching_key_prepared_alloc_from_infos(&GLWESwitchingKeyLayout {
+        n: params.n.into(),
+        ..ring_switch_layout.outbound
+    });
+    assert_eq!(run.ring_switch.outbound.n().as_usize(), params.n);
+    assert!(
+        run.standard
+            .ckks_bootstrap_batch(
+                &run.ci,
+                slice::from_mut(left),
+                slice::from_ref(&run.inputs[0]),
+                &run.context,
+                &run.keys,
+                &run.ring_switch,
+                &mut run.std_scratch.borrow()
+            )
+            .is_err()
+    );
+    assert_eq!(left.data().data().as_ref(), before.data().data().as_ref());
+    assert_eq!(left.meta(), before.meta());
 }
