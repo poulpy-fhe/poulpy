@@ -10,6 +10,10 @@ use crate::Quad;
 
 mod roots;
 
+/// Base-2 logarithm of the largest root order read from the checked-in
+/// tables. Larger orders are generated on demand, which is much slower.
+pub const ROOT_TABLE_LOG_ORDER: u32 = roots::TABLE_LOG_ORDER;
+
 /// Scalar with platform-independent transcendental functions and exact
 /// conversions between scalars and plaintext integers.
 ///
@@ -119,6 +123,11 @@ impl CKKSFloat for f64 {
     }
     #[inline]
     fn ckks_dequantize(value: i128, log_delta: usize) -> Self {
+        if log_delta <= 1022 {
+            // The conversion rounds once to nearest even, and the scaled result
+            // is normal, so scaling by the power of two is exact.
+            return (value as f64) * Self::from_bits(((1023 - log_delta) as u64) << 52);
+        }
         Self::from_bits(dequantize(value, log_delta, 52, 11) as u64)
     }
 }
@@ -158,6 +167,11 @@ impl CKKSFloat for f32 {
     }
     #[inline]
     fn ckks_dequantize(value: i128, log_delta: usize) -> Self {
+        if log_delta <= 126 {
+            // The conversion rounds once to nearest even, and the scaled result
+            // is normal, so scaling by the power of two is exact.
+            return (value as f32) * Self::from_bits(((127 - log_delta) as u32) << 23);
+        }
         Self::from_bits(dequantize(value, log_delta, 23, 8) as u32)
     }
 }
@@ -384,6 +398,47 @@ mod tests {
                     Quad(x as f128).ckks_quantize_i64(delta),
                     expected_i64,
                     "i64(Quad({x:?})) at {delta}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dequantization_fast_paths_match_exact_rounding() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..20000 {
+            let wide = (u128::from(next()) << 64 | u128::from(next())) as i128;
+            let value = wide >> (next() % 127);
+            for delta in [
+                0, 1, 52, 53, 126, 127, 128, 149, 150, 1000, 1021, 1022, 1023, 1074, 1075, 1200,
+            ] {
+                assert_eq!(
+                    f64::ckks_dequantize(value, delta).to_bits(),
+                    dequantize(value, delta, 52, 11) as u64,
+                    "f64 {value} at {delta}"
+                );
+                assert_eq!(
+                    f32::ckks_dequantize(value, delta).to_bits(),
+                    dequantize(value, delta, 23, 8) as u32,
+                    "f32 {value} at {delta}"
+                );
+            }
+        }
+        for value in [i128::MIN, i128::MIN + 1, i128::MAX, -1, 1, 0] {
+            for delta in [0, 126, 127, 1022, 1023] {
+                assert_eq!(
+                    f64::ckks_dequantize(value, delta).to_bits(),
+                    dequantize(value, delta, 52, 11) as u64
+                );
+                assert_eq!(
+                    f32::ckks_dequantize(value, delta).to_bits(),
+                    dequantize(value, delta, 23, 8) as u32
                 );
             }
         }
