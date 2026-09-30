@@ -225,6 +225,9 @@ where
 /// Backend-owned CKKS ciphertext: the backend's buffer type and its coefficient word.
 pub type CKKSCiphertextOwned<BE> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>;
 
+/// Ciphertext of ring `R` in the buffers of backend `BE`.
+pub type CKKSRingCiphertext<BE, R> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, R>;
+
 pub(crate) struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
     inner: GLWEViewRef<'a, BE>,
     meta: CKKSMeta,

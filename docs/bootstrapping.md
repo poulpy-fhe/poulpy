@@ -23,7 +23,7 @@ ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrapp
 CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
-A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
+A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`; [a fold](#batches) packs batches for it.
 Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
@@ -275,6 +275,18 @@ Three key roles are used:
 | `rotation_keys` | Automorphism keys for the DFT rotations, read off the compiled matrices, and the Galois `−1` automorphism of the split real/imaginary transform |
 | `tensor_key` | Relinearization key for the EvalMod range-extension squarings |
 | `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation |
+
+## Batches
+
+A batch is refreshed with as few bootstraps as possible by folding it into standard ciphertexts of the bootstrap degree `N` (`CKKSFoldOps::ckks_fold`), bootstrapping each with `ckks_bootstrap`, and unfolding the results (`ckks_unfold`) into outputs labeled like the inputs.
+The fold packs real inputs of the bootstrap degree in pairs `x + i·y`, merges inputs of a smaller degree `n` by `N/n`, and lets sparse inputs of the bootstrap degree share coefficient positions; unfolding reverses each step, and paired outputs lose one bit to the split.
+
+The keys are passed directly:
+
+- The ring-switch keys (`RingSwitchKeysLayout::generate`) switch between the input secret and the bootstrap secret: the fold takes the inbound one and the unfold the outbound one; inputs under the bootstrap secret at its degree pass `None`.
+- `automorphisms`, keys of the input secret for the elements of `ckks_unfold_galois_elements`, split real pairs and sparse inputs; for sparse inputs they cover `log_sparsity` bits beyond the refreshed width. Inputs under the bootstrap secret use its rotation keys.
+
+The fold takes the bootstrap degree explicitly, as the degree of the folded ciphertexts: the module only bounds it. `CKKSFoldLayoutOps` gives the folded layout of that degree and sizes the fold from layouts (`ckks_fold_count` gives the number of folded ciphertexts), and the context's slot count must match the folded ciphertexts: merged ones need full-slot transforms (`log_slots = log2(N) − 1`).
 
 ## Cost and where to look
 

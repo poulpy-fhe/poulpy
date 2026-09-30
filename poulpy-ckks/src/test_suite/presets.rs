@@ -25,8 +25,12 @@ use crate::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
         CKKSEncryptOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, RingSwitchKeysLayout,
+    },
     presets::bootstrapping::{BootstrappingPreset, all},
+    test_suite::CKKSTestParams,
     test_suite::helpers::{
         PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, assert_canonical_at_k, ckks_spec,
         precision_stats, test_vector_1,
@@ -276,5 +280,117 @@ where
             re.min_log2_prec,
             im.min_log2_prec
         );
+    }
+}
+
+/// Plan, parameters and key layouts of the ring-switched bootstrapping tests.
+pub(crate) struct RingSwitchedSetup {
+    pub(crate) plan: BootstrappingPlan,
+    /// Parameters of the inputs, at the bootstrap width `k`.
+    pub(crate) params: CKKSTestParams,
+    pub(crate) keys_layout: BootstrappingKeysLayout,
+    pub(crate) ring_switch_layout: RingSwitchKeysLayout,
+}
+
+/// Builds a full-slot plan on a standard module of degree `standard_n` for inputs
+/// of degree `params.n` at scale `2^35`, with the ring-switch key layouts.
+pub(crate) fn ring_switched_setup(
+    mut params: CKKSTestParams,
+    standard_n: usize,
+    s2c_first: bool,
+    encapsulate: bool,
+    eval_round: bool,
+    guard_bits: usize,
+) -> RingSwitchedSetup {
+    use crate::{
+        CoeffsMeta,
+        layouts::{
+            BootstrappingPipeline, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+            EvalModPlan, EvalModType, EvalRoundPlus, RingSwitchKeys, SparseSecretEncapsulation,
+        },
+        polynomial::SplitStrategy,
+    };
+    let layers = standard_n.ilog2() as usize - 1;
+    let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
+    let log_delta = 35;
+    let log_msg_ratio = if s2c_first { 13 } else { 8 };
+    let plan = BootstrappingPlan::new(
+        if s2c_first {
+            BootstrappingPipeline::S2CFirst
+        } else {
+            BootstrappingPipeline::C2SFirst
+        },
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: eval_round.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan::new(
+                    DFTType::Encode,
+                    vec![(1, 1); layers],
+                    DFTOutputFormat::SplitRealAndImag,
+                    CoeffsMeta::from_delta_budget(96, 4),
+                )
+                .unwrap(),
+            }),
+        },
+        DFTPlan::new(
+            DFTType::Encode,
+            schedule.clone(),
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(48, 3),
+        )
+        .unwrap(),
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHKEven,
+            log_msg_ratio,
+            f_mod_degree: 30,
+            f_mod_interval: 16,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(42, 4),
+            f_mod_log_delta: 58,
+        },
+        DFTPlan::new(
+            DFTType::Decode,
+            schedule,
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(28, 2),
+        )
+        .unwrap()
+        .with_scaling(if s2c_first { 0.5 } else { 256.0 })
+        .unwrap(),
+    )
+    .unwrap();
+    let plan = if s2c_first {
+        plan.with_c2s_guard_bits(guard_bits).unwrap()
+    } else {
+        plan
+    };
+    let output_k = 4 * params.base2k - 1;
+    let input_k = plan.input_k(log_delta + log_msg_ratio);
+    params.k = plan.bootstrap_k(output_k + 1, log_delta);
+    params.prec_meta.log_delta = log_delta;
+    params.prec_log_budget = 8;
+    params.dsize = if params.base2k < 40 { 7 } else { 3 };
+    params.hw = if encapsulate { 128 } else { 32 };
+    let standard_params = CKKSTestParams { n: standard_n, ..params };
+    let keys_layout = BootstrappingKeysLayout {
+        automorphism_key: standard_params.atk_layout().layout,
+        tensor_key: standard_params.tsk_layout().layout,
+        encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
+            dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
+            sparse_to_dense: standard_params.ksk_layout(params.k).layout,
+        }),
+    };
+    let ring_switch_layout = RingSwitchKeys {
+        inbound: standard_params.ksk_layout(input_k).layout,
+        outbound: standard_params.ksk_layout(output_k + 1).layout,
+    };
+    RingSwitchedSetup {
+        plan,
+        params,
+        keys_layout,
+        ring_switch_layout,
     }
 }
