@@ -17,14 +17,15 @@ use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWENormalize,
-    GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut, ScalarZnxFillDistribution, VecZnxBigAddNormal,
+    GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut,
+    ScalarZnxFillDistribution, VecZnxBigAddNormal,
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPreparedFactory, GLWEPublicKey,
         GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         ModuleCoreCompressedAlloc, Rank,
-        compressed::{GLWECompressed, GLWEDecompress},
+        compressed::{GLWECompressed, GLWEDecompress, GLWEPublicKeyDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -406,6 +407,9 @@ where
     Module<BE>: GLWEEncryptPk<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEPublicKeyGenerate<BE>
+        + GLWEPublicKeyCompressedGenerate<BE>
+        + GLWEPublicKeyDecompress
+        + GLWEDecompress<Backend = BE>
         + GLWENoise<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxFillUniformSource<BE>
@@ -425,8 +429,9 @@ where
         };
         let glwe_infos = EncryptionLayout::new_from_default_sigma(layout(k_ct)).unwrap();
 
-        // A public key more precise than the output needs scratch past the output's width.
-        for k_pk in [k_ct, k_ct + base2k] {
+        // A public key more precise than the output needs scratch past the output's width; a
+        // decompressed key encrypts as a generated one.
+        for (k_pk, compressed) in [(k_ct, false), (k_ct + base2k, false), (k_ct, true), (k_ct + base2k, true)] {
             let pk_infos = EncryptionLayout::new_from_default_sigma(layout(k_pk)).unwrap();
 
             let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
@@ -441,6 +446,7 @@ where
                 module
                     .glwe_noise_tmp_bytes(&glwe_infos)
                     .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
+                    .max(module.glwe_public_key_compressed_generate_tmp_bytes(&pk_infos))
                     .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
             );
             let mut enc_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos, &pk_infos));
@@ -452,14 +458,28 @@ where
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
-            module.glwe_public_key_generate(
-                &mut pk,
-                &sk_prepared,
-                &pk_infos,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            if compressed {
+                let mut pk_compressed = module.glwe_public_key_compressed_alloc_from_infos(&pk_infos);
+                module.glwe_public_key_compressed_generate(
+                    &mut pk_compressed,
+                    &sk_prepared,
+                    [1u8; 32],
+                    &pk_infos,
+                    &mut source_xe,
+                    &mut scratch.borrow(),
+                );
+                module.decompress_glwe_public_key(&mut pk, &pk_compressed);
+                assert!(pk.dist() == sk_prepared.dist());
+            } else {
+                module.glwe_public_key_generate(
+                    &mut pk,
+                    &sk_prepared,
+                    &pk_infos,
+                    &mut source_xe,
+                    &mut source_xa,
+                    &mut scratch.borrow(),
+                );
+            }
 
             module.vec_znx_fill_uniform_source(
                 base2k,

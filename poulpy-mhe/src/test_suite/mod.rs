@@ -69,7 +69,7 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: ranks differ")]
+            #[should_panic(expected = "invalid aggregation: layouts differ")]
             fn glwe_public_key_aggregate_rank_mismatch() {
                 $crate::test_suite::public_key::test_glwe_public_key_aggregate_rank_mismatch(&Module::<$backend>::new(64));
             }

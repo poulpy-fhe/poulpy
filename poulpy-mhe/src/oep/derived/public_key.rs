@@ -1,6 +1,9 @@
 use poulpy_core::{
-    Distribution, GetDistributionMut,
-    layouts::{GLWECompressedSeed, GLWEInfos, GLWEPublicKeyAtViewMut},
+    Distribution, GetDistribution, GetDistributionMut,
+    layouts::{
+        GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendMut,
+        GLWEPublicKeyCompressedToBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
@@ -11,10 +14,12 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedI
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
 ) {
-    assert!(res.dist == a.dist, "invalid aggregation: secret distributions differ");
-    assert!(res.entries.len() == a.entries.len(), "invalid aggregation: ranks differ");
-    for (res, a) in res.entries.iter_mut().zip(&a.entries) {
-        BE::glwe_pat_compressed_aggregate_assign(module, res, a);
+    assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+    assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
+    let mut res = res.key.to_backend_mut();
+    let a = a.key.to_backend_ref();
+    for l in 0..a.rank().as_usize() {
+        BE::glwe_pat_compressed_aggregate_assign(module, &mut res.at_view_mut(l), &a.at_view(l));
     }
 }
 
@@ -26,24 +31,22 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedIm
 ) where
     R: GLWEPublicKeyAtViewMut<BE> + GetDistributionMut + GLWEInfos,
 {
-    let (entries, dist) = (&share.entries, share.dist);
+    let (seeds, dist) = (share.seed(), *share.dist());
     assert!(
         !matches!(dist, Distribution::NONE | Distribution::ENCAPSULATED(_)),
         "invalid distribution: a public key needs a samplable distribution"
     );
     assert!(
-        entries
-            .iter()
-            .enumerate()
-            .all(|(i, entry)| entries[..i].iter().all(|other| other.seed() != entry.seed())),
+        seeds.iter().enumerate().all(|(i, seed)| !seeds[..i].contains(seed)),
         "invalid finalization: public key entries share a seed"
     );
     assert!(
-        entries.len() == res.rank().as_usize(),
-        "invalid finalization: one share per public key entry"
+        res.glwe_layout() == share.glwe_layout(),
+        "invalid finalization: layouts differ"
     );
-    for (l, entry) in entries.iter().enumerate() {
-        BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), entry, scratch);
+    let share = share.key.to_backend_ref();
+    for l in 0..share.rank().as_usize() {
+        BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), &share.at_view(l), scratch);
     }
     *res.dist_mut() = dist;
 }

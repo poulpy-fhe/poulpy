@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GLWECompressedEncryptSk, GetDistribution,
+    Distribution, EncryptionInfos, GLWEPublicKeyCompressedGenerate, GetDistribution,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -24,13 +24,13 @@ pub trait GLWEPublicKeyMHEProtocolReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos;
 }
 
 impl<BE: Backend> GLWEPublicKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWECompressedEncryptSk<BE>,
+    Self: GLWEPublicKeyCompressedGenerate<BE>,
 {
     fn mhe_glwe_public_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -40,7 +40,7 @@ where
             infos.n().as_usize() == self.n(),
             "invalid layout: degree differs from the module's"
         );
-        self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
+        self.glwe_public_key_compressed_generate_tmp_bytes(infos)
     }
 
     fn mhe_glwe_public_key_share_gen_reference<S, E>(
@@ -52,7 +52,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos,
     {
         assert!(
@@ -69,11 +69,6 @@ where
             !matches!(sk_ref.dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
             "invalid secret: a public key share needs a samplable distribution"
         );
-        res.dist = *sk_ref.dist();
-        // Every party derives the same distinct entry seeds from `seed`.
-        let mut seeds = Source::new(seed);
-        for entry in res.entries.iter_mut() {
-            self.glwe_compressed_encrypt_zero_sk(entry, sk, seeds.new_seed(), enc_infos, source_xe, scratch);
-        }
+        self.glwe_public_key_compressed_generate(&mut res.key, sk, seed, enc_infos, source_xe, scratch);
     }
 }

@@ -2,117 +2,117 @@ use std::fmt;
 
 use poulpy_core::{
     Distribution, GetDistribution, GetDistributionMut,
-    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank, TorusPrecision},
+    layouts::{
+        Base2K, Degree, GLWEInfos, GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut,
+        GLWEPublicKeyCompressedToBackendMut, GLWEPublicKeyCompressedToBackendRef, LWEInfos, Rank, TorusPrecision,
+        compressed::{GLWEPublicKeyCompressedBackendMut, GLWEPublicKeyCompressedBackendRef},
+    },
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-use crate::layouts::GLWEPatCompressed;
-
 pub type GLWEPublicKeyShareOwned<BE> = GLWEPublicKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
-/// One party's share of the collective public key: a [`GLWEPatCompressed`]
-/// per key entry, `rank` entries in all, each under its own seed, and the
+/// One party's share of the collective public key: a core
+/// [`GLWEPublicKeyCompressed`], one seeded body per key entry, tagged with the
 /// distribution of the secret it was generated with.
 ///
-/// Serializes as the distribution, then its entries in order.
+/// Serializes as core's `GLWEPublicKeyCompressed`.
 #[derive(Clone)]
 pub struct GLWEPublicKeyShare<D: Data, W: ZnxWord> {
-    pub(crate) entries: Vec<GLWEPatCompressed<D, W>>,
-    pub(crate) dist: Distribution,
-}
-
-impl<D: Data, W: ZnxWord> GLWEPublicKeyShare<D, W> {
-    /// The key entries, one per rank.
-    pub fn entries(&self) -> &[GLWEPatCompressed<D, W>] {
-        &self.entries
-    }
-
-    pub fn entries_mut(&mut self) -> &mut [GLWEPatCompressed<D, W>] {
-        &mut self.entries
-    }
+    pub(crate) key: GLWEPublicKeyCompressed<D, W>,
 }
 
 impl<D: Data, W: ZnxWord> PartialEq for GLWEPublicKeyShare<D, W>
 where
-    GLWEPatCompressed<D, W>: PartialEq,
+    GLWEPublicKeyCompressed<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.entries == other.entries && self.dist == other.dist
+        self.key == other.key
     }
 }
 
-impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyShare<D, W> where GLWEPatCompressed<D, W>: Eq {}
+impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyShare<D, W> where GLWEPublicKeyCompressed<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKeyShare<D, W> {
     fn n(&self) -> Degree {
-        self.entries[0].n()
+        self.key.n()
     }
 
     fn k(&self) -> TorusPrecision {
-        self.entries[0].k()
+        self.key.k()
     }
 
     fn base2k(&self) -> Base2K {
-        self.entries[0].base2k()
+        self.key.base2k()
     }
 
     fn max_size(&self) -> usize {
-        self.entries[0].max_size()
+        self.key.max_size()
     }
 }
 
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPublicKeyShare<D, W> {
     fn rank(&self) -> Rank {
-        self.entries[0].rank()
+        self.key.rank()
     }
 }
 
 impl<D: Data, W: ZnxWord> GetDistribution for GLWEPublicKeyShare<D, W> {
     fn dist(&self) -> &Distribution {
-        &self.dist
+        self.key.dist()
     }
 }
 
 impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKeyShare<D, W> {
     fn dist_mut(&mut self) -> &mut Distribution {
-        &mut self.dist
+        self.key.dist_mut()
+    }
+}
+
+impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressedSeed for GLWEPublicKeyShare<D, W> {
+    fn seed(&self) -> &[[u8; 32]] {
+        self.key.seed()
+    }
+}
+
+impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressedSeedMut for GLWEPublicKeyShare<D, W> {
+    fn seed_mut(&mut self) -> &mut [[u8; 32]] {
+        self.key.seed_mut()
+    }
+}
+
+impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyShare<D, BE::ZnxWord>
+where
+    GLWEPublicKeyCompressed<D, BE::ZnxWord>: GLWEPublicKeyCompressedToBackendRef<BE>,
+{
+    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
+        self.key.to_backend_ref()
+    }
+}
+
+impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyShare<D, BE::ZnxWord>
+where
+    GLWEPublicKeyCompressed<D, BE::ZnxWord>: GLWEPublicKeyCompressedToBackendMut<BE>,
+{
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
+        self.key.to_backend_mut()
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPublicKeyShare<D, W> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "GLWEPublicKeyShare: dist={:?}", self.dist)?;
-        for entry in &self.entries {
-            writeln!(f, "{entry}")?;
-        }
-        Ok(())
+        write!(f, "GLWEPublicKeyShare: {:?}", self.key)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyShare<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.dist = Distribution::read_from(reader)?;
-        self.entries.iter_mut().try_for_each(|entry| entry.read_from(reader))?;
-        // An entry's size does not depend on its rank, so a share of another rank reads without error.
-        if self.entries.iter().any(|entry| entry.rank().as_usize() != self.entries.len()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid share: entry rank differs from the share's",
-            ));
-        }
-        Ok(())
+        self.key.read_from(reader)
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKeyShare<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        self.dist.write_to(writer)?;
-        self.entries.iter().try_for_each(|entry| entry.write_to(writer))
+        self.key.write_to(writer)
     }
 }

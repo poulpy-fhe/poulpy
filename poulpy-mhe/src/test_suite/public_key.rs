@@ -2,7 +2,7 @@
 //! under the finalized key decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEEncryptPk, GLWENoise,
+    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEEncryptPk, GLWENoise, GetDistributionMut,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
         GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
@@ -116,13 +116,13 @@ where
         rank: RANK,
     };
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
-    share.dist = Distribution::TernaryProb(0.5);
+    *share.dist_mut() = Distribution::TernaryProb(0.5);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_finalize_tmp_bytes());
     module.mhe_glwe_public_key_share_finalize(&mut pk, &share, &mut scratch.borrow());
 }
 
-/// Reading a share of another rank fails: entries have the same size at every rank.
+/// Reading a share of another rank fails.
 pub fn test_glwe_public_key_share_read_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -160,7 +160,7 @@ where
     };
     let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
-    b.dist = Distribution::TernaryProb(0.5);
+    *b.dist_mut() = Distribution::TernaryProb(0.5);
     module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
 }
 

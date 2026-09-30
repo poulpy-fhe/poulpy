@@ -13,6 +13,7 @@ use crate::{
         GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
         GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
@@ -156,6 +157,31 @@ pub unsafe trait EncryptionImpl: Backend {
         Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, enc_infos, source_xe, source_xa, scratch)
+    }
+
+    fn glwe_public_key_compressed_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        super::derived::encryption::glwe_public_key_compressed_generate_tmp_bytes_derived(module, infos)
+    }
+
+    fn glwe_public_key_compressed_generate<R, S, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEPublicKeyCompressedToBackendMut<Self> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
+    {
+        super::derived::encryption::glwe_public_key_compressed_generate_derived(
+            module, res, sk, seed, enc_infos, source_xe, scratch,
+        )
     }
 
     fn gglwe_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize

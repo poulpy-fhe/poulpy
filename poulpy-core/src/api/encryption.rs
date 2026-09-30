@@ -13,7 +13,10 @@ use crate::{
         GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
         GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
         SetGaloisElement,
-        compressed::{GGLWECompressedSeedMut, GGLWECompressedToBackendMut},
+        compressed::{
+            GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GLWEPublicKeyCompressedSeedMut,
+            GLWEPublicKeyCompressedToBackendMut,
+        },
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
@@ -170,6 +173,30 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
+}
+
+pub trait GLWEPublicKeyCompressedGenerate<BE: Backend> {
+    /// Scratch required to generate a compressed public key with the given layout.
+    fn glwe_public_key_compressed_generate_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    /// Generates the compressed form of [`GLWEPublicKeyGenerate::glwe_public_key_generate`]:
+    /// entry `l` is the body of a normalized encryption of zero under `sk`
+    /// whose mask is drawn from the `l`-th seed derived from `seed`, and the key
+    /// takes the secret's distribution.
+    fn glwe_public_key_compressed_generate<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }

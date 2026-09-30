@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistributionMut,
+    EncryptionInfos, GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -37,7 +37,7 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares

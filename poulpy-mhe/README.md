@@ -14,8 +14,8 @@ Parties exchange public aggregatable transcripts (PATs), one type per shape:
 
 Each protocol has its own share type, a wrapper of these PATs:
 
-- `GLWEPublicKeyShare`: one `GLWEPatCompressed` per public key entry, with
-  the distribution of the secret it was generated with.
+- `GLWEPublicKeyShare`: a core `GLWEPublicKeyCompressed`, one seeded body per
+  public key entry, with the distribution of the secret it was generated with.
 - `GLWESwitchingKeyShare`, `GLWEAutomorphismKeyShare`: a `GGLWEPatCompressed`
   with core's key metadata (degrees, Galois element).
 

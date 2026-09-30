@@ -1,8 +1,5 @@
-use poulpy_core::{
-    Distribution,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
-    },
+use poulpy_core::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -76,19 +73,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     fn glwe_public_key_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyShareOwned<BE> {
         GLWEPublicKeyShare {
-            entries: (0..infos.rank().as_usize())
-                .map(|_| self.glwe_pat_compressed_alloc_from_infos(infos))
-                .collect(),
-            dist: Distribution::NONE,
+            key: self.glwe_public_key_compressed_alloc_from_infos(infos),
         }
     }
 
     fn glwe_public_key_share_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPublicKeyShareOwned<BE> {
         GLWEPublicKeyShare {
-            entries: (0..rank.as_usize())
-                .map(|_| self.glwe_pat_compressed_alloc(base2k, k, rank))
-                .collect(),
-            dist: Distribution::NONE,
+            key: self.glwe_public_key_compressed_alloc(base2k, k, rank),
         }
     }
 

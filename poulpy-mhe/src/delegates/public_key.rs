@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistributionMut,
+    EncryptionInfos, GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -26,7 +26,7 @@ impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> fo
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos,
     {
         BE::mhe_glwe_public_key_share_gen(self, res, sk, seed, enc_infos, source_xe, scratch)

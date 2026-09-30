@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistributionMut,
+    EncryptionInfos, GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -28,7 +28,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S: GLWESecretPreparedToBackendRef<Self>,
+        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
         E: EncryptionInfos;
 
     fn mhe_glwe_public_key_share_aggregate(
@@ -77,7 +77,7 @@ macro_rules! impl_mhe_public_key_reference {
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be>,
+                S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::GetDistribution,
                 E: ::poulpy_core::EncryptionInfos,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
