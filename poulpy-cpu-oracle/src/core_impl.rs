@@ -1,7 +1,8 @@
-//! Registers the generic Core compositions for both oracles.
+//! Registers the generic Core compositions for the oracles.
 
-use crate::{FFT64Oracle, NTT4x30Oracle};
+use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle};
 
+/// The compositions shared by both rings.
 macro_rules! impl_oracle_core {
     ($be:ty) => {
         ::poulpy_core::impl_glwe_tensoring_reference!($be);
@@ -20,6 +21,12 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_linear_transformation_reference_full!($be);
         ::poulpy_core::impl_operations_reference_full!($be);
         ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
+    };
+}
+
+/// The compositions that need monomial multiplication, on the standard ring only.
+macro_rules! impl_oracle_core_standard {
+    ($be:ty) => {
         ::poulpy_core::impl_conversion_reference_full!($be);
         ::poulpy_core::impl_glwe_packing_derived_full!($be);
         ::poulpy_core::impl_glwe_rotate_reference_full!($be);
@@ -30,4 +37,10 @@ macro_rules! impl_oracle_core {
 }
 
 impl_oracle_core!(FFT64Oracle);
+impl_oracle_core_standard!(FFT64Oracle);
 impl_oracle_core!(NTT4x30Oracle);
+impl_oracle_core_standard!(NTT4x30Oracle);
+impl_oracle_core!(FFT64CIOracle);
+::poulpy_core::impl_glwe_ci_conversion_reference_full!(FFT64CIOracle);
+impl_oracle_core!(NTT4x30CIOracle);
+::poulpy_core::impl_glwe_ci_conversion_reference_full!(NTT4x30CIOracle);
