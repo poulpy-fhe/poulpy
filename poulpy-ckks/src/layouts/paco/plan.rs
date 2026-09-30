@@ -37,6 +37,7 @@ use poulpy_core::layouts::{LinearTransformationLayout, LinearTransformationStrat
 use poulpy_hal::layouts::{galois_element, galois_elements_from_rotations};
 
 use crate::layouts::{ComplexDiagonals, dft::FactorSchedule};
+use crate::numerics::CKKSFloat;
 use crate::reference::paco::{
     lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
     ops::{conj_rotate_galois_element, fold_rotations},
@@ -496,7 +497,7 @@ impl PaCoPlan {
     }
 
     fn checked_extra_scale_log2(&self) -> Result<i64> {
-        let log2 = (self.h as f64).mul_add(self.c2s.scaling.log2(), self.stc.scaling.log2());
+        let log2 = (self.h as f64).mul_add(self.c2s.scaling.ckks_log2(), self.stc.scaling.ckks_log2());
         ensure!(log2.is_finite(), "the total user scaling exponent is not finite");
         let rounded = log2.round();
         let tolerance = 32.0 * f64::EPSILON * log2.abs().max(1.0);

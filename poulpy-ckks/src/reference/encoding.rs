@@ -197,8 +197,9 @@ where
 
 /// Host reference quantization into canonical integer coefficients at the plaintext scale.
 ///
-/// Coefficients are rounded to the nearest integer, with halfway cases away from
-/// zero. Sparse inputs occupy every `degree / coeff_count` coefficient; the
+/// Coefficients are rounded exactly to the nearest integer, with halfway cases
+/// away from zero ([`ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize)).
+/// Sparse inputs occupy every `degree / coeff_count`-th coefficient and the
 /// remaining coefficients are zero. Invalid shape or non-representable scalar
 /// inputs are rejected before writing the plaintext. The input and metadata are
 /// preserved, except the slot kind, which is narrowed to the ring's
@@ -217,24 +218,7 @@ where
     let gap = coefficient_gap(pt, coeffs.len())?;
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
-    let scale = F::from_usize(log_delta)
-        .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
-        .exp2();
     let narrow = log_delta + log_budget <= 63;
-    let limit = F::from_usize(if narrow { 63 } else { 127 })
-        .context("CKKS coefficient range is not representable by the codec scalar")?
-        .exp2();
-    let quantize = |value: F| -> Result<F> {
-        let rounded = (value * scale).round();
-        // Scalar conversion implementations may saturate instead of returning
-        // None. Check the signed half-open range explicitly, which also rejects
-        // NaN and infinities before any destination coefficient is written.
-        ensure!(
-            rounded >= -limit && rounded < limit,
-            "CKKS coefficient is outside the codec integer range"
-        );
-        Ok(rounded)
-    };
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     {
@@ -244,8 +228,7 @@ where
             let data: Vec<i64> = coeffs
                 .iter()
                 .map(|&x| {
-                    quantize(x)?
-                        .to_i64()
+                    x.ckks_quantize_i64(log_delta)
                         .context("CKKS coefficient is not representable as an i64 at the plaintext scale")
                 })
                 .collect::<Result<_>>()?;
@@ -254,8 +237,7 @@ where
             let data: Vec<i128> = coeffs
                 .iter()
                 .map(|&x| {
-                    quantize(x)?
-                        .to_i128()
+                    x.ckks_quantize(log_delta)
                         .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
                 })
                 .collect::<Result<_>>()?;
@@ -266,7 +248,8 @@ where
     Ok(())
 }
 
-/// Host reference dequantization of canonical integer coefficients.
+/// Host reference dequantization of canonical integer coefficients, rounded
+/// once ([`ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize)).
 ///
 /// The caller selects the coefficient count and therefore the sparse stride.
 /// The plaintext and its metadata are preserved.
@@ -286,8 +269,6 @@ where
         log_delta + log_budget <= 127,
         "CKKS host decoding supports at most 127 torus bits"
     );
-    let scale =
-        (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     let backend = pt.to_backend_ref();
@@ -296,15 +277,13 @@ where
         let mut data = vec![0i64; coeffs.len()];
         backend.data().decode_vec_i64_strided(base2k, 0, k, gap, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i64(value).context("decoded i64 coefficient is not representable by the codec scalar")? * scale;
+            *coefficient = F::ckks_dequantize(value as i128, log_delta);
         }
     } else {
         let mut data = vec![0i128; coeffs.len()];
         backend.data().decode_vec_i128_strided(base2k, 0, k, gap, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i128(value).context("decoded i128 coefficient is not representable by the codec scalar")? * scale;
+            *coefficient = F::ckks_dequantize(value, log_delta);
         }
     }
     Ok(())
