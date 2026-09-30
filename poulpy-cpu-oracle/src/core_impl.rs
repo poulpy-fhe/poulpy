@@ -1,14 +1,11 @@
+//! Registers the generic Core compositions for both oracles.
+
 use crate::{FFT64Oracle, NTT4x30Oracle};
-use poulpy_core::{impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference};
 
-impl_glwe_tensoring_reference!(FFT64Oracle);
-impl_glwe_tensoring_reference!(NTT4x30Oracle);
-impl_gglwe_product_digits_strided_reference!(FFT64Oracle);
-impl_gglwe_product_digits_strided_reference!(NTT4x30Oracle);
-
-/// Registers the generic Core compositions for an oracle backend.
 macro_rules! impl_oracle_core {
-    ($be:ty, $word_family:ident) => {
+    ($be:ty) => {
+        ::poulpy_core::impl_glwe_tensoring_reference!($be);
+        ::poulpy_core::impl_gglwe_product_digits_strided_reference!($be);
         ::poulpy_core::impl_automorphism_reference_full!($be);
         ::poulpy_core::impl_decryption_reference_full!($be);
         ::poulpy_core::impl_ggsw_conversion_reference_full!($be);
@@ -29,9 +26,8 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_ggsw_rotate_derived_full!($be);
         ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!($be);
         ::poulpy_core::impl_glwe_trace_derived_full!($be);
-        crate::sampling::impl_sampling_host!($be, $word_family);
     };
 }
 
-impl_oracle_core!(FFT64Oracle, fft64);
-impl_oracle_core!(NTT4x30Oracle, ntt4x30);
+impl_oracle_core!(FFT64Oracle);
+impl_oracle_core!(NTT4x30Oracle);

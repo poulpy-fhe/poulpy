@@ -5,17 +5,18 @@ Tests run the same operations through the oracle and a production backend, then 
 The oracle keeps its arithmetic simple and independently maintained, so optimized kernels can be checked against an inspectable implementation.
 
 - `FFT64Oracle`: scalar radix-2 FFT with independently generated tables.
-- `NTT4x30Oracle`: scalar negacyclic NTT with modular reduction after every butterfly, direct modular products, and independently computed CRT inverses.
+- `NTT4x30Oracle`: scalar negacyclic NTT over four 30-bit primes, with modular reduction after every butterfly, direct modular products, and CRT reconstruction.
 
-Both implement the HAL backend interfaces so they can take part in the shared test suites.
-They implement the required HAL primitives and inherit every optional operation from HAL.
-Prepared products use ordinary transform order and direct scalar loops.
-Normalization reconstructs each coefficient as an arbitrary-precision integer, rounds once, and writes centered radix digits, using heap storage.
-A sparse operand, whose degree divides the call degree, is materialized through its degree embedding before the dense kernel runs.
+Both are instances of one implementation of the HAL backend interfaces, generic over the transform family, so they can take part in the shared test suites.
+It implements only the required HAL operations, directly and with plain loops, and inherits every optional operation from HAL.
+The one exception is the in-place multiplication by `X^k - 1`, whose derived body needs more scratch than the Core callers provide.
+Temporaries live on the heap, so every scratch size is zero.
+Prepared products use ordinary transform order.
+Normalization reconstructs each coefficient as an arbitrary-precision integer, rounds once, and writes centered radix digits.
+A sparse operand, whose degree divides the call degree, is materialized through its degree embedding before the dense operation runs.
 
 This crate does not import production CPU kernels or their generated tables.
-Some scalar support routines share source ancestry with `poulpy-cpu-ref` and are maintained independently.
-Transform tests use direct polynomial evaluation and schoolbook negacyclic convolution as additional checks.
+Transform tests check against direct polynomial evaluation, and the prime set against its declared roots and modulus size.
 
 `enable-core` registers the generic Core compositions.
 Generic HAL and Core compositions are shared with the production backends, so cross-backend tests validate backend implementations, not the correctness of a shared composition itself.
