@@ -13,7 +13,7 @@ use poulpy_ckks::numerics::CKKSFloat;
 const SCALE: usize = 448;
 /// The accumulated truncation error is below `2^ERROR_BITS` units of `2^-SCALE`.
 const ERROR_BITS: usize = 16;
-const CACHED_LOG_ORDER: u32 = 17;
+const CACHED_LOG_ORDER: u32 = 18;
 
 fn atan_inverse(x: u64) -> IBig {
     let mut power = (UBig::ONE << SCALE) / x;

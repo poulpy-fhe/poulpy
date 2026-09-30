@@ -131,9 +131,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
   DFT matrices, EvalMod, the Remez, sign and LUT approximations, the PaCo and SHIP coefficient encodings and the bootstrapping presets use it.
   Setup constants can differ in the last bit from earlier versions, so cached bootstrap parameters must be rebuilt.
 - Add `CKKSFloat::ckks_root_of_unity`, the correctly rounded `(cos, sin)` of `2*pi*k / 2^log_order`.
-  Orders up to `2^17` read checked-in binary64 and binary128 quadrant tables, and larger orders evaluate the same definition on demand.
+  Orders up to `2^18`, enough for every ring degree the NTT backends support, read checked-in binary64 and binary128 quadrant tables, and larger orders evaluate the same definition on demand, much more slowly.
   The DFT matrices use these roots.
-- Add `CKKSFloat::ckks_quantize` and `ckks_dequantize`, exact conversions between scalars and plaintext integers at a power-of-two scale, which reject non-finite values and integer overflow.
+- Add `CKKSFloat::ckks_quantize` and `ckks_dequantize`, exact conversions between scalars and plaintext integers at a power-of-two scale.
+  Quantization rounds halfway cases away from zero and rejects non-finite values and integer overflow, and dequantization rounds once to nearest even.
   Encoding and decoding use them in place of a multiplication by a computed scale factor.
 - **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
 
@@ -226,7 +227,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
-- `poulpy-cpu-oracle` derives the roots of unity independently, with Machin's formula and the Taylor series of the cosine on fixed-point integers, and checks every `poulpy-ckks` root of order `2^17` in `f32`, `f64` and `Quad`.
+- `poulpy-cpu-oracle` derives the roots of unity independently, with Machin's formula and the Taylor series of the cosine on fixed-point integers, and checks every `poulpy-ckks` root of order `2^18` in `f32`, `f64` and `Quad`.
 - `impl_smudging_host!`, included by `impl_cpu_core_defaults!`, implements `SmudgingSamplingImpl` with `dashu-int`: an exact conditional discrete Gaussian with power-of-two scale and an exact signed uniform distribution, preserving low bits across multiple limbs. Gaussian sampling uses variable-time integer rejection.
 - Add `poulpy-cpu-oracle` (unpublished): `FFT64Oracle` and `NTT4x30Oracle`, independent scalar backends for correctness tests. They implement the required HAL primitives with direct scalar loops, independently generated transform tables and arbitrary-precision normalization, inherit every optional operation from HAL, and do not depend on `poulpy-cpu-ref` or any production kernel. Sparse operands are materialized through their degree embedding. `enable-core` registers the generic Core compositions and runs the Core suites on both oracles.
 - **Breaking:** `poulpy-cpu-ref` is renamed `poulpy-cpu-portable`, and its backends `FFT64Ref`, `NTT4x30Ref`, `FFT64CIRef` and `NTT4x30CIRef` are renamed `FFT64Portable`, `NTT4x30Portable`, `FFT64CIPortable` and `NTT4x30CIPortable`, with their handles and test adapters. The crate is the portable production backend, and `poulpy-cpu-oracle` is the correctness reference of the cross-backend and parity suites. Deprecated aliases keep the four old type names for one release. Its `reference` module is renamed `kernels` (`poulpy_cpu_portable::kernels::{znx, fft64, ntt4x30, vec_znx, ...}`), `ZnxRef`, `ReimFFTRef` and `ReimIFFTRef` are renamed `ZnxPortable`, `ReimFFTPortable` and `ReimIFFTPortable`, and all exported free kernel functions use the `_portable` suffix, including generic compositions, table builders and scratch-size queries.
