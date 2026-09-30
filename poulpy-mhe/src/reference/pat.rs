@@ -7,7 +7,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{VecZnxAddAssign, VecZnxCopy, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
+    api::{VecZnxAddAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -36,7 +36,7 @@ where
     Self: VecZnxAddAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
-        + VecZnxCopy<BE>
+        + VecZnxNormalize<BE>
         + GLWEMaskFill<BE>
         + GLWENormalize<BE>,
 {
@@ -66,7 +66,7 @@ where
     }
 
     fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
-        self.glwe_normalize_tmp_bytes()
+        self.vec_znx_normalize_tmp_bytes()
     }
 
     fn glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -75,13 +75,15 @@ where
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
     {
         assert!(res.glwe_layout() == pat.glwe_layout(), "invalid finalization: layouts differ");
+        res.set_canonical(true);
         {
+            let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
             let mut res_be = res.to_backend_mut();
             let pat_be = pat.to_backend_ref();
-            self.vec_znx_copy(res_be.data_mut(), 0, pat_be.data(), 0);
+            self.vec_znx_normalize(res_be.data_mut(), base2k, k, 0, 0, pat_be.data(), base2k, 0, scratch);
         }
+        // Seeded masks are uniform digits, already canonical.
         self.fill_glwe_mask_from_seed(res, *pat.seed());
-        self.glwe_normalize_assign(res, scratch);
     }
 }
 
@@ -150,7 +152,7 @@ where
     }
 
     fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
-        self.glwe_normalize_tmp_bytes()
+        self.vec_znx_normalize_tmp_bytes()
     }
 
     fn gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -163,11 +165,12 @@ where
             "invalid finalization: layouts differ"
         );
         self.decompress_gglwe(res, pat);
+        let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         for row in 0..dnum {
             for col in 0..rank_in {
-                self.glwe_normalize_assign(&mut res_be.at_view_mut(row, col), scratch);
+                self.vec_znx_normalize_assign(base2k, k, 0, res_be.at_view_mut(row, col).data_mut(), 0, scratch);
             }
         }
     }
