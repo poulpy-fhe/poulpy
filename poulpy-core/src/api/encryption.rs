@@ -377,6 +377,22 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    /// Encrypts zero: the draws and the output of [`Self::glwe_compressed_encrypt_sk`]
+    /// with a zero plaintext, without one. Scratch is
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`].
+    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 pub trait GGLWECompressedEncryptSk<BE: Backend> {

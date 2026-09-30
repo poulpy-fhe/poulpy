@@ -7,12 +7,25 @@ Backend-agnostic multiparty homomorphic encryption built on `poulpy-core` and
 
 Parties exchange public aggregatable transcripts (PATs), one type per shape:
 
-- `GLWEPatCompressed`: seeded GLWE body.
+- `GLWEPatCompressed`: seeded GLWE body (collective public key).
 - `GGLWEPatCompressed`: seeded GGLWE bodies.
 - `GGLWEPat`: unseeded full GGLWE.
 - Unseeded GLWE transcripts are core `GLWE`s.
 
-Allocate PATs through `MHEModuleAlloc` on a `Module`.
+Finalization produces canonical output without changing the PAT. Allocate
+PATs through `MHEModuleAlloc` on a `Module`.
+
+## Operations
+
+Every operation follows `API -> delegate -> OEP`; `reference` is the default
+implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
+[operation contracts](docs/mhe-contracts.md).
+
+- `GLWEPatCompressedOps`, `GGLWEPatCompressedOps`, `GGLWEPatOps`: one trait
+  per PAT type to sum shares, restore canonical digits, expand a PAT into the
+  ciphertext it transcribes.
+- `GLWEPublicKeyShare`: the collective public key, from per-party shares to a
+  `GLWEPublicKey` of the ideal secret, one share per entry (rank entries).
 
 ## Randomness
 
