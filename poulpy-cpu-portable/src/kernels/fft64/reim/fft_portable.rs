@@ -71,8 +71,14 @@ fn fft_portable_body<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: &
 /// recursion so that it inlines into the FMA-enabled entry point.
 #[inline(always)]
 fn fft_rec_16_portable<R: Float + FloatConst + Debug>(m: usize, re: &mut [R], im: &mut [R], omg: &[R], mut pos: usize) -> usize {
-    let mut blocks: Vec<(usize, usize)> = vec![(0, m)];
-    while let Some((off, size)) = blocks.pop() {
+    // The stack holds at most one pending right sibling per level, plus the
+    // current block.
+    let mut blocks = [(0usize, 0usize); usize::BITS as usize + 1];
+    blocks[0] = (0, m);
+    let mut len = 1;
+    while len > 0 {
+        len -= 1;
+        let (off, size) = blocks[len];
         let (re, im) = (&mut re[off..off + size], &mut im[off..off + size]);
         if size <= 2048 {
             pos = fft_bfs_16_portable(size, re, im, omg, pos);
@@ -81,8 +87,9 @@ fn fft_rec_16_portable<R: Float + FloatConst + Debug>(m: usize, re: &mut [R], im
         let h = size >> 1;
         twiddle_fft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
         pos += 2;
-        blocks.push((off + h, h));
-        blocks.push((off, h));
+        blocks[len] = (off + h, h);
+        blocks[len + 1] = (off, h);
+        len += 2;
     }
     pos
 }

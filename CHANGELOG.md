@@ -197,6 +197,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - `poulpy-cpu-oracle` takes the ring as a type parameter, `Standard` by default, and `FFT64CIOracle` and `NTT4x30CIOracle` are the conjugate-invariant instances. Every ring-dependent operation on the conjugate-invariant ring of degree `n` runs in the standard ring of degree `2n` through the subring embedding. Their HAL suites and Core parity run against each other, and their products and automorphisms are checked against schoolbook and basis definitions.
 - **Behaviour:** the FFT64 butterflies of the portable, AVX2, AVX-512 and NEON backends round one product and fuse the other into a multiply-add at the same positions, those of the AVX2 kernels, so the four return the same bytes on the same twiddles.
   The portable kernels use `mul_add`, which runs on the FMA unit on `x86_64` when the CPU has one, and the NEON kernels move their multiply-adds to match.
+  On targets without an FMA unit, such as older `x86_64` CPUs or `wasm32`, the multiply-adds run in software and the portable transforms are much slower.
   Ring transforms of the portable and NEON backends can differ in the last bit from earlier versions.
 - CKKS encoding is byte identical across the CPU backends.
   `ckks_encoding::EncodingFFTTable` builds the encoding twiddles from the correctly rounded roots of `CKKSFloat`, through the new `ReimFFTTable::new_with_roots` and `ReimIFFTTable::new_with_roots`, and `FFT64AvxEncodingTable`, `FFT64Avx512EncodingTable` and `FFT64NeonEncodingTable` run the SIMD kernels on it.

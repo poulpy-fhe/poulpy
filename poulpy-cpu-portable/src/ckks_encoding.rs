@@ -13,10 +13,10 @@
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData};
 
 use anyhow::{Result, ensure};
-use poulpy_ckks::api::CKKSEncodingScalar;
+use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
 use crate::kernels::fft64::reim::{ReimFFTTable, ReimIFFTTable};
@@ -158,7 +158,7 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
     fn new(m: usize) -> Self {
         let log_order = (4 * m).trailing_zeros();
         let order = F::from_u64(1 << log_order).expect("twiddle order is representable");
-        let root = move |turn: F| {
+        let index = move |turn: F| {
             // Scaling a dyadic turn by the power-of-two order is exact.
             let scaled = turn * order;
             let k = scaled.to_u64().expect("twiddle turn is non-negative");
@@ -166,7 +166,21 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
                 F::from_u64(k) == Some(scaled),
                 "twiddle turn is not a multiple of 2^-{log_order}"
             );
-            F::ckks_root_of_unity(k, log_order)
+            k
+        };
+        if log_order <= ROOT_TABLE_LOG_ORDER {
+            let root = move |turn: F| F::ckks_root_of_unity(index(turn), log_order);
+            return Self {
+                fft: ReimFFTTable::new_with_roots(m, root),
+                ifft: ReimIFFTTable::new_with_roots(m, root),
+            };
+        }
+        // Past the checked-in tables, roots are costly to generate and both
+        // tables read the same ones, so each is computed once.
+        let memo: RefCell<Vec<Option<(F, F)>>> = RefCell::new(vec![None; 4 * m]);
+        let root = |turn: F| {
+            let k = index(turn);
+            *memo.borrow_mut()[k as usize & (4 * m - 1)].get_or_insert_with(|| F::ckks_root_of_unity(k, log_order))
         };
         Self {
             fft: ReimFFTTable::new_with_roots(m, root),
