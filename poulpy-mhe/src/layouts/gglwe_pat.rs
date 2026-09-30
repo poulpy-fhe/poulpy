@@ -10,6 +10,9 @@ pub type GGLWEPatOwned<BE> = GGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>
 
 /// Unseeded public aggregatable transcript of a GGLWE: a full [`GGLWE`], for
 /// transcripts whose masks are not uniform, such as public-key encryptions.
+///
+/// Aggregation adds limbs without normalizing; normalization and finalization
+/// produce canonical digits, and finalization leaves the PAT unchanged.
 #[derive(Clone)]
 pub struct GGLWEPat<D: Data, W: ZnxWord> {
     pub(crate) inner: GGLWE<D, W>,

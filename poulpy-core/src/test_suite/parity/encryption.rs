@@ -71,6 +71,11 @@ fn poison_glwe<B: Backend, G: GLWEToBackendMut<B>>(value: &mut G) {
     let bytes = B::len_bytes_mut(view.data.data_mut());
     B::copy_host_to_view(view.data.data_mut(), &vec![0xA5; bytes]);
 }
+fn poison_glwe_compressed<B: Backend, G: GLWECompressedToBackendMut<B>>(value: &mut G) {
+    let mut view = value.to_backend_mut();
+    let bytes = B::len_bytes_mut(view.data.data_mut());
+    B::copy_host_to_view(view.data.data_mut(), &vec![0xA5; bytes]);
+}
 fn poison_lwe<B: Backend, G: LWEToBackendMut<B>>(value: &mut G) {
     let mut view = value.to_backend_mut();
     let body_bytes = B::len_bytes_mut(view.body.data_mut());
@@ -230,11 +235,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
 
         let mut compressed = module.glwe_compressed_alloc_from_infos(&infos);
-        {
-            let mut view = GLWECompressedToBackendMut::<B>::to_backend_mut(&mut compressed);
-            let bytes = B::len_bytes_mut(view.data.data_mut());
-            B::copy_host_to_view(view.data.data_mut(), &vec![0xA5; bytes]);
-        }
+        poison_glwe_compressed::<B, _>(&mut compressed);
         module.glwe_compressed_encrypt_sk(
             &mut compressed,
             &pt,
@@ -248,6 +249,20 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.decompress_glwe(&mut out, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_sk", &out));
         results.push(source_snapshot("compressed_sources", &mut e, &mut a));
+        poison_glwe_compressed::<B, _>(&mut compressed);
+        module.glwe_compressed_encrypt_zero_sk(
+            &mut compressed,
+            &skp,
+            [79; 32],
+            &enc,
+            &mut e,
+            &mut poisoned_scratch::<B>(module.glwe_compressed_encrypt_sk_tmp_bytes(&infos)).arena(),
+        );
+        let mut zero = module.glwe_alloc_from_infos(&infos);
+        poison_glwe::<B, _>(&mut zero);
+        module.decompress_glwe(&mut zero, &compressed);
+        results.push(snapshot_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
+        results.push(source_snapshot("compressed_zero_sources", &mut e, &mut a));
         module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
         results.push(snapshot_glwe::<B, _>("mask_seed", &out));
         module.fill_glwe_mask_from_source(&mut out, &mut a);
