@@ -37,7 +37,9 @@ paste = {workspace = true}
 rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
-# Serial core parity suites select portable comparison backends.
+# HAL and core cross suites compare against the oracle.
+poulpy-cpu-oracle = {workspace = true, features = ["enable-core"]}
+# Encryption and scheme parity suites still select portable comparison backends.
 poulpy-cpu-ref = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}

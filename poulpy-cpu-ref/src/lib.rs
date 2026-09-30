@@ -81,16 +81,36 @@ pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
 
 #[cfg(test)]
-crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+crate::conjugate_invariant_test_suite!(
+    ci_fft64ref,
+    crate::FFT64CIRef,
+    crate::FFT64Ref,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(test)]
-crate::conjugate_invariant_test_suite!(ci_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+crate::conjugate_invariant_test_suite!(
+    ci_ntt4x30ref,
+    crate::NTT4x30CIRef,
+    crate::NTT4x30Ref,
+    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+);
 
 #[cfg(all(test, feature = "enable-core"))]
-crate::conjugate_invariant_core_test_suite!(ci_core_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+crate::conjugate_invariant_core_test_suite!(
+    ci_core_fft64ref,
+    crate::FFT64CIRef,
+    crate::FFT64Ref,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-core"))]
-crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+crate::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30ref,
+    crate::NTT4x30CIRef,
+    crate::NTT4x30Ref,
+    reference = poulpy_cpu_oracle::FFT64CIOracle
+);
 
 #[cfg(all(test, feature = "enable-ckks"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
