@@ -1,6 +1,6 @@
 //! Standard-ring items of [`NTT4x30Neon`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
@@ -16,7 +16,7 @@ use crate::neon::{
     znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate},
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::standard::{intt_ref, ntt_ref},
     znx::{standard::znx_automorphism_ref as kn_automorphism, znx_automorphism_rotate_ref as kn_automorphism_rotate},
 };

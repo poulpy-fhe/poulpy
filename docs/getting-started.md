@@ -13,7 +13,8 @@ poulpy-hal                 hardware abstraction: layouts and operation traits
     ├── poulpy-ckks        leveled CKKS evaluator
     └── poulpy-bin-fhe     binary and gate-level FHE
 
-poulpy-cpu-ref             portable reference backend
+poulpy-cpu-portable        portable scalar backend
+poulpy-cpu-oracle          independent scalar oracle for correctness tests
 poulpy-cpu-avx             AVX2 / FMA backend
 poulpy-cpu-avx512          AVX-512 / IFMA backend
 ```
@@ -37,17 +38,21 @@ The operation traits are grouped by the type they act on: `vec_znx` for coeffici
 A backend supplies the actual low-level arithmetic behind the HAL: the Fourier or number-theoretic transform, the vector-matrix and scalar-vector products, and the coefficient-domain operations.
 Each backend crate exposes one or more zero-sized marker types that you pass as the `B` in `Module<B>`.
 
-`poulpy-cpu-ref` is the portable reference.
-It implements the full HAL operation set in plain scalar Rust with no intrinsics, runs on any target, and acts as the correctness oracle the other backends are checked against.
-It provides `FFT64Ref` and `NTT4x30Ref`.
+`poulpy-cpu-portable` is the portable backend.
+It implements the full HAL operation set in plain scalar Rust with no intrinsics and runs on any target.
+It provides `FFT64Portable` and `NTT4x30Portable`.
+
+`poulpy-cpu-oracle` is the correctness oracle the other backends, the portable one included, are checked against.
+It implements only the required HAL operations, directly and with plain loops, inherits every optional one, and has no fast paths.
+It is a test dependency only and is not published.
 
 `poulpy-cpu-avx` and `poulpy-cpu-avx512` do not reimplement the whole HAL.
-They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the reference implementation through shared macros.
+They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the portable backend through shared macros.
 `poulpy-cpu-avx` adds AVX2 and FMA kernels and provides `FFT64Avx` and `NTT4x30Avx`.
 `poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
 
 Results are deterministic and bit-identical across backends, since the NTT backends are exact and the FFT backends are held within correct rounding.
-This means you can develop and test against `FFT64Ref` and switch to an accelerated backend with no change in output.
+This means you can develop and test against `FFT64Portable` and switch to an accelerated backend with no change in output.
 See [backends.md](backends.md) for the arithmetic families, their subfamilies, and how to pick one.
 
 ### poulpy-core
@@ -111,10 +116,10 @@ Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same intern
 | `delegates` | Wires the `api` traits onto `Module<B>` through `oep` |
 
 The reason for this split is that it decouples scheme code from the arithmetic backend.
-You write a scheme once against the `api` traits, name a backend as the `B` in `Module<B>`, and the same code runs on the reference backend, on AVX, on AVX-512, or on a future GPU or FPGA backend with no change.
+You write a scheme once against the `api` traits, name a backend as the `B` in `Module<B>`, and the same code runs on the portable backend, on AVX, on AVX-512, or on a future GPU or FPGA backend with no change.
 A new backend implements the `Backend` trait and the `oep` traits, and runs every algorithm from `reference`, which is the implementation, so it is correct from the first day.
-It then overrides only its hot paths by implementing the relevant `oep` trait directly instead of taking the `reference`; each override is independent per operation and per layer, and each is a faster route to the same result, validated by the parity test: the suite runs the override and an attested backend on the same inputs and requires the same result. Attestation is transitive: the oracle is `reference`, the portable backend runs it directly, and a backend attested against an attested backend is attested itself, so a new backend need not test against the oracle when an attested one is at hand (a GPU backend against an attested AVX-512 backend, for example). An override is correct only when that test passes.
-This is what lets the portable reference prove correctness once while the accelerated backends add speed incrementally without ever forking the scheme logic.
+It then overrides only its hot paths by implementing the relevant `oep` trait directly instead of taking the `reference`; each override is independent per operation and per layer, and each is a faster route to the same result, validated by the parity test: the suite runs the override and an attested backend on the same inputs and requires the same result. Attestation is transitive: the root is `reference`, which `poulpy-cpu-oracle` runs directly, and a backend attested against an attested backend is attested itself, so a new backend need not test against the oracle when an attested one is at hand (a GPU backend against an attested AVX-512 backend, for example). An override is correct only when that test passes.
+This is what lets the oracle prove correctness once while the accelerated backends add speed incrementally without ever forking the scheme logic.
 `poulpy-hal` has no `reference` folder.
 A backend implements the basis operations of each `oep` family, and the derived operations (the shifts, the small-operand big products, `vmp_apply_dft`, the convolution composites, ...) are default bodies on the `oep` traits themselves, written only in terms of the backend's own basis and overridable one method at a time; `test_suite::derived` validates every default body, and every override of one, against the api on every backend.
 Every `api` trait of `poulpy-hal` carries a contract block (operation class, mutation class, domain, exact postcondition, pinning test) next to its prose; the `poulpy_hal::api` module docs define the vocabulary and the `poulpy_hal::oep` module docs give the order in which a new backend implements the families.
@@ -133,8 +138,8 @@ Run them with the matching features.
 ```sh
 cargo test -p poulpy-core
 cargo test -p poulpy-ckks
-cargo test -p poulpy-cpu-ref --features enable-core
-cargo test -p poulpy-cpu-ref --features enable-ckks
+cargo test -p poulpy-cpu-portable --features enable-core
+cargo test -p poulpy-cpu-portable --features enable-ckks
 cargo test -p poulpy-bin-fhe --features enable-bin-fhe
 ```
 
@@ -206,8 +211,8 @@ let ggsw_layout = GGSWLayout {
 
 ## Where to go next
 
-- For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-ref/examples/core_encryption.rs`.
+- For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-portable/examples/core_encryption.rs`.
 - For the gate and encrypted integer API, read `poulpy-bin-fhe/examples/bdd_arithmetic.rs`.
-- For CKKS, read `poulpy-cpu-ref/examples/ckks_poly2.rs`.
+- For CKKS, read `poulpy-cpu-portable/examples/ckks_poly2.rs`.
 - For CKKS polynomial evaluation and homomorphic linear transformations, read [polynomial_evaluation.md](polynomial_evaluation.md) and [linear_transformation.md](linear_transformation.md).
 - For the choice of arithmetic backend, read [backends.md](backends.md).

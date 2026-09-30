@@ -1,6 +1,6 @@
 //! Standard-ring items of [`FFT64Neon`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::ring_arith::Fft64RingArith,
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
 };
@@ -9,7 +9,7 @@ use super::FFT64Neon;
 #[cfg(target_arch = "aarch64")]
 use crate::neon::znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate};
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     standard::znx_automorphism_ref as kn_automorphism, znx_automorphism_rotate_ref as kn_automorphism_rotate,
 };
 
@@ -44,5 +44,5 @@ impl ZnxAutomorphismRotate for FFT64Neon {
 }
 
 impl Fft64RingArith for FFT64Neon {
-    poulpy_cpu_ref::fft64_ring_arith_standard!();
+    poulpy_cpu_portable::fft64_ring_arith_standard!();
 }

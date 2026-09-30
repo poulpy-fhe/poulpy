@@ -1,6 +1,6 @@
 //! Standard-ring items of [`NTT4x30Avx`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},

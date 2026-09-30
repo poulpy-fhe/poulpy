@@ -2,8 +2,8 @@ use std::ptr::NonNull;
 
 use poulpy_hal::layouts::{Ring, Standard};
 
-use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
+use poulpy_cpu_portable::reference::{
     fft64::{
         convolution::I64Ops,
         module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
@@ -80,7 +80,7 @@ use crate::{
 #[repr(C)]
 pub struct FFT64AvxHandle<R: Ring = Standard> {
     ring_plans: FFT64PlanSet<f64, R>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Avx<R> {}
@@ -198,7 +198,7 @@ impl<R: Ring> Backend for FFT64Avx<R> {
 /// The returned handle must be fully initialized for `n`.
 unsafe impl<R: Ring> FFT64HandleFactory for FFT64AvxHandle<R>
 where
-    FFT64Plan<f64, R>: poulpy_cpu_ref::reference::fft64::module::FFT64PlanNew,
+    FFT64Plan<f64, R>: poulpy_cpu_portable::reference::fft64::module::FFT64PlanNew,
 {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64AvxHandle {
@@ -425,7 +425,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for FFT64Avx<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx<R> {
+impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for FFT64Avx<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
@@ -580,7 +580,7 @@ impl<R: Ring> ReimArith for FFT64Avx<R> {
 
     #[inline(always)]
     fn reim_automorphism(
-        plan: &poulpy_cpu_ref::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan,
+        plan: &poulpy_cpu_portable::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan,
         res: &mut [f64],
         a: &[f64],
     ) {
@@ -756,8 +756,8 @@ impl<R: Ring> BigWordHadamardProduct for FFT64Avx<R> {
     }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64AvxHandle<R> {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64AvxHandle<R> {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

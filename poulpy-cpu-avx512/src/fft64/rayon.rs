@@ -5,7 +5,7 @@ use poulpy_hal::layouts::Ring;
 use super::FFT64Avx512Rayon;
 
 mod standard {
-    use poulpy_cpu_ref::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+    use poulpy_cpu_portable::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
 
     use super::FFT64Avx512Rayon;
     use crate::FFT64Avx512;
@@ -13,11 +13,11 @@ mod standard {
     poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon, FFT64Avx512);
 
     unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512Rayon {
-        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+        poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
     }
 
     unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Avx512Rayon<poulpy_hal::layouts::ConjugateInvariant> {
-        poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+        poulpy_cpu_portable::hal_impl_vec_znx_ci!();
     }
 
     impl ZnxAutomorphismRotate for FFT64Avx512Rayon {
@@ -28,12 +28,12 @@ mod standard {
     }
 
     impl Fft64RingArith for FFT64Avx512Rayon {
-        poulpy_cpu_ref::fft64_ring_arith_standard!();
+        poulpy_cpu_portable::fft64_ring_arith_standard!();
     }
 }
 
 mod conjugate_invariant {
-    use poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith;
+    use poulpy_cpu_portable::reference::fft64::ring_arith::Fft64RingArith;
     use poulpy_hal::layouts::ConjugateInvariant;
 
     use super::FFT64Avx512Rayon;
@@ -42,7 +42,7 @@ mod conjugate_invariant {
     poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64Avx512Rayon<ConjugateInvariant>, FFT64Avx512<ConjugateInvariant>);
 
     impl Fft64RingArith for FFT64Avx512Rayon<ConjugateInvariant> {
-        poulpy_cpu_ref::fft64_ring_arith_ci!();
+        poulpy_cpu_portable::fft64_ring_arith_ci!();
     }
 }
 

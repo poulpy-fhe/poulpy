@@ -28,7 +28,7 @@
 //!
 //! # Algorithm
 //!
-//! Identical to the scalar reference in [`poulpy_cpu_ref::reference::ntt4x30::ntt`].
+//! Identical to the scalar reference in [`poulpy_cpu_portable::reference::ntt4x30::ntt`].
 //! The inner loops operate on 4 primes per coefficient (256-bit) and on 2
 //! coefficients in parallel (512-bit) where the butterfly shape allows it.
 //!
@@ -61,7 +61,7 @@ use core::arch::x86_64::{
 
 use poulpy_hal::layouts::Ring;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
@@ -1140,7 +1140,7 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ri
 mod tests {
 
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
+    use poulpy_cpu_portable::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
         ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},

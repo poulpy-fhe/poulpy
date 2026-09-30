@@ -52,7 +52,7 @@
 //!    method at a time. The module docs give the implementation order.
 //! 3. **[`delegates`]** -- Blanket `impl` glue that connects each [`api`] trait to
 //!    the corresponding backend family method on [`layouts::Module`].
-//! 4. **Reference implementations** live in the `poulpy-cpu-ref` crate, which provides
+//! 4. **Reference implementations** live in the `poulpy-cpu-portable` crate, which provides
 //!    the portable default backend used by tests and benchmarks.
 //!
 //! ## Testing and Benchmarking
@@ -62,7 +62,7 @@
 //! [`backend_test_suite!`](crate::backend_test_suite) and
 //! [`cross_backend_test_suite!`](crate::cross_backend_test_suite) macros to
 //! validate correctness against the reference implementation in
-//! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
+//! [`poulpy-cpu-portable`](https://docs.rs/poulpy-cpu-portable).
 //!
 //! Analogous Criterion-based benchmark harnesses live in the separate
 //! [`poulpy-bench`](https://docs.rs/poulpy-bench) crate.
@@ -124,7 +124,7 @@ pub mod layouts;
 /// backend traits.
 ///
 /// Backend crates implement only the families they own and may delegate to
-/// helper defaults provided by a backend crate (for example `poulpy-cpu-ref`). See
+/// helper defaults provided by a backend crate (for example `poulpy-cpu-portable`). See
 /// [`doc::backend_safety`] for the safety contract.
 pub mod oep;
 

@@ -389,7 +389,7 @@ Higher-level functionality on top of that foundation:
 
 ## Conjugate invariant CKKS
 
-A CI backend such as `FFT64CIRef` or `NTT4x30CIRef` supports `N` real slots
+A CI backend such as `FFT64CIPortable` or `NTT4x30CIPortable` supports `N` real slots
 at degree `N`, constructed with `Module::<Backend>::new(N)`.
 `CKKSModuleInfos::ckks_max_slots` reports the capacity, and
 `ckks_galois_element` provides the identifiers for rotation keys. On both

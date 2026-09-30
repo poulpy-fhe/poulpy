@@ -118,7 +118,7 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
         }
 
         if !res.len().is_multiple_of(8) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_from_znx_i64_ref;
+            use poulpy_cpu_portable::reference::fft64::reim::reim_from_znx_i64_ref;
             reim_from_znx_i64_ref(&mut res[span << 3..], &a[span << 3..])
         }
     }
@@ -204,7 +204,7 @@ pub fn reim_to_znx_i64_bnd63_avx512(res: &mut [i64], divisor: f64, a: &[f64]) {
         }
 
         if !res.len().is_multiple_of(8) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_to_znx_i64_ref;
+            use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_ref;
             reim_to_znx_i64_ref(&mut res[span << 3..], divisor, &a[span << 3..])
         }
     }
@@ -231,7 +231,7 @@ pub fn reim_to_znx_i64_assign_bnd63_avx512(res: &mut [f64], divisor: f64) {
             _mm512_sub_epi64, _mm512_xor_si512,
         };
 
-        use poulpy_cpu_ref::reference::fft64::reim::reim_to_znx_i64_assign_ref;
+        use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_assign_ref;
 
         let sign_mask_512: __m512i = _mm512_set1_epi64(sign_mask as i64);
         let expo_mask_512: __m512i = _mm512_set1_epi64(expo_mask as i64);
@@ -300,10 +300,10 @@ pub fn reim_to_znx_i64_assign_bnd63_avx512(res: &mut [f64], divisor: f64) {
 mod tests {
     #[test]
     fn reim_to_znx_rounding_boundaries() {
-        poulpy_cpu_ref::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Avx512>();
+        poulpy_cpu_portable::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Avx512>();
     }
 
-    use poulpy_cpu_ref::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
+    use poulpy_cpu_portable::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
 
     use super::*;
 

@@ -362,7 +362,7 @@ pub(crate) unsafe fn reim4_real_convolution_1coeff_neon(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::fft64::reim4::{
+    use poulpy_cpu_portable::reference::fft64::reim4::{
         reim4_convolution_1coeff_ref, reim4_convolution_2coeffs_ref, reim4_convolution_by_real_const_1coeff_ref,
         reim4_convolution_by_real_const_2coeffs_ref,
     };

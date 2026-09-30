@@ -218,7 +218,7 @@ fn test_convolution_direct() {
 
 cross_backend_test_suite! {
     mod word_compat,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {

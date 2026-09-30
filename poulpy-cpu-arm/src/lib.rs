@@ -51,7 +51,7 @@
 //! ## Determinism
 //!
 //! Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) produce
-//! **bit-identical results** against `poulpy-cpu-ref`. Floating-point operations in FFT
+//! **bit-identical results** against `poulpy-cpu-portable`. Floating-point operations in FFT
 //! match the reference within ULP tolerance — NEON kernels use FMA (`vfmaq_f64`) where
 //! the scalar reference does not, so individual rounding bits may differ.
 //!
@@ -198,7 +198,7 @@ pub type FFT64CINeonRayon = FFT64NeonRayon<poulpy_hal::layouts::ConjugateInvaria
 pub type NTT4x30CINeonRayon = NTT4x30NeonRayon<poulpy_hal::layouts::ConjugateInvariant>;
 
 #[cfg(all(test, feature = "enable-neon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64neon,
     crate::FFT64CINeon,
     crate::FFT64Neon,
@@ -206,7 +206,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30neon,
     crate::NTT4x30CINeon,
     crate::NTT4x30Neon,
@@ -214,7 +214,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64neonrayon,
     crate::FFT64CINeonRayon,
     crate::FFT64NeonRayon,
@@ -222,7 +222,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30neonrayon,
     crate::NTT4x30CINeonRayon,
     crate::NTT4x30NeonRayon,
@@ -230,7 +230,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64neon,
     crate::FFT64CINeon,
     crate::FFT64Neon,
@@ -238,7 +238,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30neon,
     crate::NTT4x30CINeon,
     crate::NTT4x30Neon,
@@ -246,7 +246,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64neonrayon,
     crate::FFT64CINeonRayon,
     crate::FFT64NeonRayon,
@@ -254,7 +254,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30neonrayon,
     crate::NTT4x30CINeonRayon,
     crate::NTT4x30NeonRayon,

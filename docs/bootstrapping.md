@@ -295,10 +295,10 @@ The total arithmetic cost is `consumed_bits`; its placement around ModUp is give
 A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message ratio `2^11`, `log_delta = 45`, a degree-30 `CosHK` EvalMod) recovers the slots to a few bits of precision on the reference backend, which is the floor the end-to-end test asserts; wider parameters recover proportionally more.
 
 - `poulpy-ckks/src/test_suite/bootstrapping.rs` runs `ckks_bootstrap` end to end for the C2S-first, EvalRound+, and S2C-first pipelines.
-- `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
+- `poulpy-cpu-portable/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
+cargo test -p poulpy-cpu-portable --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```
 
 ## Conjugate invariant ciphertexts
@@ -306,12 +306,12 @@ cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::boots
 A CI ciphertext of degree `N` is a folded element of the standard ring of degree `2N`, so `ckks_bootstrap_batch` on a standard module of degree `g·2N` refreshes CI batches, the fold selecting its CI strategy from their type:
 
 ```rust,ignore
-let ci = Module::<NTT4x30CIRef>::new(n);
-let standard = Module::<NTT4x30Ref>::new(2 * n);
+let ci = Module::<NTT4x30CIPortable>::new(n);
+let standard = Module::<NTT4x30Portable>::new(2 * n);
 standard.ckks_bootstrap_batch(&ci, outs, ins, &context, &keys, &ring_switch, scratch)?;
 ```
 
-The CI backend shares coefficient storage and word with the standard one; `CIBridge` (`type CI = NTT4x30CIRef`) records that pairing for key generation and tests, and `test_fold_parity` compares the CI strategy across backends.
+The CI backend shares coefficient storage and word with the standard one; `CIBridge` (`type CI = NTT4x30CIPortable`) records that pairing for key generation and tests, and `test_fold_parity` compares the CI strategy across backends.
 
 The ring maps are also available on their own through `CKKSCIRingMapOps`, on CI modules only.
 `ckks_ci_unfold` writes `a_0 + Σ a_i (X^i + X^-i)` into a standard ciphertext of degree `2N`, which decrypts under the unfolded CI secret; its digits are exact but not renormalized.

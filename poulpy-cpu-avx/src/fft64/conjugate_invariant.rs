@@ -1,6 +1,6 @@
 //! Conjugate invariant ring items of [`FFT64Avx`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::ring_arith::Fft64RingArith,
     znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_ref},
 };
@@ -28,5 +28,5 @@ impl ZnxAutomorphism for FFT64Avx<ConjugateInvariant> {
 }
 
 impl Fft64RingArith for FFT64Avx<ConjugateInvariant> {
-    poulpy_cpu_ref::fft64_ring_arith_ci!();
+    poulpy_cpu_portable::fft64_ring_arith_ci!();
 }

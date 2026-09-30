@@ -27,15 +27,15 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-oracle/enable-bin-fhe
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-ref/enable-bin-fhe
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-portable/enable-bin-fhe
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-ref/enable-bin-fhe
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
@@ -43,9 +43,9 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-ref/enable-bin-fhe
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
@@ -57,9 +57,9 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-ref/enable-bin-fhe
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-bin-fhe
     poulpy-cpu-arm/enable-neon
@@ -222,7 +222,7 @@ jobs:
 
       - name: Test Quad CKKS encoding on Darwin
         run: >-
-          cargo test -p poulpy-cpu-ref --lib
+          cargo test -p poulpy-cpu-portable --lib
           --features "enable-ckks,poulpy-ckks/libquadmath"
           ckks_encoding::tests::fft64_precision_families_coexist_in_one_module
           -- --exact
@@ -268,7 +268,7 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_log_regressions_terminate -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_math_surface_values -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
-          cargo test -p poulpy-cpu-ref --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
+          cargo test -p poulpy-cpu-portable --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
   # Run natively when every required CPU feature is usable; otherwise use SDE.
   avx512:

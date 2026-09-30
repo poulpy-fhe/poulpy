@@ -11,7 +11,7 @@ use core::arch::aarch64::{
     vaddq_u64, vandq_u64, vdupq_n_s64, vdupq_n_u64, vld1q_u64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrq_n_u64,
     vsraq_n_u64, vst1q_u64,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
 };

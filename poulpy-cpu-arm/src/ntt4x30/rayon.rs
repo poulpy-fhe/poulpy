@@ -5,7 +5,7 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 use rayon::prelude::*;
 
-use poulpy_cpu_ref::{
+use poulpy_cpu_portable::{
     hal_defaults::{
         BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
         NTT4x30VecZnxBigDefault, NTT4x30VmpDefault,
@@ -42,8 +42,8 @@ use poulpy_hal::{
 };
 
 use super::{NTT4x30Neon, NTT4x30NeonRayon};
+use poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::{NttPlan, NttPlanNew};
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr};
-use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::{NttPlan, NttPlanNew};
 use poulpy_hal::layouts::Ring;
 
 poulpy_hal::impl_backend_from!(NTT4x30NeonRayon<R>, NTT4x30Neon<R>, RayonTaskExecutor; generic R: Ring);
@@ -234,10 +234,10 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30NeonRayon<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRayon<R> {
+impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT4x30NeonRayon<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
             base2k, lsh, a, carry,
         );
     }
@@ -251,7 +251,7 @@ impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4
         a: &[i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
             base2k, lsh, padding, res, a, carry,
         );
     }
@@ -264,14 +264,14 @@ impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4
         res: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
             base2k, lsh, padding, res, carry,
         );
     }
 
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
             base2k, lsh, res, src,
         );
     }
@@ -285,7 +285,7 @@ impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4
         src: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<
             OVERWRITE,
         >(base2k, lsh, res_base2k, res, src, carry);
     }
@@ -300,7 +300,7 @@ where
         <NTT4x30Neon<R> as NttDFTExecute<NttTable<Primes30, R>>>::ntt_dft_execute(table, data)
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
         <NTT4x30Neon<R> as NttDFTExecute<NttTable<Primes30, R>>>::ntt_automorphism_plan(n, p)
     }
 }
@@ -313,7 +313,7 @@ where
         <NTT4x30Neon<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_dft_execute(table, data)
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
         <NTT4x30Neon<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_automorphism_plan(n, p)
     }
 }
@@ -474,10 +474,10 @@ impl<R: Ring> I128NormalizeOps for NTT4x30NeonRayon<R> {
         <NTT4x30Neon<R> as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src);
     }
 
-    const FUSE_NORMALIZE: bool = <NTT4x30Neon<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+    const FUSE_NORMALIZE: bool = <NTT4x30Neon<R> as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
 
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
             base2k, lsh, res, src,
         )
     }
@@ -490,7 +490,7 @@ impl<R: Ring> I128NormalizeOps for NTT4x30NeonRayon<R> {
         src: &mut [i128],
         carry: &mut [i128],
     ) {
-        <NTT4x30Neon<R> as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
+        <NTT4x30Neon<R> as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
             OVERWRITE,
         >(base2k, lsh, res_base2k, res, src, carry)
     }
@@ -519,18 +519,18 @@ impl<R: Ring> BigWordHadamardProduct for NTT4x30NeonRayon<R> {
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30NeonRayon<poulpy_hal::layouts::ConjugateInvariant> {
-    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
         _module: &Module<Self>,
@@ -567,7 +567,7 @@ unsafe impl<R: Ring> HalModuleImpl for NTT4x30NeonRayon<R>
 where
     NttPlan<Primes30, R>: NttPlanNew,
 {
-    poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(NTT4x30ModuleDefault);
 }
 unsafe impl<R: Ring> HalVmpImpl for NTT4x30NeonRayon<R>
 where
@@ -711,13 +711,13 @@ unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 }
 unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
 
     fn vec_znx_big_normalize(
         _module: &Module<Self>,
@@ -749,7 +749,7 @@ unsafe impl<R: Ring> HalSvpImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(NTT4x30SvpDefault);
 }
 unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30NeonRayon<R>
 where
@@ -1051,11 +1051,11 @@ where
     ) {
         let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
                 plan, res, res_col, a, a_col,
             );
         } else {
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, RayonTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, RayonTaskExecutor>(
                 plan, res, res_col, a, a_col,
             );
         }
@@ -1077,7 +1077,7 @@ impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30NeonRayon<R> {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::ZnxAdd;
+    use poulpy_cpu_portable::reference::znx::ZnxAdd;
     use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
 
     use super::NTT4x30NeonRayon;

@@ -1,4 +1,4 @@
-//! Single-command sanity + perf check for `poulpy-cpu-avx` vs `poulpy-cpu-ref`.
+//! Single-command sanity + perf check for `poulpy-cpu-avx` vs `poulpy-cpu-portable`.
 //!
 //! TEMPORARY — fold into proper `poulpy-bench` criterion benches once the
 //! AVX backend is fully validated.
@@ -56,8 +56,8 @@ mod avx {
     use rand_chacha::ChaCha8Rng;
 
     use poulpy_cpu_avx::{FFT64Avx, NTT4x30Avx};
-    use poulpy_cpu_ref::{
-        FFT64Ref, NTT4x30Ref,
+    use poulpy_cpu_portable::{
+        FFT64Portable, NTT4x30Portable,
         reference::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             ntt4x30::{
@@ -170,13 +170,13 @@ mod avx {
         let mut avx = vec![0i64; n];
         let mut refr = vec![0i64; n];
         <FFT64Avx as ZnxAdd>::znx_add(&mut avx, &a, &b);
-        <FFT64Ref as ZnxAdd>::znx_add(&mut refr, &a, &b);
+        <FFT64Portable as ZnxAdd>::znx_add(&mut refr, &a, &b);
         assert_eq!(avx, refr, "znx_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
         let ref_ns = time(iters, || {
-            <FFT64Ref as ZnxAdd>::znx_add(&mut r, &a, &b);
+            <FFT64Portable as ZnxAdd>::znx_add(&mut r, &a, &b);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -196,7 +196,7 @@ mod avx {
         let mut x_ref = x_init.clone();
         let mut c_ref = c_init.clone();
         <FFT64Avx as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_avx, &mut c_avx);
-        <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
+        <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
         assert_eq!(x_avx, x_ref, "znx_normalize_middle_step_assign x (n={n})");
         assert_eq!(c_avx, c_ref, "znx_normalize_middle_step_assign c (n={n})");
 
@@ -206,7 +206,7 @@ mod avx {
         let ref_ns = time(iters, || {
             x.copy_from_slice(&x_init);
             c.copy_from_slice(&c_init);
-            <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
+            <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
             black_box((&x, &c));
         });
         let avx_ns = time(iters, || {
@@ -225,13 +225,13 @@ mod avx {
         let mut avx = vec![0i64; n];
         let mut refr = vec![0i64; n];
         <FFT64Avx as ZnxAutomorphism>::znx_automorphism(p, &mut avx, &a);
-        <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut refr, &a);
+        <FFT64Portable as ZnxAutomorphism>::znx_automorphism(p, &mut refr, &a);
         assert_eq!(avx, refr, "znx_automorphism (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
         let ref_ns = time(iters, || {
-            <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut r, &a);
+            <FFT64Portable as ZnxAutomorphism>::znx_automorphism(p, &mut r, &a);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -250,13 +250,13 @@ mod avx {
         let mut avx = vec![0f64; n];
         let mut refr = vec![0f64; n];
         <FFT64Avx as ReimArith>::reim_add(&mut avx, &a, &b);
-        <FFT64Ref as ReimArith>::reim_add(&mut refr, &a, &b);
+        <FFT64Portable as ReimArith>::reim_add(&mut refr, &a, &b);
         assert!(close_enough(&avx, &refr, 0.0), "reim_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0f64; n];
         let ref_ns = time(iters, || {
-            <FFT64Ref as ReimArith>::reim_add(&mut r, &a, &b);
+            <FFT64Portable as ReimArith>::reim_add(&mut r, &a, &b);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -273,13 +273,13 @@ mod avx {
         let mut avx = vec![0f64; n];
         let mut refr = vec![0f64; n];
         <FFT64Avx as ReimArith>::reim_mul(&mut avx, &a, &b);
-        <FFT64Ref as ReimArith>::reim_mul(&mut refr, &a, &b);
+        <FFT64Portable as ReimArith>::reim_mul(&mut refr, &a, &b);
         assert!(close_enough(&avx, &refr, 1e-3), "reim_mul (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0f64; n];
         let ref_ns = time(iters, || {
-            <FFT64Ref as ReimArith>::reim_mul(&mut r, &a, &b);
+            <FFT64Portable as ReimArith>::reim_mul(&mut r, &a, &b);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -297,14 +297,14 @@ mod avx {
         let mut avx = r0.clone();
         let mut refr = r0.clone();
         <FFT64Avx as ReimArith>::reim_addmul(&mut avx, &a, &b);
-        <FFT64Ref as ReimArith>::reim_addmul(&mut refr, &a, &b);
+        <FFT64Portable as ReimArith>::reim_addmul(&mut refr, &a, &b);
         assert!(close_enough(&avx, &refr, 1e-3), "reim_addmul (n={n})");
 
         let iters = iters_for(n);
         let mut r = r0.clone();
         let ref_ns = time(iters, || {
             r.copy_from_slice(&r0);
-            <FFT64Ref as ReimArith>::reim_addmul(&mut r, &a, &b);
+            <FFT64Portable as ReimArith>::reim_addmul(&mut r, &a, &b);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -325,7 +325,7 @@ mod avx {
         let mut avx = data0.clone();
         let mut refr = data0.clone();
         <FFT64Avx as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut avx);
-        <FFT64Ref as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
+        <FFT64Portable as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
         let rel = avx
             .iter()
             .zip(&refr)
@@ -337,7 +337,7 @@ mod avx {
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <FFT64Ref as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
+            <FFT64Portable as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx_ns = time(iters, || {
@@ -356,7 +356,7 @@ mod avx {
         let mut avx = data0.clone();
         let mut refr = data0.clone();
         <FFT64Avx as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut avx);
-        <FFT64Ref as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
+        <FFT64Portable as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
         let rel = avx
             .iter()
             .zip(&refr)
@@ -368,7 +368,7 @@ mod avx {
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <FFT64Ref as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
+            <FFT64Portable as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx_ns = time(iters, || {
@@ -387,13 +387,13 @@ mod avx {
         let mut avx = vec![0u64; 4 * n];
         let mut refr = vec![0u64; 4 * n];
         <NTT4x30Avx as NttFromZnx64>::ntt_from_znx64(&mut avx, &a);
-        <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
+        <NTT4x30Portable as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
         assert_eq!(avx, refr, "ntt_from_znx64 (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0u64; 4 * n];
         let ref_ns = time(iters, || {
-            <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
+            <NTT4x30Portable as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -410,14 +410,14 @@ mod avx {
         let mut avx = data0.clone();
         let mut refr = data0.clone();
         <NTT4x30Avx as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut avx);
-        <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
+        <NTT4x30Portable as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
         assert_eq!(avx, refr, "ntt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Portable as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx_ns = time(iters, || {
@@ -435,14 +435,14 @@ mod avx {
         let mut avx = data0.clone();
         let mut refr = data0.clone();
         <NTT4x30Avx as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut avx);
-        <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
+        <NTT4x30Portable as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
         assert_eq!(avx, refr, "intt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Portable as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx_ns = time(iters, || {
@@ -462,13 +462,13 @@ mod avx {
         let mut avx = vec![0i128; n];
         let mut refr = vec![0i128; n];
         <NTT4x30Avx as I128BigOps>::i128_add(&mut avx, &a, &b);
-        <NTT4x30Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
+        <NTT4x30Portable as I128BigOps>::i128_add(&mut refr, &a, &b);
         assert_eq!(avx, refr, "i128_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i128; n];
         let ref_ns = time(iters, || {
-            <NTT4x30Ref as I128BigOps>::i128_add(&mut r, &a, &b);
+            <NTT4x30Portable as I128BigOps>::i128_add(&mut r, &a, &b);
             black_box(&r);
         });
         let avx_ns = time(iters, || {
@@ -488,7 +488,7 @@ mod avx {
         let mut r_ref = vec![0i64; n];
         let mut c_ref = c_init.clone();
         <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
-        <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
+        <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
         assert_eq!(r_avx, r_ref, "nfc_middle_step r (n={n})");
         assert_eq!(c_avx, c_ref, "nfc_middle_step c (n={n})");
 
@@ -497,7 +497,7 @@ mod avx {
         let mut c = c_init.clone();
         let ref_ns = time(iters, || {
             c.copy_from_slice(&c_init);
-            <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
+            <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
             black_box((&r, &c));
         });
         let avx_ns = time(iters, || {

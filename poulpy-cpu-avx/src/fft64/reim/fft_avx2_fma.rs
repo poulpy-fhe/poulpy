@@ -25,7 +25,7 @@ use crate::fft64::reim::{as_arr, as_arr_mut};
 #[target_feature(enable = "avx2,fma")]
 pub(crate) fn fft_avx2_fma(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        use poulpy_cpu_ref::reference::fft64::reim::fft_ref;
+        use poulpy_cpu_portable::reference::fft64::reim::fft_ref;
 
         fft_ref(m, omg, data);
         return;
@@ -236,7 +236,7 @@ fn bitwiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{ReimFFTExecute, ReimFFTRef, ReimFFTTable, ReimIFFTRef, ReimIFFTTable};
+    use poulpy_cpu_portable::reference::fft64::reim::{ReimFFTExecute, ReimFFTRef, ReimFFTTable, ReimIFFTRef, ReimIFFTTable};
 
     use crate::fft64::reim::{ReimFFTAvx, ReimIFFTAvx};
 
@@ -325,7 +325,7 @@ fn test_fft_avx2_fma() {
 
     #[target_feature(enable = "avx2,fma")]
     fn internal(log_m: usize) {
-        use poulpy_cpu_ref::reference::fft64::reim::ReimFFTRef;
+        use poulpy_cpu_portable::reference::fft64::reim::ReimFFTRef;
 
         let m = 1 << log_m;
 
