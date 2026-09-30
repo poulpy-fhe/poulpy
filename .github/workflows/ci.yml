@@ -107,7 +107,7 @@ jobs:
         run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
       - name: Check scheme documentation
-        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
 
   avx:
     name: AVX backend (native or SDE)
