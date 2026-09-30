@@ -6,17 +6,17 @@ use poulpy_ckks::{
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx);
-// `f64` encodes through the AVX2/FMA kernels; `Quad` has no accelerated
-// transform and falls back to the generic scalar table. Rust has no
-// specialization, so accelerated backends list their precisions explicitly.
+// `f64` encodes through the AVX2/FMA kernels and `Quad` through the portable
+// kernels, both on the canonical twiddles. Rust has no specialization, so
+// accelerated backends list their precisions explicitly.
 macro_rules! select_avx_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = super::FFT64AvxReimTable;
+            type Fft = super::FFT64AvxEncodingTable;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>;
         }
     };
 }
