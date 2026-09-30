@@ -228,11 +228,8 @@ where
             &mut source_xe_have,
             &mut scratch.borrow(),
         );
-        let (mut bytes_want, mut bytes_have) = (Vec::new(), Vec::new());
-        ct_compressed.write_to(&mut bytes_want).unwrap();
-        ct_zero.write_to(&mut bytes_have).unwrap();
-        assert_eq!(
-            bytes_have, bytes_want,
+        assert!(
+            ct_zero == ct_compressed,
             "zero encryption differs from encrypting a zero plaintext"
         );
         assert_eq!(source_xe_have.new_seed(), source_xe_want.new_seed());
