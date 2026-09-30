@@ -9,9 +9,13 @@ defaults in `oep::derived`.
 ## Public API organization
 
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
-the collective public key protocol. Both are re-exported by `api` and the crate
-root. Every operation that takes caller scratch has a matching `_tmp_bytes`
-query in the same trait.
+the collective public key protocol and `api::evaluation_key` the collective
+switching and automorphism key protocols. A protocol trait, named
+`*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
+`mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
+from core's operations. All are re-exported by `api` and the crate root. Every
+operation that takes caller scratch has a matching `_tmp_bytes` query in the
+same trait.
 
 ## Operation map
 
@@ -20,23 +24,37 @@ query in the same trait.
 | `GLWEPatCompressedOps` | `GLWEPatCompressedImpl` | `reference::GLWEPatCompressedReference` |
 | `GGLWEPatCompressedOps` | `GGLWEPatCompressedImpl` | `reference::GGLWEPatCompressedReference` |
 | `GGLWEPatOps` | `GGLWEPatImpl` | `reference::GGLWEPatReference` |
-| `GLWEPublicKeyShare` | `GLWEPublicKeyShareImpl` | `reference::GLWEPublicKeyShareReference`; finalization is a derived default |
+| `GLWEPublicKeyMHEProtocol` | `GLWEPublicKeyMHEProtocolImpl` | `reference::GLWEPublicKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWESwitchingKeyMHEProtocol` | `GLWESwitchingKeyMHEProtocolImpl` | `reference::GLWESwitchingKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 
 ## Normalization
 
-Aggregation adds limbs without normalizing; normalization and finalization
-produce canonical digits. Headroom for chains of additions follows the
+Aggregation adds limbs without normalizing; finalization, the only
+normalization, produces canonical digits. Headroom for chains of additions
+follows the
 [radix failure estimates](../../docs/base2k-failure-probability.md).
+
+## Share metadata
+
+Public key shares carry the distribution of the secret they were generated
+with, which the finalized key draws its ephemerals from, as core's key takes
+its secret's. Switching key shares carry the input and output degrees,
+automorphism key shares the Galois element, as core's compressed keys do.
+Aggregation asserts that both shares carry the same metadata, and finalization
+copies it into the key.
 
 ## Randomness and seeds
 
 A public mask seed is common to all parties contributing to one result.
 Use a fresh seed for every result, separated by protocol, session and key
-identity. Derive separate seeds from the CRS
-for a key set. Each of
-the `rank` public key entries is shared under its own seed; finalization
-rejects entries that share one, since common masks would make public-key
-encryption rank 1 in its ephemerals.
+identity (including the Galois element). Derive separate seeds from the CRS
+for a key set. In particular, switching keys for different input secrets and
+one output secret must have different seeds: subtracting same-mask bodies
+reveals the gadget-scaled input-secret difference plus small error. Public
+key generation derives a distinct seed for each of the `rank` entries from the
+common seed; finalization rejects entries that share one, since common masks
+would make public-key encryption rank 1 in its ephemerals.
 
 Private `source_xe` streams must be independently
 seeded for each party and purpose, kept secret and consumed without replay.
@@ -49,13 +67,13 @@ An override must compute the same result as the reference, including its
 seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
-`impl_mhe_pat_reference!`, which covers the three PAT types, or
-`impl_mhe_public_key_reference!` alone when replacing the other one. The
+`impl_mhe_pat_reference!`, which covers every PAT type,
+`impl_mhe_public_key_reference!` or `impl_mhe_evaluation_key_reference!` alone
+when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
 
-Size scratch with the queries: each PAT type's `*_normalize_tmp_bytes` and
-`*_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes` and
-`glwe_public_key_finalize_tmp_bytes`. A replacement that needs more workspace
-replaces the matching query.
+Size scratch with the queries: each PAT type's `*_finalize_tmp_bytes`, and each
+protocol's `mhe_*_share_gen_tmp_bytes` and `mhe_*_share_finalize_tmp_bytes`. A
+replacement that needs more workspace replaces the matching query.

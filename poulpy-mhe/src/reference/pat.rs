@@ -17,12 +17,6 @@ pub trait GLWEPatCompressedReference<BE: Backend> {
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
 
-    fn glwe_pat_compressed_normalize_tmp_bytes_reference(&self) -> usize;
-
-    fn glwe_pat_compressed_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWECompressedToBackendMut<BE> + GLWEInfos;
-
     fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
 
     fn glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -33,12 +27,7 @@ pub trait GLWEPatCompressedReference<BE: Backend> {
 
 impl<BE: Backend> GLWEPatCompressedReference<BE> for Module<BE>
 where
-    Self: VecZnxAddAssign<BE>
-        + VecZnxNormalizeTmpBytes
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalize<BE>
-        + GLWEMaskFill<BE>
-        + GLWENormalize<BE>,
+    Self: VecZnxAddAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxNormalize<BE> + GLWEMaskFill<BE>,
 {
     fn glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -50,19 +39,6 @@ where
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.vec_znx_add_assign(res_be.data_mut(), 0, a_be.data(), 0);
-    }
-
-    fn glwe_pat_compressed_normalize_tmp_bytes_reference(&self) -> usize {
-        self.vec_znx_normalize_tmp_bytes().max(self.glwe_normalize_tmp_bytes())
-    }
-
-    fn glwe_pat_compressed_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWECompressedToBackendMut<BE> + GLWEInfos,
-    {
-        let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
-        let mut res_be = res.to_backend_mut();
-        self.vec_znx_normalize_assign(base2k, k, 0, res_be.data_mut(), 0, scratch);
     }
 
     fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
@@ -93,12 +69,6 @@ pub trait GGLWEPatCompressedReference<BE: Backend> {
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<BE> + GGLWECompressedSeed + GGLWEInfos;
 
-    fn gglwe_pat_compressed_normalize_tmp_bytes_reference(&self) -> usize;
-
-    fn gglwe_pat_compressed_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWECompressedToBackendMut<BE> + GGLWEInfos;
-
     fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
 
     fn gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -112,7 +82,6 @@ where
     Self: VecZnxAddAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
-        + GLWENormalize<BE>
         + GLWEDecompress<Backend = BE>
         + GGLWEDecompress,
 {
@@ -129,24 +98,6 @@ where
         for row in 0..dnum {
             for col in 0..rank_in {
                 self.vec_znx_add_assign(res_be.at_view_mut(row, col).data_mut(), 0, a_be.at_view(row, col).data(), 0);
-            }
-        }
-    }
-
-    fn gglwe_pat_compressed_normalize_tmp_bytes_reference(&self) -> usize {
-        self.vec_znx_normalize_tmp_bytes().max(self.glwe_normalize_tmp_bytes())
-    }
-
-    fn gglwe_pat_compressed_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWECompressedToBackendMut<BE> + GGLWEInfos,
-    {
-        let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
-        let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
-        let mut res_be = res.to_backend_mut();
-        for row in 0..dnum {
-            for col in 0..rank_in {
-                self.vec_znx_normalize_assign(base2k, k, 0, res_be.at_view_mut(row, col).data_mut(), 0, scratch);
             }
         }
     }
@@ -182,12 +133,6 @@ pub trait GGLWEPatReference<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos;
 
-    fn gglwe_pat_normalize_tmp_bytes_reference(&self) -> usize;
-
-    fn gglwe_pat_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
-
     fn gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize;
 
     fn gglwe_pat_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -198,7 +143,7 @@ pub trait GGLWEPatReference<BE: Backend> {
 
 impl<BE: Backend> GGLWEPatReference<BE> for Module<BE>
 where
-    Self: VecZnxNormalizeTmpBytes + GLWEAdd<BE> + GLWENormalize<BE>,
+    Self: GLWEAdd<BE> + GLWENormalize<BE>,
 {
     fn gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -212,23 +157,6 @@ where
         for row in 0..dnum {
             for col in 0..rank_in {
                 self.glwe_add_assign(&mut res_be.at_view_mut(row, col), &a_be.at_view(row, col));
-            }
-        }
-    }
-
-    fn gglwe_pat_normalize_tmp_bytes_reference(&self) -> usize {
-        self.vec_znx_normalize_tmp_bytes().max(self.glwe_normalize_tmp_bytes())
-    }
-
-    fn gglwe_pat_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    {
-        let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
-        let mut res_be = res.to_backend_mut();
-        for row in 0..dnum {
-            for col in 0..rank_in {
-                self.glwe_normalize_assign(&mut res_be.at_view_mut(row, col), scratch);
             }
         }
     }

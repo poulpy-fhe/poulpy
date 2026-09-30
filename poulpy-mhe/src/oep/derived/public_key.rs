@@ -1,41 +1,52 @@
 use poulpy_core::{
-    Distribution, GetDistributionMut,
-    layouts::{GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWEPublicKeyAtViewMut},
+    Distribution, GetDistribution, GetDistributionMut,
+    layouts::{
+        GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendMut,
+        GLWEPublicKeyCompressedToBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
-use crate::oep::GLWEPatCompressedImpl;
+use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 
-pub(crate) fn glwe_public_key_finalize_tmp_bytes_derived<BE: GLWEPatCompressedImpl>(module: &Module<BE>) -> usize {
-    BE::glwe_pat_compressed_finalize_tmp_bytes(module)
+pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedImpl>(
+    module: &Module<BE>,
+    res: &mut GLWEPublicKeyShareOwned<BE>,
+    a: &GLWEPublicKeyShareOwned<BE>,
+) {
+    assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+    assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
+    let mut res = res.key.to_backend_mut();
+    let a = a.key.to_backend_ref();
+    for l in 0..a.rank().as_usize() {
+        BE::glwe_pat_compressed_aggregate_assign(module, &mut res.at_view_mut(l), &a.at_view(l));
+    }
 }
 
-pub(crate) fn glwe_public_key_finalize_derived<BE: GLWEPatCompressedImpl, R, P>(
+pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedImpl, R>(
     module: &Module<BE>,
     res: &mut R,
-    pats: &[P],
-    dist: Distribution,
+    share: &GLWEPublicKeyShareOwned<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEPublicKeyAtViewMut<BE> + GetDistributionMut + GLWEInfos,
-    P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
 {
+    let (seeds, dist) = (share.seed(), *share.dist());
     assert!(
         !matches!(dist, Distribution::NONE | Distribution::ENCAPSULATED(_)),
         "invalid distribution: a public key needs a samplable distribution"
     );
     assert!(
-        pats.iter()
-            .enumerate()
-            .all(|(i, pat)| pats[..i].iter().all(|other| other.seed() != pat.seed())),
+        seeds.iter().enumerate().all(|(i, seed)| !seeds[..i].contains(seed)),
         "invalid finalization: public key entries share a seed"
     );
     assert!(
-        pats.len() == res.rank().as_usize(),
-        "invalid finalization: one share per public key entry"
+        res.glwe_layout() == share.glwe_layout(),
+        "invalid finalization: layouts differ"
     );
-    for (l, pat) in pats.iter().enumerate() {
-        BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), pat, scratch);
+    let share = share.key.to_backend_ref();
+    for l in 0..share.rank().as_usize() {
+        BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), &share.at_view(l), scratch);
     }
     *res.dist_mut() = dist;
 }

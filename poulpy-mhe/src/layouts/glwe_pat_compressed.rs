@@ -14,8 +14,8 @@ pub type GLWEPatCompressedOwned<BE> = GLWEPatCompressed<<BE as Backend>::OwnedBu
 /// Seeded public aggregatable transcript of a GLWE: the body of a
 /// [`GLWECompressed`] whose mask every party regenerates from the common seed.
 ///
-/// Aggregation adds limbs without normalizing; normalization and finalization
-/// produce canonical digits, and finalization leaves the PAT unchanged.
+/// Aggregation adds limbs without normalizing; finalization produces canonical
+/// digits and leaves the PAT unchanged.
 #[derive(Clone)]
 pub struct GLWEPatCompressed<D: Data, W: ZnxWord> {
     pub(crate) inner: GLWECompressed<D, W>,

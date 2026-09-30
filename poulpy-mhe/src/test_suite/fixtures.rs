@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GetDistributionMut,
+    Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GLWELayout, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
         GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -12,10 +12,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    api::{GLWEPatCompressedOps, GLWEPublicKeyShare},
-    layouts::MHEModuleAlloc,
-};
+use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub(crate) const BASE2K: Base2K = Base2K(12);
 pub(crate) const K: TorusPrecision = TorusPrecision(33);
@@ -24,6 +21,9 @@ pub(crate) const DNUM: Dnum = Dnum(3);
 pub(crate) const DSIZE: Dsize = Dsize(1);
 pub(crate) const SEEDS: [[u8; 32]; 2] = [[1u8; 32], [2u8; 32]];
 pub(crate) const PARTIES: usize = 3;
+
+/// Galois element of the automorphism key tests.
+pub(crate) const P: i64 = -5;
 
 pub(crate) type Secret<BE> = (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>);
 
@@ -105,13 +105,6 @@ where
     sum_prepared
 }
 
-/// The common seed of public key entry `entry`, distinct per entry.
-pub(crate) fn pk_entry_seed(entry: usize) -> [u8; 32] {
-    let mut seed = SEEDS[0];
-    seed[0] = 0x40 + entry as u8;
-    seed
-}
-
 /// The collective public key of `parties` at `layout`: the public key protocol
 /// under `SEEDS[0]`, finalized and prepared.
 pub(crate) fn collective_public_key<BE>(
@@ -121,40 +114,32 @@ pub(crate) fn collective_public_key<BE>(
 ) -> GLWEPublicKeyPrepared<AlignedBuf, BE>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyShare<BE> + GLWEPatCompressedOps<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .glwe_public_key_share_tmp_bytes(layout)
-            .max(module.glwe_public_key_finalize_tmp_bytes())
+            .mhe_glwe_public_key_share_gen_tmp_bytes(layout)
+            .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes())
             .max(module.glwe_public_key_prepare_tmp_bytes(layout)),
     );
-    let pats: Vec<_> = (0..layout.rank.as_usize())
-        .map(|entry| {
-            let mut acc = module.glwe_pat_compressed_alloc_from_infos(layout);
-            let mut share = module.glwe_pat_compressed_alloc_from_infos(layout);
-            for (i, (_, sk)) in parties.iter().enumerate() {
-                let dst = if i == 0 { &mut acc } else { &mut share };
-                let mut source_xe = Source::new([40 + (i + PARTIES * entry) as u8; 32]);
-                module.glwe_public_key_share(
-                    dst,
-                    sk,
-                    pk_entry_seed(entry),
-                    &enc_infos,
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
-                if i > 0 {
-                    module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
-                }
-            }
-            acc
-        })
-        .collect();
+    let mut acc = module.glwe_public_key_share_alloc_from_infos(layout);
+    let mut share = module.glwe_public_key_share_alloc_from_infos(layout);
+    for (i, (_, sk)) in parties.iter().enumerate() {
+        let dst = if i == 0 { &mut acc } else { &mut share };
+        let mut source_xe = Source::new([40 + i as u8; 32]);
+        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        if i > 0 {
+            module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
+        }
+    }
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
-    module.glwe_public_key_finalize(&mut pk, &pats, Distribution::TernaryProb(0.5), &mut scratch.borrow());
+    module.mhe_glwe_public_key_share_finalize(&mut pk, &acc, &mut scratch.borrow());
+    assert!(
+        pk.dist() == parties[0].0.dist(),
+        "the key takes the parties' secret distribution"
+    );
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
     pk_prepared

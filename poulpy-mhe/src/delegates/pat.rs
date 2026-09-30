@@ -18,17 +18,6 @@ impl<BE: Backend + GLWEPatCompressedImpl> GLWEPatCompressedOps<BE> for Module<BE
         BE::glwe_pat_compressed_aggregate_assign(self, res, a)
     }
 
-    fn glwe_pat_compressed_normalize_tmp_bytes(&self) -> usize {
-        BE::glwe_pat_compressed_normalize_tmp_bytes(self)
-    }
-
-    fn glwe_pat_compressed_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWECompressedToBackendMut<BE> + GLWEInfos,
-    {
-        BE::glwe_pat_compressed_normalize_assign(self, res, scratch)
-    }
-
     fn glwe_pat_compressed_finalize_tmp_bytes(&self) -> usize {
         BE::glwe_pat_compressed_finalize_tmp_bytes(self)
     }
@@ -51,17 +40,6 @@ impl<BE: Backend + GGLWEPatCompressedImpl> GGLWEPatCompressedOps<BE> for Module<
         BE::gglwe_pat_compressed_aggregate_assign(self, res, a)
     }
 
-    fn gglwe_pat_compressed_normalize_tmp_bytes(&self) -> usize {
-        BE::gglwe_pat_compressed_normalize_tmp_bytes(self)
-    }
-
-    fn gglwe_pat_compressed_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWECompressedToBackendMut<BE> + GGLWEInfos,
-    {
-        BE::gglwe_pat_compressed_normalize_assign(self, res, scratch)
-    }
-
     fn gglwe_pat_compressed_finalize_tmp_bytes(&self) -> usize {
         BE::gglwe_pat_compressed_finalize_tmp_bytes(self)
     }
@@ -82,17 +60,6 @@ impl<BE: Backend + GGLWEPatImpl> GGLWEPatOps<BE> for Module<BE> {
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         BE::gglwe_pat_aggregate_assign(self, res, a)
-    }
-
-    fn gglwe_pat_normalize_tmp_bytes(&self) -> usize {
-        BE::gglwe_pat_normalize_tmp_bytes(self)
-    }
-
-    fn gglwe_pat_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    {
-        BE::gglwe_pat_normalize_assign(self, res, scratch)
     }
 
     fn gglwe_pat_finalize_tmp_bytes(&self) -> usize {

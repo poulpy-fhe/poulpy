@@ -1,37 +1,38 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GLWECompressedEncryptSk, GetDistribution,
-    layouts::{GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
+    Distribution, EncryptionInfos, GLWEPublicKeyCompressedGenerate, GetDistribution,
+    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
-pub trait GLWEPublicKeyShareReference<BE: Backend> {
-    fn glwe_public_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+use crate::layouts::GLWEPublicKeyShareOwned;
+
+pub trait GLWEPublicKeyMHEProtocolReference<BE: Backend> {
+    fn mhe_glwe_public_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_public_key_share_reference<R, S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S, E>(
         &self,
-        res: &mut R,
+        res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWEPublicKeyShareReference<BE> for Module<BE>
+impl<BE: Backend> GLWEPublicKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWECompressedEncryptSk<BE>,
+    Self: GLWEPublicKeyCompressedGenerate<BE>,
 {
-    fn glwe_public_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_public_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -39,20 +40,19 @@ where
             infos.n().as_usize() == self.n(),
             "invalid layout: degree differs from the module's"
         );
-        self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
+        self.glwe_public_key_compressed_generate_tmp_bytes(infos)
     }
 
-    fn glwe_public_key_share_reference<R, S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S, E>(
         &self,
-        res: &mut R,
+        res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
         E: EncryptionInfos,
     {
         assert!(
@@ -69,6 +69,6 @@ where
             !matches!(sk_ref.dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
             "invalid secret: a public key share needs a samplable distribution"
         );
-        self.glwe_compressed_encrypt_zero_sk(res, sk, seed, enc_infos, source_xe, scratch);
+        self.glwe_public_key_compressed_generate(&mut res.key, sk, seed, enc_infos, source_xe, scratch);
     }
 }

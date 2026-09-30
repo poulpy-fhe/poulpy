@@ -5,10 +5,9 @@
 //!   The accumulator starts from the first share, a clone of it or a
 //!   `read_from` into it: a freshly allocated PAT has a zero seed and
 //!   aggregating into it panics on the seed check.
-//! - Normalization, `*_normalize_assign`: in-place normalization of a PAT.
 //! - Finalization, `*_finalize`: expansion of an aggregated PAT into the
-//!   ciphertext it transcribes. `res` must have the PAT's layout. The PAT is
-//!   left unchanged and `res` is canonical.
+//!   ciphertext it transcribes, the only normalization. `res` must have the
+//!   PAT's layout. The PAT is left unchanged and `res` is canonical.
 use poulpy_core::layouts::{
     GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWEToBackendMut,
     GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -21,12 +20,6 @@ pub trait GLWEPatCompressedOps<BE: Backend> {
     where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
-
-    fn glwe_pat_compressed_normalize_tmp_bytes(&self) -> usize;
-
-    fn glwe_pat_compressed_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWECompressedToBackendMut<BE> + GLWEInfos;
 
     fn glwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
 
@@ -43,12 +36,6 @@ pub trait GGLWEPatCompressedOps<BE: Backend> {
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<BE> + GGLWECompressedSeed + GGLWEInfos;
 
-    fn gglwe_pat_compressed_normalize_tmp_bytes(&self) -> usize;
-
-    fn gglwe_pat_compressed_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWECompressedToBackendMut<BE> + GGLWEInfos;
-
     fn gglwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
 
     fn gglwe_pat_compressed_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
@@ -63,12 +50,6 @@ pub trait GGLWEPatOps<BE: Backend> {
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos;
-
-    fn gglwe_pat_normalize_tmp_bytes(&self) -> usize;
-
-    fn gglwe_pat_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
 
     fn gglwe_pat_finalize_tmp_bytes(&self) -> usize;
 

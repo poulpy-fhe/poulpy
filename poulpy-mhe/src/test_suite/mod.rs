@@ -1,6 +1,7 @@
 //! Backend-generic tests of `poulpy-mhe`, instantiated by backend crates
 //! through [`mhe_backend_test_suite!`](crate::mhe_backend_test_suite).
 
+pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod pat;
 pub mod public_key;
@@ -63,6 +64,23 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn glwe_public_key_share_read_rank_mismatch() {
+                $crate::test_suite::public_key::test_glwe_public_key_share_read_rank_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: layouts differ")]
+            fn glwe_public_key_aggregate_rank_mismatch() {
+                $crate::test_suite::public_key::test_glwe_public_key_aggregate_rank_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: secret distributions differ")]
+            fn glwe_public_key_aggregate_dist_mismatch() {
+                $crate::test_suite::public_key::test_glwe_public_key_aggregate_dist_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             #[should_panic(expected = "invalid finalization: public key entries share a seed")]
             fn glwe_public_key_finalize_shared_seed() {
                 $crate::test_suite::public_key::test_glwe_public_key_finalize_shared_seed(&Module::<$backend>::new(64));
@@ -70,13 +88,46 @@ macro_rules! mhe_backend_test_suite {
 
             #[test]
             #[should_panic(expected = "invalid secret")]
-            fn glwe_public_key_share_secret_none() {
-                $crate::test_suite::public_key::test_glwe_public_key_share_secret_none(&Module::<$backend>::new(64));
+            fn glwe_public_key_gen_secret_none() {
+                $crate::test_suite::public_key::test_glwe_public_key_gen_secret_none(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn glwe_public_key_share_shape_guards() {
-                $crate::test_suite::public_key::test_glwe_public_key_share_shape_guards(&Module::<$backend>::new(64));
+            fn glwe_switching_key() {
+                $crate::test_suite::evaluation_key::test_glwe_switching_key(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_automorphism_key() {
+                $crate::test_suite::evaluation_key::test_glwe_automorphism_key(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: degrees differ")]
+            fn glwe_switching_key_degree_mismatch() {
+                $crate::test_suite::evaluation_key::test_glwe_switching_key_degree_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: degrees differ")]
+            fn glwe_switching_key_out_degree_mismatch() {
+                $crate::test_suite::evaluation_key::test_glwe_switching_key_out_degree_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: Galois elements differ")]
+            fn glwe_automorphism_key_p_mismatch() {
+                $crate::test_suite::evaluation_key::test_glwe_automorphism_key_p_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_public_key_gen_shape_guards() {
+                $crate::test_suite::public_key::test_glwe_public_key_gen_shape_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_evaluation_key_share_shape_guards() {
+                $crate::test_suite::evaluation_key::test_glwe_evaluation_key_share_shape_guards(&Module::<$backend>::new(64));
             }
         }
     };

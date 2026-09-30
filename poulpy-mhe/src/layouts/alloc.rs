@@ -1,16 +1,20 @@
 use poulpy_core::layouts::{
-    Base2K, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::layouts::{
-    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEPatCompressed, GLWEPatCompressedOwned,
+    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEAutomorphismKeyShare,
+    GLWEAutomorphismKeyShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
+    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned,
 };
 
-/// PAT allocation on a backend module.
+/// PAT and share allocation on a backend module.
 ///
 /// Every method is default-bodied over the core allocation supertraits, so the
-/// blanket impl for `Module<BE>` is empty. A fresh PAT is zero.
+/// blanket impl for `Module<BE>` is empty. A fresh PAT or share is zero; share
+/// metadata starts as in core (degrees `0`, Galois element `0`, distribution
+/// `NONE`).
 pub trait MHEModuleAlloc<BE: Backend>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -64,6 +68,63 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ) -> GGLWEPatOwned<BE> {
         GGLWEPat {
             inner: self.gglwe_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+        }
+    }
+
+    fn glwe_public_key_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyShareOwned<BE> {
+        GLWEPublicKeyShare {
+            key: self.glwe_public_key_compressed_alloc_from_infos(infos),
+        }
+    }
+
+    fn glwe_public_key_share_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPublicKeyShareOwned<BE> {
+        GLWEPublicKeyShare {
+            key: self.glwe_public_key_compressed_alloc(base2k, k, rank),
+        }
+    }
+
+    fn glwe_switching_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWESwitchingKeyShareOwned<BE> {
+        GLWESwitchingKeyShare {
+            key: self.gglwe_pat_compressed_alloc_from_infos(infos),
+            input_degree: Degree(0),
+            output_degree: Degree(0),
+        }
+    }
+
+    fn glwe_switching_key_share_alloc(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
+    ) -> GLWESwitchingKeyShareOwned<BE> {
+        GLWESwitchingKeyShare {
+            key: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            input_degree: Degree(0),
+            output_degree: Degree(0),
+        }
+    }
+
+    fn glwe_automorphism_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEAutomorphismKeyShareOwned<BE> {
+        GLWEAutomorphismKeyShare {
+            key: self.gglwe_pat_compressed_alloc_from_infos(infos),
+            p: 0,
+        }
+    }
+
+    fn glwe_automorphism_key_share_alloc(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> GLWEAutomorphismKeyShareOwned<BE> {
+        GLWEAutomorphismKeyShare {
+            key: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank, rank),
+            p: 0,
         }
     }
 }

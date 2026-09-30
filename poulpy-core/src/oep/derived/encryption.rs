@@ -11,7 +11,9 @@ use crate::{
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyAtViewMut,
         GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut,
-        LWEToBackendMut, prepared::GLWESecretPreparedToBackendRef,
+        LWEToBackendMut,
+        compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
+        prepared::GLWESecretPreparedToBackendRef,
     },
     oep::EncryptionImpl,
 };
@@ -90,6 +92,56 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
             module.glwe_normalize_assign(&mut entry, scratch);
         }
     }
+    *res.dist_mut() = *sk.dist();
+}
+
+pub(crate) fn glwe_public_key_compressed_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
+    module: &Module<BE>,
+    infos: &A,
+) -> usize {
+    assert_eq!(infos.n(), module.n() as u32);
+    BE::glwe_compressed_encrypt_sk_tmp_bytes(module, infos)
+}
+
+pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, E>(
+    module: &Module<BE>,
+    res: &mut R,
+    sk: &S,
+    seed: [u8; 32],
+    enc_infos: &E,
+    source_xe: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: EncryptionImpl,
+    R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
+    E: EncryptionInfos,
+    S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
+{
+    {
+        let sk_ref = sk.to_backend_ref();
+        assert_eq!(res.n(), module.n() as u32);
+        assert_eq!(sk_ref.n(), module.n() as u32);
+        match sk_ref.dist {
+            Distribution::NONE => panic!("invalid sk: SecretDistribution::NONE"),
+            Distribution::ENCAPSULATED(_) => {
+                panic!("invalid sk: encapsulated secrets cannot back a public key")
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        scratch.available() >= glwe_public_key_compressed_generate_tmp_bytes_derived(module, res),
+        "insufficient scratch for compressed GLWE public key generation"
+    );
+    let mut seeds = Source::new(seed);
+    let entry_seeds: Vec<[u8; 32]> = (0..res.rank().as_usize()).map(|_| seeds.new_seed()).collect();
+    {
+        let mut pk = res.to_backend_mut();
+        for (l, entry_seed) in entry_seeds.iter().enumerate() {
+            BE::glwe_compressed_encrypt_zero_sk(module, &mut pk.at_view_mut(l), sk, *entry_seed, enc_infos, source_xe, scratch);
+        }
+    }
+    res.seed_mut().copy_from_slice(&entry_seeds);
     *res.dist_mut() = *sk.dist();
 }
 
