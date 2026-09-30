@@ -1,5 +1,7 @@
 //! Direct complex evaluation oracles for raw transform tables.
 
+use rand_distr::num_traits::{Float, FromPrimitive};
+
 use crate::api::NegacyclicFFT;
 
 /// Checks forward root order, the separate real/imaginary halves, and the
@@ -47,5 +49,64 @@ pub fn test_negacyclic_fft<T: NegacyclicFFT<f64>>(table: &T) {
     table.ifft(&mut roundtrip);
     for (actual, original) in roundtrip.iter().zip(input) {
         assert!((actual - original * m as f64).abs() <= tolerance);
+    }
+}
+
+/// Checks that two transforms of the same size return the same bits on fixed
+/// inputs, forward and inverse: zeros, an impulse, alternating signs, tiny and
+/// huge magnitudes and dense dyadic values.
+pub fn test_negacyclic_fft_bit_exact<F, A, B>(a: &A, b: &B)
+where
+    F: Float + FromPrimitive + bytemuck::Pod + std::fmt::Debug,
+    A: NegacyclicFFT<F>,
+    B: NegacyclicFFT<F>,
+{
+    let m = a.m();
+    assert_eq!(m, b.m(), "transform sizes differ");
+    let scalar = |x: f64| F::from_f64(x).expect("representable test value");
+    for sample in 0..10u32 {
+        let input: Vec<F> = (0..2 * m)
+            .map(|i| match sample {
+                0 => F::zero(),
+                1 => {
+                    if i == m / 2 {
+                        F::one()
+                    } else {
+                        F::zero()
+                    }
+                }
+                2 => scalar(if i & 1 == 0 { 1.0 } else { -1.0 }),
+                3 => {
+                    if i & 1 == 0 {
+                        F::zero()
+                    } else {
+                        -F::zero()
+                    }
+                }
+                4 => F::min_positive_value() * F::epsilon() * scalar((i % 7) as f64),
+                5 => F::max_value() / scalar((8 * m) as f64),
+                _ => {
+                    let bits = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(17 + sample);
+                    scalar((bits as i64 >> 12) as f64) * scalar(1.0 / (1u64 << 51) as f64)
+                        + scalar((i as f64 + 1.0) / (1u128 << (60 + sample)) as f64)
+                }
+            })
+            .collect();
+        for inverse in [false, true] {
+            let (mut have, mut want) = (input.clone(), input.clone());
+            if inverse {
+                a.ifft(&mut have);
+                b.ifft(&mut want);
+            } else {
+                a.fft(&mut have);
+                b.fft(&mut want);
+            }
+            for (i, (x, y)) in have.iter().zip(&want).enumerate() {
+                assert!(
+                    bytemuck::bytes_of(x) == bytemuck::bytes_of(y),
+                    "m={m} sample={sample} inverse={inverse} scalar {i}: {x:?} != {y:?}"
+                );
+            }
+        }
     }
 }
