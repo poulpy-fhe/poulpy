@@ -128,3 +128,22 @@ Within a chosen subfamily, prefer the most accelerated backend your CPU and buil
 Choose a `*Rayon` variant when one operation should use several CPU cores, especially for large dimensions or batches.
 Choose its serial counterpart when the application already parallelizes independent operations or when the workload is too small to repay scheduling overhead.
 Rayon variants fall back to serial execution when the active pool has one thread or the work is below their internal parallelization threshold.
+
+## CKKS encoding
+
+CKKS encoding and decoding return the same bytes on every backend and platform, at each scalar precision (`f32`, `f64` and `Quad`), in both rings.
+The plaintexts, the decoded slots and the float coefficients of the slot transforms all match, and so do the setup constants of bootstrapping.
+
+A backend implementing `CKKSEncodingImpl` keeps this by following one arithmetic definition, whatever its layout, vectorization or scheduling:
+
+- The slot transforms are the radix-2 negacyclic FFT of `fft_portable` and `ifft_portable` in `poulpy-cpu-portable`, with the same butterflies on the same pairs.
+- Each butterfly computes `b * w` with one multiply-add per component, as the portable kernels do: the real part is `fma(br, wr, -(bi * wi))` and the imaginary part `fma(bi, wr, br * wi)`, the product in parentheses rounded once. The butterflies by `i * w` and the inverse butterflies follow the portable kernels in the same way, including which sum is computed negated.
+- No other operation is fused or reassociated. On a GPU this means compiling with contraction disabled, such as `--fmad=false`, or writing every operation with the explicitly rounded intrinsics `__fma_rn`, `__fmul_rn` and `__fadd_rn`.
+- The twiddles are the correctly rounded roots of unity of `CKKSFloat::ckks_root_of_unity`, as built by `EncodingFFTTable`.
+- Scalars convert to plaintext integers with `CKKSFloat::ckks_quantize` and back with `CKKSFloat::ckks_dequantize`.
+- Arithmetic runs in the default floating-point environment: round to nearest even, with subnormals kept.
+
+Two tests check the contract.
+`test_negacyclic_fft_bit_exact` in the HAL test suite compares a transform with `EncodingFFTTable` byte for byte, and the oracle's independent `EncodingFft` checks the portable table the same way.
+The `encoding_determinism` tests of the CKKS backend suites hash the encodings and setup constants and compare them with `poulpy-ckks/src/test_suite/determinism.txt`, so every backend that runs the suites is held to the same bytes.
+After an intended change to the encoding or the setup math, `POULPY_UPDATE_FIXTURES=1` records new hashes, and every backend must then pass without the variable.
