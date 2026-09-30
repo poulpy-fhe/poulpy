@@ -32,9 +32,10 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   per PAT type to sum PATs and expand one into the canonical ciphertext it
   transcribes.
 - `GLWEPublicKeyMHEProtocol`, `GLWESwitchingKeyMHEProtocol`,
-  `GLWEAutomorphismKeyMHEProtocol`: one trait per protocol, `_gen` a party's
-  share, `_aggregate` two shares, `_finalize` the core `GLWEPublicKey`,
-  `GLWESwitchingKey` or `GLWEAutomorphismKey` of the ideal secrets.
+  `GLWEAutomorphismKeyMHEProtocol`: one trait per protocol, `mhe_*_gen` a
+  party's share, `mhe_*_aggregate` two shares, `mhe_*_finalize` the core
+  `GLWEPublicKey`, `GLWESwitchingKey` or `GLWEAutomorphismKey` of the ideal
+  secrets.
 
 ## Randomness
 

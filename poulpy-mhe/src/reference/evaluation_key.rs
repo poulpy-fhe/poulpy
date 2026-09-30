@@ -10,12 +10,12 @@ use poulpy_hal::{
 use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 
 pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
-    fn glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_gen_reference<S1, S2, E>(
+    fn mhe_glwe_switching_key_gen_reference<S1, S2, E>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
@@ -34,7 +34,7 @@ impl<BE: Backend> GLWESwitchingKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESwitchingKeyCompressedEncryptSk<BE>,
 {
-    fn glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -45,7 +45,7 @@ where
         self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_switching_key_gen_reference<S1, S2, E>(
+    fn mhe_glwe_switching_key_gen_reference<S1, S2, E>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
@@ -84,12 +84,12 @@ where
 }
 
 pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
-    fn glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_gen_reference<S, E>(
+    fn mhe_glwe_automorphism_key_gen_reference<S, E>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
@@ -107,7 +107,7 @@ impl<BE: Backend> GLWEAutomorphismKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWEAutomorphismKeyCompressedEncryptSk<BE>,
 {
-    fn glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -118,7 +118,7 @@ where
         self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_automorphism_key_gen_reference<S, E>(
+    fn mhe_glwe_automorphism_key_gen_reference<S, E>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,

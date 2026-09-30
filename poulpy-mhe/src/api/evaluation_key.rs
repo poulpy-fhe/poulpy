@@ -13,7 +13,7 @@ use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 /// common seed, and any party aggregates the shares and finalizes the key
 /// switching from the sum of the input secrets to the sum of the output secrets.
 pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
-    fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
@@ -28,7 +28,7 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     /// independently seeded for each party and purpose; never replay its stream
     /// or initialize it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_gen<S1, S2, E>(
+    fn mhe_glwe_switching_key_gen<S1, S2, E>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
@@ -44,13 +44,13 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, seed and degrees.
-    fn glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>);
+    fn mhe_glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>);
 
-    fn glwe_switching_key_finalize_tmp_bytes(&self) -> usize;
+    fn mhe_glwe_switching_key_finalize_tmp_bytes(&self) -> usize;
 
     /// Expands the aggregated shares into the canonical key `res` and copies
     /// their degrees. `res` must have the share's layout.
-    fn glwe_switching_key_finalize<R>(
+    fn mhe_glwe_switching_key_finalize<R>(
         &self,
         res: &mut R,
         share: &GLWESwitchingKeyShareOwned<BE>,
@@ -64,7 +64,7 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
 /// shares and finalizes the key mapping `X -> X^p` under the ideal secret, the
 /// sum of the parties' secrets.
 pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
-    fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
@@ -78,7 +78,7 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     /// seeded for each party and purpose; never replay its stream or initialize
     /// it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_gen<S, E>(
+    fn mhe_glwe_automorphism_key_gen<S, E>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
@@ -93,13 +93,17 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, seed and Galois element.
-    fn glwe_automorphism_key_aggregate(&self, res: &mut GLWEAutomorphismKeyShareOwned<BE>, a: &GLWEAutomorphismKeyShareOwned<BE>);
+    fn mhe_glwe_automorphism_key_aggregate(
+        &self,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        a: &GLWEAutomorphismKeyShareOwned<BE>,
+    );
 
-    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize;
+    fn mhe_glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize;
 
     /// Expands the aggregated shares into the canonical key `res` and copies
     /// their Galois element. `res` must have the share's layout.
-    fn glwe_automorphism_key_finalize<R>(
+    fn mhe_glwe_automorphism_key_finalize<R>(
         &self,
         res: &mut R,
         share: &GLWEAutomorphismKeyShareOwned<BE>,

@@ -6,7 +6,7 @@ use crate::{
     oep::GGLWEPatCompressedImpl,
 };
 
-pub(crate) fn glwe_switching_key_aggregate_derived<BE: GGLWEPatCompressedImpl>(
+pub(crate) fn mhe_glwe_switching_key_aggregate_derived<BE: GGLWEPatCompressedImpl>(
     module: &Module<BE>,
     res: &mut GLWESwitchingKeyShareOwned<BE>,
     a: &GLWESwitchingKeyShareOwned<BE>,
@@ -18,7 +18,7 @@ pub(crate) fn glwe_switching_key_aggregate_derived<BE: GGLWEPatCompressedImpl>(
     BE::gglwe_pat_compressed_aggregate_assign(module, &mut res.key, &a.key);
 }
 
-pub(crate) fn glwe_switching_key_finalize_derived<BE: GGLWEPatCompressedImpl, R>(
+pub(crate) fn mhe_glwe_switching_key_finalize_derived<BE: GGLWEPatCompressedImpl, R>(
     module: &Module<BE>,
     res: &mut R,
     share: &GLWESwitchingKeyShareOwned<BE>,
@@ -31,7 +31,7 @@ pub(crate) fn glwe_switching_key_finalize_derived<BE: GGLWEPatCompressedImpl, R>
     *res.output_degree() = share.output_degree;
 }
 
-pub(crate) fn glwe_automorphism_key_aggregate_derived<BE: GGLWEPatCompressedImpl>(
+pub(crate) fn mhe_glwe_automorphism_key_aggregate_derived<BE: GGLWEPatCompressedImpl>(
     module: &Module<BE>,
     res: &mut GLWEAutomorphismKeyShareOwned<BE>,
     a: &GLWEAutomorphismKeyShareOwned<BE>,
@@ -40,7 +40,7 @@ pub(crate) fn glwe_automorphism_key_aggregate_derived<BE: GGLWEPatCompressedImpl
     BE::gglwe_pat_compressed_aggregate_assign(module, &mut res.key, &a.key);
 }
 
-pub(crate) fn glwe_automorphism_key_finalize_derived<BE: GGLWEPatCompressedImpl, R>(
+pub(crate) fn mhe_glwe_automorphism_key_finalize_derived<BE: GGLWEPatCompressedImpl, R>(
     module: &Module<BE>,
     res: &mut R,
     share: &GLWEAutomorphismKeyShareOwned<BE>,

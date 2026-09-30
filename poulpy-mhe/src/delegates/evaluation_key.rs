@@ -14,14 +14,14 @@ use crate::{
 };
 
 impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<BE> for Module<BE> {
-    fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        BE::glwe_switching_key_gen_tmp_bytes(self, infos)
+        BE::mhe_glwe_switching_key_gen_tmp_bytes(self, infos)
     }
 
-    fn glwe_switching_key_gen<S1, S2, E>(
+    fn mhe_glwe_switching_key_gen<S1, S2, E>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
@@ -35,18 +35,18 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::glwe_switching_key_gen(self, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+        BE::mhe_glwe_switching_key_gen(self, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
     }
 
-    fn glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>) {
-        BE::glwe_switching_key_aggregate(self, res, a)
+    fn mhe_glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>) {
+        BE::mhe_glwe_switching_key_aggregate(self, res, a)
     }
 
-    fn glwe_switching_key_finalize_tmp_bytes(&self) -> usize {
-        BE::glwe_switching_key_finalize_tmp_bytes(self)
+    fn mhe_glwe_switching_key_finalize_tmp_bytes(&self) -> usize {
+        BE::mhe_glwe_switching_key_finalize_tmp_bytes(self)
     }
 
-    fn glwe_switching_key_finalize<R>(
+    fn mhe_glwe_switching_key_finalize<R>(
         &self,
         res: &mut R,
         share: &GLWESwitchingKeyShareOwned<BE>,
@@ -54,19 +54,19 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
     {
-        BE::glwe_switching_key_finalize(self, res, share, scratch)
+        BE::mhe_glwe_switching_key_finalize(self, res, share, scratch)
     }
 }
 
 impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEProtocol<BE> for Module<BE> {
-    fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        BE::glwe_automorphism_key_gen_tmp_bytes(self, infos)
+        BE::mhe_glwe_automorphism_key_gen_tmp_bytes(self, infos)
     }
 
-    fn glwe_automorphism_key_gen<S, E>(
+    fn mhe_glwe_automorphism_key_gen<S, E>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
@@ -79,22 +79,22 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::glwe_automorphism_key_gen(self, res, p, sk, seed, enc_infos, source_xe, scratch)
+        BE::mhe_glwe_automorphism_key_gen(self, res, p, sk, seed, enc_infos, source_xe, scratch)
     }
 
-    fn glwe_automorphism_key_aggregate(
+    fn mhe_glwe_automorphism_key_aggregate(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         a: &GLWEAutomorphismKeyShareOwned<BE>,
     ) {
-        BE::glwe_automorphism_key_aggregate(self, res, a)
+        BE::mhe_glwe_automorphism_key_aggregate(self, res, a)
     }
 
-    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize {
-        BE::glwe_automorphism_key_finalize_tmp_bytes(self)
+    fn mhe_glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize {
+        BE::mhe_glwe_automorphism_key_finalize_tmp_bytes(self)
     }
 
-    fn glwe_automorphism_key_finalize<R>(
+    fn mhe_glwe_automorphism_key_finalize<R>(
         &self,
         res: &mut R,
         share: &GLWEAutomorphismKeyShareOwned<BE>,
@@ -102,6 +102,6 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
     {
-        BE::glwe_automorphism_key_finalize(self, res, share, scratch)
+        BE::mhe_glwe_automorphism_key_finalize(self, res, share, scratch)
     }
 }

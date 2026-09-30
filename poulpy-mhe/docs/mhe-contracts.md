@@ -10,8 +10,9 @@ defaults in `oep::derived`.
 
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
 the collective public key protocol and `api::evaluation_key` the collective
-switching and automorphism key protocols. A protocol trait holds `_gen`,
-`_aggregate` and `_finalize` on the protocol's share type. All are re-exported
+switching and automorphism key protocols. A protocol trait, named
+`*MHEProtocol`, holds `mhe_*_gen`, `mhe_*_aggregate` and `mhe_*_finalize` on
+the protocol's share type; the prefix keeps them apart from core's operations. All are re-exported
 by `api` and the crate root. Every operation that takes caller scratch has a
 matching `_tmp_bytes` query in the same trait.
 
@@ -73,5 +74,5 @@ reference traits stay callable from an override.
 ## Workspace
 
 Size scratch with the queries: each PAT type's `*_finalize_tmp_bytes`, and
-each protocol's `*_gen_tmp_bytes` and `*_finalize_tmp_bytes`. A replacement
+each protocol's `mhe_*_gen_tmp_bytes` and `mhe_*_finalize_tmp_bytes`. A replacement
 that needs more workspace replaces the matching query.

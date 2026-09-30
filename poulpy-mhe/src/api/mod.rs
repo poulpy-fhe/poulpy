@@ -4,8 +4,8 @@
 //! - [`pat`]: aggregation and finalization of every PAT shape.
 //! - [`public_key`]: the collective public key protocol.
 //!
-//! A protocol trait holds the protocol's `_gen`, `_aggregate` and `_finalize`
-//! operations on its share type.
+//! A protocol trait, `*MHEProtocol`, holds the protocol's `mhe_*_gen`,
+//! `mhe_*_aggregate` and `mhe_*_finalize` operations on its share type.
 //!
 //! Every trait delegates through [`crate::oep`].
 pub mod evaluation_key;

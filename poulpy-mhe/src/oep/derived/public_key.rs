@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 
-pub(crate) fn glwe_public_key_aggregate_derived<BE: GLWEPatCompressedImpl>(
+pub(crate) fn mhe_glwe_public_key_aggregate_derived<BE: GLWEPatCompressedImpl>(
     module: &Module<BE>,
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
@@ -18,7 +18,7 @@ pub(crate) fn glwe_public_key_aggregate_derived<BE: GLWEPatCompressedImpl>(
     }
 }
 
-pub(crate) fn glwe_public_key_finalize_derived<BE: GLWEPatCompressedImpl, R>(
+pub(crate) fn mhe_glwe_public_key_finalize_derived<BE: GLWEPatCompressedImpl, R>(
     module: &Module<BE>,
     res: &mut R,
     share: &GLWEPublicKeyShareOwned<BE>,

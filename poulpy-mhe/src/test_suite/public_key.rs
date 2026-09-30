@@ -96,8 +96,8 @@ where
     };
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_finalize_tmp_bytes());
-    module.glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_finalize_tmp_bytes());
+    module.mhe_glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
 }
 
 /// Entries sharing a seed share their masks, which makes encryption rank 1 in the ephemerals; a fresh share has zero seeds.
@@ -118,8 +118,8 @@ where
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     share.dist = Distribution::TernaryProb(0.5);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_finalize_tmp_bytes());
-    module.glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_finalize_tmp_bytes());
+    module.mhe_glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
 }
 
 /// Aggregating shares generated under secrets of different distributions panics.
@@ -137,7 +137,7 @@ where
     let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
     b.dist = Distribution::TernaryProb(0.5);
-    module.glwe_public_key_aggregate(&mut a, &b);
+    module.mhe_glwe_public_key_aggregate(&mut a, &b);
 }
 
 /// Sharing under a secret without a samplable distribution panics.
@@ -158,8 +158,8 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_gen_tmp_bytes(&layout));
-    module.glwe_public_key_gen(
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_gen_tmp_bytes(&layout));
+    module.mhe_glwe_public_key_gen(
         &mut res,
         &sk,
         SEEDS[0],
@@ -192,7 +192,7 @@ where
     for (case, expected) in expected.into_iter().enumerate() {
         super::fixtures::assert_panics_with(expected, || {
             if case == 2 {
-                module.glwe_public_key_gen_tmp_bytes(&GLWELayout {
+                module.mhe_glwe_public_key_gen_tmp_bytes(&GLWELayout {
                     n: (module.n() / 2).into(),
                     ..layout
                 });
@@ -204,8 +204,8 @@ where
                 module.glwe_secret_prepared_alloc(Rank(1))
             };
             let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_gen_tmp_bytes(&layout));
-            module.glwe_public_key_gen(
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_gen_tmp_bytes(&layout));
+            module.mhe_glwe_public_key_gen(
                 &mut res,
                 &sk,
                 SEEDS[0],
