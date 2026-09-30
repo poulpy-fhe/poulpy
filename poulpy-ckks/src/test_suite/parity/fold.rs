@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
-    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys},
+    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext, RingSwitchKeys},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
     test_suite::CKKSTestParams,
 };
@@ -18,7 +18,7 @@ use poulpy_core::{
         GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxWord};
 
 type Outcome = [Vec<Snapshot>; 2];
 type SwitchKeys<B> = RingSwitchKeys<GGLWEPrepared<<B as Backend>::OwnedBuf, B>>;
@@ -40,20 +40,26 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
     }
 }
 
+fn relabel<D: Data, W: ZnxWord, S: Ring, R: Ring>(ct: CKKSCiphertext<D, W, S>) -> CKKSCiphertext<D, W, R> {
+    let meta = ct.meta();
+    CKKSCiphertext::from_inner(ct.inner, meta)
+}
+
 /// Folds `ins` into ciphertexts of `degree` and unfolds fixture refreshed ciphertexts
 /// of width `k_refreshed` into outputs of the layout of `out` labeled like `ins`, each
 /// within its exact guarded scratch.
-fn run_case<B>(
+fn run_case<B, R>(
     module: &Module<B>,
     degree: usize,
-    ins: &[CKKSCiphertextOwned<B>],
+    ins: &[CKKSRingCiphertext<B, R>],
     out: &CKKSLayout,
     k_refreshed: usize,
     ring_switch: Option<&SwitchKeys<B>>,
     automorphisms: Option<&AutomorphismKeys<B>>,
 ) -> Outcome
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    B: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
+    R: Ring,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
 {
     let keys_layout = CKKSFoldKeysLayout {
@@ -89,10 +95,16 @@ where
             fixture_ciphertext(module, &refreshed, 170 + i as u8)
         })
         .collect();
-    let mut outs: Vec<_> = ins
+    let mut outs: Vec<CKKSRingCiphertext<B, R>> = ins
         .iter()
         .enumerate()
-        .map(|(i, ct)| fixture_ciphertext(module, &CKKSLayout { meta: ct.meta(), ..*out }, 190 + i as u8))
+        .map(|(i, ct)| {
+            relabel(fixture_ciphertext(
+                module,
+                &CKKSLayout { meta: ct.meta(), ..*out },
+                190 + i as u8,
+            ))
+        })
         .collect();
     with_scratch::<B, _>(bytes, |scratch| {
         B::ckks_unfold_impl(
@@ -105,12 +117,17 @@ where
         )
     })
     .expect("unfold");
-    [folded_snapshot, outs.iter().map(snapshot::<B, _>).collect()]
+    [
+        folded_snapshot,
+        outs.into_iter()
+            .map(|ct| snapshot::<B, _>(&relabel::<_, _, R, Standard>(ct)))
+            .collect(),
+    ]
 }
 
 fn run_fold<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B> + GLWEAutomorphismKeyPreparedFactory<B> + GGLWEPreparedFactory<B>,
 {
     let (n, b) = (module.n(), params.base2k);
@@ -180,6 +197,69 @@ where
             Some(&automorphisms),
         ));
     }
+    // Conjugate-invariant inputs, at half the degree and merged two per bootstrap at a quarter.
+    for degree in [n / 2, n / 4] {
+        let ins: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = [199u8, 211, 223]
+            .map(|seed| {
+                relabel(fixture_ciphertext(
+                    module,
+                    &layout(degree, b, k_in, log_delta, SlotsKind::Real),
+                    seed,
+                ))
+            })
+            .into();
+        outcomes.push(run_case::<B, ConjugateInvariant>(
+            module,
+            n,
+            &ins,
+            &layout(degree, b, k_out, log_delta, SlotsKind::Real),
+            k_refreshed,
+            Some(&ring_switch),
+            None,
+        ));
+    }
+    // Sixteen sparse conjugate-invariant inputs at an eighth of the degree: embedded
+    // and paired at a quarter, filled four per position, then merged four per bootstrap
+    // into a single folded ciphertext.
+    let sparse_ci: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = (0..16u8)
+        .map(|i| {
+            let ci = CKKSLayout {
+                meta: CKKSMeta {
+                    log_sparsity: 2,
+                    ..layout(n / 8, b, k_in, log_delta, SlotsKind::Real).meta
+                },
+                ..layout(n / 8, b, k_in, log_delta, SlotsKind::Real)
+            };
+            relabel(fixture_ciphertext(module, &ci, 227 + i))
+        })
+        .collect();
+    assert_eq!(B::ckks_fold_count_impl(module, &sparse_ci, n.into()), 1);
+    let ci_automorphisms: HashMap<i64, _> =
+        <B as CKKSFoldImpl<ConjugateInvariant>>::ckks_unfold_galois_elements_impl(module, &sparse_ci[0])
+            .into_iter()
+            .zip(79u8..)
+            .map(|(p, seed)| {
+                (
+                    p,
+                    prepared_automorphism_key(module, &key_layout(n / 4, b, k_out, 2, 1, 1), p, seed),
+                )
+            })
+            .collect();
+    outcomes.push(run_case::<B, ConjugateInvariant>(
+        module,
+        n,
+        &sparse_ci,
+        &CKKSLayout {
+            meta: CKKSMeta {
+                log_sparsity: 2,
+                ..layout(n / 8, b, k_out, log_delta, SlotsKind::Real).meta
+            },
+            ..layout(n / 8, b, k_out, log_delta, SlotsKind::Real)
+        },
+        k_refreshed,
+        Some(&ring_switch),
+        Some(&ci_automorphisms),
+    ));
     outcomes
 }
 
@@ -439,11 +519,12 @@ where
 
 /// Compare selected fold implementations on the same fixture inputs and keys:
 /// dense and sparse complex inputs and real pairs at the module degree and below,
-/// under the bootstrap secret and under another secret with ring packing.
+/// under the bootstrap secret and under another secret with ring packing, and
+/// conjugate-invariant batches alone and merged.
 pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
-    BR: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
-    BT: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    BR: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
+    BT: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     Module<BR>: CKKSModuleAlloc<BR> + GLWEMaskFill<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GGLWEPreparedFactory<BR>,
     Module<BT>: CKKSModuleAlloc<BT> + GLWEMaskFill<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GGLWEPreparedFactory<BT>,
 {
