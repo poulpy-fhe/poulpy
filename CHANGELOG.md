@@ -105,6 +105,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Add `test_suite::determinism`, frozen FNV-64 fixtures in `test_suite/determinism.txt` that pin the CKKS encoding bytes of every backend on every platform.
+  They cover the slot transforms, the plaintexts, the decoded slots and the dequantized coefficients in both rings, in `f32`, `f64` and `Quad`, and the setup constants: the `CKKSFloat` functions, DFT matrices, the sign and minimax approximations, and the EvalMod polynomials and plaintexts.
+  The CKKS backend suites run them as `encoding_determinism`, and `POULPY_UPDATE_FIXTURES=1` records new hashes after an intended change.
+- The `slot_encoding` parity test compares decoded slots byte for byte, including the sign of zero.
 - **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on every platform, as a first step towards encodings that are byte identical on every backend.
   The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through soft-float `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
   `libm` and `astro-float-num` are pinned to exact versions because these results are not correctly rounded.
@@ -202,6 +206,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - CKKS encoding is byte identical across the CPU backends.
   `ckks_encoding::EncodingFFTTable` builds the encoding twiddles from the correctly rounded roots of `CKKSFloat`, through the new `ReimFFTTable::new_with_roots` and `ReimIFFTTable::new_with_roots`, and `FFT64AvxEncodingTable`, `FFT64Avx512EncodingTable` and `FFT64NeonEncodingTable` run the SIMD kernels on it.
   Every CPU backend selects these tables for encoding, ring tables keep their twiddles, and the `slot_encoding` parity tests are enabled on every backend.
+- `docs/backends.md` states the CKKS encoding contract that every backend follows, including GPU backends, whose compilers must not fuse other operations.
+  CI runs the encoding fixtures in the native portable, AVX2 and NEON lanes, and on Intel macOS, Apple Silicon and Linux with `libquadmath`.
 - `poulpy-cpu-oracle` encodes with `EncodingFft`, a recursive radix-2 negacyclic FFT with the same butterfly on its own roots, and the portable encoding transform matches it byte for byte in `f32`, `f64` and `Quad`.
 - `poulpy-cpu-oracle` derives the roots of unity independently, with Machin's formula and the Taylor series of the cosine on fixed-point integers, and checks every `poulpy-ckks` root of order `2^18` in `f32`, `f64` and `Quad`.
 - The HAL and Core cross-backend suites of `poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` compare against `poulpy-cpu-oracle`, for both rings. `poulpy-cpu-ref` checks each family against its own oracle. Core encryption parity uses `FFT64Oracle` directly as reference, since the CPU backends and the oracle draw matching sampling streams, so it checks sampling and encryption arithmetic together. The controlled-sampling adapters remain for backends whose streams differ. The word-compatibility suites keep `poulpy-cpu-ref` as reference, since they check raw buffer compatibility, which the oracle does not promise. `conjugate_invariant_test_suite!` and `conjugate_invariant_core_test_suite!` take an optional `reference` argument, the portable backends by default. Their large-radix product check runs one shape, the largest accumulation of the VMP sweep, at degree 8192, through the new HAL `test_vmp_apply_dft_to_dft_add_shape` and `VmpAddShape`.
