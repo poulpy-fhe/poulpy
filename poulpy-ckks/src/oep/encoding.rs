@@ -17,9 +17,17 @@ use crate::{
 /// device memory; host slices appear only in public convenience helpers.
 ///
 /// The canonical circuit is defined by [`crate::reference::encoding`]. An
-/// override must produce the same encoding at the selected scalar precision and
-/// pass paired tests against a caller-selected validated implementation. Plans
-/// and staging are backend-owned; these signatures require no host access.
+/// override must produce the same bytes at the selected scalar precision as
+/// every other backend: the fused butterflies of the portable negacyclic FFT on
+/// the correctly rounded twiddles of
+/// [`CKKSFloat::ckks_root_of_unity`](crate::numerics::CKKSFloat::ckks_root_of_unity),
+/// with no other fused or reassociated operation, and the conversions of
+/// [`CKKSFloat::ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize) and
+/// [`CKKSFloat::ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize).
+/// Layouts and scheduling are free. The `encoding_determinism` fixtures of the
+/// test suite check the result. See the CKKS encoding section of
+/// `docs/backends.md`. Plans and staging are backend-owned, and these
+/// signatures require no host access.
 ///
 /// # Safety
 /// Implementations must uphold the backend layout, aliasing, and numeric
