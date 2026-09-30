@@ -6,35 +6,25 @@
 use poulpy_hal::{
     layouts::{
         CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendRef, Module,
-        ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
+        ScalarZnxBackendRef, ScratchArena, Standard, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
         VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
         ZnxView, ZnxViewMut, assert_dense,
     },
-    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl},
+    oep::{
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMonomialImpl, HalVmpImpl,
+    },
     source::Source,
 };
 
 use crate::{
-    backend::{Oracle, table},
+    backend::Oracle,
     embed::{with_vec_znx, with_vec_znx_big},
     family::{Family, Int},
     limbs::{apply, apply_poly, map, map_poly, update, zip},
     normalize::{normalize, normalize_assign},
+    ring::{self, OracleRing},
 };
-
-/// `res = sigma_p(a)`: `X -> X^p` in `Z[X]/(X^n + 1)`, `p` odd.
-fn automorphism<T: Int>(p: i64, res: &mut [T], a: &[T]) {
-    let n = a.len() as i64;
-    assert!(p & 1 == 1, "p must be odd, got {p}");
-    for (i, &x) in a.iter().enumerate() {
-        let k = (p.rem_euclid(2 * n) * i as i64) % (2 * n);
-        if k < n {
-            res[k as usize] = x;
-        } else {
-            res[(k - n) as usize] = x.neg();
-        }
-    }
-}
 
 /// `res = X^p a` in `Z[X]/(X^n + 1)`.
 fn rotate(p: i64, res: &mut [i64], a: &[i64]) {
@@ -63,18 +53,18 @@ fn switch_ring(res: &mut [i64], a: &[i64]) {
 
 /// The transform at degree `N = res.len()` of the degree embedding of the
 /// degree-`n` polynomial whose transform is `a`.
-fn lift<F: Family>(module: &Module<Oracle<F>>, res: &mut [F::Dft], a: &[F::Dft]) {
+fn lift<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Dft], a: &[F::Dft]) {
     let (n, big) = (a.len(), res.len());
     let mut coeffs = vec![F::Big::default(); n];
-    F::inverse(table(module, n), &mut coeffs, a);
+    ring::inverse(module, &mut coeffs, a);
     let mut spread = vec![0i64; big];
     for (i, c) in coeffs.into_iter().enumerate() {
         spread[i * (big / n)] = i64::try_from(c.into()).expect("prepared coefficient exceeds 64 bits");
     }
-    F::forward(table(module, big), res, &spread);
+    ring::forward(module, res, &spread);
 }
 
-unsafe impl<F: Family> HalVecZnxImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
     fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize) {
         apply(res, res_col, |_| 0);
     }
@@ -195,7 +185,7 @@ unsafe impl<F: Family> HalVecZnxImpl for Oracle<F> {
         assert_dense(res, "vec_znx_automorphism");
         assert_dense(a, "vec_znx_automorphism");
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| automorphism(k, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
     }
 
     fn vec_znx_automorphism_assign_tmp_bytes(_module: &Module<Self>) -> usize {
@@ -210,7 +200,7 @@ unsafe impl<F: Family> HalVecZnxImpl for Oracle<F> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(res, "vec_znx_automorphism_assign");
-        apply_poly(res, res_col, |r, x| automorphism(k, r, x));
+        apply_poly(res, res_col, |r, x| ring::automorphism::<R, _>(k, r, x));
     }
 
     fn vec_znx_switch_ring(
@@ -269,7 +259,7 @@ unsafe impl<F: Family> HalVecZnxImpl for Oracle<F> {
 // The HAL-derived in-place multiplication by X^p - 1 stages a full-size
 // temporary in scratch, which Core's in-place callers do not provide. This
 // override works limb by limb on the heap.
-unsafe impl<F: Family> HalVecZnxMonomialImpl for Oracle<F> {
+unsafe impl<F: Family> HalVecZnxMonomialImpl for Oracle<F, Standard> {
     fn vec_znx_rotate(
         _module: &Module<Self>,
         k: i64,
@@ -318,7 +308,7 @@ unsafe impl<F: Family> HalVecZnxMonomialImpl for Oracle<F> {
     }
 }
 
-unsafe impl<F: Family> HalVecZnxBigImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     fn vec_znx_big_from_small(
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -526,7 +516,7 @@ unsafe impl<F: Family> HalVecZnxBigImpl for Oracle<F> {
         assert_dense(res, "vec_znx_big_automorphism");
         assert_dense(a, "vec_znx_big_automorphism");
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| automorphism(k, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes(_module: &Module<Self>) -> usize {
@@ -541,7 +531,53 @@ unsafe impl<F: Family> HalVecZnxBigImpl for Oracle<F> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(a, "vec_znx_big_automorphism_assign");
-        apply_poly(a, a_col, |r, x| automorphism(k, r, x));
+        apply_poly(a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
+    }
+}
+
+/// Maps between the conjugate-invariant ring of degree `N` and the standard
+/// ring of degree `2N`, from their HAL definitions, on the standard oracle.
+unsafe impl<F: Family> HalVecZnxCIImpl for Oracle<F, Standard> {
+    // res = a_0 + sum_{0<i<N} a_i (X^i + X^-i), with X^-i = -X^(2N-i)
+    fn vec_znx_ci_embed(
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        assert_dense(res, "vec_znx_ci_embed");
+        assert_dense(a, "vec_znx_ci_embed");
+        assert_eq!(res.n(), 2 * a.n());
+        map_poly(res, res_col, a, a_col, |r, x| {
+            let n = x.len();
+            r.fill(0);
+            r[0] = x[0];
+            for i in 1..n {
+                r[i] = x[i];
+                r[2 * n - i] = x[i].wrapping_neg();
+            }
+        });
+    }
+
+    // res_0 = 2 a_0 and res_i = a_i - a_(2N-i): the coordinates of a(X) + a(X^-1)
+    fn vec_znx_ci_trace(
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        assert_dense(res, "vec_znx_ci_trace");
+        assert_dense(a, "vec_znx_ci_trace");
+        assert_eq!(a.n(), 2 * res.n());
+        map_poly(res, res_col, a, a_col, |r, x| {
+            let n = r.len();
+            r[0] = x[0].wrapping_mul(2);
+            for i in 1..n {
+                r[i] = x[i].wrapping_sub(x[2 * n - i]);
+            }
+        });
     }
 }
 
@@ -550,7 +586,7 @@ pub struct DftAutomorphismPlan {
     p: i64,
 }
 
-unsafe impl<F: Family> HalVecZnxDftImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
     // res[j] = DFT(a[offset + j step]) while that limb exists, zero after.
     fn vec_znx_dft_apply(
         module: &Module<Self>,
@@ -564,11 +600,10 @@ unsafe impl<F: Family> HalVecZnxDftImpl for Oracle<F> {
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         assert_dense(a, "vec_znx_dft_apply");
         assert_eq!(res.n(), a.n());
-        let table = table(module, res.n());
         for j in 0..res.size() {
             let limb = offset + j * step;
             if j < a.size().div_ceil(step) && limb < a.size() {
-                F::forward(table, res.at_mut(res_col, j), a.at(a_col, limb));
+                ring::forward(module, res.at_mut(res_col, j), a.at(a_col, limb));
             } else {
                 res.at_mut(res_col, j).fill(F::Dft::default());
             }
@@ -589,8 +624,7 @@ unsafe impl<F: Family> HalVecZnxDftImpl for Oracle<F> {
     ) {
         assert_dense(res, "vec_znx_idft_apply");
         assert_eq!(res.n(), a.n());
-        let table = table(module, res.n());
-        map_poly(res, res_col, a, a_col, |r, x| F::inverse(table, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::inverse(module, r, x));
     }
 
     fn vec_znx_idft_apply_tmpa(
@@ -602,8 +636,7 @@ unsafe impl<F: Family> HalVecZnxDftImpl for Oracle<F> {
     ) {
         assert_dense(res, "vec_znx_idft_apply_tmpa");
         assert_eq!(res.n(), a.n());
-        let table = table(module, res.n());
-        map_poly(res, res_col, a, a_col, |r, x| F::inverse(table, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::inverse(module, r, x));
     }
 
     fn vec_znx_dft_add(
@@ -711,11 +744,11 @@ unsafe impl<F: Family> HalVecZnxDftImpl for Oracle<F> {
         a_col: usize,
     ) {
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| F::dft_automorphism(plan.p, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::dft_automorphism::<F, R>(plan.p, r, x));
     }
 }
 
-unsafe impl<F: Family> HalSvpImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalSvpImpl for Oracle<F, R> {
     fn svp_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
@@ -724,7 +757,7 @@ unsafe impl<F: Family> HalSvpImpl for Oracle<F> {
         a_col: usize,
     ) {
         assert_eq!(res.n(), a.n());
-        F::forward(table(module, a.n()), res.at_mut(res_col, 0), a.at(a_col, 0));
+        ring::forward(module, res.at_mut(res_col, 0), a.at(a_col, 0));
     }
 
     fn svp_ppol_copy(
@@ -750,7 +783,7 @@ unsafe impl<F: Family> HalSvpImpl for Oracle<F> {
         let a = a.at(a_col, 0);
         map_poly(res, res_col, b, b_col, |r, x| {
             r.fill(F::Dft::default());
-            F::mul_acc(r, a, x);
+            ring::mul_acc::<F, R>(r, a, x);
         });
     }
 
@@ -762,14 +795,14 @@ unsafe impl<F: Family> HalSvpImpl for Oracle<F> {
         a_col: usize,
     ) {
         for j in 0..res.size() {
-            F::mul_assign(res.at_mut(res_col, j), a.at(a_col, 0));
+            ring::mul_assign::<F, R>(res.at_mut(res_col, j), a.at(a_col, 0));
         }
     }
 }
 
 // A prepared matrix keeps the MatZnx order: row, input column, limb, output
 // column, each block the transform of one polynomial.
-unsafe impl<F: Family> HalVmpImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalVmpImpl for Oracle<F, R> {
     fn vmp_prepare_tmp_bytes(_module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         0
     }
@@ -785,9 +818,8 @@ unsafe impl<F: Family> HalVmpImpl for Oracle<F> {
             (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
         );
         let n = res.n();
-        let table = table(module, n);
         for (out, x) in res.raw_mut().chunks_exact_mut(n).zip(a.raw().chunks_exact(n)) {
-            F::forward(table, out, x);
+            ring::forward(module, out, x);
         }
     }
 
@@ -825,7 +857,7 @@ unsafe impl<F: Family> HalVmpImpl for Oracle<F> {
                 for row in 0..a.size().min(b.rows()) {
                     for input in 0..a.cols() {
                         let at = ((row * b.cols_in() + input) * b.size() * b.cols_out() + k * b.cols_out() + col) * n;
-                        F::mul_acc(out, a.at(input, row), &b.raw()[at..at + n]);
+                        ring::mul_acc::<F, R>(out, a.at(input, row), &b.raw()[at..at + n]);
                     }
                 }
             }
@@ -872,22 +904,21 @@ unsafe impl<F: Family> HalVmpImpl for Oracle<F> {
 }
 
 /// Prepares every limb of every column of `a` into `raw`, limb-major.
-fn cnv_prepare<F: Family>(
-    module: &Module<Oracle<F>>,
+fn cnv_prepare<F: Family, R: OracleRing>(
+    module: &Module<Oracle<F, R>>,
     raw: &mut [F::Dft],
     cols: usize,
     size: usize,
-    a: &VecZnxBackendRef<'_, Oracle<F>>,
+    a: &VecZnxBackendRef<'_, Oracle<F, R>>,
 ) {
     assert_dense(a, "cnv_prepare");
     assert_eq!(cols, a.cols());
     let n = a.n();
-    let table = table(module, n);
     for j in 0..size {
         for col in 0..cols {
             let out = &mut raw[(j * cols + col) * n..(j * cols + col + 1) * n];
             if j < a.size() {
-                F::forward(table, out, a.at(col, j));
+                ring::forward(module, out, a.at(col, j));
             } else {
                 out.fill(F::Dft::default());
             }
@@ -895,7 +926,7 @@ fn cnv_prepare<F: Family>(
     }
 }
 
-unsafe impl<F: Family> HalConvolutionImpl for Oracle<F> {
+unsafe impl<F: Family, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
     fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
@@ -1016,7 +1047,7 @@ unsafe impl<F: Family> HalConvolutionImpl for Oracle<F> {
             };
             for i in 0..a.size().min(k + 1) {
                 if k - i < b.size() {
-                    F::mul_acc(out, a.at(a_col, i), b_limb(k - i));
+                    ring::mul_acc::<F, R>(out, a.at(a_col, i), b_limb(k - i));
                 }
             }
         }
