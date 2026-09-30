@@ -25,6 +25,7 @@ select_avx_encoding_transform!(NTT4x30CIAvx);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64Avx);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64Avx);
 ::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64Avx);
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64Avx);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Avx);
 ::poulpy_ckks::impl_ckks_dft_reference!(super::FFT64Avx);
 ::poulpy_ckks::impl_ckks_eval_mod_reference!(super::FFT64Avx);
@@ -33,6 +34,7 @@ poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::FFT64Avx);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30Avx);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30Avx);
 ::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30Avx);
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30Avx);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Avx);
 ::poulpy_ckks::impl_ckks_dft_reference!(super::NTT4x30Avx);
 ::poulpy_ckks::impl_ckks_eval_mod_reference!(super::NTT4x30Avx);
@@ -46,6 +48,8 @@ poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64AvxRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64AvxRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
@@ -62,6 +66,8 @@ poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30AvxRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
