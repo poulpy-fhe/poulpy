@@ -67,9 +67,14 @@ fn ifft_portable_body<R: Float + FloatConst + Debug>(m: usize, omg: &[R], data: 
 /// rather than a recursion so that it inlines into the FMA-enabled entry point.
 #[inline(always)]
 fn ifft_rec_16_portable<R: Float + FloatConst>(m: usize, re: &mut [R], im: &mut [R], omg: &[R], mut pos: usize) -> usize {
-    // `(offset, size, children_done)`.
-    let mut blocks: Vec<(usize, usize, bool)> = vec![(0, m, false)];
-    while let Some((off, size, children_done)) = blocks.pop() {
+    // `(offset, size, children_done)`. The stack holds at most one finished
+    // parent and one pending right sibling per level, plus the current block.
+    let mut blocks = [(0usize, 0usize, false); 2 * usize::BITS as usize + 1];
+    blocks[0] = (0, m, false);
+    let mut len = 1;
+    while len > 0 {
+        len -= 1;
+        let (off, size, children_done) = blocks[len];
         let (re, im) = (&mut re[off..off + size], &mut im[off..off + size]);
         if size <= 2048 {
             pos = ifft_bfs_16_portable(size, re, im, omg, pos);
@@ -80,9 +85,10 @@ fn ifft_rec_16_portable<R: Float + FloatConst>(m: usize, re: &mut [R], im: &mut 
             inv_twiddle_ifft_portable(h, re, im, as_arr::<2, R>(&omg[pos..]));
             pos += 2;
         } else {
-            blocks.push((off, size, true));
-            blocks.push((off + h, h, false));
-            blocks.push((off, h, false));
+            blocks[len] = (off, size, true);
+            blocks[len + 1] = (off + h, h, false);
+            blocks[len + 2] = (off, h, false);
+            len += 3;
         }
     }
     pos

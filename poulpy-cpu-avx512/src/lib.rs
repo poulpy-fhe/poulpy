@@ -163,7 +163,7 @@ mod vec_znx_big_avx512;
 #[cfg(feature = "enable-ifma")]
 mod ntt3x42_ifma;
 
-#[cfg(feature = "enable-ckks")]
+#[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 pub use fft64::FFT64Avx512EncodingTable;
 #[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
 pub use fft64::FFT64Avx512Rayon;

@@ -172,7 +172,7 @@ mod ntt4x30;
 #[cfg(all(test, feature = "enable-neon"))]
 mod tests;
 
-#[cfg(feature = "enable-ckks")]
+#[cfg(all(feature = "enable-neon", feature = "enable-ckks"))]
 pub use fft64::FFT64NeonEncodingTable;
 #[cfg(feature = "enable-rayon")]
 pub use fft64::FFT64NeonRayon;
