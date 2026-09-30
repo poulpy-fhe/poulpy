@@ -178,6 +178,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- Add `poulpy-cpu-oracle` (unpublished): `FFT64Oracle` and `NTT4x30Oracle`, independent scalar backends for correctness tests. They implement the required HAL primitives with direct scalar loops, independently generated transform tables and arbitrary-precision normalization, inherit every optional operation from HAL, and do not depend on `poulpy-cpu-ref` or any production kernel. Sparse operands are materialized through their degree embedding. `enable-core` registers the generic Core compositions and runs the Core suites on both oracles.
 - Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend, and the standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate, `mul_xp_minus_one`, GLWE trace) and CKKS families (conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP coefficient encodings) by each standard-ring backend.
 
 - **Breaking:** the FFT64 reference kernels (`vec_znx_dft_apply`, `vec_znx_idft_apply*`, `svp_prepare`, `vmp_prepare`, `convolution_prepare_*`) take the ring-typed `&FFT64Plan` instead of `ReimFFTTable`/`ReimIFFTTable`, and the NTT4x30 reference kernels take `&Module<BE>` instead of `&impl NttModuleHandle`.

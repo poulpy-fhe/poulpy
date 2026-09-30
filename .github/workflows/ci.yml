@@ -25,6 +25,7 @@ env:
   SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
+    poulpy-cpu-oracle/enable-core
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-ref/enable-bin-fhe

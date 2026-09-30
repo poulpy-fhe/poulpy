@@ -1,0 +1,27 @@
+[package]
+name = "poulpy-cpu-oracle"
+version = "0.8.3"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+readme = "README.md"
+description = "Independent scalar CPU oracle for Poulpy correctness tests"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+
+[features]
+enable-core = ["dep:poulpy-core"]
+
+[dependencies]
+dashu-int = {workspace = true}
+poulpy-core = {workspace = true, optional = true}
+poulpy-hal = {workspace = true}
+bytemuck = {workspace = true}
+rand = {workspace = true}
+rand_distr = {workspace = true}
+
+[lib]
+doctest = false
+
+[dev-dependencies]
+once_cell = {workspace = true}
