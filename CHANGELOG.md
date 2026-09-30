@@ -62,6 +62,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-core`
 
 - GLWE decryption rejects ciphertext, plaintext and prepared secret key degrees that differ or exceed the module degree, including in release builds.
+- `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
 - Add `SmudgingNoise`, `VecZnxAddSmudging` and the optional `SmudgingSamplingImpl` backend hook for full-width integer noise, placed at the destination's precision `k` so that it always reaches the bottom bit of the value it hides. Ordinary encryption sampling is unchanged.
