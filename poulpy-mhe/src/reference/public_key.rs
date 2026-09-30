@@ -10,12 +10,12 @@ use poulpy_hal::{
 use crate::layouts::GLWEPublicKeyShareOwned;
 
 pub trait GLWEPublicKeyMHEProtocolReference<BE: Backend> {
-    fn mhe_glwe_public_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_public_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_key_gen_reference<S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S, E>(
         &self,
         res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
@@ -32,7 +32,7 @@ impl<BE: Backend> GLWEPublicKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWECompressedEncryptSk<BE>,
 {
-    fn mhe_glwe_public_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_public_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -43,7 +43,7 @@ where
         self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn mhe_glwe_public_key_gen_reference<S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S, E>(
         &self,
         res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,

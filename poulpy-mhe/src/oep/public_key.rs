@@ -14,12 +14,12 @@ use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 /// Reproduce the reference share, entry seeds included, within the queried
 /// scratch budget.
 pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
-    fn mhe_glwe_public_key_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_key_gen<S, E>(
+    fn mhe_glwe_public_key_share_gen<S, E>(
         module: &Module<Self>,
         res: &mut GLWEPublicKeyShareOwned<Self>,
         sk: &S,
@@ -31,19 +31,19 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
         S: GLWESecretPreparedToBackendRef<Self>,
         E: EncryptionInfos;
 
-    fn mhe_glwe_public_key_aggregate(
+    fn mhe_glwe_public_key_share_aggregate(
         module: &Module<Self>,
         res: &mut GLWEPublicKeyShareOwned<Self>,
         a: &GLWEPublicKeyShareOwned<Self>,
     ) {
-        derived::mhe_glwe_public_key_aggregate_derived(module, res, a)
+        derived::mhe_glwe_public_key_share_aggregate_derived(module, res, a)
     }
 
-    fn mhe_glwe_public_key_finalize_tmp_bytes(module: &Module<Self>) -> usize {
+    fn mhe_glwe_public_key_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
         Self::glwe_pat_compressed_finalize_tmp_bytes(module)
     }
 
-    fn mhe_glwe_public_key_finalize<R>(
+    fn mhe_glwe_public_key_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,
         share: &GLWEPublicKeyShareOwned<Self>,
@@ -51,7 +51,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
     ) where
         R: GLWEPublicKeyAtViewMut<Self> + GetDistributionMut + GLWEInfos,
     {
-        derived::mhe_glwe_public_key_finalize_derived(module, res, share, scratch)
+        derived::mhe_glwe_public_key_share_finalize_derived(module, res, share, scratch)
     }
 }
 
@@ -61,14 +61,14 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
 macro_rules! impl_mhe_public_key_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEPublicKeyMHEProtocolImpl for $be {
-            fn mhe_glwe_public_key_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
+            fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
-            fn mhe_glwe_public_key_gen<S, E>(
+            fn mhe_glwe_public_key_share_gen<S, E>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWEPublicKeyShareOwned<$be>,
                 sk: &S,
@@ -80,7 +80,7 @@ macro_rules! impl_mhe_public_key_reference {
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be>,
                 E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
             }
         }
     };

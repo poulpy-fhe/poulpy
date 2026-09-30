@@ -120,8 +120,8 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .mhe_glwe_public_key_gen_tmp_bytes(layout)
-            .max(module.mhe_glwe_public_key_finalize_tmp_bytes())
+            .mhe_glwe_public_key_share_gen_tmp_bytes(layout)
+            .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes())
             .max(module.glwe_public_key_prepare_tmp_bytes(layout)),
     );
     let mut acc = module.glwe_public_key_share_alloc_from_infos(layout);
@@ -129,13 +129,13 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);
-        module.mhe_glwe_public_key_gen(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
         if i > 0 {
-            module.mhe_glwe_public_key_aggregate(&mut acc, &share);
+            module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
         }
     }
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
-    module.mhe_glwe_public_key_finalize(&mut pk, &acc, &mut scratch.borrow());
+    module.mhe_glwe_public_key_share_finalize(&mut pk, &acc, &mut scratch.borrow());
     assert!(
         pk.dist() == parties[0].0.dist(),
         "the key takes the parties' secret distribution"
