@@ -8,7 +8,7 @@ use std::{
     ops::{Add, Mul},
 };
 
-use crate::reference::{
+use crate::kernels::{
     fft64::vec_znx_big::{
         vec_znx_big_add as fft64_vec_znx_big_add, vec_znx_big_add_assign as fft64_vec_znx_big_add_assign,
         vec_znx_big_add_small as fft64_vec_znx_big_add_small, vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
@@ -39,7 +39,7 @@ use crate::reference::{
         I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
         ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
         ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-        ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_copy_ref, znx_zero_ref,
+        ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_copy_portable, znx_zero_portable,
     },
 };
 use poulpy_hal::{
@@ -211,11 +211,11 @@ where
         let min_size = res_size.min(a_size);
 
         for j in 0..min_size {
-            znx_copy_ref(res.at_mut(res_col, j), a.at(a_col, j));
+            znx_copy_portable(res.at_mut(res_col, j), a.at(a_col, j));
         }
 
         for j in min_size..res_size {
-            znx_zero_ref(res.at_mut(res_col, j));
+            znx_zero_portable(res.at_mut(res_col, j));
         }
     }
 
@@ -871,7 +871,7 @@ where
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::reference::znx::ZnxAutomorphism,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism,
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
@@ -892,7 +892,7 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::reference::znx::ZnxAutomorphism,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<Self>,
     {

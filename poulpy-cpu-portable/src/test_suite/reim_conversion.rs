@@ -1,6 +1,6 @@
 //! Rounding boundaries shared by the FFT64 conversion kernels.
 
-use crate::reference::fft64::reim::{ReimArith, reim_to_znx_i64_ref};
+use crate::kernels::fft64::reim::{ReimArith, reim_to_znx_i64_portable};
 
 pub fn test_reim_to_znx_rounding<BE: ReimArith>() {
     let mut values = vec![0.0, -0.0, f64::from_bits(1), -f64::from_bits(1), f64::MIN_POSITIVE];
@@ -28,7 +28,7 @@ pub fn test_reim_to_znx_rounding<BE: ReimArith>() {
             // Nine copies exercise every SIMD lane plus a scalar tail.
             let input = vec![value * divisor; 9];
             let mut want = vec![0i64; input.len()];
-            reim_to_znx_i64_ref(&mut want, divisor, &input);
+            reim_to_znx_i64_portable(&mut want, divisor, &input);
 
             let mut have = vec![0i64; input.len()];
             BE::reim_to_znx(&mut have, divisor, &input);

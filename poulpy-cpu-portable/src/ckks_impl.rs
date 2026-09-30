@@ -6,7 +6,7 @@ use poulpy_hal::layouts::Ring;
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Portable);
 impl_ckks_encapsulated_mod_up_reference!(NTT4x30Portable);
-// The reference backends have no accelerated transform, so they select the
+// The portable backends have no accelerated transform, so they select the
 // generic scalar table for every precision at once.
 impl<R: Ring, F> CKKSEncodingTransform<F> for FFT64Portable<R>
 where

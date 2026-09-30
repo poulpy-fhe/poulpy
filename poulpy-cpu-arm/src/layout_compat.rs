@@ -2,7 +2,7 @@
 //!
 //! # Safety
 //!
-//! Each impl asserts byte-identical buffer layouts with the reference backend
+//! Each impl asserts byte-identical buffer layouts with the portable backend
 //! for that container family, for every shape. Validated by the word-compat
 //! suite instantiated in the corresponding `tests.rs`. `VmpPMat` and
 //! `CnvPVec*` markers are intentionally absent: the accelerated NTT4x30

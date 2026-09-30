@@ -3,11 +3,11 @@ use std::ptr::NonNull;
 use poulpy_hal::layouts::{Ring, Standard};
 
 use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     fft64::{
         convolution::I64Ops,
         module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_ref, reim_zero_ref},
+        reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_portable, reim_zero_portable},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
         vec_znx_dft::Fft64AutomorphismPlan,
     },
@@ -16,7 +16,7 @@ use poulpy_cpu_portable::reference::{
         ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
         ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
         ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
-        znx_copy_ref, znx_rotate, znx_zero_ref,
+        znx_copy_portable, znx_rotate, znx_zero_portable,
     },
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
@@ -200,7 +200,7 @@ impl<R: Ring> Backend for FFT64Avx512<R> {
 /// The returned handle must be fully initialized for `n`.
 unsafe impl<R: Ring> FFT64HandleFactory for FFT64Avx512Handle<R>
 where
-    FFT64Plan<f64, R>: poulpy_cpu_portable::reference::fft64::module::FFT64PlanNew,
+    FFT64Plan<f64, R>: poulpy_cpu_portable::kernels::fft64::module::FFT64PlanNew,
 {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64Avx512Handle {
@@ -274,7 +274,7 @@ impl<R: Ring> ZnxSubNegateAssign for FFT64Avx512<R> {
 impl<R: Ring> ZnxCopy for FFT64Avx512<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
-        znx_copy_ref(res, a);
+        znx_copy_portable(res, a);
     }
 }
 
@@ -333,7 +333,7 @@ impl<R: Ring> ZnxRotate for FFT64Avx512<R> {
 impl<R: Ring> ZnxZero for FFT64Avx512<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
-        znx_zero_ref(res);
+        znx_zero_portable(res);
     }
 }
 
@@ -427,7 +427,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for FFT64Avx512<R> {
+impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for FFT64Avx512<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
@@ -572,12 +572,12 @@ impl<R: Ring> ReimArith for FFT64Avx512<R> {
 
     #[inline(always)]
     fn reim_copy(res: &mut [f64], a: &[f64]) {
-        reim_copy_ref(res, a)
+        reim_copy_portable(res, a)
     }
 
     #[inline(always)]
     fn reim_zero(res: &mut [f64]) {
-        reim_zero_ref(res)
+        reim_zero_portable(res)
     }
 
     #[inline(always)]

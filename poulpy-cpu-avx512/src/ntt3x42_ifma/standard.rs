@@ -1,8 +1,8 @@
 //! Standard-ring items of [`NTT3x42Ifma`].
 
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::NttHandleFactory,
-    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
 use poulpy_hal::layouts::Standard;
 
@@ -54,7 +54,7 @@ impl ZnxAutomorphism for NTT3x42Ifma {
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 

@@ -5,7 +5,7 @@ use core::arch::x86_64::{
     _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
 };
 
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan},
@@ -13,7 +13,7 @@ use poulpy_cpu_portable::reference::{
         primes::{PrimeSetCrt4, Primes30},
         vec_znx_dft::NttAutomorphismPlan,
     },
-    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_portable},
 };
 use poulpy_hal::layouts::ConjugateInvariant;
 
@@ -32,12 +32,12 @@ impl poulpy_hal::layouts::MaxBase2k for NTT4x30Avx<ConjugateInvariant> {
 impl ZnxAutomorphism for NTT4x30Avx<ConjugateInvariant> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn basis_change_parity() {
         use poulpy_cpu_portable::{
-            reference::ntt4x30::primes::{Primes29, Primes30, Primes31},
+            kernels::ntt4x30::primes::{Primes29, Primes30, Primes31},
             test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
         };
         test_conjugate_invariant_ntt_basis_change::<Primes29>(|plans, data| unsafe { basis_change::<Primes29>(plans, data) });

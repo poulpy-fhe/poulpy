@@ -1,7 +1,7 @@
 //! Conjugate invariant basis change — NEON kernel.
 
 use core::arch::aarch64::{vdupq_n_s64, vshlq_u64};
-use poulpy_cpu_portable::reference::ntt4x30::{conjugate_invariant::BasisChange, primes::PrimeSetCrt4};
+use poulpy_cpu_portable::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::PrimeSetCrt4};
 
 use super::{
     ntt4x30_ntt::broadcast_mask,
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn basis_change_parity() {
         use poulpy_cpu_portable::{
-            reference::ntt4x30::primes::{Primes29, Primes30, Primes31},
+            kernels::ntt4x30::primes::{Primes29, Primes30, Primes31},
             test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
         };
         test_conjugate_invariant_ntt_basis_change::<Primes29>(|plans, data| unsafe { basis_change::<Primes29>(plans, data) });

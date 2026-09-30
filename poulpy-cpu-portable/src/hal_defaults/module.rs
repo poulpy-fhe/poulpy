@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use crate::reference::{fft64::module::FFT64HandleFactory, ntt4x30::vec_znx_dft::NttHandleFactory};
+use crate::kernels::{fft64::module::FFT64HandleFactory, ntt4x30::vec_znx_dft::NttHandleFactory};
 use poulpy_hal::layouts::{Backend, Module};
 
 #[doc(hidden)]

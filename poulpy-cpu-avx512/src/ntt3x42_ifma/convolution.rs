@@ -14,7 +14,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_portable::reference::sparse_log_gap;
+use poulpy_cpu_portable::kernels::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{

@@ -22,49 +22,49 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Portable {
 
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Portable<R>
 where
-    Self: crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for FFT64Portable<R>
 where
-    crate::reference::fft64::module::FFT64Plan<f64, R>: crate::reference::fft64::module::FFT64PlanNew,
+    crate::kernels::fft64::module::FFT64Plan<f64, R>: crate::kernels::fft64::module::FFT64PlanNew,
 {
     crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
 unsafe impl<R: Ring> HalVmpImpl for FFT64Portable<R>
 where
-    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::fft64::ring_arith::Fft64RingArith + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for FFT64Portable<R>
 where
-    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::fft64::ring_arith::Fft64RingArith + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Portable<R>
 where
-    Self: crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for FFT64Portable<R>
 where
-    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::fft64::ring_arith::Fft64RingArith + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_svp!(FFT64SvpDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxDftImpl for FFT64Portable<R>
 where
-    Self: crate::reference::fft64::ring_arith::Fft64RingArith + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::fft64::ring_arith::Fft64RingArith + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
@@ -79,33 +79,33 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Portable {
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for NTT4x30Portable<R>
 where
-    crate::reference::ntt4x30::vec_znx_dft::NttPlan<crate::reference::ntt4x30::primes::Primes30, R>:
-        crate::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+    crate::kernels::ntt4x30::vec_znx_dft::NttPlan<crate::kernels::ntt4x30::primes::Primes30, R>:
+        crate::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
 {
     crate::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
 unsafe impl<R: Ring> HalVmpImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTable<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTableInv<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTable<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTableInv<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 
@@ -141,25 +141,25 @@ where
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTable<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTableInv<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Portable<R>
 where
-    Self: crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTable<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::ntt4x30::NttDFTExecute<crate::reference::ntt4x30::ntt::NttTableInv<crate::reference::ntt4x30::primes::Primes30, R>>
-        + crate::reference::znx::ZnxAutomorphism,
+    Self: crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTable<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::ntt4x30::NttDFTExecute<crate::kernels::ntt4x30::ntt::NttTableInv<crate::kernels::ntt4x30::primes::Primes30, R>>
+        + crate::kernels::znx::ZnxAutomorphism,
 {
     crate::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

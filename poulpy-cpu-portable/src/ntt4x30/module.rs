@@ -19,7 +19,7 @@ use poulpy_hal::{
     layouts::{Backend, Host},
 };
 
-use crate::reference::ntt4x30::{
+use crate::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     types::Q120bScalar,
@@ -29,7 +29,7 @@ use poulpy_hal::layouts::{Ring, Standard};
 
 use super::NTT4x30Portable;
 
-/// Opaque handle for the NTT4x30 reference backends over ring `R`
+/// Opaque handle for the NTT4x30 portable backends over ring `R`
 /// ([`NTT4x30Portable`](super::NTT4x30Portable) and [`NTT4x30CIPortable`](crate::NTT4x30CIPortable)).
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
@@ -185,7 +185,7 @@ impl<R: Ring> Backend for NTT4x30Portable<R> {
 /// The returned handle must be fully initialized for `n`.
 unsafe impl<R: Ring> NttHandleFactory for NTT4x30PortableHandle<R>
 where
-    crate::reference::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>: crate::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+    crate::kernels::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>: crate::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
 {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30PortableHandle {

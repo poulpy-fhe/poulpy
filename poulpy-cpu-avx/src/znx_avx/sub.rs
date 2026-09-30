@@ -30,9 +30,9 @@ pub fn znx_sub_avx(res: &mut [i64], a: &[i64], b: &[i64]) {
 
     // tail
     if !res.len().is_multiple_of(4) {
-        use poulpy_cpu_portable::reference::znx::znx_sub_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_sub_portable;
 
-        znx_sub_ref(&mut res[span << 2..], &a[span << 2..], &b[span << 2..]);
+        znx_sub_portable(&mut res[span << 2..], &a[span << 2..], &b[span << 2..]);
     }
 }
 
@@ -65,9 +65,9 @@ pub fn znx_sub_assign_avx(res: &mut [i64], a: &[i64]) {
 
     // tail
     if !res.len().is_multiple_of(4) {
-        use poulpy_cpu_portable::reference::znx::znx_sub_assign_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_sub_assign_portable;
 
-        znx_sub_assign_ref(&mut res[span << 2..], &a[span << 2..]);
+        znx_sub_assign_portable(&mut res[span << 2..], &a[span << 2..]);
     }
 }
 
@@ -100,8 +100,8 @@ pub fn znx_sub_negate_assign_avx(res: &mut [i64], a: &[i64]) {
 
     // tail
     if !res.len().is_multiple_of(4) {
-        use poulpy_cpu_portable::reference::znx::znx_sub_negate_assign_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_sub_negate_assign_portable;
 
-        znx_sub_negate_assign_ref(&mut res[span << 2..], &a[span << 2..]);
+        znx_sub_negate_assign_portable(&mut res[span << 2..], &a[span << 2..]);
     }
 }

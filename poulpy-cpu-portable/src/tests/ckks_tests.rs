@@ -1,4 +1,4 @@
-//! CKKS conformance tests for the reference backends.
+//! CKKS conformance tests for the portable backends.
 //!
 //! All test logic lives in `poulpy_ckks::test_suite` as backend-generic
 //! functions; this file only instantiates that suite for each concrete

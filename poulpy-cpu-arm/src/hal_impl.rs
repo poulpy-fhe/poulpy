@@ -7,7 +7,7 @@ use poulpy_cpu_portable::hal_defaults::{
     HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
     NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
 };
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     fft64::{
         module::{FFT64Plan, FFT64PlanNew},
         ring_arith::Fft64RingArith,

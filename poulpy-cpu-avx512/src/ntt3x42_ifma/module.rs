@@ -15,7 +15,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     types::Q126Scalar,
 };
-use poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttHandleFactory;
+use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttHandleFactory;
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{Backend, Module, PrepareHint, Ring, Standard},

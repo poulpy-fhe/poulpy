@@ -15,10 +15,10 @@
 #[macro_export]
 macro_rules! impl_sampling_host {
     ($be:ty, fft64) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::reference::fft64::vec_znx_big::vec_znx_big_add_normal_ref::<_, $be>);
+        $crate::impl_sampling_host!(@impl $be, $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_normal_portable::<_, $be>);
     };
     ($be:ty, ntt4x30) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
+        $crate::impl_sampling_host!(@impl $be, $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_portable::<_, $be>);
     };
     (@impl $be:ty, $big_kernel:expr) => {
         unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
@@ -61,7 +61,7 @@ macro_rules! impl_sampling_host {
                 seed: [u8; 32],
             ) {
                 let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::reference::vec_znx::vec_znx_add_normal_ref::<$be>(
+                $crate::kernels::vec_znx::vec_znx_add_normal_portable::<$be>(
                     base2k,
                     res,
                     res_col,
@@ -113,7 +113,7 @@ macro_rules! impl_smudging_host {
             ) {
                 assert!(res.n() == module.n(), "invalid smudging: degree mismatch");
                 let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::reference::smudging::vec_znx_add_smudging_ref::<$be>(base2k, k, res, res_col, noise, &mut source);
+                $crate::kernels::smudging::vec_znx_add_smudging_portable::<$be>(base2k, k, res, res_col, noise, &mut source);
             }
         }
     };

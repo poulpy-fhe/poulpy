@@ -352,8 +352,9 @@ pub unsafe fn reim_mul_assign_avx512(res: &mut [f64], a: &[f64]) {
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
-    use poulpy_cpu_portable::reference::fft64::reim::{
-        reim_add_ref, reim_addmul_ref, reim_mul_ref, reim_negate_ref, reim_sub_negate_assign_ref, reim_sub_ref,
+    use poulpy_cpu_portable::kernels::fft64::reim::{
+        reim_add_portable, reim_addmul_portable, reim_mul_portable, reim_negate_portable, reim_sub_negate_assign_portable,
+        reim_sub_portable,
     };
 
     use super::*;
@@ -370,7 +371,7 @@ mod tests {
         let mut res_avx512 = vec![0f64; n];
         let mut res_ref = vec![0f64; n];
         unsafe { reim_add_avx512(&mut res_avx512, &a, &b) };
-        reim_add_ref(&mut res_ref, &a, &b);
+        reim_add_portable(&mut res_ref, &a, &b);
         assert_eq!(res_avx512, res_ref, "reim_add: AVX-512 vs ref mismatch");
     }
 
@@ -382,7 +383,7 @@ mod tests {
         let mut res_avx512 = vec![0f64; n];
         let mut res_ref = vec![0f64; n];
         unsafe { reim_sub_avx512(&mut res_avx512, &a, &b) };
-        reim_sub_ref(&mut res_ref, &a, &b);
+        reim_sub_portable(&mut res_ref, &a, &b);
         assert_eq!(res_avx512, res_ref, "reim_sub: AVX-512 vs ref mismatch");
     }
 
@@ -393,7 +394,7 @@ mod tests {
         let mut res_avx512 = vec![0f64; n];
         let mut res_ref = vec![0f64; n];
         unsafe { reim_negate_avx512(&mut res_avx512, &a) };
-        reim_negate_ref(&mut res_ref, &a);
+        reim_negate_portable(&mut res_ref, &a);
         assert_eq!(res_avx512, res_ref, "reim_negate: AVX-512 vs ref mismatch");
     }
 
@@ -405,7 +406,7 @@ mod tests {
         let mut res_avx512 = vec![0f64; n];
         let mut res_ref = vec![0f64; n];
         unsafe { reim_mul_avx512(&mut res_avx512, &a, &b) };
-        reim_mul_ref(&mut res_ref, &a, &b);
+        reim_mul_portable(&mut res_ref, &a, &b);
         let tol = 1e-14f64;
         for i in 0..n {
             assert!(
@@ -426,7 +427,7 @@ mod tests {
         let mut res_avx512 = init.clone();
         let mut res_ref = init.clone();
         unsafe { reim_addmul_avx512(&mut res_avx512, &a, &b) };
-        reim_addmul_ref(&mut res_ref, &a, &b);
+        reim_addmul_portable(&mut res_ref, &a, &b);
         let tol = 1e-14f64;
         for i in 0..n {
             assert!(
@@ -446,7 +447,7 @@ mod tests {
         let mut res_avx512 = init.clone();
         let mut res_ref = init.clone();
         unsafe { reim_sub_negate_assign_avx512(&mut res_avx512, &a) };
-        reim_sub_negate_assign_ref(&mut res_ref, &a);
+        reim_sub_negate_assign_portable(&mut res_ref, &a);
         assert_eq!(res_avx512, res_ref, "reim_sub_negate_assign: AVX-512 vs ref mismatch");
     }
 }

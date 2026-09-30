@@ -2,8 +2,8 @@
 
 use super::NTT4x30Neon;
 #[cfg(target_arch = "aarch64")]
-use poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::AssignOp;
-use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
+use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::AssignOp;
+use poulpy_cpu_portable::kernels::ntt4x30::{I128BigOps, I128NormalizeOps};
 use poulpy_hal::layouts::Ring;
 
 #[cfg(target_arch = "aarch64")]

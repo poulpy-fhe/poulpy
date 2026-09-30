@@ -176,7 +176,7 @@ Each case checks its measured precision against the preset's advertised minimum.
 # List the logN15 cases without allocating bootstrapping keys
 cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- n15_d35_k180_p18_c2s --list
 
-# Run the logN15 preset on the reference NTT backend
+# Run the logN15 preset on the portable NTT backend
 cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
 ```
 

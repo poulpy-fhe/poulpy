@@ -1,10 +1,10 @@
 //! Backend extension points for vector-matrix product (VMP) operations
 //! on [`VmpPMat`](poulpy_hal::layouts::VmpPMat).
 
-use crate::reference::fft64::ring_arith::Fft64RingArith;
+use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use std::mem::size_of;
 
-use crate::reference::{
+use crate::kernels::{
     fft64::{
         module::FFTModuleHandle,
         reim::ReimArith,
@@ -254,7 +254,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttFromZnx64
             + NttCFromB,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,

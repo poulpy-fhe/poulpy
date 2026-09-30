@@ -1,19 +1,19 @@
 //! Trait implementations for [`NTT4x30Portable`] — primitive NTT-domain operations.
 //!
-//! Implements all `Ntt*` traits from [`crate::reference::ntt4x30`] for
+//! Implements all `Ntt*` traits from [`crate::kernels::ntt4x30`] for
 //! [`NTT4x30Portable`], delegating to the `*_ref` scalar functions.
 //!
 //! This mirrors `poulpy_cpu_portable::fft64::reim` for the FFT64 backend.
 
-use crate::reference::ntt4x30::{
+use crate::kernels::ntt4x30::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
-    arithmetic::{add_bbb_ref, b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
+    arithmetic::{add_bbb_portable, b_from_znx64_portable, b_to_znx128_portable, c_from_b_portable},
     conjugate_invariant,
     mat_vec::{
-        BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref, vec_mat1col_product_bbb_ref, vec_mat1col_product_bbc_ref,
-        vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref,
+        BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_portable, vec_mat1col_product_bbb_portable,
+        vec_mat1col_product_bbc_portable, vec_mat1col_product_x2_bbc_portable, vec_mat2cols_product_x2_bbc_portable,
     },
     ntt::{NttTable, NttTableInv},
     primes::{PrimeSet, Primes30},
@@ -31,24 +31,24 @@ use super::NTT4x30Portable;
 impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Portable<Standard> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, Standard>, data: &mut [u64]) {
-        standard::ntt_ref::<Primes30>(table, data);
+        standard::ntt_portable::<Primes30>(table, data);
     }
 }
 
 impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Portable<Standard> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, Standard>, data: &mut [u64]) {
-        standard::intt_ref::<Primes30>(table, data);
+        standard::intt_portable::<Primes30>(table, data);
     }
 }
 
 impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable<ConjugateInvariant> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
-        conjugate_invariant::ntt_ref::<Primes30>(table, data);
+        conjugate_invariant::ntt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
         conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
     }
 }
@@ -56,10 +56,10 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable<C
 impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portable<ConjugateInvariant> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
-        conjugate_invariant::intt_ref::<Primes30>(table, data);
+        conjugate_invariant::intt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
         conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
     }
 }
@@ -71,14 +71,14 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portabl
 impl<R: Ring> NttFromZnx64 for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
-        b_from_znx64_ref::<Primes30>(a.len(), res, a);
+        b_from_znx64_portable::<Primes30>(a.len(), res, a);
     }
 }
 
 impl<R: Ring> NttToZnx128 for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
-        b_to_znx128_ref::<Primes30>(divisor_is_n, res, a);
+        b_to_znx128_portable::<Primes30>(divisor_is_n, res, a);
     }
 }
 
@@ -89,7 +89,7 @@ impl<R: Ring> NttToZnx128 for NTT4x30Portable<R> {
 impl<R: Ring> NttAdd for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
-        add_bbb_ref::<Primes30>(res.len() / 4, res, a, b);
+        add_bbb_portable::<Primes30>(res.len() / 4, res, a, b);
     }
 }
 
@@ -196,14 +196,14 @@ impl<R: Ring> NttCopy for NTT4x30Portable<R> {
 impl<R: Ring> NttMulBbb for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
-        vec_mat1col_product_bbb_ref::<Primes30>(meta, ell, res, a, b);
+        vec_mat1col_product_bbb_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
 impl<R: Ring> NttMulBbc for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
-        vec_mat1col_product_bbc_ref::<Primes30>(meta, ell, res, ntt_coeff, prepared);
+        vec_mat1col_product_bbc_portable::<Primes30>(meta, ell, res, ntt_coeff, prepared);
     }
 }
 
@@ -214,7 +214,7 @@ impl<R: Ring> NttMulBbc for NTT4x30Portable<R> {
 impl<R: Ring> NttCFromB for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
-        c_from_b_ref::<Primes30>(n, res, a);
+        c_from_b_portable::<Primes30>(n, res, a);
     }
 }
 
@@ -225,21 +225,21 @@ impl<R: Ring> NttCFromB for NTT4x30Portable<R> {
 impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        vec_mat1col_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
+        vec_mat1col_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
 impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        vec_mat2cols_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
+        vec_mat2cols_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
 impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Portable<R> {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-        extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, dst, src);
+        extract_1blk_from_contiguous_q120b_portable(n, row_max, blk, dst, src);
     }
 }
 

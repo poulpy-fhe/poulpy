@@ -471,7 +471,7 @@ backend_test_suite! {
     }
 }
 
-// Gated on `enable-core`, like `core_impl`, which implements the noise seam for both reference backends.
+// Gated on `enable-core`, like `core_impl`, which implements the noise seam for both portable backends.
 #[cfg(feature = "enable-core")]
 backend_test_suite! {
     mod sampling_core,
@@ -822,7 +822,7 @@ const NORMALIZE_IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_72
 
 #[test]
 fn test_vec_znx_big_normalize_input_bound_integer() {
-    use crate::reference::{
+    use crate::kernels::{
         ntt4x30::ntt4x30_vec_znx_big_normalize,
         vec_znx::{normalize_integer_oracle, vec_znx_normalize},
     };
@@ -941,7 +941,7 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
 
 #[test]
 fn test_normalize_exact_canonical_precision() {
-    use crate::reference::{
+    use crate::kernels::{
         ntt4x30::ntt4x30_vec_znx_big_normalize,
         vec_znx::{vec_znx_normalize, vec_znx_normalize_assign},
     };
@@ -1014,7 +1014,7 @@ fn test_normalize_exact_canonical_precision() {
 
 #[test]
 fn test_vec_znx_big_normalize_assign_and_ranges() {
-    use crate::reference::ntt4x30::{
+    use crate::kernels::ntt4x30::{
         ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_assign, ntt4x30_vec_znx_big_normalize_range_raw,
         vec_znx_big::{AddOp, SubOp},
     };
@@ -1113,7 +1113,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
 
 #[test]
 fn test_i128_normalization_kernel_integer() {
-    use crate::reference::ntt4x30::I128NormalizeOps;
+    use crate::kernels::ntt4x30::I128NormalizeOps;
     use dashu_int::IBig;
     for base2k in 1..=63 {
         let half = 1i128 << (base2k - 1);
@@ -1157,7 +1157,7 @@ fn test_i128_normalization_kernel_integer() {
 
 #[test]
 fn test_i128_normalize_fused_reference() {
-    use crate::reference::{
+    use crate::kernels::{
         ntt4x30::I128NormalizeOps,
         znx::{get_carry_i128, get_digit_i128},
     };
@@ -1190,7 +1190,7 @@ fn test_i128_normalize_fused_reference() {
 
 #[test]
 fn test_vec_znx_big_normalize_wide_radices() {
-    use crate::reference::{
+    use crate::kernels::{
         ntt4x30::{
             ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_assign,
             vec_znx_big::{AddOp, SubOp},
@@ -1282,7 +1282,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
 mod canonical_precision_tests {
     use crate::{
         FFT64Portable, NTT4x30Portable,
-        reference::{
+        kernels::{
             ntt4x30::{ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_range_raw},
             vec_znx::{
                 vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_assign_range_raw, vec_znx_normalize_range_raw,

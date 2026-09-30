@@ -3,21 +3,21 @@
 use poulpy_hal::layouts::Ring;
 use std::mem::size_of;
 
-use crate::reference::vec_znx::{
+use crate::kernels::vec_znx::{
     vec_znx_add, vec_znx_add_assign, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes,
-    vec_znx_copy, vec_znx_fill_uniform_ref, vec_znx_lsh_assign, vec_znx_lsh_assign_carry_bytes, vec_znx_mul_xp_minus_one_assign,
-    vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize,
-    vec_znx_normalize_assign, vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign,
+    vec_znx_copy, vec_znx_fill_uniform_portable, vec_znx_lsh_assign, vec_znx_lsh_assign_carry_bytes,
+    vec_znx_mul_xp_minus_one_assign, vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign,
+    vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign,
     vec_znx_rotate_assign_tmp_bytes, vec_znx_sub, vec_znx_sub_assign, vec_znx_sub_negate_assign, vec_znx_switch_ring,
     vec_znx_zero,
 };
-use crate::reference::znx::{
+use crate::kernels::znx::{
     I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
     ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
     ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
     ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
 };
-use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
+use crate::kernels::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{Backend, HostDataMut, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
@@ -412,7 +412,7 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
     {
         let mut source = Source::new(seed);
-        vec_znx_fill_uniform_ref::<Self>(base2k, k, res, res_col, &mut source);
+        vec_znx_fill_uniform_portable::<Self>(base2k, k, res, res_col, &mut source);
     }
 }
 

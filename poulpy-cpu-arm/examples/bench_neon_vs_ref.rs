@@ -30,7 +30,7 @@ mod neon {
     use poulpy_cpu_arm::{FFT64Neon, NTT4x30Neon};
     use poulpy_cpu_portable::{
         FFT64Portable, NTT4x30Portable,
-        reference::{
+        kernels::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             ntt4x30::{
                 I128BigOps, I128NormalizeOps, NttDFTExecute, NttFromZnx64,

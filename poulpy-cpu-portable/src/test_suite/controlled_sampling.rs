@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::*;
 
-// Safety: these test reference backends copy distribution-correct draws from
+// Safety: these test comparison backends copy distribution-correct draws from
 // the backend under test and mutate only the selected coefficient/limb column.
 macro_rules! impl_controlled_sampling {
     ($($be:ty),+) => {$(

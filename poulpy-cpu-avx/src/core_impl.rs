@@ -2,7 +2,7 @@ use super::{FFT64Avx, FFT64CIAvx, NTT4x30Avx, NTT4x30CIAvx};
 #[cfg(feature = "enable-rayon")]
 use super::{FFT64AvxRayon, FFT64CIAvxRayon, NTT4x30AvxRayon, NTT4x30CIAvxRayon};
 use poulpy_core::{impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference};
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
