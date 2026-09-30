@@ -57,6 +57,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- GLWE decryption rejects ciphertext, plaintext and prepared secret key degrees that differ from the module before backend dispatch, including in release builds.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
 - **Breaking:** the GGSW methods of `ConversionImpl` and `ConversionReference` move to `GGSWConversionImpl` (registered by `impl_ggsw_conversion_reference_full!`) and `GGSWConversionReference`; `AutomorphismImpl` requires `GLWEKeyswitchImpl` and `GGSWConversionImpl`, and `GGSWKeyswitchImpl` requires `GGSWConversionImpl`, instead of `ConversionImpl`; `impl_core_reference_full!` and `impl_operations_reference_full!` no longer register LWE conversion, packing, GLWE/GGSW rotate, or `mul_xp_minus_one`, and `impl_core_reference_full!` no longer registers the GLWE trace, whose Galois elements are the standard ring's.
@@ -99,6 +100,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- `ckks_encrypt_sk` and `ckks_decrypt` return `EncryptionDegreeMismatch` when the ciphertext or prepared secret key degree differs from the module degree, before backend dispatch or output mutation.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; its reference is the trait `CKKSBootstrappingReference`, implemented for `Module`, in place of the crate-private `BootstrappingReference` driver. `test_bootstrapping_parity` compares it across backends.
 - **Breaking:** `CKKSCiphertext<D, W, R>` and `CKKSPlaintext<D, W, R>` carry their ring as a type parameter; a module accepts only operands of its backend's `Ring`, so mixing rings is a compile error. Keys and prepared linear transformations use the Core types, with distinct CI and standard backend types. Host polynomial encoding and the test helpers take their ring from the `HostBytesBackend<R>` module.
 - **Breaking:** SHIP, PaCo and functional-bootstrapping LUTs are typed for the standard ring: `ShipCoeffEncodings`, `PaCoKeySet` and `PaCoKeysPrepared` hold standard-ring operands, and `CKKSShipCoeffEncodingImpl`, `CKKSPaCoCoeffEncodingImpl`, `ship_coeff_encodings_host`, `paco_coeff_encodings_host`, the `poulpy-cpu-ref` `ship_coeff_encodings_staged` and `paco_coeff_encodings_staged` wrappers, `ShipKeySet::prepare`/`generate`, `PaCoKeySet::prepare`/`into_prepare`, `PaCoContext::compile`, `PaCoSecretSpec::sigma_slots_reim` and `EncodedLut::transfer_to` require `Backend<Ring = Standard>`.
