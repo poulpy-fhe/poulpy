@@ -26,6 +26,7 @@ select_neon_encoding_transform!(super::NTT4x30CINeon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64Neon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64Neon);
 ::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64Neon);
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64Neon);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Neon);
 ::poulpy_ckks::impl_ckks_dft_reference!(super::FFT64Neon);
 ::poulpy_ckks::impl_ckks_eval_mod_reference!(super::FFT64Neon);
@@ -34,6 +35,7 @@ poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::FFT64Neon);
 poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30Neon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30Neon);
 ::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30Neon);
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30Neon);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Neon);
 ::poulpy_ckks::impl_ckks_dft_reference!(super::NTT4x30Neon);
 ::poulpy_ckks::impl_ckks_eval_mod_reference!(super::NTT4x30Neon);
@@ -45,6 +47,8 @@ poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::FFT64NeonRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_imag_reference!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -61,6 +65,8 @@ poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT4x30NeonRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_imag_reference!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_ckks::impl_ckks_bootstrapping_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
