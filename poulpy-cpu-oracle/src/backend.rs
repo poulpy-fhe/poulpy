@@ -30,6 +30,16 @@ pub type NTT4x30CIOracle = NTT4x30Oracle<ConjugateInvariant>;
 /// by `log2(n)`.
 pub struct Handle<F: Family> {
     tables: Vec<F::Table>,
+    /// Plans built on demand by the CKKS encoding.
+    #[cfg(feature = "enable-ckks")]
+    plans: poulpy_hal::layouts::ModulePlanCache,
+}
+
+/// The scheme plan cache of `module`.
+#[cfg(feature = "enable-ckks")]
+pub(crate) fn plan_cache<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>) -> &poulpy_hal::layouts::ModulePlanCache {
+    let handle: &Handle<F> = unsafe { &*module.ptr() };
+    &handle.plans
 }
 
 /// The transform tables of `module` for degree `n`.
@@ -47,7 +57,11 @@ unsafe impl<F: Family, R: OracleRing> HalModuleImpl for Oracle<F, R> {
         assert!(n.is_power_of_two(), "module degree must be a power of two, got {n}");
         let top = R::std_degree(n as usize).ilog2();
         let tables = (0..=top).map(|log_n| F::table(1 << log_n)).collect();
-        let ptr = NonNull::from(Box::leak(Box::new(Handle::<F> { tables })));
+        let ptr = NonNull::from(Box::leak(Box::new(Handle::<F> {
+            tables,
+            #[cfg(feature = "enable-ckks")]
+            plans: poulpy_hal::layouts::ModulePlanCache::default(),
+        })));
         unsafe { Module::from_nonnull(ptr, n) }
     }
 }

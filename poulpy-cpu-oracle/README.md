@@ -23,7 +23,9 @@ This crate does not import production CPU kernels or their generated tables.
 Transform tests check against direct polynomial evaluation, and the prime set against its declared roots and modulus size.
 
 `enable-core` registers the generic Core compositions.
-Generic HAL and Core compositions are shared with the production backends, so cross-backend tests validate backend implementations, not the correctness of a shared composition itself.
+`enable-ckks` adds CKKS, with the canonical encoding circuit of the CKKS reference over the oracle FFT, which is generic over the float precision, and `enable-bin-fhe` adds binary FHE.
+Both register the generic scheme compositions and imply `enable-core`.
+Generic HAL, Core and scheme compositions are shared with the production backends, so cross-backend tests validate backend implementations, not the correctness of a shared composition itself.
 The existing expected-result, noise, and cleartext tests complement these comparisons.
 
 This crate is unpublished (`publish = false`).
@@ -33,5 +35,5 @@ Oracle types do not promise raw-buffer compatibility with production backends.
 
 ```toml
 [dev-dependencies]
-poulpy-cpu-oracle = { path = "../poulpy-cpu-oracle", features = ["enable-core"] }
+poulpy-cpu-oracle = { path = "../poulpy-cpu-oracle", features = ["enable-ckks", "enable-bin-fhe"] }
 ```

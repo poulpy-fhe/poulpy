@@ -704,9 +704,12 @@ dependencies = [
 name = "poulpy-cpu-oracle"
 version = "0.8.3"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "dashu-int",
  "once_cell",
+ "poulpy-bin-fhe",
+ "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",
  "rand",

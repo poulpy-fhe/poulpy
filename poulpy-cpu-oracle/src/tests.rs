@@ -8,6 +8,8 @@ use poulpy_hal::{
 
 use crate::{FFT64Oracle, NTT4x30Oracle};
 
+#[cfg(feature = "enable-ckks")]
+mod ckks_tests;
 mod conjugate_invariant;
 mod derived_scratch;
 
@@ -621,4 +623,27 @@ poulpy_core::core_parity_test_suite! {
         glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
+}
+
+#[cfg(feature = "enable-ckks")]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64,
+    crate::FFT64CIOracle,
+    crate::FFT64Oracle,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(feature = "enable-ckks")]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30,
+    crate::NTT4x30CIOracle,
+    crate::NTT4x30Oracle,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_tests {
+    poulpy_bin_fhe::bin_fhe_reference_test_suite!(mod fft64, backend = crate::FFT64Oracle);
+    poulpy_bin_fhe::bin_fhe_reference_test_suite!(mod ntt4x30, backend = crate::NTT4x30Oracle);
+    poulpy_bin_fhe::bin_fhe_parity_test_suite!(mod parity, backend_ref = crate::FFT64Oracle, backend_test = crate::NTT4x30Oracle);
 }
