@@ -85,6 +85,7 @@ pub mod encoding;
 mod error;
 mod eval_lut;
 pub mod layouts;
+pub mod numerics;
 /// One-stop imports for the common CKKS path.
 ///
 /// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
