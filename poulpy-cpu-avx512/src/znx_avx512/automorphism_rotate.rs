@@ -33,7 +33,7 @@ pub unsafe fn znx_automorphism_rotate_avx512(p: i64, k: i64, res: &mut [i64], a:
     assert!(p & 1 == 1);
 
     if n < 8 {
-        use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
+        use poulpy_cpu_portable::reference::znx::znx_automorphism_rotate_ref;
         znx_automorphism_rotate_ref(p, k, res, a);
         return;
     }
@@ -94,7 +94,7 @@ pub unsafe fn znx_automorphism_rotate_avx512(p: i64, k: i64, res: &mut [i64], a:
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
+    use poulpy_cpu_portable::reference::znx::znx_automorphism_rotate_ref;
 
     use super::*;
 

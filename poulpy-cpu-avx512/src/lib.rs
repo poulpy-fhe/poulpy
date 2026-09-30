@@ -231,7 +231,7 @@ pub type NTT4x30CIAvx512Rayon = NTT4x30Avx512Rayon<poulpy_hal::layouts::Conjugat
 pub type NTT3x42CIIfmaRayon = NTT3x42IfmaRayon<poulpy_hal::layouts::ConjugateInvariant>;
 
 #[cfg(all(test, feature = "enable-avx512f"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64avx512,
     crate::FFT64CIAvx512,
     crate::FFT64Avx512,
@@ -239,7 +239,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30avx512,
     crate::NTT4x30CIAvx512,
     crate::NTT4x30Avx512,
@@ -247,7 +247,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-ifma"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt3x42ifma,
     crate::NTT3x42CIIfma,
     crate::NTT3x42Ifma,
@@ -255,7 +255,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64avx512rayon,
     crate::FFT64CIAvx512Rayon,
     crate::FFT64Avx512Rayon,
@@ -263,7 +263,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30avx512rayon,
     crate::NTT4x30CIAvx512Rayon,
     crate::NTT4x30Avx512Rayon,
@@ -271,7 +271,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt3x42ifmarayon,
     crate::NTT3x42CIIfmaRayon,
     crate::NTT3x42IfmaRayon,
@@ -279,7 +279,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avx512,
     crate::FFT64CIAvx512,
     crate::FFT64Avx512,
@@ -287,7 +287,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avx512,
     crate::NTT4x30CIAvx512,
     crate::NTT4x30Avx512,
@@ -295,7 +295,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-ifma"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt3x42ifma,
     crate::NTT3x42CIIfma,
     crate::NTT3x42Ifma,
@@ -303,7 +303,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avx512rayon,
     crate::FFT64CIAvx512Rayon,
     crate::FFT64Avx512Rayon,
@@ -311,7 +311,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx512f", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avx512rayon,
     crate::NTT4x30CIAvx512Rayon,
     crate::NTT4x30Avx512Rayon,
@@ -319,7 +319,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt3x42ifmarayon,
     crate::NTT3x42CIIfmaRayon,
     crate::NTT3x42IfmaRayon,

@@ -4,7 +4,7 @@ use core::arch::x86_64::{
     _mm512_add_epi64, _mm512_loadu_si512, _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_storeu_si512,
 };
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::{
         NttHandleFactory,
         conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan},
@@ -200,7 +200,7 @@ unsafe fn basis_change<P: PrimeSetNtt3x42Ifma>(plans: &[BasisChangeTable; 3], da
 mod tests {
     use super::*;
     use crate::ntt3x42_ifma::primes::Primes42;
-    use poulpy_cpu_ref::reference::ntt4x30::conjugate_invariant::BasisChange;
+    use poulpy_cpu_portable::reference::ntt4x30::conjugate_invariant::BasisChange;
     use poulpy_hal::layouts::PrimeSet;
 
     #[test]

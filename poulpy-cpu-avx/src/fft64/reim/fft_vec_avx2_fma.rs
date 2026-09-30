@@ -353,7 +353,7 @@ pub fn reim_mul_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{
+    use poulpy_cpu_portable::reference::fft64::reim::{
         reim_add_ref, reim_addmul_ref, reim_mul_ref, reim_negate_ref, reim_sub_negate_assign_ref, reim_sub_ref,
     };
 

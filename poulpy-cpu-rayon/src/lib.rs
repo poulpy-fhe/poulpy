@@ -8,7 +8,7 @@ pub mod tuning;
 #[doc(hidden)]
 pub mod __private {
     pub use ::bytemuck;
-    pub use ::poulpy_cpu_ref;
+    pub use ::poulpy_cpu_portable;
     pub use ::poulpy_hal;
     pub use ::rayon;
 }

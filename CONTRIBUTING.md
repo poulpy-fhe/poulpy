@@ -36,7 +36,7 @@ Feature requests belong there too. Please make sure the feature is self-containe
 The toolchain is pinned in [`rust-toolchain.toml`](./rust-toolchain.toml), so `cargo` picks the right nightly on its own. CI runs six jobs (portable, AVX, AVX-512, NEON, and two macOS smoke jobs); the backend jobs skip themselves when the runner lacks the instruction set. The feature sets they use are at the top of [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), and the portable one is the minimum to run locally:
 
 ```sh
-PORTABLE_FEATURES="poulpy-core/enable-core poulpy-cpu-ref/enable-core poulpy-cpu-ref/enable-ckks poulpy-bin-fhe/enable-bin-fhe"
+PORTABLE_FEATURES="poulpy-core/enable-core poulpy-cpu-portable/enable-core poulpy-cpu-portable/enable-ckks poulpy-bin-fhe/enable-bin-fhe"
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
@@ -50,10 +50,10 @@ If you touch an accelerated backend, run its lane too, with `RUSTFLAGS="-C targe
 - Format with `cargo fmt --all`; the settings live in [`rustfmt.toml`](./rustfmt.toml). Clippy must be clean under `-D warnings`.
 - Public API items carry doc comments. Prefer documenting the contract, in particular anything a backend override has to reproduce.
 - Respect the four-layer split. `api` declares the user-facing trait, `oep` the override extension point, `delegates` the forwarding, and `reference` the implementation itself, the portable composition every override must reproduce. A new operation family that a backend might want to specialize goes through `oep`, not straight into `reference`.
-- An `oep` override ships with its parity test passing against an attested backend (attestation is transitive back to `reference`: the portable backend runs it directly, and any backend already attested serves as the oracle for the next); a passing parity test is what makes an override correct, not review.
+- An `oep` override ships with its parity test passing against an attested backend (attestation is transitive back to `reference`: `poulpy-cpu-oracle` runs it directly, and any backend already attested serves as reference for the next); a passing parity test is what makes an override correct, not review.
 - A backend does not re-implement the test suites: `poulpy-hal` and `poulpy-core` ship theirs as generic functions, instantiated through `backend_test_suite!`, `cross_backend_test_suite!`, `core_backend_test_suite!` and `core_parity_test_suite!`. See [Testing a Backend](./README.md#testing-a-backend). A backend with a narrow envelope (for example not supporting rank > 1 for CKKS) restricts the sweep through `ParityShapes` rather than dropping the suite.
 - Non-trivial logic must come with its own tests. 
-- Correctness against the noise model belongs in the `noise` suite, agreement with the reference backend in the `parity` suite.
+- Correctness against the noise model belongs in the `noise` suite, agreement with the oracle in the `parity` suite.
 
 ## Changelog, versions and history
 

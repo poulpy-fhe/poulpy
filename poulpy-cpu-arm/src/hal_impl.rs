@@ -2,12 +2,12 @@
 use std::mem::size_of;
 
 use crate::{FFT64Neon, NTT4x30Neon};
-use poulpy_cpu_ref::hal_defaults::{
+use poulpy_cpu_portable::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
     NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
 };
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::{
         module::{FFT64Plan, FFT64PlanNew},
         ring_arith::Fft64RingArith,
@@ -51,84 +51,84 @@ where
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Neon<R>
 where
     Self: ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for FFT64Neon<R>
 where
     FFT64Plan<f64, R>: FFT64PlanNew,
 {
-    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(FFT64ModuleDefault);
 }
 
 unsafe impl<R: Ring> HalVmpImpl for FFT64Neon<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
+    poulpy_cpu_portable::hal_impl_vmp!(FFT64VmpDefault);
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for FFT64Neon<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Neon<R>
 where
     Self: ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for FFT64Neon<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(FFT64SvpDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxDftImpl for FFT64Neon<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Neon {
-    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for NTT4x30Neon<R>
 where
     NttPlan<Primes30, R>: NttPlanNew,
 {
-    poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -235,33 +235,33 @@ unsafe impl<R: Ring> HalVmpImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vmp!(NTT4x30VmpDefault);
+    poulpy_cpu_portable::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Neon<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

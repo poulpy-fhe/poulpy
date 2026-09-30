@@ -1,11 +1,11 @@
 use std::mem::size_of;
 
 use crate::{FFT64Avx512, NTT4x30Avx512};
-use poulpy_cpu_ref::hal_defaults::{
+use poulpy_cpu_portable::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault,
 };
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::{
         module::{FFT64Plan, FFT64PlanNew},
         ring_arith::Fft64RingArith,
@@ -48,84 +48,84 @@ where
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Avx512<R>
 where
     Self: ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for FFT64Avx512<R>
 where
     FFT64Plan<f64, R>: FFT64PlanNew,
 {
-    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(FFT64ModuleDefault);
 }
 
 unsafe impl<R: Ring> HalVmpImpl for FFT64Avx512<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
+    poulpy_cpu_portable::hal_impl_vmp!(FFT64VmpDefault);
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for FFT64Avx512<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Avx512<R>
 where
     Self: ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for FFT64Avx512<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(FFT64SvpDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxDftImpl for FFT64Avx512<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT4x30Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
 }
 
 unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Avx512<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
 }
 
 unsafe impl<R: Ring> HalModuleImpl for NTT4x30Avx512<R>
 where
     NttPlan<Primes30, R>: NttPlanNew,
 {
-    poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
 unsafe impl<R: Ring> HalVmpImpl for NTT4x30Avx512<R>
@@ -295,7 +295,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -332,7 +332,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -446,7 +446,7 @@ unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30Avx512<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
 unsafe impl<R: Ring> HalSvpImpl for NTT4x30Avx512<R>
@@ -548,7 +548,7 @@ where
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
                 poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -558,7 +558,7 @@ where
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
         let mut res_ref = &mut *res;
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
+        poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
             &mut res_ref,
             res_base2k,
             res_k,
@@ -686,7 +686,7 @@ where
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_zero(res, res_col)
     }
 
-    type AutomorphismPlan = poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+    type AutomorphismPlan = poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;
@@ -735,8 +735,8 @@ mod ifma_impl {
         tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
         traits::Ntt3x42IfmaDFTExecute,
     };
-    use poulpy_cpu_ref::hal_defaults::HalVecZnxDefault;
-    use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory;
+    use poulpy_cpu_portable::hal_defaults::HalVecZnxDefault;
+    use poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttHandleFactory;
     use poulpy_hal::{
         execution::SerialTaskExecutor,
         layouts::{
@@ -749,11 +749,11 @@ mod ifma_impl {
     use std::mem::size_of;
 
     unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for NTT3x42Ifma {
-        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+        poulpy_cpu_portable::hal_impl_vec_znx_monomial!();
     }
 
     unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT3x42Ifma {
-        poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+        poulpy_cpu_portable::hal_impl_vec_znx_ci!();
     }
 
     unsafe impl<R: Ring> HalVecZnxImpl for NTT3x42Ifma<R>
@@ -762,8 +762,8 @@ mod ifma_impl {
             + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
             + ZnxAutomorphism,
     {
-        poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-        poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+        poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+        poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
     }
 
     unsafe impl<R: Ring> HalModuleImpl for NTT3x42Ifma<R>
@@ -875,7 +875,7 @@ mod ifma_impl {
         }
     }
 
-    use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
+    use poulpy_cpu_portable::hal_defaults::NTT4x30VecZnxBigDefault;
     use poulpy_hal::layouts::{DataView, DataViewMut};
 
     unsafe impl<R: Ring> HalVecZnxBigImpl for NTT3x42Ifma<R>
@@ -884,7 +884,7 @@ mod ifma_impl {
             + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
             + ZnxAutomorphism,
     {
-        poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
+        poulpy_cpu_portable::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
     }
 
     unsafe impl<R: Ring> HalSvpImpl for NTT3x42Ifma<R>
@@ -996,7 +996,7 @@ mod ifma_impl {
                 let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
                     poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
                 let mut big_ref = &mut big;
-                poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
+                poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
                     &mut big_ref,
                     a_col,
                     &add,
@@ -1006,7 +1006,7 @@ mod ifma_impl {
             let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
                 poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
             let mut res_ref = &mut *res;
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
                 &mut res_ref,
                 res_base2k,
                 res_k,
@@ -1139,7 +1139,7 @@ mod ifma_impl {
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_zero::<_, poulpy_hal::execution::SerialTaskExecutor>(res, res_col);
         }
 
-        type AutomorphismPlan = poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+        type AutomorphismPlan = poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
         fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
             let _ = module;
@@ -1251,7 +1251,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
@@ -1282,7 +1282,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);

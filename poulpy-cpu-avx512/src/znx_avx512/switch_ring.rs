@@ -53,7 +53,7 @@ pub unsafe fn znx_switch_ring_avx512(res: &mut [i64], a: &[i64]) {
         // Upsample: res[k * gap] = a[k], rest zero
         let gap = n_out / n_in;
 
-        poulpy_cpu_ref::reference::znx::znx_zero_ref(res);
+        poulpy_cpu_portable::reference::znx::znx_zero_ref(res);
 
         let span = n_in >> 3;
 

@@ -1,8 +1,8 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
-use poulpy_cpu_ref::reference::fft64::{
+use poulpy_cpu_portable::reference::fft64::reim::{fft_ref, ifft_ref};
+use poulpy_cpu_portable::reference::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
@@ -113,11 +113,11 @@ impl<R: Ring> ReimArith for FFT64Neon<R> {
     // bound at large n; the autovec reference is as fast or faster.
     #[inline(always)]
     fn reim_add(res: &mut [f64], a: &[f64], b: &[f64]) {
-        poulpy_cpu_ref::reference::fft64::reim::reim_add_ref(res, a, b);
+        poulpy_cpu_portable::reference::fft64::reim::reim_add_ref(res, a, b);
     }
     #[inline(always)]
     fn reim_add_assign(res: &mut [f64], a: &[f64]) {
-        poulpy_cpu_ref::reference::fft64::reim::reim_add_assign_ref(res, a);
+        poulpy_cpu_portable::reference::fft64::reim::reim_add_assign_ref(res, a);
     }
     #[inline(always)]
     fn reim_sub(res: &mut [f64], a: &[f64], b: &[f64]) {
@@ -271,7 +271,7 @@ impl<R: Ring> I64Ops for FFT64Neon<R> {
 #[cfg(not(target_arch = "aarch64"))]
 impl<R: Ring> I64Ops for FFT64Neon<R> {}
 
-impl<R: Ring> poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
+impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)

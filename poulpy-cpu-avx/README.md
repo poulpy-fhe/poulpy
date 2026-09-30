@@ -21,7 +21,7 @@ To avoid illegal hardware instructions (SIGILL) on unsupported CPUs, this backen
 
 If `enable-avx` is enabled but the target does not provide these capabilities, the build **fails immediately with a clear error message**, rather than generating invalid binaries.
 
-When `enable-avx` is **not** enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-ref` backend. This ensures that Poulpy's workspace remains portable (e.g. for macOS ARM).
+When `enable-avx` is **not** enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-portable` backend. This ensures that Poulpy's workspace remains portable (e.g. for macOS ARM).
 
 ## ⚙️ Building with the AVX backend enabled
 

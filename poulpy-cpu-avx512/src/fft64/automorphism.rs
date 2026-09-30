@@ -12,7 +12,7 @@ use core::arch::x86_64::{
     _mm512_i64gather_pd, _mm512_set1_epi64, _mm512_storeu_pd, _mm512_xor_si512,
 };
 
-use poulpy_cpu_ref::reference::fft64::{standard::fft64_automorphism_ref, vec_znx_dft::Fft64AutomorphismPlan};
+use poulpy_cpu_portable::reference::fft64::{standard::fft64_automorphism_ref, vec_znx_dft::Fft64AutomorphismPlan};
 
 /// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`; scalar below the 8-slot SIMD width.
 #[inline(always)]

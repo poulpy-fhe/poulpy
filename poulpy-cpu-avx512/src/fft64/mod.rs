@@ -71,5 +71,5 @@ pub struct FFT64Avx512Rayon<R: Ring = Standard>(PhantomData<R>);
 pub mod tests;
 
 #[allow(unused_imports)]
-pub use poulpy_cpu_ref::reference::fft64::module::FFTModuleHandle;
+pub use poulpy_cpu_portable::reference::fft64::module::FFTModuleHandle;
 pub use reim::{FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};

@@ -5,7 +5,7 @@ use core::arch::x86_64::{
     _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
 };
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::{
         NttDFTExecute,
         conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan},
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn basis_change_parity() {
-        use poulpy_cpu_ref::{
+        use poulpy_cpu_portable::{
             reference::ntt4x30::primes::{Primes29, Primes30, Primes31},
             test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
         };

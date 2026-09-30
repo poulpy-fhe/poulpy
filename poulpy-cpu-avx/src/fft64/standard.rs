@@ -1,6 +1,6 @@
 //! Standard-ring items of [`FFT64Avx`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::ring_arith::Fft64RingArith,
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
 };
@@ -43,5 +43,5 @@ impl ZnxAutomorphismRotate for FFT64Avx {
 }
 
 impl Fft64RingArith for FFT64Avx {
-    poulpy_cpu_ref::fft64_ring_arith_standard!();
+    poulpy_cpu_portable::fft64_ring_arith_standard!();
 }

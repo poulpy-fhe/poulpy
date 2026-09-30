@@ -1,6 +1,6 @@
 //! Standard-ring items of [`NTT3x42Ifma`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::NttHandleFactory,
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
 };

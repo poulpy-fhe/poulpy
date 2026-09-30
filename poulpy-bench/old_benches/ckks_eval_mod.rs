@@ -162,9 +162,9 @@ fn tsk_layout() -> GLWETensorKeyLayout {
     }
 }
 
-fn bench_ntt4x30_ref(c: &mut Criterion) {
-    type BE = poulpy_cpu_ref::NTT4x30Ref;
-    let label = "ntt4x30-ref";
+fn bench_ntt4x30_portable(c: &mut Criterion) {
+    type BE = poulpy_cpu_portable::NTT4x30Portable;
+    let label = "ntt4x30-portable";
 
     let module = Module::<BE>::new(N as u64);
     let glwe_layout = glwe_layout();
@@ -248,7 +248,7 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
 }
 
 fn bench_ckks_eval_mod(c: &mut Criterion) {
-    bench_ntt4x30_ref(c);
+    bench_ntt4x30_portable(c);
 }
 
 criterion_group! {

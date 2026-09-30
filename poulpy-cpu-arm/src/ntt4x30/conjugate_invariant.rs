@@ -1,6 +1,6 @@
 //! Conjugate invariant ring items of [`NTT4x30Neon`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::{
         NttDFTExecute,
         conjugate_invariant::build_ntt4x30_automorphism_plan,
@@ -19,7 +19,7 @@ use crate::neon::{
     ntt4x30_ntt::{intt_neon, ntt_neon},
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::ntt4x30::conjugate_invariant::{intt_ref, ntt_ref};
+use poulpy_cpu_portable::reference::ntt4x30::conjugate_invariant::{intt_ref, ntt_ref};
 
 /// No failure model: a square's constant coefficient has a large positive mean on this ring.
 impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon<ConjugateInvariant> {

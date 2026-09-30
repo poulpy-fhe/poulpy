@@ -1,10 +1,10 @@
 //! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`NTT4x30Avx`](super::NTT4x30Avx).
 //!
-//! Implements the `Znx*` traits from `poulpy_cpu_ref::reference::znx`. All implementations
+//! Implements the `Znx*` traits from `poulpy_cpu_portable::reference::znx`. All implementations
 //! delegate to the AVX2-accelerated functions in `crate::znx_avx` (same kernels used
 //! by `FFT64Avx`). These operate on plain `&[i64]` slices and are backend-independent.
 
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
     ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
     ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
@@ -185,7 +185,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Avx<R> {
+impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT4x30Avx<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());

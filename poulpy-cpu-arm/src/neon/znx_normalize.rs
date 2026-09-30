@@ -2,7 +2,7 @@
 
 use core::arch::aarch64::{int64x2_t, vaddq_s64, vandq_s64, vdupq_n_s64, veorq_s64, vld1q_s64, vshlq_s64, vst1q_s64, vsubq_s64};
 
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref,
     znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref,
     znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
@@ -75,7 +75,7 @@ pub(crate) fn znx_extract_digit_addmul_impl_neon<const OVERWRITE: bool>(
     }
     let tail = span << 2;
     if tail < n {
-        poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref::<OVERWRITE>(
+        poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_impl_ref::<OVERWRITE>(
             base2k,
             lsh,
             &mut res[tail..],
@@ -609,7 +609,7 @@ pub(crate) fn znx_extract_digit_addmul_normalize_neon<const OVERWRITE: bool>(
             vst1q_s64(carry.as_mut_ptr().add(i), output_carry);
         }
     }
-    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+    poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
         base2k,
         lsh,
         res_base2k,
@@ -623,12 +623,12 @@ pub(crate) fn znx_extract_digit_addmul_normalize_neon<const OVERWRITE: bool>(
 mod tests {
     #[test]
     fn test_normalization_kernels_bounded_inputs() {
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Neon>();
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Neon>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64Neon>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Neon>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64NeonRayon>();
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30NeonRayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64NeonRayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30NeonRayon>();
         }
     }
 }

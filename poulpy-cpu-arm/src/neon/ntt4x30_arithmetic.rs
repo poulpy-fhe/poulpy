@@ -1,7 +1,7 @@
 //! NEON kernels for q120b lazy modular arithmetic (NTT4x30 backend).
 
 use core::arch::aarch64::{uint64x2_t, vaddq_u64, vbslq_u64, vcgeq_u64, vld1q_u64, vst1q_u64, vsubq_u64};
-use poulpy_cpu_ref::reference::ntt4x30::types::Q_SHIFTED;
+use poulpy_cpu_portable::reference::ntt4x30::types::Q_SHIFTED;
 
 /// Lazy reduction: bring each lane of `x ∈ [0, 2·q_s)` into `[0, q_s)`.
 /// Subtracts `q_s` from each lane where `x >= q_s` (unsigned).
@@ -187,7 +187,7 @@ mod tests {
     }
 
     /// Scalar lazy reference: per-lane `(x % q_s)`. Matches the formulas in
-    /// `poulpy-cpu-ref/src/ntt4x30/prim.rs`.
+    /// `poulpy-cpu-portable/src/ntt4x30/prim.rs`.
     fn lazy_lane(x: u64, q_s: u64) -> u64 {
         x % q_s
     }

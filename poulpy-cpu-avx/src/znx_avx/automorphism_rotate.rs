@@ -36,7 +36,7 @@ pub fn znx_automorphism_rotate_avx(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
     assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
-        use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
+        use poulpy_cpu_portable::reference::znx::znx_automorphism_rotate_ref;
 
         znx_automorphism_rotate_ref(p, k, res, a);
         return;
@@ -103,7 +103,7 @@ pub fn znx_automorphism_rotate_avx(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
+    use poulpy_cpu_portable::reference::znx::znx_automorphism_rotate_ref;
 
     use super::*;
 

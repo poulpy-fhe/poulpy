@@ -1,6 +1,6 @@
 //! Conjugate invariant ring items of [`FFT64Neon`].
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     fft64::ring_arith::Fft64RingArith,
     znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_ref},
 };
@@ -28,7 +28,7 @@ impl ZnxAutomorphism for FFT64Neon<ConjugateInvariant> {
 }
 
 impl Fft64RingArith for FFT64Neon<ConjugateInvariant> {
-    poulpy_cpu_ref::fft64_ring_arith_ci!();
+    poulpy_cpu_portable::fft64_ring_arith_ci!();
 }
 
 #[cfg(all(test, target_arch = "aarch64"))]
@@ -37,6 +37,6 @@ mod tests {
 
     #[test]
     fn real_arithmetic_parity() {
-        poulpy_cpu_ref::test_suite::conjugate_invariant::test_conjugate_invariant_fft_arithmetic::<FFT64Neon>();
+        poulpy_cpu_portable::test_suite::conjugate_invariant::test_conjugate_invariant_fft_arithmetic::<FFT64Neon>();
     }
 }

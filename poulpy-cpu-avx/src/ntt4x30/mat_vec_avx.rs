@@ -46,7 +46,7 @@ use core::arch::x86_64::{
     _mm256_setzero_si256, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256,
 };
 
-use poulpy_cpu_ref::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
+use poulpy_cpu_portable::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared final-reduction helper
@@ -568,7 +568,7 @@ pub(crate) unsafe fn vec_mat2cols_product_x2_bbc_avx2(
 mod tests {
     use super::*;
     use core::arch::x86_64::_mm256_set_epi64x;
-    use poulpy_cpu_ref::reference::ntt4x30::{
+    use poulpy_cpu_portable::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, c_from_b_ref},
         mat_vec::{BbcMeta, vec_mat1col_product_bbc_ref, vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref},
         primes::Primes30,
