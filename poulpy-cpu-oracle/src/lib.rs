@@ -13,6 +13,8 @@ mod backend;
 mod bin_fhe;
 #[cfg(feature = "enable-ckks")]
 mod ckks;
+#[cfg(all(test, feature = "enable-ckks"))]
+mod ckks_roots;
 #[cfg(feature = "enable-core")]
 mod core_impl;
 mod embed;
