@@ -1,85 +1,77 @@
-//! Host implementation of the `poulpy-core` sampling extension point.
+//! The `poulpy-core` sampling extension point, on host buffers.
 
-macro_rules! impl_sampling_host {
-    ($be:ty, fft64) => {
-        $crate::sampling::impl_sampling_host!(@impl $be, $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_normal_ref::<_, $be>);
-    };
-    ($be:ty, ntt4x30) => {
-        $crate::sampling::impl_sampling_host!(@impl $be, $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
-    };
-    (@impl $be:ty, $big_kernel:expr) => {
-        unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
-            fn scalar_znx_fill_distribution(
-                _module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::ScalarZnxBackendMut<'_, $be>,
-                res_col: usize,
-                dist: ::poulpy_core::Distribution,
-                seed: [u8; 32],
-            ) {
-                use ::poulpy_hal::layouts::{ZnxViewMut, ZnxWord};
-                use $crate::ScalarZnxFill;
-                let mut source = ::poulpy_hal::source::Source::new(seed);
-                match dist {
-                    ::poulpy_core::Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),
-                    ::poulpy_core::Distribution::TernaryProb(prob) => res.fill_ternary_prob(res_col, prob, &mut source),
-                    ::poulpy_core::Distribution::BinaryFixed(hw) => res.fill_binary_hw(res_col, hw, &mut source),
-                    ::poulpy_core::Distribution::BinaryProb(prob) => res.fill_binary_prob(res_col, prob, &mut source),
-                    ::poulpy_core::Distribution::BinaryBlock(block_size) => {
-                        res.fill_binary_block(res_col, block_size, &mut source)
-                    }
-                    ::poulpy_core::Distribution::ZERO => {
-                        res.at_mut(res_col, 0)
-                            .fill(<<$be as ::poulpy_hal::layouts::Backend>::ZnxWord as ZnxWord>::from_i64(
-                                0,
-                            ))
-                    }
-                    ::poulpy_core::Distribution::NONE | ::poulpy_core::Distribution::ENCAPSULATED(_) => {
-                        panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
-                    }
-                }
-            }
+use poulpy_core::{Distribution, NoiseInfos, oep::SamplingImpl};
+use poulpy_hal::{
+    layouts::{Module, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut, ZnxViewMut},
+    source::Source,
+};
+use rand_distr::{Distribution as _, Normal};
 
-            fn vec_znx_add_normal(
-                _module: &::poulpy_hal::layouts::Module<$be>,
-                base2k: usize,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
-                res_col: usize,
-                noise: ::poulpy_core::NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::kernels::vec_znx::vec_znx_add_normal_ref::<$be>(
-                    base2k,
-                    res,
-                    res_col,
-                    noise.k,
-                    noise.sigma,
-                    noise.bound,
-                    &mut source,
-                );
-            }
+use crate::{
+    ScalarZnxFill,
+    backend::Oracle,
+    family::{Family, Int},
+};
 
-            fn vec_znx_big_add_normal(
-                _module: &::poulpy_hal::layouts::Module<$be>,
-                base2k: usize,
-                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be>,
-                res_col: usize,
-                noise: ::poulpy_core::NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let mut source = ::poulpy_hal::source::Source::new(seed);
-                $big_kernel(
-                    base2k,
-                    &mut res,
-                    res_col,
-                    noise.k,
-                    noise.sigma,
-                    noise.bound,
-                    &mut source,
-                );
-            }
+/// Adds rounded Gaussian noise, rejected above `bound`, to the limb holding
+/// precision `k`, scaled to that precision.
+fn add_normal<T: Int>(limb: &mut [T], base2k: usize, k: usize, sigma: f64, bound: f64, seed: [u8; 32]) {
+    assert!((bound.log2().ceil() as i64) < 64, "invalid bound: ceil(log2(bound)) > 63");
+    let shift = (k.div_ceil(base2k) * base2k - k) as u32;
+    let normal = Normal::new(0.0, sigma).unwrap();
+    let mut source = Source::new(seed);
+    for x in limb {
+        let mut e: f64 = normal.sample(&mut source);
+        while e.abs() > bound {
+            e = normal.sample(&mut source);
         }
-    };
+        *x = x.add(T::from(e.round() as i64).shl(shift));
+    }
 }
 
-pub(crate) use impl_sampling_host;
+unsafe impl<F: Family> SamplingImpl for Oracle<F> {
+    fn scalar_znx_fill_distribution(
+        _module: &Module<Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res_col: usize,
+        dist: Distribution,
+        seed: [u8; 32],
+    ) {
+        let mut source = Source::new(seed);
+        match dist {
+            Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),
+            Distribution::TernaryProb(prob) => res.fill_ternary_prob(res_col, prob, &mut source),
+            Distribution::BinaryFixed(hw) => res.fill_binary_hw(res_col, hw, &mut source),
+            Distribution::BinaryProb(prob) => res.fill_binary_prob(res_col, prob, &mut source),
+            Distribution::BinaryBlock(block_size) => res.fill_binary_block(res_col, block_size, &mut source),
+            Distribution::ZERO => res.at_mut(res_col, 0).fill(0),
+            Distribution::NONE | Distribution::ENCAPSULATED(_) => {
+                panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
+            }
+        }
+    }
+
+    fn vec_znx_add_normal(
+        _module: &Module<Self>,
+        base2k: usize,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        noise: NoiseInfos,
+        seed: [u8; 32],
+    ) {
+        let limb = noise.k.div_ceil(base2k) - 1;
+        add_normal(res.at_mut(res_col, limb), base2k, noise.k, noise.sigma, noise.bound, seed);
+    }
+
+    fn vec_znx_big_add_normal(
+        _module: &Module<Self>,
+        base2k: usize,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        noise: NoiseInfos,
+        seed: [u8; 32],
+    ) {
+        let limb = noise.k.div_ceil(base2k) - 1;
+        add_normal(res.at_mut(res_col, limb), base2k, noise.k, noise.sigma, noise.bound, seed);
+    }
+}
