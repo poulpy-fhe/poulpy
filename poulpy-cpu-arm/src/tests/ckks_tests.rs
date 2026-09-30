@@ -6,7 +6,7 @@ ckks_backend_test_suite!(
     mod fft64_f64,
     backend = crate::FFT64Neon,
     scalar = f64,
-    encoder = crate::FFT64NeonReimTable,
+    encoder = crate::FFT64NeonEncodingTable,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -16,7 +16,7 @@ ckks_backend_test_suite!(
     mod fft64_rayon_f64,
     backend = crate::FFT64NeonRayon,
     scalar = f64,
-    encoder = crate::FFT64NeonReimTable,
+    encoder = crate::FFT64NeonEncodingTable,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -25,7 +25,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_f64,
     backend = crate::NTT4x30Neon,
     scalar = f64,
-    encoder = crate::FFT64NeonReimTable,
+    encoder = crate::FFT64NeonEncodingTable,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -35,7 +35,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_rayon_f64,
     backend = crate::NTT4x30NeonRayon,
     scalar = f64,
-    encoder = crate::FFT64NeonReimTable,
+    encoder = crate::FFT64NeonEncodingTable,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -45,7 +45,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_f128,
     backend = crate::NTT4x30Neon,
     scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>,
+    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
     rotations = super::ATK_ROTATIONS,
 );
@@ -55,7 +55,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_rayon_f128,
     backend = crate::NTT4x30NeonRayon,
     scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>,
+    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
     rotations = super::ATK_ROTATIONS,
 );
