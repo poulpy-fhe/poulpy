@@ -68,7 +68,7 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.glwe_compressed_encrypt_sk(dst, &pt, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.glwe_compressed_encrypt_zero_sk(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
