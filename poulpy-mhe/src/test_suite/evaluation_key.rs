@@ -24,7 +24,9 @@ use super::{
     pat::assert_gglwe_noise,
 };
 use crate::{
-    api::{GLWEAutomorphismKeyShare, GLWESwitchingKeyShare},
+    api::{
+        GLWEAutomorphismKeyPatCompressedOps, GLWEAutomorphismKeyShare, GLWESwitchingKeyPatCompressedOps, GLWESwitchingKeyShare,
+    },
     layouts::MHEModuleAlloc,
 };
 
@@ -35,6 +37,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
         + GLWESwitchingKeyShare<BE>
+        + GLWESwitchingKeyPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -50,8 +53,8 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_switching_key_share_tmp_bytes(&layout)
-            .max(module.glwe_switching_key_share_normalize_tmp_bytes())
-            .max(module.glwe_switching_key_finalize_tmp_bytes())
+            .max(module.glwe_switching_key_pat_compressed_normalize_tmp_bytes())
+            .max(module.glwe_switching_key_pat_compressed_finalize_tmp_bytes())
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
 
@@ -70,19 +73,19 @@ where
             &mut scratch.borrow(),
         );
         if i > 0 {
-            module.glwe_switching_key_share_aggregate_assign(&mut acc, &share);
+            module.glwe_switching_key_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
 
     let mut lazy: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
-    module.glwe_switching_key_finalize(&mut lazy, &acc, &mut scratch.borrow());
+    module.glwe_switching_key_pat_compressed_finalize(&mut lazy, &acc, &mut scratch.borrow());
     let n = Degree(module.n() as u32);
     assert_eq!((*lazy.input_degree(), *lazy.output_degree()), (n, n));
     assert_gglwe_noise(module, &lazy, &pt_want, &sk_out_ideal, &mut scratch);
 
-    module.glwe_switching_key_share_normalize_assign(&mut acc, &mut scratch.borrow());
+    module.glwe_switching_key_pat_compressed_normalize_assign(&mut acc, &mut scratch.borrow());
     let mut eager: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
-    module.glwe_switching_key_finalize(&mut eager, &acc, &mut scratch.borrow());
+    module.glwe_switching_key_pat_compressed_finalize(&mut eager, &acc, &mut scratch.borrow());
     assert_eq!(lazy, eager);
 }
 
@@ -93,6 +96,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
         + GLWEAutomorphismKeyShare<BE>
+        + GLWEAutomorphismKeyPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -109,8 +113,8 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_automorphism_key_share_tmp_bytes(&layout)
-            .max(module.glwe_automorphism_key_share_normalize_tmp_bytes())
-            .max(module.glwe_automorphism_key_finalize_tmp_bytes())
+            .max(module.glwe_automorphism_key_pat_compressed_normalize_tmp_bytes())
+            .max(module.glwe_automorphism_key_pat_compressed_finalize_tmp_bytes())
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
 
@@ -121,18 +125,18 @@ where
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.glwe_automorphism_key_share(dst, P, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
         if i > 0 {
-            module.glwe_automorphism_key_share_aggregate_assign(&mut acc, &share);
+            module.glwe_automorphism_key_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
 
     let mut lazy: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
-    module.glwe_automorphism_key_finalize(&mut lazy, &acc, &mut scratch.borrow());
+    module.glwe_automorphism_key_pat_compressed_finalize(&mut lazy, &acc, &mut scratch.borrow());
     assert_eq!(lazy.p(), P);
     assert_gglwe_noise(module, &lazy, &pt_want, &sk_out, &mut scratch);
 
-    module.glwe_automorphism_key_share_normalize_assign(&mut acc, &mut scratch.borrow());
+    module.glwe_automorphism_key_pat_compressed_normalize_assign(&mut acc, &mut scratch.borrow());
     let mut eager: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
-    module.glwe_automorphism_key_finalize(&mut eager, &acc, &mut scratch.borrow());
+    module.glwe_automorphism_key_pat_compressed_finalize(&mut eager, &acc, &mut scratch.borrow());
     assert_eq!(lazy, eager);
 }
 
@@ -140,39 +144,39 @@ where
 pub fn test_glwe_switching_key_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyShare<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyPatCompressedOps<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
     let mut b = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
     b.input_degree = Degree(module.n() as u32);
-    module.glwe_switching_key_share_aggregate_assign(&mut a, &b);
+    module.glwe_switching_key_pat_compressed_aggregate_assign(&mut a, &b);
 }
 
 /// Aggregating switching key shares of different output degrees panics.
 pub fn test_glwe_switching_key_out_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyShare<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyPatCompressedOps<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
     let mut b = module.glwe_switching_key_pat_compressed_alloc_from_infos(&layout);
     b.output_degree = Degree(module.n() as u32);
-    module.glwe_switching_key_share_aggregate_assign(&mut a, &b);
+    module.glwe_switching_key_pat_compressed_aggregate_assign(&mut a, &b);
 }
 
 /// Aggregating automorphism key shares of different Galois elements panics.
 pub fn test_glwe_automorphism_key_p_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyShare<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyPatCompressedOps<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_automorphism_key_pat_compressed_alloc_from_infos(&layout);
     let mut b = module.glwe_automorphism_key_pat_compressed_alloc_from_infos(&layout);
     b.p = P;
-    module.glwe_automorphism_key_share_aggregate_assign(&mut a, &b);
+    module.glwe_automorphism_key_pat_compressed_aggregate_assign(&mut a, &b);
 }
 
 /// `sigma_{p^-1}(sk)` prepared: the secret core's automorphism key encrypts under.

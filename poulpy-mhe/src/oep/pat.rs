@@ -1,8 +1,11 @@
 use poulpy_core::layouts::{
     GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWEToBackendMut,
-    GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos,
+    GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GetGaloisElement, SetGaloisElement,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+
+use super::derived::pat as derived;
 
 /// # Safety
 /// Reproduce the reference sum, including the seed and layout checks; produce
@@ -74,6 +77,92 @@ pub unsafe trait GGLWEPatImpl: Backend {
     where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
         P: GGLWEToBackendRef<Self> + GGLWEInfos;
+}
+
+/// # Safety
+/// Reproduce [`GGLWEPatCompressedImpl`] on the key, with the reference degree
+/// check on aggregation and the degrees copied on finalization.
+pub unsafe trait GLWESwitchingKeyPatCompressedImpl: GGLWEPatCompressedImpl {
+    fn glwe_switching_key_pat_compressed_aggregate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
+    where
+        R: GGLWECompressedToBackendMut<Self> + GGLWECompressedSeed + GGLWEInfos + GLWESwitchingKeyDegrees,
+        A: GGLWECompressedToBackendRef<Self> + GGLWECompressedSeed + GGLWEInfos + GLWESwitchingKeyDegrees,
+    {
+        derived::glwe_switching_key_pat_compressed_aggregate_assign_derived(module, res, a)
+    }
+
+    fn glwe_switching_key_pat_compressed_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+        Self::gglwe_pat_compressed_normalize_tmp_bytes(module)
+    }
+
+    fn glwe_switching_key_pat_compressed_normalize_assign<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGLWECompressedToBackendMut<Self> + GGLWEInfos,
+    {
+        Self::gglwe_pat_compressed_normalize_assign(module, res, scratch)
+    }
+
+    fn glwe_switching_key_pat_compressed_finalize_tmp_bytes(module: &Module<Self>) -> usize {
+        Self::gglwe_pat_compressed_finalize_tmp_bytes(module)
+    }
+
+    fn glwe_switching_key_pat_compressed_finalize<R, P>(
+        module: &Module<Self>,
+        res: &mut R,
+        pat: &P,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        P: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    {
+        derived::glwe_switching_key_pat_compressed_finalize_derived(module, res, pat, scratch)
+    }
+}
+
+/// # Safety
+/// Reproduce [`GGLWEPatCompressedImpl`] on the key, with the reference Galois
+/// element check on aggregation and the Galois element copied on finalization.
+pub unsafe trait GLWEAutomorphismKeyPatCompressedImpl: GGLWEPatCompressedImpl {
+    fn glwe_automorphism_key_pat_compressed_aggregate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
+    where
+        R: GGLWECompressedToBackendMut<Self> + GGLWECompressedSeed + GGLWEInfos + GetGaloisElement,
+        A: GGLWECompressedToBackendRef<Self> + GGLWECompressedSeed + GGLWEInfos + GetGaloisElement,
+    {
+        derived::glwe_automorphism_key_pat_compressed_aggregate_assign_derived(module, res, a)
+    }
+
+    fn glwe_automorphism_key_pat_compressed_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+        Self::gglwe_pat_compressed_normalize_tmp_bytes(module)
+    }
+
+    fn glwe_automorphism_key_pat_compressed_normalize_assign<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGLWECompressedToBackendMut<Self> + GGLWEInfos,
+    {
+        Self::gglwe_pat_compressed_normalize_assign(module, res, scratch)
+    }
+
+    fn glwe_automorphism_key_pat_compressed_finalize_tmp_bytes(module: &Module<Self>) -> usize {
+        Self::gglwe_pat_compressed_finalize_tmp_bytes(module)
+    }
+
+    fn glwe_automorphism_key_pat_compressed_finalize<R, P>(
+        module: &Module<Self>,
+        res: &mut R,
+        pat: &P,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos + SetGaloisElement,
+        P: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GetGaloisElement,
+    {
+        derived::glwe_automorphism_key_pat_compressed_finalize_derived(module, res, pat, scratch)
+    }
 }
 
 /// Selects the reference aggregation, normalization and finalization of every PAT type.
@@ -209,5 +298,9 @@ macro_rules! impl_mhe_pat_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GGLWEPatReference<$be>>::gglwe_pat_finalize_reference(module, res, pat, scratch)
             }
         }
+
+        unsafe impl $crate::oep::GLWESwitchingKeyPatCompressedImpl for $be {}
+
+        unsafe impl $crate::oep::GLWEAutomorphismKeyPatCompressedImpl for $be {}
     };
 }

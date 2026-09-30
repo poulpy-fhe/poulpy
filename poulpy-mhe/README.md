@@ -23,14 +23,15 @@ Every operation follows `API -> delegate -> OEP`; `reference` is the default
 implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 [operation contracts](docs/mhe-contracts.md).
 
-- `GLWEPatCompressedOps`, `GGLWEPatCompressedOps`, `GGLWEPatOps`: one trait
-  per PAT type to sum shares, restore canonical digits, expand a PAT into the
-  ciphertext it transcribes.
+- `GLWEPatCompressedOps`, `GGLWEPatCompressedOps`, `GGLWEPatOps`,
+  `GLWESwitchingKeyPatCompressedOps`, `GLWEAutomorphismKeyPatCompressedOps`:
+  one trait per PAT type to sum shares, restore canonical digits, expand a PAT
+  into the ciphertext or key it transcribes.
 - `GLWEPublicKeyShare`: the collective public key, from per-party shares to a
   `GLWEPublicKey` of the ideal secret, one share per entry (rank entries).
-- `GLWESwitchingKeyShare`, `GLWEAutomorphismKeyShare`: collective switching and
-  automorphism keys, finalized into core `GLWESwitchingKey` and
-  `GLWEAutomorphismKey` of the ideal secrets.
+- `GLWESwitchingKeyShare`, `GLWEAutomorphismKeyShare`: per-party shares of the
+  collective switching and automorphism keys; their PATs finalize into core
+  `GLWESwitchingKey` and `GLWEAutomorphismKey` of the ideal secrets.
 
 ## Randomness
 

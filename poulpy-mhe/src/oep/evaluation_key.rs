@@ -1,22 +1,18 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
+    layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef},
 };
 use poulpy_hal::{
-    layouts::{Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
-use super::derived::evaluation_key as derived;
-use crate::{
-    layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned},
-    oep::GGLWEPatCompressedImpl,
-};
+use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
 
 /// # Safety
 /// Reproduce the reference share, mask seeds and degrees included, within the
 /// queried scratch budget.
-pub unsafe trait GLWESwitchingKeyShareImpl: GGLWEPatCompressedImpl {
+pub unsafe trait GLWESwitchingKeyShareImpl: Backend {
     fn glwe_switching_key_share_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -35,47 +31,12 @@ pub unsafe trait GLWESwitchingKeyShareImpl: GGLWEPatCompressedImpl {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
         E: EncryptionInfos;
-
-    fn glwe_switching_key_share_aggregate_assign(
-        module: &Module<Self>,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<Self>,
-        a: &GLWESwitchingKeyPatCompressedOwned<Self>,
-    ) {
-        derived::glwe_switching_key_share_aggregate_assign_derived(module, res, a)
-    }
-
-    fn glwe_switching_key_share_normalize_tmp_bytes(module: &Module<Self>) -> usize {
-        derived::glwe_switching_key_share_normalize_tmp_bytes_derived(module)
-    }
-
-    fn glwe_switching_key_share_normalize_assign(
-        module: &Module<Self>,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        derived::glwe_switching_key_share_normalize_assign_derived(module, res, scratch)
-    }
-
-    fn glwe_switching_key_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        derived::glwe_switching_key_finalize_tmp_bytes_derived(module)
-    }
-
-    fn glwe_switching_key_finalize<R>(
-        module: &Module<Self>,
-        res: &mut R,
-        pat: &GLWESwitchingKeyPatCompressedOwned<Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-    {
-        derived::glwe_switching_key_finalize_derived(module, res, pat, scratch)
-    }
 }
 
 /// # Safety
 /// Reproduce the reference share, mask seeds and Galois element included,
 /// within the queried scratch budget.
-pub unsafe trait GLWEAutomorphismKeyShareImpl: GGLWEPatCompressedImpl {
+pub unsafe trait GLWEAutomorphismKeyShareImpl: Backend {
     fn glwe_automorphism_key_share_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -93,45 +54,9 @@ pub unsafe trait GLWEAutomorphismKeyShareImpl: GGLWEPatCompressedImpl {
     ) where
         S: GLWESecretToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos;
-
-    fn glwe_automorphism_key_share_aggregate_assign(
-        module: &Module<Self>,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<Self>,
-        a: &GLWEAutomorphismKeyPatCompressedOwned<Self>,
-    ) {
-        derived::glwe_automorphism_key_share_aggregate_assign_derived(module, res, a)
-    }
-
-    fn glwe_automorphism_key_share_normalize_tmp_bytes(module: &Module<Self>) -> usize {
-        derived::glwe_automorphism_key_share_normalize_tmp_bytes_derived(module)
-    }
-
-    fn glwe_automorphism_key_share_normalize_assign(
-        module: &Module<Self>,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        derived::glwe_automorphism_key_share_normalize_assign_derived(module, res, scratch)
-    }
-
-    fn glwe_automorphism_key_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        derived::glwe_automorphism_key_finalize_tmp_bytes_derived(module)
-    }
-
-    fn glwe_automorphism_key_finalize<R>(
-        module: &Module<Self>,
-        res: &mut R,
-        pat: &GLWEAutomorphismKeyPatCompressedOwned<Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + SetGaloisElement,
-    {
-        derived::glwe_automorphism_key_finalize_derived(module, res, pat, scratch)
-    }
 }
 
-/// Selects the reference evaluation key shares; aggregation, normalization and
-/// finalization keep their derived defaults.
+/// Selects the reference evaluation key shares.
 #[macro_export]
 macro_rules! impl_mhe_evaluation_key_reference {
     ($be:ty) => {

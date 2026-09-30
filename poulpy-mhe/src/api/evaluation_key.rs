@@ -1,6 +1,6 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
+    layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
@@ -10,8 +10,10 @@ use poulpy_hal::{
 use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
 
 /// Collective GLWE switching key: every party publishes a share under the
-/// common seed, the shares are aggregated, and any party finalizes the key
-/// switching from the sum of the input secrets to the sum of the output secrets.
+/// common seed, and any party aggregates and finalizes the shares with
+/// [`GLWESwitchingKeyPatCompressedOps`](crate::api::GLWESwitchingKeyPatCompressedOps)
+/// into the key switching from the sum of the input secrets to the sum of the
+/// output secrets.
 pub trait GLWESwitchingKeyShare<BE: Backend> {
     fn glwe_switching_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -41,37 +43,13 @@ pub trait GLWESwitchingKeyShare<BE: Backend> {
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos;
-
-    /// Adds share `a` into `res`, which starts as the first share. The degrees
-    /// must match.
-    fn glwe_switching_key_share_aggregate_assign(
-        &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
-        a: &GLWESwitchingKeyPatCompressedOwned<BE>,
-    );
-
-    fn glwe_switching_key_share_normalize_tmp_bytes(&self) -> usize;
-
-    fn glwe_switching_key_share_normalize_assign(
-        &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn glwe_switching_key_finalize_tmp_bytes(&self) -> usize;
-
-    /// Expands the aggregated shares into `res` and copies their degrees.
-    fn glwe_switching_key_finalize<R>(
-        &self,
-        res: &mut R,
-        pat: &GLWESwitchingKeyPatCompressedOwned<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut;
 }
 
-/// Collective GLWE automorphism key for one Galois element `p`: the finalized
-/// key maps `X -> X^p` under the ideal secret, the sum of the parties' secrets.
+/// Collective GLWE automorphism key for one Galois element `p`: the shares,
+/// aggregated and finalized with
+/// [`GLWEAutomorphismKeyPatCompressedOps`](crate::api::GLWEAutomorphismKeyPatCompressedOps),
+/// give the key mapping `X -> X^p` under the ideal secret, the sum of the
+/// parties' secrets.
 pub trait GLWEAutomorphismKeyShare<BE: Backend> {
     fn glwe_automorphism_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -99,31 +77,4 @@ pub trait GLWEAutomorphismKeyShare<BE: Backend> {
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
-
-    /// Adds share `a` into `res`, which starts as the first share. The Galois
-    /// elements must match.
-    fn glwe_automorphism_key_share_aggregate_assign(
-        &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
-        a: &GLWEAutomorphismKeyPatCompressedOwned<BE>,
-    );
-
-    fn glwe_automorphism_key_share_normalize_tmp_bytes(&self) -> usize;
-
-    fn glwe_automorphism_key_share_normalize_assign(
-        &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize;
-
-    /// Expands the aggregated shares into `res` and copies their Galois element.
-    fn glwe_automorphism_key_finalize<R>(
-        &self,
-        res: &mut R,
-        pat: &GLWEAutomorphismKeyPatCompressedOwned<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement;
 }

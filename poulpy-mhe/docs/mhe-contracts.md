@@ -21,9 +21,11 @@ the same trait.
 | `GLWEPatCompressedOps` | `GLWEPatCompressedImpl` | `reference::GLWEPatCompressedReference` |
 | `GGLWEPatCompressedOps` | `GGLWEPatCompressedImpl` | `reference::GGLWEPatCompressedReference` |
 | `GGLWEPatOps` | `GGLWEPatImpl` | `reference::GGLWEPatReference` |
+| `GLWESwitchingKeyPatCompressedOps` | `GLWESwitchingKeyPatCompressedImpl` | derived defaults over `GGLWEPatCompressedImpl` |
+| `GLWEAutomorphismKeyPatCompressedOps` | `GLWEAutomorphismKeyPatCompressedImpl` | derived defaults over `GGLWEPatCompressedImpl` |
 | `GLWEPublicKeyShare` | `GLWEPublicKeyShareImpl` | `reference::GLWEPublicKeyShareReference`; finalization is a derived default |
-| `GLWESwitchingKeyShare` | `GLWESwitchingKeyShareImpl` | `reference::GLWESwitchingKeyShareReference`; aggregation, normalization and finalization are derived defaults |
-| `GLWEAutomorphismKeyShare` | `GLWEAutomorphismKeyShareImpl` | `reference::GLWEAutomorphismKeyShareReference`; aggregation, normalization and finalization are derived defaults |
+| `GLWESwitchingKeyShare` | `GLWESwitchingKeyShareImpl` | `reference::GLWESwitchingKeyShareReference` |
+| `GLWEAutomorphismKeyShare` | `GLWEAutomorphismKeyShareImpl` | `reference::GLWEAutomorphismKeyShareReference` |
 
 ## Normalization
 
@@ -61,7 +63,7 @@ An override must compute the same result as the reference, including its
 seed and layout checks, and pass parity against a validated backend; the
 parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
-`impl_mhe_pat_reference!`, which covers the three PAT types,
+`impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!` or `impl_mhe_evaluation_key_reference!` alone
 when replacing another one. The
 reference traits stay callable from an override.
@@ -70,6 +72,6 @@ reference traits stay callable from an override.
 
 Size scratch with the queries: each PAT type's `*_normalize_tmp_bytes` and
 `*_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes`,
-`glwe_public_key_finalize_tmp_bytes`, and the share, normalize and finalize
-queries of `GLWESwitchingKeyShare` and `GLWEAutomorphismKeyShare`. A
-replacement that needs more workspace replaces the matching query.
+`glwe_public_key_finalize_tmp_bytes`, `glwe_switching_key_share_tmp_bytes` and
+`glwe_automorphism_key_share_tmp_bytes`. A replacement that needs more
+workspace replaces the matching query.
