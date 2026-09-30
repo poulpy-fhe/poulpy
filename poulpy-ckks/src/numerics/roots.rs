@@ -11,7 +11,7 @@ use astro_float_num::{BigFloat, Consts, RoundingMode, WORD_BIT_SIZE, Word};
 use super::CKKSFloat;
 
 /// Base-2 logarithm of the order of the checked-in quadrant tables.
-pub const TABLE_LOG_ORDER: u32 = 17;
+pub const TABLE_LOG_ORDER: u32 = 18;
 const TABLE_LEN: usize = (1 << (TABLE_LOG_ORDER - 2)) + 1;
 
 pub(super) static COS_QUADRANT_F64: &[u8; TABLE_LEN * 8] = include_bytes!("cos_quadrant_f64.bin");
@@ -50,7 +50,7 @@ pub(super) fn generated_quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F 
 pub(super) fn root_of_unity<F: CKKSFloat>(k: u64, log_order: u32) -> (F, F) {
     assert!(log_order < u64::BITS, "root order 2^{log_order} exceeds u64");
     let (k, log_order) = if log_order < 2 {
-        (k << (2 - log_order), 2)
+        ((k & ((1u64 << log_order) - 1)) << (2 - log_order), 2)
     } else {
         (k & ((1u64 << log_order) - 1), log_order)
     };
@@ -185,6 +185,9 @@ mod tests {
         check_symmetries::<Quad>(8);
         assert_eq!(f64::ckks_root_of_unity(0, 0), (1.0, 0.0));
         assert_eq!(f64::ckks_root_of_unity(1, 1), (-1.0, 0.0));
+        assert_eq!(f64::ckks_root_of_unity(5, 0), (1.0, 0.0));
+        assert_eq!(f64::ckks_root_of_unity(3, 1), (-1.0, 0.0));
+        assert_eq!(f64::ckks_root_of_unity(u64::MAX, 3), f64::ckks_root_of_unity(7, 3));
         let (c, s) = f64::ckks_root_of_unity(1, 2);
         assert_eq!((c.to_bits(), s), (0, 1.0));
     }

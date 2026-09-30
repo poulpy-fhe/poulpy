@@ -199,7 +199,7 @@ where
 ///
 /// Coefficients are rounded exactly to the nearest integer, with halfway cases
 /// away from zero ([`ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize)).
-/// Sparse inputs occupy every `degree / coeff_count` coefficient; the
+/// Sparse inputs occupy every `degree / coeff_count`-th coefficient and the
 /// remaining coefficients are zero. Invalid shape or non-representable scalar
 /// inputs are rejected before writing the plaintext. The input and metadata are
 /// preserved, except the slot kind, which is narrowed to the ring's
