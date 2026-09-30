@@ -150,9 +150,9 @@ where
         let sk_ref = sk.to_backend_ref();
 
         assert_eq!(res.rank(), sk_ref.rank());
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(sk_ref.n(), self.n() as u32);
-        assert_eq!(pt_backend.n(), self.n() as u32);
+        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
+        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
+        assert_eq!(pt_backend.n(), self.n() as u32, "GLWE plaintext degree must match the module");
         assert!(
             scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -193,8 +193,8 @@ where
         let sk_ref = sk.to_backend_ref();
 
         assert_eq!(res.rank(), sk_ref.rank());
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(sk_ref.n(), self.n() as u32);
+        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
+        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
         assert!(
             scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",

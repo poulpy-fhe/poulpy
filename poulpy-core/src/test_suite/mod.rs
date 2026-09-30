@@ -15,6 +15,7 @@
 
 pub mod copy;
 pub mod decryption;
+pub mod encryption;
 pub mod keys;
 pub mod noise;
 pub mod parity;

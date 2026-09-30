@@ -162,6 +162,11 @@ macro_rules! core_encryption_parity_test_suite {
     ) => {
         mod $name {
             #[test]
+            fn glwe_encrypt_degree_mismatch() {
+                $crate::test_suite::encryption::test_glwe_encrypt_degree_mismatch::<$backend_test>();
+            }
+
+            #[test]
             fn glwe_decrypt_degree_mismatch() {
                 $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<$backend_test>();
             }

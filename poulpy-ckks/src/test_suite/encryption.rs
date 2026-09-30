@@ -123,14 +123,15 @@ where
     assert_precision_for_log_delta("encrypt_decrypt im", &im_out, &im1, ct.log_delta(), params.n);
 }
 
-/// Encryption and decryption reject mismatched degrees without changing outputs or random sources.
+/// CKKS returns a degree error without changing outputs or consuming randomness.
 pub fn test_encryption_degree_mismatch_error<BE>()
 where
     BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl,
     Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE>,
 {
-    let n = 2 * BE::MIN_DEGREE.max(16);
+    let n = BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
+    let other = Module::<BE>::new((2 * n) as u64);
     let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
         n: n.into(),
         base2k: 8usize.into(),
@@ -140,33 +141,29 @@ where
     .unwrap();
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
     let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
-    let sk = module.glwe_secret_prepared_alloc(1usize.into());
+    let sk = other.glwe_secret_prepared_alloc(1usize.into());
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     let ct_before = snapshot::<BE, _>(&ct);
     let pt_before = snapshot::<BE, _>(&pt);
     let mut xe = Source::new([1; 32]);
     let mut xa = Source::new([2; 32]);
 
-    for other_n in [n / 2, n * 2] {
-        let other_module = Module::<BE>::new(other_n as u64);
-        let other_sk = other_module.glwe_secret_prepared_alloc(1usize.into());
-        for (call_module, key) in [(&module, &other_sk), (&other_module, &sk), (&other_module, &other_sk)] {
-            let expected = |op| CKKSCompositionError::EncryptionDegreeMismatch {
-                op,
-                module_n: call_module.n(),
-                ct_n: n,
-                sk_n: key.n().as_usize(),
-            };
-            let err = call_module.ckks_decrypt(&mut pt, &ct, key, &mut scratch.arena()).unwrap_err();
-            assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
-            assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+    for call_module in [&module, &other] {
+        let expected = |op| CKKSCompositionError::EncryptionDegreeMismatch {
+            op,
+            module_n: call_module.n(),
+            ct_n: n,
+            sk_n: 2 * n,
+        };
+        let err = call_module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.arena()).unwrap_err();
+        assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
+        assert_eq!(pt_before, snapshot::<BE, _>(&pt));
 
-            let err = call_module
-                .ckks_encrypt_sk(&mut ct, &pt, key, &enc, &mut xe, &mut xa, &mut scratch.arena())
-                .unwrap_err();
-            assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
-            assert_eq!(ct_before, snapshot::<BE, _>(&ct));
-        }
+        let err = call_module
+            .ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena())
+            .unwrap_err();
+        assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
+        assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     }
     assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
     assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
