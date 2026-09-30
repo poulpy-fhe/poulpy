@@ -11,7 +11,7 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
     source::Source,
     test_suite::vec_znx_backend_mut,
 };
@@ -120,6 +120,30 @@ where
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_finalize_tmp_bytes());
     module.mhe_glwe_public_key_share_finalize(&mut pk, &share, &mut scratch.borrow());
+}
+
+/// Reading a share of another rank fails: entries have the same size at every rank.
+pub fn test_glwe_public_key_share_read_rank_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE>,
+{
+    let share = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
+    let mut bytes = Vec::new();
+    share.write_to(&mut bytes).unwrap();
+    let mut res = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
+    assert!(res.read_from(&mut bytes.as_slice()).is_err());
+}
+
+/// Aggregating shares of different ranks panics.
+pub fn test_glwe_public_key_aggregate_rank_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+{
+    let mut a = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
+    let b = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
+    module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
 }
 
 /// Aggregating shares generated under secrets of different distributions panics.

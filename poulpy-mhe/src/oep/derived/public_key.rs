@@ -12,7 +12,7 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedI
     a: &GLWEPublicKeyShareOwned<BE>,
 ) {
     assert!(res.dist == a.dist, "invalid aggregation: secret distributions differ");
-    // Entry layouts carry the rank, so equal layouts mean equal entry counts.
+    assert!(res.entries.len() == a.entries.len(), "invalid aggregation: ranks differ");
     for (res, a) in res.entries.iter_mut().zip(&a.entries) {
         BE::glwe_pat_compressed_aggregate_assign(module, res, a);
     }

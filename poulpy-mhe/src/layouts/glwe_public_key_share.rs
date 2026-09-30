@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poulpy_core::{
-    Distribution, GetDistribution,
+    Distribution, GetDistribution, GetDistributionMut,
     layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
@@ -19,6 +19,17 @@ pub type GLWEPublicKeyShareOwned<BE> = GLWEPublicKeyShare<<BE as Backend>::Owned
 pub struct GLWEPublicKeyShare<D: Data, W: ZnxWord> {
     pub(crate) entries: Vec<GLWEPatCompressed<D, W>>,
     pub(crate) dist: Distribution,
+}
+
+impl<D: Data, W: ZnxWord> GLWEPublicKeyShare<D, W> {
+    /// The key entries, one per rank.
+    pub fn entries(&self) -> &[GLWEPatCompressed<D, W>] {
+        &self.entries
+    }
+
+    pub fn entries_mut(&mut self) -> &mut [GLWEPatCompressed<D, W>] {
+        &mut self.entries
+    }
 }
 
 impl<D: Data, W: ZnxWord> PartialEq for GLWEPublicKeyShare<D, W>
@@ -62,6 +73,12 @@ impl<D: Data, W: ZnxWord> GetDistribution for GLWEPublicKeyShare<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKeyShare<D, W> {
+    fn dist_mut(&mut self) -> &mut Distribution {
+        &mut self.dist
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
@@ -81,7 +98,15 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPublicKeyShare<D, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyShare<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
-        self.entries.iter_mut().try_for_each(|entry| entry.read_from(reader))
+        self.entries.iter_mut().try_for_each(|entry| entry.read_from(reader))?;
+        // An entry's size does not depend on its rank, so a share of another rank reads without error.
+        if self.entries.iter().any(|entry| entry.rank().as_usize() != self.entries.len()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid share: entry rank differs from the share's",
+            ));
+        }
+        Ok(())
     }
 }
 
