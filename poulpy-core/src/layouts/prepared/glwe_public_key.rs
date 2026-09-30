@@ -3,6 +3,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
+use crate::layouts::{GLWELayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
@@ -77,45 +78,45 @@ where
         k: TorusPrecision,
         rank: Rank,
     ) -> GLWEPublicKeyPrepared<B::OwnedBuf, B> {
-        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
-        GLWEPublicKeyPrepared {
-            data: self.vmp_pmat_alloc(
-                self.ring_degree().into(),
-                1,
-                rank.into(),
-                (rank + 1).into(),
-                k.0.div_ceil(base2k.0) as usize,
-                PrepareHint::Reuse,
-            ),
+        self.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
+            n: self.ring_degree(),
             base2k,
             k,
-            dist: Distribution::NONE,
-        }
+            rank,
+        })
     }
 
     fn glwe_public_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPublicKeyPrepared<B::OwnedBuf, B>
     where
         A: GLWEInfos,
     {
-        self.glwe_public_key_prepared_alloc(infos.base2k(), infos.k(), infos.rank())
+        let rank: Rank = infos.rank();
+        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        GLWEPublicKeyPrepared {
+            data: self.vmp_pmat_alloc(n, 1, rank.into(), (rank + 1).into(), infos.size(), PrepareHint::Reuse),
+            base2k: infos.base2k(),
+            k: infos.k(),
+            dist: Distribution::NONE,
+        }
     }
 
     fn glwe_public_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.bytes_of_vmp_pmat(
-            self.ring_degree().into(),
-            1,
-            rank.into(),
-            (rank + 1).into(),
-            k.0.div_ceil(base2k.0) as usize,
-            PrepareHint::Reuse,
-        )
+        self.glwe_public_key_prepared_bytes_of_from_infos(&GLWELayout {
+            n: self.ring_degree(),
+            base2k,
+            k,
+            rank,
+        })
     }
 
     fn glwe_public_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        self.glwe_public_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
+        let rank: usize = infos.rank().into();
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        self.bytes_of_vmp_pmat(n, 1, rank, rank + 1, infos.size(), PrepareHint::Reuse)
     }
 
     fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -138,8 +139,7 @@ where
                 res.data.cols_in() == other.data.cols_in(),
                 "public key and prepared public key have different entry counts"
             );
-            assert_eq!(res.n(), self.ring_degree());
-            assert_eq!(other.n(), self.ring_degree());
+            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
             assert_eq!(res.base2k(), other.base2k());
             assert_eq!(res.k(), other.k());
             assert_eq!(res.size(), other.size());

@@ -78,7 +78,7 @@ fn glwe_external_product_dft_fill<BE, M>(
     for di in 0..dsize {
         let (mut a_dft, mut scratch_1) = scratch
             .borrow()
-            .take_vec_znx_dft_scratch(module.n(), cols, (a_size + di) / dsize);
+            .take_vec_znx_dft_scratch(a.n().as_usize(), cols, (a_size + di) / dsize);
 
         for j in 0..cols {
             module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
@@ -273,9 +273,10 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
     let res_base2k: usize = res.base2k().into();
     let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
-    let (mut res_dft, scratch_1) = scratch
-        .borrow()
-        .take_vec_znx_dft_scratch(module.n(), (res.rank() + 1).into(), output_size);
+    let (mut res_dft, scratch_1) =
+        scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), (res.rank() + 1).into(), output_size);
 
     let mut scratch = scratch_1;
     if a_base2k != ggsw_base2k {
@@ -293,7 +294,9 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
         module.glwe_external_product_dft(&mut res_dft, a, ggsw, &mut scratch.borrow());
     }
 
-    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
+    let (mut res_big, mut scratch) = scratch
+        .borrow()
+        .take_vec_znx_big_scratch(res.n().as_usize(), cols, res_dft.size());
     let res_dft_ref = res_dft.to_backend_ref();
     for col in 0..cols {
         module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
@@ -357,9 +360,10 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
     if !res.is_canonical() && res_base2k == ggsw_base2k {
         module.glwe_normalize_assign(res, scratch);
     }
-    let (mut res_dft, scratch_1) = scratch
-        .borrow()
-        .take_vec_znx_dft_scratch(module.n(), (res.rank() + 1).into(), output_size);
+    let (mut res_dft, scratch_1) =
+        scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), (res.rank() + 1).into(), output_size);
 
     let mut scratch = scratch_1;
     if res_base2k != ggsw_base2k {
@@ -377,7 +381,9 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
         module.glwe_external_product_dft(&mut res_dft, res, ggsw, &mut scratch.borrow());
     }
 
-    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
+    let (mut res_big, mut scratch) = scratch
+        .borrow()
+        .take_vec_znx_big_scratch(res.n().as_usize(), cols, res_dft.size());
     let res_dft_ref = res_dft.to_backend_ref();
     for col in 0..cols {
         module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());

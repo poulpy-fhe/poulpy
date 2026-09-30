@@ -7,6 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
@@ -45,11 +46,11 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(self.n() as u32, infos.n());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
 
         let sk_prepared: usize = self.glwe_secret_prepared_bytes_of(infos.rank());
         let sk_tensor: usize = self.glwe_secret_tensor_bytes_of_from_infos(infos);
-        let sk_ij: usize = self.glwe_secret_bytes_of(self.n().into(), infos.rank());
+        let sk_ij: usize = self.glwe_secret_bytes_of(n.into(), infos.rank());
         let lvl_0: usize = sk_prepared;
         let lvl_1: usize = sk_tensor;
         let lvl_2: usize = sk_ij;
@@ -85,9 +86,9 @@ where
         );
 
         let scratch = scratch.borrow();
-        let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, res.rank());
-        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(self.n().into(), res.rank());
-        let (mut sk_ij, scratch_3) = scratch_2.take_scalar_znx_scratch(self.n(), rank);
+        let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(sk.n(), res.rank());
+        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(sk.n().as_usize().into(), res.rank());
+        let (mut sk_ij, scratch_3) = scratch_2.take_scalar_znx_scratch(sk.n().as_usize(), rank);
         let (mut tensor_scratch, scratch_4) = scratch_3.split_at(self.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
         self.glwe_secret_prepare(&mut sk_prepared, sk);
         self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);

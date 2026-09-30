@@ -5,6 +5,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::operand_degree;
 use crate::{
     Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::GLWEBytesOf,
@@ -49,7 +50,7 @@ pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: 
 where
     Module<BE>: GLWENormalize<BE>,
 {
-    assert_eq!(infos.n(), module.n() as u32);
+    operand_degree(module.n(), &[infos.n()]);
     BE::glwe_encrypt_sk_tmp_bytes(module, infos).max(module.glwe_normalize_tmp_bytes())
 }
 
@@ -71,8 +72,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
     {
         let sk_ref = sk.to_backend_ref();
 
-        assert_eq!(res.n(), module.n() as u32);
-        assert_eq!(sk_ref.n(), module.n() as u32);
+        operand_degree(module.n(), &[res.n(), sk_ref.n()]);
 
         match sk_ref.dist {
             Distribution::NONE => panic!("invalid sk: SecretDistribution::NONE"),
@@ -192,7 +192,7 @@ pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos
 where
     Module<BE>: VecZnxNormalizeTmpBytes,
 {
-    assert_eq!(res_infos.n(), module.n() as u32);
+    operand_degree(module.n(), &[res_infos.n()]);
     BE::scratch_aligned(module.glwe_plaintext_bytes_of_from_infos(res_infos))
         + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
 }
@@ -214,8 +214,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
-    assert_eq!(res.n(), module.n() as u32);
-    assert_eq!(pt.n(), module.n());
+    operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
         "insufficient scratch for GGSW public-key encryption"
@@ -256,7 +255,7 @@ where
     BE: EncryptionImpl,
     A: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, infos.n());
+    operand_degree(module.n(), &[infos.n()]);
 
     let sk_prepared: usize = module.glwe_secret_prepared_bytes_of(infos.rank_out());
     let sk_tensor: usize = module.glwe_secret_tensor_bytes_of_from_infos(infos);
@@ -293,8 +292,8 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
     );
 
     let scratch = scratch.borrow();
-    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
-    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
+    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
+    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
     let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
     module.glwe_secret_prepare(&mut sk_prepared, sk);
     module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
@@ -319,7 +318,7 @@ where
     BE: EncryptionImpl,
     A: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, infos.n());
+    operand_degree(module.n(), &[infos.n()]);
 
     let sk_prepared: usize = module.glwe_secret_prepared_bytes_of(infos.rank_out());
     let sk_tensor: usize = module.glwe_secret_tensor_bytes_of_from_infos(infos);
@@ -356,8 +355,8 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
     );
 
     let scratch = scratch.borrow();
-    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
-    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
+    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
+    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
     let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
     module.glwe_secret_prepare(&mut sk_prepared, sk);
     module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);

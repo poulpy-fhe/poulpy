@@ -40,11 +40,12 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
     }
 }
 
-/// Folds `ins` and unfolds fixture refreshed ciphertexts of width `k_refreshed`
-/// into outputs of the layout of `out` labeled like `ins`, each within its exact
-/// guarded scratch.
+/// Folds `ins` into ciphertexts of `degree` and unfolds fixture refreshed ciphertexts
+/// of width `k_refreshed` into outputs of the layout of `out` labeled like `ins`, each
+/// within its exact guarded scratch.
 fn run_case<B, R>(
     module: &Module<B>,
+    degree: usize,
     ins: &[CKKSRingCiphertext<B, R>],
     out: &CKKSLayout,
     k_refreshed: usize,
@@ -56,7 +57,6 @@ where
     R: Ring,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
 {
-    let degree = module.n();
     let keys_layout = CKKSFoldKeysLayout {
         ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
         automorphism: automorphisms
@@ -149,6 +149,7 @@ where
     )]);
     let mut outcomes = run_case::<B, Standard>(
         module,
+        n,
         &fixtures(n),
         &layout(n, b, k_out, log_delta, SlotsKind::Complex),
         k_refreshed,
@@ -181,14 +182,15 @@ where
         .collect();
     outcomes.extend(run_case::<B, Standard>(
         module,
+        n,
         &sparse_ins,
         &sparse(layout(n, b, k_out, log_delta, SlotsKind::Complex)),
         k_refreshed,
         None,
         Some(&automorphisms),
     ));
-    // The same inputs under their own secret, paired at the bootstrap degree, then
-    // of half the degree, unpaired and merged two per bootstrap.
+    // The same inputs under their own secret, at the bootstrap degree, then of half
+    // the degree, merged two per bootstrap.
     let ring_switch = RingSwitchKeys {
         inbound: prepared_gglwe(module, &key_layout(n, b, k_in, 2, 1, 1), 107),
         outbound: prepared_gglwe(module, &key_layout(n, b, k_refreshed, 1, 1, 1), 109),
@@ -199,6 +201,7 @@ where
     )]);
     outcomes.extend(run_case::<B, Standard>(
         module,
+        n,
         &fixtures(n),
         &layout(n, b, k_out, log_delta, SlotsKind::Complex),
         k_refreshed,
@@ -207,11 +210,59 @@ where
     ));
     outcomes.extend(run_case::<B, Standard>(
         module,
+        n,
         &fixtures(n / 2),
         &layout(n / 2, b, k_out, log_delta, SlotsKind::Complex),
         k_refreshed,
         Some(&ring_switch),
-        None,
+        Some(&HashMap::from([(
+            -1,
+            prepared_automorphism_key(module, &key_layout(n / 2, b, k_out, 2, 1, 1), -1, 67),
+        )])),
+    ));
+    // Sparse inputs of half the degree under their own secret, two per position.
+    let sparse_small: Vec<_> = slots
+        .iter()
+        .zip([167u8, 173, 179, 181, 191])
+        .map(|(&slots, seed)| fixture_ciphertext(module, &sparse(layout(n / 2, b, k_in, log_delta, slots)), seed))
+        .collect();
+    let small_automorphisms: HashMap<i64, _> =
+        <B as CKKSFoldImpl<Standard>>::ckks_unfold_galois_elements_impl(module, &sparse_small[1])
+            .into_iter()
+            .zip(71u8..)
+            .map(|(p, seed)| {
+                (
+                    p,
+                    prepared_automorphism_key(module, &key_layout(n / 2, b, k_out, 2, 1, 1), p, seed),
+                )
+            })
+            .collect();
+    outcomes.extend(run_case::<B, Standard>(
+        module,
+        n,
+        &sparse_small,
+        &sparse(layout(n / 2, b, k_out, log_delta, SlotsKind::Complex)),
+        k_refreshed,
+        Some(&ring_switch),
+        Some(&small_automorphisms),
+    ));
+    // The same inputs at a quarter of the degree, folded into ciphertexts of half the
+    // module degree: the module only bounds the fold degree.
+    let half_ring_switch = RingSwitchKeys {
+        inbound: prepared_gglwe(module, &key_layout(n / 2, b, k_in, 2, 1, 1), 113),
+        outbound: prepared_gglwe(module, &key_layout(n / 2, b, k_refreshed, 1, 1, 1), 127),
+    };
+    outcomes.extend(run_case::<B, Standard>(
+        module,
+        n / 2,
+        &fixtures(n / 4),
+        &layout(n / 4, b, k_out, log_delta, SlotsKind::Complex),
+        k_refreshed,
+        Some(&half_ring_switch),
+        Some(&HashMap::from([(
+            -1,
+            prepared_automorphism_key(module, &key_layout(n / 4, b, k_out, 2, 1, 1), -1, 131),
+        )])),
     ));
     outcomes
 }

@@ -1269,8 +1269,8 @@ fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKS
 /// Refreshes batches on a module of degree `2n` by folding them ([`CKKSFoldOps`]),
 /// bootstrapping each folded ciphertext and unfolding:
 /// a complex input and two real pairs under the bootstrap secret at its degree,
-/// then the same inputs of degree `n` under their own secret, unpaired and merged
-/// two per bootstrap.
+/// then the same inputs of degree `n` under their own secret, merged two per
+/// bootstrap.
 pub fn test_bootstrapping_fold_e2e<BE, F, E>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
@@ -1353,51 +1353,69 @@ pub fn test_bootstrapping_fold_e2e<BE, F, E>(
         &mut source_xe,
         &mut source_xa,
     );
-    batch.check(module, &sk, Some(&ring_switch), None, 0, &mut source_xe, &mut source_xa);
-    // Sparse inputs share each coefficient position of a bootstrap, split back with
-    // automorphism keys of their secret.
-    let sparse = CKKSLayout {
-        glwe_layout: GLWELayout {
-            n: (2 * n).into(),
-            base2k: params.base2k.into(),
-            k: input_k.into(),
-            rank: Rank(1),
-        },
-        meta: CKKSMeta {
-            log_sparsity: 1,
-            ..params.prec_meta
-        },
-    };
-    // Keys for real inputs of that layout.
-    let real = CKKSLayout {
-        meta: CKKSMeta {
-            slots: SlotsKind::Real,
-            ..sparse.meta
-        },
-        ..sparse
-    };
-    let automorphisms: HashMap<i64, _> = CKKSFoldOps::<_, Standard>::ckks_unfold_galois_elements(&bootstrap_module, &real)
-        .into_iter()
-        .map(|p| {
-            let key = gen_atk(
-                &bootstrap_params,
-                &bootstrap_module,
-                p,
-                &bootstrap_sk_raw,
-                &mut bootstrap_scratch.borrow(),
-            );
-            (p, key)
-        })
-        .collect();
+    let conjugation = HashMap::from([(
+        -1,
+        gen_atk(&params, &bootstrap_module, -1, &sk_raw, &mut bootstrap_scratch.borrow()),
+    )]);
     batch.check(
-        &bootstrap_module,
-        &bootstrap_sk,
-        None,
-        Some(&automorphisms),
-        1,
+        module,
+        &sk,
+        Some(&ring_switch),
+        Some(&conjugation),
+        0,
         &mut source_xe,
         &mut source_xa,
     );
+    // Sparse inputs share each coefficient position, split back with automorphism
+    // keys of their secret: at the bootstrap degree, then at half of it.
+    for (input_module, input_params, input_sk_raw, input_sk) in [
+        (&bootstrap_module, &bootstrap_params, &bootstrap_sk_raw, &bootstrap_sk),
+        (module, &params, &sk_raw, &sk),
+    ] {
+        let sparse = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: input_module.n().into(),
+                base2k: params.base2k.into(),
+                k: input_k.into(),
+                rank: Rank(1),
+            },
+            meta: CKKSMeta {
+                log_sparsity: 1,
+                ..params.prec_meta
+            },
+        };
+        // Keys for real inputs of that layout.
+        let real = CKKSLayout {
+            meta: CKKSMeta {
+                slots: SlotsKind::Real,
+                ..sparse.meta
+            },
+            ..sparse
+        };
+        let automorphisms: HashMap<i64, _> = CKKSFoldOps::<_, Standard>::ckks_unfold_galois_elements(input_module, &real)
+            .into_iter()
+            .map(|p| {
+                let key = gen_atk(
+                    input_params,
+                    &bootstrap_module,
+                    p,
+                    input_sk_raw,
+                    &mut bootstrap_scratch.borrow(),
+                );
+                (p, key)
+            })
+            .collect();
+        // Inputs of half the degree are under their own secret.
+        batch.check(
+            input_module,
+            input_sk,
+            (input_module.n() != bootstrap_module.n()).then_some(&ring_switch),
+            Some(&automorphisms),
+            1,
+            &mut source_xe,
+            &mut source_xa,
+        );
+    }
 }
 
 struct BatchCase<'a, BE: Backend> {
@@ -1420,7 +1438,7 @@ where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    /// Encrypts a complex input and four real ones under `sk`, folds them, refreshes
+    /// Encrypts a complex input and two real pairs under `sk`, folds them, refreshes
     /// each folded ciphertext, unfolds and checks every output.
     #[allow(clippy::too_many_arguments)]
     fn check(

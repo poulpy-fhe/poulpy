@@ -279,7 +279,7 @@ Three key roles are used:
 ## Batches
 
 A batch is refreshed with as few bootstraps as possible by folding it into standard ciphertexts of the bootstrap degree `N` (`CKKSFoldOps::ckks_fold`), bootstrapping each with `ckks_bootstrap`, and unfolding the results (`ckks_unfold`) into outputs labeled like the inputs.
-The fold packs real inputs of the bootstrap degree in pairs `x + i·y`, merges inputs of a smaller degree `n` by `N/n`, and lets sparse inputs of the bootstrap degree share coefficient positions; unfolding reverses each step, and paired outputs lose one bit to the split.
+The fold packs real inputs in pairs `x + i·y`, merges inputs of a smaller degree `n` by `N/n`, and lets sparse inputs share coefficient positions; unfolding reverses each step, and paired outputs lose one bit to the split.
 
 The keys are passed directly:
 

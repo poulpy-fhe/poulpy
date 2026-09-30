@@ -8,6 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
@@ -51,7 +52,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for GLWEAutomorphismKey"
         );
-        assert_eq!(self.n() as u32, infos.n());
+        operand_degree(self.n(), &[infos.n()]);
 
         let lvl_0: usize = self.glwe_secret_prepared_bytes_of_from_infos(infos);
         let lvl_1_sk: usize = self.glwe_secret_bytes_of_from_infos(infos);
@@ -90,8 +91,8 @@ where
         );
 
         let scratch = scratch.borrow();
-        let (mut sk_out_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, sk.rank());
-        let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk.rank());
+        let (mut sk_out_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), sk.rank());
+        let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), sk.rank());
         sk_out.dist = sk.dist;
         {
             let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());

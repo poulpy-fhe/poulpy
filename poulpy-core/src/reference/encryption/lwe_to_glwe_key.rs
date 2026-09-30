@@ -8,6 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
@@ -53,10 +54,10 @@ where
             Rank(1),
             "rank_in != 1 is not supported for LWEToGLWEKeyPrepared"
         );
-        assert_eq!(self.n() as u32, infos.n());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
 
-        let lvl_0: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
-        let lvl_1: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
+        let lvl_0: usize = self.glwe_secret_bytes_of(n.into(), Rank(1));
+        let lvl_1: usize = self.glwe_secret_bytes_of(n.into(), Rank(1));
         let lvl_2_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1 + lvl_2_encrypt
@@ -80,7 +81,7 @@ where
     {
         let sk_lwe = sk_lwe.to_backend_ref();
 
-        assert!(sk_lwe.n().0 <= self.n() as u32);
+        assert!(sk_lwe.n().0 <= res.n().0);
         assert!(
             scratch.available() >= self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWEToGLWESwitchingKeyEncryptSk::lwe_to_glwe_key_encrypt_sk_tmp_bytes: {}",
@@ -89,8 +90,8 @@ where
         );
 
         let scratch = scratch.borrow();
-        let (mut sk_lwe_as_glwe_src, scratch_1) = scratch.take_glwe_secret_scratch(self.n().into(), Rank(1));
-        let (mut sk_lwe_as_glwe, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), Rank(1));
+        let (mut sk_lwe_as_glwe_src, scratch_1) = scratch.take_glwe_secret_scratch(res.n().as_usize().into(), Rank(1));
+        let (mut sk_lwe_as_glwe, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), Rank(1));
 
         sk_lwe_as_glwe_src.dist = sk_lwe.dist;
         sk_lwe_as_glwe.dist = sk_lwe.dist;

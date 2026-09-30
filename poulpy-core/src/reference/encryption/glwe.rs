@@ -13,6 +13,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GLWEMaskFill, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
     dist::Distribution,
@@ -115,13 +116,13 @@ where
         A: GLWEInfos,
     {
         let size: usize = infos.size();
-        assert_eq!(self.n() as u32, infos.n());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
 
-        let lvl_0: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
-        let lvl_1: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
+        let lvl_0: usize = BE::bytes_of_vec_znx(n, 1, size);
+        let lvl_1: usize = BE::bytes_of_vec_znx(n, 1, size);
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
-            self.bytes_of_vec_znx_dft(self.n(), 1, size)
-                + self.bytes_of_vec_znx_big(self.n(), 1, size)
+            self.bytes_of_vec_znx_dft(n, 1, size)
+                + self.bytes_of_vec_znx_big(n, 1, size)
                 + self.vec_znx_big_normalize_tmp_bytes(),
         );
 
@@ -150,9 +151,7 @@ where
         let sk_ref = sk.to_backend_ref();
 
         assert_eq!(res.rank(), sk_ref.rank());
-        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
-        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
-        assert_eq!(pt_backend.n(), self.n() as u32, "GLWE plaintext degree must match the module");
+        operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
         assert!(
             scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -193,8 +192,7 @@ where
         let sk_ref = sk.to_backend_ref();
 
         assert_eq!(res.rank(), sk_ref.rank());
-        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
-        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
+        operand_degree(self.n(), &[res.n(), sk_ref.n()]);
         assert!(
             scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -246,8 +244,7 @@ where
     {
         let size: usize = res_infos.size().max(pk_infos.size());
         let rank: usize = pk_infos.rank().into();
-        let n: usize = self.n();
-        assert_eq!(n as u32, res_infos.n());
+        let n: usize = operand_degree(self.n(), &[res_infos.n(), pk_infos.n()]);
         let lvl_0: usize = BE::bytes_of_scalar_znx(n, rank);
         let lvl_1: usize = self.bytes_of_vec_znx_dft(n, rank, 1);
         let lvl_2: usize = self.bytes_of_vec_znx_dft(n, rank + 1, size);
@@ -355,7 +352,7 @@ where
             pk.data.cols_out() == pk.data.cols_in() + 1,
             "invalid public key: entry count differs from its rank"
         );
-        let n: usize = self.n();
+        let n: usize = operand_degree(self.n(), &[res.n(), pk.n()]);
         let base2k: usize = pk.base2k().into();
         let noise_infos = enc_infos.noise_infos();
         let size_pk: usize = pk.size();
@@ -510,8 +507,8 @@ where
         let size: usize = res.size();
 
         let scratch_local = scratch.borrow();
-        let (mut c0, scratch_1) = scratch_local.take_vec_znx_scratch(self.n(), 1, size);
-        let (mut ci, scratch_2) = scratch_1.take_vec_znx_scratch(self.n(), 1, size);
+        let (mut c0, scratch_1) = scratch_local.take_vec_znx_scratch(res.n(), 1, size);
+        let (mut ci, scratch_2) = scratch_1.take_vec_znx_scratch(res.n(), 1, size);
         let mut scratch_2 = scratch_2;
         self.vec_znx_zero(&mut c0, 0);
 
@@ -532,10 +529,10 @@ where
             }
 
             {
-                let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self.n(), 1, size);
+                let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(res.n(), 1, size);
                 self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ci.to_backend_ref(), 0);
                 self.svp_apply_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
-                let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, size);
+                let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n(), 1, size);
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut ci_dft.to_backend_mut(), 0);
                 self.vec_znx_big_normalize(
                     &mut ci.to_backend_mut(),

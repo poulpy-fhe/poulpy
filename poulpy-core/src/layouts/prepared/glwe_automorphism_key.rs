@@ -103,7 +103,10 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
         );
-        self.glwe_automorphism_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        GLWEAutomorphismKeyPrepared::<B::OwnedBuf, B> {
+            key: self.gglwe_prepared_alloc_from_infos(infos),
+            p: 0,
+        }
     }
 
     fn glwe_automorphism_key_prepared_bytes_of(
@@ -126,7 +129,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
         );
-        self.glwe_automorphism_key_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        self.gglwe_prepared_bytes_of_from_infos(infos)
     }
 
     fn glwe_automorphism_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

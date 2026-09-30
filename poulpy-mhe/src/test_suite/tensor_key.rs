@@ -11,7 +11,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
     source::Source,
 };
@@ -182,8 +182,7 @@ fn public_key_layout<BE: Backend>(module: &Module<BE>, k: TorusPrecision) -> GLW
 pub fn test_glwe_tensor_key_pk_shape_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: ModuleNew<BE>
-        + MHEModuleAlloc<BE>
+    Module<BE>: MHEModuleAlloc<BE>
         + GLWETensorKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -193,7 +192,6 @@ where
     let layout = tensor_key_layout(module, DNUM, DSIZE);
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
-    let small_module = Module::<BE>::new((module.n() / 2) as u64);
     let expected = [
         "invalid share: public key degree differs from the key's",
         "invalid share: public key radix differs from the key's",
@@ -203,7 +201,10 @@ where
         super::fixtures::assert_panics_with(expected, || {
             let mut pk_layout = public_key_layout(module, layout.k());
             let mut pk = if case == 0 {
-                small_module.glwe_public_key_prepared_alloc_from_infos(&pk_layout)
+                module.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
+                    n: (module.n() / 2).into(),
+                    ..pk_layout
+                })
             } else {
                 if case == 1 {
                     pk_layout.base2k = Base2K(BASE2K.0 / 2);

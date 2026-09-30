@@ -14,8 +14,8 @@ pub trait GLWEDecrypt<BE: Backend> {
     /// Decrypts a GLWE ciphertext into the destination plaintext.
     ///
     /// # Panics
-    /// Panics if the ciphertext, plaintext or prepared secret key degree differs
-    /// from the module degree, including in release builds.
+    /// Panics if the ciphertext, plaintext and prepared secret key degrees differ
+    /// or exceed the module degree, including in release builds.
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,

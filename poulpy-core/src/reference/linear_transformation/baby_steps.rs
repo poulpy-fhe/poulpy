@@ -37,6 +37,7 @@ use crate::{
 };
 
 use super::{LinearTransformationBabySteps, LinearTransformationLayout};
+use crate::layouts::operand_galois_element;
 
 const BABY_ROTATION_WORKERS: usize = 4;
 
@@ -60,7 +61,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         for &rot in baby_steps {
             values
                 .entry(rot)
-                .or_insert_with(|| module.cnv_pvec_left_alloc(module.n(), cols, size, PrepareHint::Reuse));
+                .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
         Self { values }
     }
@@ -140,7 +141,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     assert_eq!(key_ref.base2k(), a.base2k());
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, key_size);
+    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n().as_usize(), cols, key_size);
     module.gglwe_product_dft_reference(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
@@ -222,7 +223,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         .keys()
         .map(|&rot| {
             (rot != 0).then(|| {
-                keys.get_automorphism_key(module.galois_element(rot), a.k())
+                keys.get_automorphism_key(operand_galois_element(module, a.n().as_usize(), rot), a.k())
                     .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"))
             })
         })
@@ -239,7 +240,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
 
     if use_hoisted {
         let scratch = scratch.borrow();
-        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module.n(), cols - 1, a_size);
+        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(a.n().as_usize(), cols - 1, a_size);
         for col_i in 0..cols - 1 {
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, &a_ref.data, col_i + 1);
         }
