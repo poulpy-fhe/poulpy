@@ -625,7 +625,17 @@ where
     where
         Fun: Fn(F) -> F,
     {
-        chebyshev_interpolate(degree, a, b, f)
+        chebyshev_interpolate(degree, a, b, f, F::cos)
+    }
+
+    /// Interpolates with the given cosine for the Chebyshev nodes, so callers
+    /// can pin the node values independently of the platform libm.
+    pub fn chebyshev_interpolate_with_cos<Fun, Cos>(degree: usize, a: F, b: F, f: Fun, cos: Cos) -> Result<Self>
+    where
+        Fun: Fn(F) -> F,
+        Cos: Fn(F) -> F,
+    {
+        chebyshev_interpolate(degree, a, b, f, cos)
     }
 
     pub fn degree(&self) -> usize {
@@ -839,10 +849,11 @@ where
 /// `u = (2x-a-b)/(b-a)`. Use [`Polynomial::evaluate_on_interval`] for host
 /// evaluation on the original interval, or evaluate homomorphically on an
 /// input ciphertext that has already been mapped to `u`.
-fn chebyshev_interpolate<F, Fun>(degree: usize, a: F, b: F, f: Fun) -> Result<Polynomial<F>>
+fn chebyshev_interpolate<F, Fun, Cos>(degree: usize, a: F, b: F, f: Fun, cos: Cos) -> Result<Polynomial<F>>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
+    Cos: Fn(F) -> F,
 {
     ensure!(a < b, "chebyshev_interpolate: expected a < b");
 
@@ -856,7 +867,7 @@ where
     let mut coeffs = vec![F::zero(); n];
     for k in (1..=n).rev() {
         let theta = (F::from_usize(k).expect("k must fit in scalar") - half) * pi_over_n;
-        let u = theta.cos();
+        let u = cos(theta);
         let val = f(center + radius * u);
         let mut t_prev = F::one();
         let mut t = u;

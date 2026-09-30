@@ -26,6 +26,7 @@ use poulpy_core::layouts::{
     GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
 };
 
+use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
     layouts::{
@@ -403,7 +404,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         CoeffsMeta::from_delta_budget(spec.s2c_log_delta, spec.s2c_log_budget),
     )?
     .with_scaling(match spec.pipeline {
-        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).exp2(),
+        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
         BootstrappingPipeline::S2CFirst => 0.5,
     })?;
     let coeffs_to_slots = DFTPlan::new(
