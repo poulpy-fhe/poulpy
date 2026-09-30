@@ -433,7 +433,17 @@ macro_rules! conjugate_invariant_test_suite {
                     base2k: 19,
                 };
                 poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &reference, &module);
-                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &reference, &module);
+                // The shapes are swept at small degrees: here only the largest
+                // accumulation of the sweep, where precision is tightest.
+                let shape = poulpy_hal::test_suite::vmp::VmpAddShape {
+                    cols_in: 2,
+                    cols_out: 2,
+                    size_in: 4,
+                    size_out: 4,
+                    mat_size: 4,
+                    limb_offset: 0,
+                };
+                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add_shape(&params, &reference, &module, &shape);
             }
         }
     };
