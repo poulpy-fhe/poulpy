@@ -12,7 +12,7 @@ use crate::{
         BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
         FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault,
     },
-    reference::{
+    kernels::{
         fft64::{
             convolution::I64Ops,
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
@@ -214,7 +214,7 @@ macro_rules! impl_fft64_delegating_backend {
             }
         }
 
-        impl crate::reference::normalization::I64NormalizeOps for $be {}
+        impl crate::kernels::normalization::I64NormalizeOps for $be {}
         impl ZnxNormalizeDigit for $be {
             #[inline(always)]
             fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
@@ -298,7 +298,7 @@ unsafe impl HalVecZnxMonomialImpl for DelegatingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
 #[cfg(test)]
-impl crate::reference::fft64::ring_arith::Fft64RingArith for DelegatingFFT64Portable {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for DelegatingFFT64Portable {
     crate::fft64_ring_arith_standard!();
 }
 impl_fft64_delegating_backend!(ControlledSamplingFFT64Portable, FFT64Portable);
@@ -306,12 +306,12 @@ impl_fft64_delegating_rotate!(ControlledSamplingFFT64Portable);
 unsafe impl HalVecZnxMonomialImpl for ControlledSamplingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
-impl crate::reference::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64Portable {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64Portable {
     crate::fft64_ring_arith_standard!();
 }
 
 impl_fft64_delegating_backend!(ControlledSamplingFFT64CIPortable, FFT64CIPortable);
-impl crate::reference::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64CIPortable {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64CIPortable {
     crate::fft64_ring_arith_ci!();
 }
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64CIPortable);
@@ -338,7 +338,7 @@ unsafe impl HalVecZnxMonomialImpl for DifferentSamplingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
 #[cfg(test)]
-impl crate::reference::fft64::ring_arith::Fft64RingArith for DifferentSamplingFFT64Portable {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for DifferentSamplingFFT64Portable {
     crate::fft64_ring_arith_standard!();
 }
 #[cfg(test)]
@@ -365,6 +365,6 @@ unsafe impl HalVecZnxMonomialImpl for BinFheOverrideFFT64 {
     crate::hal_impl_vec_znx_monomial!();
 }
 #[cfg(all(test, feature = "enable-bin-fhe"))]
-impl crate::reference::fft64::ring_arith::Fft64RingArith for BinFheOverrideFFT64 {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for BinFheOverrideFFT64 {
     crate::fft64_ring_arith_standard!();
 }

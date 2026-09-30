@@ -24,7 +24,7 @@
 //! when the required scratch changes. [`crate::test_suite::derived`] compares
 //! overrides directly against these bodies, and
 //! [`crate::cross_backend_test_suite!`] compares backend implementations against
-//! a reference backend. Backend crates must register and execute the applicable
+//! a comparison backend, `poulpy-cpu-oracle` in this workspace. Backend crates must register and execute the applicable
 //! tests for each implementation; exporting a generic test does not execute it.
 //!
 //! The exception is a `_tmp_bytes` that sizes a whole family rather than one

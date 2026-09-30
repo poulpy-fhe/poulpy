@@ -226,7 +226,7 @@ backend_test_suite! {
 // CHANGE_MODE_N = 1024: for n <= 1024 the AVX NTT runs fully by-block;
 // for n > 1024 it first completes upper levels by-level then switches to
 // by-block for the remaining levels. These suites ensure both modes are
-// exercised and agree with the reference backend.
+// exercised and agree with the oracle.
 
 // n = 1024: last size that uses by-block only.
 cross_backend_test_suite! {

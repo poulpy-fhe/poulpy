@@ -101,7 +101,7 @@
 //! - **Convolution**: O(n log n) via FFT-based approach
 //! - **Normalization**: O(n) per limb with vectorized digit extraction
 //!
-//! ## Speedup over reference backend
+//! ## Speedup over the portable backend
 //!
 //! Speedups depend on the host micro-architecture and on the operation profile of the
 //! workload. Run the benches in `poulpy-bench` on the target host for representative

@@ -3,7 +3,7 @@
 //! Backend availability is a build-time decision: a backend exists only if its
 //! Cargo feature and its `target-feature` flags were passed. Each backend crate
 //! declares its own entries as [`BackendCapability`] values; this module owns
-//! the reference backends and the shared formatting.
+//! the portable backends and the shared formatting.
 
 /// One backend, whether this CPU can run it, and whether it is in this build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,7 +133,7 @@ pub fn report_instruction_sets() -> String {
             if set.present { "yes" } else { "no" }
         ));
     }
-    out.push_str("\nThe reference backends need none of these and run everywhere.\n");
+    out.push_str("\nThe portable backends need none of these and run everywhere.\n");
     out.push_str("`-C target-cpu=native` enables every instruction set this CPU has.\n");
     out.push_str("For the backends each set unlocks, see docs/performance.md.\n");
     out

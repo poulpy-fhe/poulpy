@@ -38,7 +38,7 @@ use core::arch::x86_64::{
     _mm256_sub_epi64, _mm256_unpackhi_epi64, _mm256_unpacklo_epi64, _mm256_xor_si256,
 };
 
-use poulpy_cpu_portable::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::BbbMeta,
     primes::{PrimeSet, PrimeSetCrt4, Primes30},
 };
@@ -288,7 +288,7 @@ pub(crate) unsafe fn crt_accumulate_avx2(t: __m256i, qm_hi: __m256i, qm_mid: __m
 // b_from_znx64_avx2
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// AVX2 port of `b_from_znx64_ref`: convert `i64` coefficients to q120b.
+/// AVX2 port of `b_from_znx64_portable`: convert `i64` coefficients to q120b.
 ///
 /// For each coefficient `x[j]`:
 /// - Strips the sign bit to get `xl = x[j] as u64 & i64::MAX`.
@@ -401,7 +401,7 @@ pub(crate) unsafe fn reduce_b_and_apply_crt(
     }
 }
 
-/// AVX2 port of `c_from_b_ref`: convert q120b to q120c.
+/// AVX2 port of `c_from_b_portable`: convert q120b to q120c.
 ///
 /// For each of `nn` ring elements, reads one `__m256i` (4 × u64, q120b layout) and writes
 /// one `__m256i` (8 × u32, q120c layout `[r[0], r_shift[0], ..., r[3], r_shift[3]]`).
@@ -589,7 +589,7 @@ pub(crate) unsafe fn pairwise_pack_right_1blk_x2_avx2(
 // vec_mat1col_product_bbb_avx2
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// AVX2 port of `vec_mat1col_product_bbb_ref`: q120b × q120b → q120b dot product.
+/// AVX2 port of `vec_mat1col_product_bbb_portable`: q120b × q120b → q120b dot product.
 ///
 /// Computes `res = Σᵢ x[i] · y[i]` in q120b format for `i ∈ 0..ell`.
 /// Each element is one `__m256i` (4 × u64, one u64 per prime).
@@ -920,9 +920,9 @@ pub(crate) unsafe fn b_to_znx128_avx2(nn: usize, res: &mut [i128], a: &[u64]) {
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
     use super::*;
-    use poulpy_cpu_portable::reference::ntt4x30::{
-        arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
-        mat_vec::{BbbMeta, vec_mat1col_product_bbb_ref},
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        arithmetic::{b_from_znx64_portable, b_to_znx128_portable, c_from_b_portable},
+        mat_vec::{BbbMeta, vec_mat1col_product_bbb_portable},
         primes::Primes30,
     };
 
@@ -936,7 +936,7 @@ mod tests {
         let mut res_ref = vec![0u64; 4 * n];
 
         unsafe { b_from_znx64_avx2(n, &mut res_avx, &coeffs) };
-        b_from_znx64_ref::<Primes30>(n, &mut res_ref, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut res_ref, &coeffs);
 
         assert_eq!(res_avx, res_ref, "b_from_znx64: AVX2 vs ref mismatch");
     }
@@ -948,13 +948,13 @@ mod tests {
         let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 11 + 3).collect();
 
         let mut b = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut b, &coeffs);
 
         let mut res_avx = vec![0u32; 8 * n];
         let mut res_ref = vec![0u32; 8 * n];
 
         unsafe { c_from_b_avx2(n, &mut res_avx, &b) };
-        c_from_b_ref::<Primes30>(n, &mut res_ref, &b);
+        c_from_b_portable::<Primes30>(n, &mut res_ref, &b);
 
         assert_eq!(res_avx, res_ref, "c_from_b: AVX2 vs ref mismatch");
     }
@@ -972,14 +972,14 @@ mod tests {
 
         let mut x = vec![0u64; 4 * ell * n];
         let mut y = vec![0u64; 4 * ell * n];
-        b_from_znx64_ref::<Primes30>(ell * n, &mut x, &x_i64);
-        b_from_znx64_ref::<Primes30>(ell * n, &mut y, &y_i64);
+        b_from_znx64_portable::<Primes30>(ell * n, &mut x, &x_i64);
+        b_from_znx64_portable::<Primes30>(ell * n, &mut y, &y_i64);
 
         let mut res_avx = vec![0u64; 4 * n];
         let mut res_ref = vec![0u64; 4 * n];
 
         unsafe { vec_mat1col_product_bbb_avx2(&meta, ell, &mut res_avx, &x, &y) };
-        vec_mat1col_product_bbb_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_bbb_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbb: AVX2 vs ref mismatch");
     }
@@ -987,11 +987,11 @@ mod tests {
     /// Fused `reduce_b_and_apply_crt` matches two-step `reduce_b_to_canonical` + barrett.
     #[test]
     fn reduce_b_and_apply_crt_vs_two_step() {
-        use poulpy_cpu_portable::reference::ntt4x30::arithmetic::b_from_znx64_ref;
+        use poulpy_cpu_portable::kernels::ntt4x30::arithmetic::b_from_znx64_portable;
         let n = 64usize;
         let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 5 - 160).collect();
         let mut b = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut b, &coeffs);
 
         let q = unsafe { _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i) };
         let mu = unsafe { _mm256_loadu_si256(BARRETT_MU.as_ptr() as *const __m256i) };
@@ -1025,13 +1025,13 @@ mod tests {
             let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 5 - 160).collect();
 
             let mut b = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut b, &coeffs);
 
             let mut res_avx = vec![0i128; n];
             let mut res_ref = vec![0i128; n];
 
             unsafe { b_to_znx128_avx2(n, &mut res_avx, &b) };
-            b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
+            b_to_znx128_portable::<Primes30>(n, &mut res_ref, &b);
 
             assert_eq!(res_avx, res_ref, "b_to_znx128: AVX2 vs ref mismatch at n={n}");
         }

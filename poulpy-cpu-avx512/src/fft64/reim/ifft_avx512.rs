@@ -33,8 +33,8 @@ pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     // call, so it needs m >= 32). For m >= 32, the BFS dispatcher always
     // produces an even number of IFFT16 blocks and uses `ifft16x2_avx512`.
     if m <= 16 {
-        use poulpy_cpu_portable::reference::fft64::reim::ifft_ref;
-        ifft_ref(m, omg, data);
+        use poulpy_cpu_portable::kernels::fft64::reim::ifft_portable;
+        ifft_portable(m, omg, data);
         return;
     }
 
@@ -451,7 +451,7 @@ fn test_ifft_avx512() {
 
     #[target_feature(enable = "avx512f")]
     fn internal(log_m: usize) {
-        use poulpy_cpu_portable::reference::fft64::reim::ReimIFFTRef;
+        use poulpy_cpu_portable::kernels::fft64::reim::ReimIFFTPortable;
 
         let m: usize = 1 << log_m;
 
@@ -465,7 +465,7 @@ fn test_ifft_avx512() {
         values_1.iter_mut().zip(values_0.iter()).for_each(|(y, x)| *y = *x);
 
         ReimIFFTAvx512::reim_dft_execute(&table, &mut values_0);
-        ReimIFFTRef::reim_dft_execute(&table, &mut values_1);
+        ReimIFFTPortable::reim_dft_execute(&table, &mut values_1);
 
         let max_diff: f64 = 1.0 / ((1u64 << (53 - log_m - 1)) as f64);
 

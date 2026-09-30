@@ -289,10 +289,10 @@ pub(crate) unsafe fn reim4_real_mat_prod_neon<const COLS: usize, const STRIDE: u
 mod tests {
 
     use super::*;
-    use poulpy_cpu_portable::reference::fft64::reim4::{
-        reim4_extract_1blk_from_reim_contiguous_ref, reim4_save_1blk_to_reim_contiguous_ref, reim4_save_1blk_to_reim_ref,
-        reim4_save_2blk_to_reim_ref, reim4_vec_mat1col_product_ref, reim4_vec_mat2cols_2ndcol_product_ref,
-        reim4_vec_mat2cols_product_ref,
+    use poulpy_cpu_portable::kernels::fft64::reim4::{
+        reim4_extract_1blk_from_reim_contiguous_portable, reim4_save_1blk_to_reim_contiguous_portable,
+        reim4_save_1blk_to_reim_portable, reim4_save_2blk_to_reim_portable, reim4_vec_mat1col_product_portable,
+        reim4_vec_mat2cols_2ndcol_product_portable, reim4_vec_mat2cols_product_portable,
     };
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -323,7 +323,7 @@ mod tests {
         let mut got = vec![0f64; 8 * rows];
         let mut want = vec![0f64; 8 * rows];
         reim4_extract_1blk_contiguous_neon(m, rows, blk, &mut got, &src);
-        reim4_extract_1blk_from_reim_contiguous_ref(m, rows, blk, &mut want, &src);
+        reim4_extract_1blk_from_reim_contiguous_portable(m, rows, blk, &mut want, &src);
         assert_eq!(got, want);
     }
 
@@ -337,7 +337,7 @@ mod tests {
         let mut got = vec![0f64; 2 * rows * m];
         let mut want = vec![0f64; 2 * rows * m];
         reim4_save_1blk_contiguous_neon(m, rows, blk, &mut got, &src);
-        reim4_save_1blk_to_reim_contiguous_ref(m, rows, blk, &mut want, &src);
+        reim4_save_1blk_to_reim_contiguous_portable(m, rows, blk, &mut want, &src);
         assert_eq!(got, want);
     }
 
@@ -352,10 +352,10 @@ mod tests {
             let mut want = got.clone();
             if overwrite {
                 reim4_save_1blk_neon::<true>(m, blk, &mut got, &src);
-                reim4_save_1blk_to_reim_ref::<true>(m, blk, &mut want, &src);
+                reim4_save_1blk_to_reim_portable::<true>(m, blk, &mut want, &src);
             } else {
                 reim4_save_1blk_neon::<false>(m, blk, &mut got, &src);
-                reim4_save_1blk_to_reim_ref::<false>(m, blk, &mut want, &src);
+                reim4_save_1blk_to_reim_portable::<false>(m, blk, &mut want, &src);
             }
             assert_eq!(got, want, "overwrite={overwrite}");
         }
@@ -372,10 +372,10 @@ mod tests {
             let mut want = got.clone();
             if overwrite {
                 reim4_save_2blks_neon::<true>(m, blk, &mut got, &src);
-                reim4_save_2blk_to_reim_ref::<true>(m, blk, &mut want, &src);
+                reim4_save_2blk_to_reim_portable::<true>(m, blk, &mut want, &src);
             } else {
                 reim4_save_2blks_neon::<false>(m, blk, &mut got, &src);
-                reim4_save_2blk_to_reim_ref::<false>(m, blk, &mut want, &src);
+                reim4_save_2blk_to_reim_portable::<false>(m, blk, &mut want, &src);
             }
             assert_eq!(got, want, "overwrite={overwrite}");
         }
@@ -390,7 +390,7 @@ mod tests {
             let mut got = vec![0f64; 8];
             let mut want = vec![0f64; 8];
             reim4_mat1col_prod_neon(nrows, &mut got, &u, &v);
-            reim4_vec_mat1col_product_ref(nrows, &mut want, &u, &v);
+            reim4_vec_mat1col_product_portable(nrows, &mut want, &u, &v);
             close_enough(&got, &want, &format!("mat1col nrows={nrows}"));
         }
     }
@@ -404,7 +404,7 @@ mod tests {
             let mut got = vec![0f64; 16];
             let mut want = vec![0f64; 16];
             reim4_mat2cols_prod_neon(nrows, &mut got, &u, &v);
-            reim4_vec_mat2cols_product_ref(nrows, &mut want, &u, &v);
+            reim4_vec_mat2cols_product_portable(nrows, &mut want, &u, &v);
             close_enough(&got, &want, &format!("mat2cols nrows={nrows}"));
         }
     }
@@ -418,7 +418,7 @@ mod tests {
             let mut got = vec![0f64; 16];
             let mut want = vec![0f64; 16];
             reim4_mat2cols_2ndcol_prod_neon(nrows, &mut got, &u, &v);
-            reim4_vec_mat2cols_2ndcol_product_ref(nrows, &mut want, &u, &v);
+            reim4_vec_mat2cols_2ndcol_product_portable(nrows, &mut want, &u, &v);
             close_enough(&got, &want, &format!("mat2cols_2ndcol nrows={nrows}"));
         }
     }

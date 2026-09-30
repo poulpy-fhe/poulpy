@@ -1,7 +1,7 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Portable`](super::FFT64Portable).
 //!
 //! Implements the `ReimArith`, `Reim4BlkMatVec`, `Reim4Convolution`, and `I64Ops`
-//! traits from `crate::reference::fft64`, covering:
+//! traits from `crate::kernels::fft64`, covering:
 //!
 //! - **FFT/IFFT execution**: forward and inverse transforms using precomputed twiddle tables.
 //! - **Domain conversion**: `Z[X]/(X^n+1)` integer coefficients to/from `f64` REIM layout.
@@ -17,21 +17,21 @@
 use super::FFT64Portable;
 use poulpy_hal::layouts::Ring;
 
-use crate::reference::fft64::{
+use crate::kernels::fft64::{
     convolution::I64Ops,
-    reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref},
+    reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, fft_portable, ifft_portable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
 
 impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Portable<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
-        fft_ref(table.m(), table.omg(), data);
+        fft_portable(table.m(), table.omg(), data);
     }
 }
 
 impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Portable<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
-        ifft_ref(table.m(), table.omg(), data);
+        ifft_portable(table.m(), table.omg(), data);
     }
 }
 
@@ -43,10 +43,10 @@ impl<R: Ring> Reim4Convolution for FFT64Portable<R> {}
 
 impl<R: Ring> I64Ops for FFT64Portable<R> {}
 
-impl crate::reference::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::Standard> {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::Standard> {
     crate::fft64_ring_arith_standard!();
 }
 
-impl crate::reference::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::ConjugateInvariant> {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::ConjugateInvariant> {
     crate::fft64_ring_arith_ci!();
 }

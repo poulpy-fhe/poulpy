@@ -166,7 +166,7 @@ fn unit_shifts_use_selected_plaintext_scratch() {
     ADD_CONST_CALLS.set(0);
     SUB_CONST_CALLS.set(0);
     // The parity runner gives each operation its exact reported, poisoned arena
-    // and checks coefficient and metadata equality against the reference backend.
+    // and checks coefficient and metadata equality against the portable backend.
     poulpy_ckks::test_suite::parity::test_arithmetic_parity::<FFT64Portable, OverrideBackend, f64>(params, &reference, &module);
     assert!(ADD_CONST_CALLS.get() > 0);
     assert!(SUB_CONST_CALLS.get() > 0);

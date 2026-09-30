@@ -244,7 +244,7 @@ mod ntt3x42_ifma_tests {
     // The planar IFMA NTT runs breadth-first level loops with fused head/tail
     // stages. These sizes cover the scalar-only edges, the fused tail, and
     // larger mixed-width levels, confirming bit-exact agreement with the
-    // reference backend.
+    // oracle.
 
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {

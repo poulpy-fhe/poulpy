@@ -52,7 +52,7 @@ use core::arch::x86_64::{
     _mm512_srli_epi64,
 };
 
-use poulpy_cpu_portable::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
+use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared final-reduction helper
@@ -775,9 +775,11 @@ pub(crate) unsafe fn vec_mat2cols_product_x2_bbc_avx512(
 mod tests {
     use super::*;
     use core::arch::x86_64::_mm256_set_epi64x;
-    use poulpy_cpu_portable::reference::ntt4x30::{
-        arithmetic::{b_from_znx64_ref, c_from_b_ref},
-        mat_vec::{BbcMeta, vec_mat1col_product_bbc_ref, vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref},
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        arithmetic::{b_from_znx64_portable, c_from_b_portable},
+        mat_vec::{
+            BbcMeta, vec_mat1col_product_bbc_portable, vec_mat1col_product_x2_bbc_portable, vec_mat2cols_product_x2_bbc_portable,
+        },
         primes::Primes30,
     };
 
@@ -791,7 +793,7 @@ mod tests {
     fn make_q120b_u32(ell: usize, n: usize, seed: i64) -> Vec<u32> {
         let coeffs: Vec<i64> = (0..ell * n).map(|i| (i as i64 * seed + 1) % 50 + 1).collect();
         let mut b = vec![0u64; 4 * ell * n];
-        b_from_znx64_ref::<Primes30>(ell * n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(ell * n, &mut b, &coeffs);
         b_to_u32(&b)
     }
 
@@ -799,9 +801,9 @@ mod tests {
     fn make_q120c_u32(ell: usize, n: usize, seed: i64) -> Vec<u32> {
         let coeffs: Vec<i64> = (0..ell * n).map(|i| (i as i64 * seed + 2) % 50 + 1).collect();
         let mut b = vec![0u64; 4 * ell * n];
-        b_from_znx64_ref::<Primes30>(ell * n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(ell * n, &mut b, &coeffs);
         let mut c = vec![0u32; 8 * ell * n];
-        c_from_b_ref::<Primes30>(ell * n, &mut c, &b);
+        c_from_b_portable::<Primes30>(ell * n, &mut c, &b);
         c
     }
 
@@ -819,7 +821,7 @@ mod tests {
         let mut res_ref = vec![0u64; 4];
 
         unsafe { vec_mat1col_product_bbc_avx512(&meta, ell, &mut res_avx, &x, &y) };
-        vec_mat1col_product_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbc: AVX-512F vs ref mismatch");
     }
@@ -852,7 +854,7 @@ mod tests {
         let mut res_ref = vec![0u64; 8];
 
         unsafe { vec_mat1col_product_x2_bbc_avx512::<false>(&meta, ell, &mut res_avx, &x, &y) };
-        vec_mat1col_product_x2_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_x2_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_avx, res_ref, "vec_mat1col_product_x2_bbc: AVX-512F vs ref mismatch");
     }
@@ -894,7 +896,7 @@ mod tests {
         let mut res_ref = vec![0u64; 16];
 
         unsafe { vec_mat2cols_product_x2_bbc_avx512(&meta, ell, &mut res_avx, &x, &y) };
-        vec_mat2cols_product_x2_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat2cols_product_x2_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_avx, res_ref, "vec_mat2cols_product_x2_bbc: AVX-512F vs ref mismatch");
     }
@@ -909,11 +911,11 @@ mod tests {
 
         let mut x_b = vec![0u64; 16 * ell];
         let mut y_b = vec![0u64; 16 * ell];
-        b_from_znx64_ref::<Primes30>(ell * 4, &mut x_b, &coeffs_x);
-        b_from_znx64_ref::<Primes30>(ell * 4, &mut y_b, &coeffs_y);
+        b_from_znx64_portable::<Primes30>(ell * 4, &mut x_b, &coeffs_x);
+        b_from_znx64_portable::<Primes30>(ell * 4, &mut y_b, &coeffs_y);
 
         let mut y_c = vec![0u32; 32 * ell];
-        c_from_b_ref::<Primes30>(ell * 4, &mut y_c, &y_b);
+        c_from_b_portable::<Primes30>(ell * 4, &mut y_c, &y_b);
         let x_b_u32 = b_to_u32(&x_b);
 
         let x_pm: Vec<u64> = {
@@ -965,7 +967,13 @@ mod tests {
             let y_coeff: Vec<u32> = (0..ell)
                 .flat_map(|row| y_c[row * 32 + coeff * 8..row * 32 + (coeff + 1) * 8].iter().copied())
                 .collect();
-            vec_mat1col_product_bbc_ref::<Primes30>(&meta, ell, &mut res_ref[4 * coeff..4 * (coeff + 1)], &x_coeff, &y_coeff);
+            vec_mat1col_product_bbc_portable::<Primes30>(
+                &meta,
+                ell,
+                &mut res_ref[4 * coeff..4 * (coeff + 1)],
+                &x_coeff,
+                &y_coeff,
+            );
         }
 
         assert_eq!(

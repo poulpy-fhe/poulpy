@@ -1,14 +1,14 @@
 #![allow(clippy::too_many_arguments)]
 
-//! Reference (portable) CPU backend for the Poulpy lattice cryptography library.
+//! Portable CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides two reference implementations for [`poulpy_hal`]:
+//! This crate provides two backends for [`poulpy_hal`]:
 //!
 //! - [`FFT64Portable`]: scalar `f64` FFT arithmetic — see the [`fft64`] module.
 //! - [`NTT4x30Portable`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt4x30`] module.
 //!
-//! Both are canonical reference implementations: portable across all CPU architectures,
-//! prioritising correctness and debuggability over throughput.
+//! Both are portable across all CPU architectures, in plain scalar Rust, and
+//! their scalar kernels, in [`kernels`], back the SIMD backends too.
 //!
 //! Both are generic over the ring, standard by default: [`FFT64CIPortable`] and [`NTT4x30CIPortable`]
 //! are their conjugate invariant instantiations.
@@ -22,8 +22,8 @@
 //!   `Module<FFT64Portable>` / `Module<NTT4x30Portable>` gain the scheme-level traits
 //!   (`GLWEKeyswitch`, `Automorphism`, ...). Without it those traits do not
 //!   resolve, and the failure reads as a missing impl rather than a missing
-//!   feature. Required to use this crate as the reference side of a
-//!   cross-backend comparison.
+//!   feature. Required to use this crate on either side of a cross-backend
+//!   comparison.
 //! - `enable-ckks`: implies `enable-core` and adds the `poulpy-ckks` layer.
 //!
 //! # Platform support
@@ -52,7 +52,7 @@ mod sampling;
 mod scalar_znx_fill;
 
 pub mod capabilities;
-pub mod reference;
+pub mod kernels;
 pub mod table_cache;
 pub mod test_suite;
 

@@ -1,8 +1,8 @@
 //! Conjugate invariant ring items of [`FFT64Neon`].
 
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     fft64::ring_arith::Fft64RingArith,
-    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_portable},
 };
 use poulpy_hal::layouts::ConjugateInvariant;
 
@@ -18,12 +18,12 @@ impl poulpy_hal::layouts::MaxBase2k for FFT64Neon<ConjugateInvariant> {
 impl ZnxAutomorphism for FFT64Neon<ConjugateInvariant> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 

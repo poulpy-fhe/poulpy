@@ -1,6 +1,6 @@
 //! Bounded coefficient tests shared by the normalization backends.
 
-use crate::reference::znx::*;
+use crate::kernels::znx::*;
 
 type Step = fn(usize, usize, &mut [i64], &[i64], &mut [i64]);
 type AssignStep = fn(usize, usize, &mut [i64], &mut [i64]);
@@ -21,17 +21,29 @@ where
 {
     test_boundary_kernels::<B>();
     let steps: [(Step, Step); 6] = [
-        (znx_normalize_first_step_ref::<true>, B::znx_normalize_first_step::<true>),
-        (znx_normalize_first_step_ref::<false>, B::znx_normalize_first_step::<false>),
-        (znx_normalize_middle_step_ref::<true>, B::znx_normalize_middle_step::<true>),
-        (znx_normalize_middle_step_ref::<false>, B::znx_normalize_middle_step::<false>),
-        (znx_normalize_final_step_ref::<true>, B::znx_normalize_final_step::<true>),
-        (znx_normalize_final_step_ref::<false>, B::znx_normalize_final_step::<false>),
+        (znx_normalize_first_step_portable::<true>, B::znx_normalize_first_step::<true>),
+        (
+            znx_normalize_first_step_portable::<false>,
+            B::znx_normalize_first_step::<false>,
+        ),
+        (
+            znx_normalize_middle_step_portable::<true>,
+            B::znx_normalize_middle_step::<true>,
+        ),
+        (
+            znx_normalize_middle_step_portable::<false>,
+            B::znx_normalize_middle_step::<false>,
+        ),
+        (znx_normalize_final_step_portable::<true>, B::znx_normalize_final_step::<true>),
+        (
+            znx_normalize_final_step_portable::<false>,
+            B::znx_normalize_final_step::<false>,
+        ),
     ];
     let assign_steps: [(AssignStep, AssignStep); 3] = [
-        (znx_normalize_first_step_assign_ref, B::znx_normalize_first_step_assign),
-        (znx_normalize_middle_step_assign_ref, B::znx_normalize_middle_step_assign),
-        (znx_normalize_final_step_assign_ref, B::znx_normalize_final_step_assign),
+        (znx_normalize_first_step_assign_portable, B::znx_normalize_first_step_assign),
+        (znx_normalize_middle_step_assign_portable, B::znx_normalize_middle_step_assign),
+        (znx_normalize_final_step_assign_portable, B::znx_normalize_final_step_assign),
     ];
     let mut state = 0xc105_ca77_1234_5678u64;
     for k in 1..=62 {
@@ -74,7 +86,7 @@ where
                     })
                     .collect();
                 let mut carry = vec![0; n + 3];
-                znx_normalize_first_step_carry_only_ref(k, lsh, &a, &mut carry);
+                znx_normalize_first_step_carry_only_portable(k, lsh, &a, &mut carry);
                 carry[..n].rotate_left(n / 2);
                 for (c, endpoint) in carry[..n].iter_mut().zip([-(1i64 << 62), 1i64 << 62]) {
                     *c = endpoint;
@@ -113,10 +125,10 @@ where
                     let mut rc = carry.clone();
                     let mut bc = carry.clone();
                     if first {
-                        znx_normalize_first_step_carry_only_ref(k, lsh, &a, &mut rc);
+                        znx_normalize_first_step_carry_only_portable(k, lsh, &a, &mut rc);
                         B::znx_normalize_first_step_carry_only(k, lsh, &a, &mut bc);
                     } else {
-                        znx_normalize_middle_step_carry_only_ref(k, lsh, &a, &mut rc);
+                        znx_normalize_middle_step_carry_only_portable(k, lsh, &a, &mut rc);
                         B::znx_normalize_middle_step_carry_only(k, lsh, &a, &mut bc);
                     }
                     assert_eq!(rc, bc, "carry only k={k}, lsh={lsh}, n={n}");
@@ -125,14 +137,14 @@ where
                 let mut b = r.clone();
                 let mut rs = a.clone();
                 let mut bs = a.clone();
-                znx_extract_digit_addmul_ref(k - lsh, lsh, &mut r, &mut rs);
+                znx_extract_digit_addmul_portable(k - lsh, lsh, &mut r, &mut rs);
                 B::znx_extract_digit_addmul(k - lsh, lsh, &mut b, &mut bs);
                 assert_eq!((&r, &rs), (&b, &bs), "extract k={k}, lsh={lsh}, n={n}");
                 r.fill(0);
                 b.fill(1i64 << 62);
                 rs.copy_from_slice(&a);
                 bs.copy_from_slice(&a);
-                znx_extract_digit_addmul_ref(k - lsh, lsh, &mut r, &mut rs);
+                znx_extract_digit_addmul_portable(k - lsh, lsh, &mut r, &mut rs);
                 B::znx_extract_digit_mul(k - lsh, lsh, &mut b, &mut bs);
                 assert_eq!((&r, &rs), (&b, &bs), "extract overwrite k={k}, lsh={lsh}, n={n}");
                 for overwrite in [false, true] {
@@ -147,8 +159,8 @@ where
                     bs.copy_from_slice(&a);
                     let mut rc: Vec<_> = (0..n + 3).map(|i| (i % 3) as i64 - 1).collect();
                     let mut bc = rc.clone();
-                    znx_extract_digit_addmul_ref(k - lsh, lsh, &mut r, &mut rs);
-                    znx_normalize_middle_step_assign_ref(k, 0, &mut r, &mut rc);
+                    znx_extract_digit_addmul_portable(k - lsh, lsh, &mut r, &mut rs);
+                    znx_normalize_middle_step_assign_portable(k, 0, &mut r, &mut rc);
                     if overwrite {
                         B::znx_extract_digit_addmul_normalize::<true>(k - lsh, lsh, k, &mut b, &mut bs, &mut bc);
                     } else {
@@ -164,7 +176,7 @@ where
                 b.copy_from_slice(&a);
                 rs.fill(0);
                 bs.fill(0);
-                znx_normalize_digit_ref(k, &mut r, &mut rs);
+                znx_normalize_digit_portable(k, &mut r, &mut rs);
                 B::znx_normalize_digit(k, &mut b, &mut bs);
                 assert_eq!((&r, &rs), (&b, &bs), "digit k={k}, lsh={lsh}, n={n}");
             }
@@ -174,7 +186,9 @@ where
 
 fn test_boundary_kernels<B: I64NormalizeOps>() {
     fn check<B: I64NormalizeOps, const INPUT: bool, const MODE: bool>(k: usize, lsh: usize, padding: usize, n: usize) {
-        use crate::reference::normalization::{znx_normalize_floor_ref, znx_normalize_round_assign_ref, znx_normalize_round_ref};
+        use crate::kernels::normalization::{
+            znx_normalize_floor_portable, znx_normalize_round_assign_portable, znx_normalize_round_portable,
+        };
         let mut state = 0x1234_5678_abcd_ef90u64;
         let half = 1i64 << (k - 1);
         let edge = [-(1i64 << 62), 1i64 << 62, -half, half, half - 1, -half + 1, -1, 0, 1];
@@ -192,7 +206,7 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
             .collect();
         let carry: Vec<_> = (0..n + 2).map(|i| edge[(i + padding) % edge.len()]).collect();
         let (mut got, mut want) = (carry.clone(), carry.clone());
-        znx_normalize_floor_ref::<INPUT, MODE>(k, lsh, &a[1..], &mut want[1..n + 1]);
+        znx_normalize_floor_portable::<INPUT, MODE>(k, lsh, &a[1..], &mut want[1..n + 1]);
         B::znx_normalize_floor::<INPUT, MODE>(k, lsh, &a[1..], &mut got[1..n + 1]);
         assert_eq!(got, want, "floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
         for i in 1..n + 1 {
@@ -201,7 +215,7 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
         }
         let (mut got_c, mut want_c) = (carry.clone(), carry.clone());
         let (mut got_r, mut want_r) = (a.clone(), a.clone());
-        znx_normalize_round_ref::<INPUT, MODE>(k, lsh, padding, &mut want_r[1..n + 1], &a[1..], &mut want_c[1..]);
+        znx_normalize_round_portable::<INPUT, MODE>(k, lsh, padding, &mut want_r[1..n + 1], &a[1..], &mut want_c[1..]);
         B::znx_normalize_round::<INPUT, MODE>(k, lsh, padding, &mut got_r[1..n + 1], &a[1..], &mut got_c[1..]);
         assert_eq!(
             (&got_r, &got_c),
@@ -220,7 +234,7 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
         if MODE {
             let (mut got_c, mut want_c) = (carry.clone(), carry);
             let (mut got_r, mut want_r) = (a.clone(), a);
-            znx_normalize_round_assign_ref::<INPUT>(k, lsh, padding, &mut want_r[1..n + 1], &mut want_c[1..]);
+            znx_normalize_round_assign_portable::<INPUT>(k, lsh, padding, &mut want_r[1..n + 1], &mut want_c[1..]);
             B::znx_normalize_round_assign::<INPUT>(k, lsh, padding, &mut got_r[1..n + 1], &mut got_c[1..]);
             assert_eq!(
                 (got_r, got_c),

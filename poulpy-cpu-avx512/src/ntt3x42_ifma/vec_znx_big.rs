@@ -18,7 +18,7 @@ use crate::vec_znx_big_avx512::{
     vi128_sub_small_a_avx512, vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
 };
 use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
+use poulpy_cpu_portable::kernels::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 use poulpy_hal::layouts::Ring;
 
 impl<R: Ring> I128BigOps for NTT3x42Ifma<R> {

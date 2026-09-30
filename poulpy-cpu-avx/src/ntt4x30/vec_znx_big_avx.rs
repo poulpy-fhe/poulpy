@@ -22,13 +22,13 @@
 //! `lsh != 0` have dedicated kernels; scalar fallback only when `base2k > 64`
 //! or `n < 4`.
 //!
-//! [`I128NormalizeOps`]: poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps
-//! [`I128BigOps`]: poulpy_cpu_portable::reference::ntt4x30::I128BigOps
+//! [`I128NormalizeOps`]: poulpy_cpu_portable::kernels::ntt4x30::I128NormalizeOps
+//! [`I128BigOps`]: poulpy_cpu_portable::kernels::ntt4x30::I128BigOps
 
 use std::arch::x86_64::*;
 
 use itertools::izip;
-use poulpy_cpu_portable::reference::znx::{get_carry_i128, get_digit_i128};
+use poulpy_cpu_portable::kernels::znx::{get_carry_i128, get_digit_i128};
 
 /// Floor-decompose four shifted i128 values without a signed left shift.
 #[inline(always)]
@@ -89,7 +89,7 @@ pub(super) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND:
             store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
         }
         let end = chunks * 4;
-        poulpy_cpu_portable::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
+        poulpy_cpu_portable::kernels::normalization::nfc_normalize_floor_portable::<CARRY_IN, ROUND>(
             base2k,
             lsh,
             &a[end..],
@@ -132,7 +132,7 @@ pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: b
             store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
         }
         let end = chunks * 4;
-        poulpy_cpu_portable::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
+        poulpy_cpu_portable::kernels::normalization::nfc_normalize_round_portable::<CARRY_IN, PAD>(
             base2k,
             lsh,
             padding,
@@ -1084,7 +1084,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
     };
     if base2k >= 64 || (FINALIZE && res_base2k >= 64) {
         if FINALIZE {
-            poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_i128_portable::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else {
@@ -1131,7 +1131,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
             }
         }
         if FINALIZE {
-            poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_i128_portable::<OVERWRITE>(
                 base2k,
                 lsh,
                 res_base2k,

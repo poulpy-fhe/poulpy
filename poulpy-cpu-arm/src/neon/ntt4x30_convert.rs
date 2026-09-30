@@ -4,7 +4,7 @@ use core::arch::aarch64::{
     uint32x4_t, vaddq_u32, vaddvq_u64, vcgtq_s64, vdupq_n_s64, vdupq_n_u64, vld1q_u32, vorrq_u64, vreinterpretq_u64_s64,
     vshlq_n_u64, vshrq_n_u64, vst1q_u32, vst1q_u64,
 };
-use poulpy_cpu_portable::reference::ntt4x30::primes::{PrimeSet, PrimeSetCrt4, Primes30};
+use poulpy_cpu_portable::kernels::ntt4x30::primes::{PrimeSet, PrimeSetCrt4, Primes30};
 
 #[allow(unused_imports)]
 use super::q120::{
@@ -445,8 +445,8 @@ pub(crate) fn pairwise_pack_right_1blk_x2_neon(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_portable::reference::ntt4x30::{
-        arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        arithmetic::{b_from_znx64_portable, b_to_znx128_portable, c_from_b_portable},
         primes::Primes30,
     };
 
@@ -457,7 +457,7 @@ mod tests {
         let mut got = vec![0u64; 4 * n];
         let mut want = vec![0u64; 4 * n];
         b_from_znx64_neon(n, &mut got, &coeffs);
-        b_from_znx64_ref::<Primes30>(n, &mut want, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut want, &coeffs);
         assert_eq!(got, want);
     }
 
@@ -466,11 +466,11 @@ mod tests {
         let n = 64usize;
         let coeffs: Vec<i64> = (0..n as i64).map(|i| i.wrapping_mul(11).wrapping_add(3)).collect();
         let mut b = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut b, &coeffs);
         let mut got = vec![0u32; 8 * n];
         let mut want = vec![0u32; 8 * n];
         c_from_b_neon(n, &mut got, &b);
-        c_from_b_ref::<Primes30>(n, &mut want, &b);
+        c_from_b_portable::<Primes30>(n, &mut want, &b);
         assert_eq!(got, want);
     }
 
@@ -479,11 +479,11 @@ mod tests {
         let n = 64usize;
         let coeffs: Vec<i64> = (0..n as i64).map(|i| i.wrapping_mul(7).wrapping_sub(20)).collect();
         let mut b = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+        b_from_znx64_portable::<Primes30>(n, &mut b, &coeffs);
         let mut got = vec![0i128; n];
         let mut want = vec![0i128; n];
         b_to_znx128_neon(n, &mut got, &b);
-        b_to_znx128_ref::<Primes30>(n, &mut want, &b);
+        b_to_znx128_portable::<Primes30>(n, &mut want, &b);
         assert_eq!(got, want);
     }
 }

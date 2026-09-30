@@ -25,9 +25,9 @@ use crate::fft64::reim::{as_arr, as_arr_mut};
 #[target_feature(enable = "avx2,fma")]
 pub(crate) fn fft_avx2_fma(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        use poulpy_cpu_portable::reference::fft64::reim::fft_ref;
+        use poulpy_cpu_portable::kernels::fft64::reim::fft_portable;
 
-        fft_ref(m, omg, data);
+        fft_portable(m, omg, data);
         return;
     }
 
@@ -236,11 +236,13 @@ fn bitwiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
-    use poulpy_cpu_portable::reference::fft64::reim::{ReimFFTExecute, ReimFFTRef, ReimFFTTable, ReimIFFTRef, ReimIFFTTable};
+    use poulpy_cpu_portable::kernels::fft64::reim::{
+        ReimFFTExecute, ReimFFTPortable, ReimFFTTable, ReimIFFTPortable, ReimIFFTTable,
+    };
 
     use crate::fft64::reim::{ReimFFTAvx, ReimIFFTAvx};
 
-    /// AVX2 FFT → IFFT round-trip matches reference FFT → IFFT (same residual error).
+    /// AVX2 FFT → IFFT round-trip matches portable FFT → IFFT (same residual error).
     #[test]
     fn fft_ifft_roundtrip_avx2() {
         let m = 64usize;
@@ -254,8 +256,8 @@ mod tests {
         ReimIFFTAvx::reim_dft_execute(&inv, &mut avx);
 
         let mut reference = data.clone();
-        ReimFFTRef::reim_dft_execute(&fwd, &mut reference);
-        ReimIFFTRef::reim_dft_execute(&inv, &mut reference);
+        ReimFFTPortable::reim_dft_execute(&fwd, &mut reference);
+        ReimIFFTPortable::reim_dft_execute(&inv, &mut reference);
 
         let tol = 1e-10f64;
         for i in 0..2 * m {
@@ -295,8 +297,8 @@ mod tests {
 
         let mut a_ref2 = a_ref;
         let mut b_ref2 = b_ref;
-        ReimFFTRef::reim_dft_execute(&fwd, &mut a_ref2);
-        ReimFFTRef::reim_dft_execute(&fwd, &mut b_ref2);
+        ReimFFTPortable::reim_dft_execute(&fwd, &mut a_ref2);
+        ReimFFTPortable::reim_dft_execute(&fwd, &mut b_ref2);
 
         // Pointwise complex multiply: reim format = real[0..m], imag[m..2m]
         let mut c_avx = vec![0f64; 2 * m];
@@ -309,7 +311,7 @@ mod tests {
         }
 
         ReimIFFTAvx::reim_dft_execute(&inv, &mut c_avx);
-        ReimIFFTRef::reim_dft_execute(&inv, &mut c_ref);
+        ReimIFFTPortable::reim_dft_execute(&inv, &mut c_ref);
 
         let tol = 1e-8f64;
         for i in 0..2 * m {
@@ -325,7 +327,7 @@ fn test_fft_avx2_fma() {
 
     #[target_feature(enable = "avx2,fma")]
     fn internal(log_m: usize) {
-        use poulpy_cpu_portable::reference::fft64::reim::ReimFFTRef;
+        use poulpy_cpu_portable::kernels::fft64::reim::ReimFFTPortable;
 
         let m = 1 << log_m;
 
@@ -339,7 +341,7 @@ fn test_fft_avx2_fma() {
         values_1.iter_mut().zip(values_0.iter()).for_each(|(y, x)| *y = *x);
 
         ReimFFTAvx::reim_dft_execute(&table, &mut values_0);
-        ReimFFTRef::reim_dft_execute(&table, &mut values_1);
+        ReimFFTPortable::reim_dft_execute(&table, &mut values_1);
 
         let max_diff: f64 = 1.0 / ((1u64 << (53 - log_m - 1)) as f64);
 

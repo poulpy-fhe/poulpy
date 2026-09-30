@@ -16,7 +16,7 @@ use poulpy_hal::layouts::{Ring, Standard};
 mod tests;
 
 #[allow(unused_imports)]
-pub use poulpy_cpu_portable::reference::fft64::module::FFTModuleHandle;
+pub use poulpy_cpu_portable::kernels::fft64::module::FFTModuleHandle;
 pub use reim::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 
 /// NEON-accelerated CPU backend for Poulpy HAL.

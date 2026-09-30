@@ -1,9 +1,9 @@
 //! Backend extension points for DFT-domain [`poulpy_hal::layouts::VecZnxDft`] operations.
 
-use crate::reference::fft64::ring_arith::Fft64RingArith;
+use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use std::mem::size_of;
 
-use crate::reference::{
+use crate::kernels::{
     fft64::{
         module::FFTModuleHandle,
         reim::ReimArith,
@@ -309,7 +309,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttFromZnx64
             + NttZero
             + 'static,
@@ -335,7 +335,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttToZnx128
             + NttCopy,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -358,7 +358,7 @@ where
     ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttToZnx128,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {

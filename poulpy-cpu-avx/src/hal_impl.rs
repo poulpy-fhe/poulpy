@@ -6,7 +6,7 @@ use poulpy_cpu_portable::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault,
 };
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     fft64::{
         module::{FFT64Plan, FFT64PlanNew},
         ring_arith::Fft64RingArith,
@@ -297,7 +297,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -334,7 +334,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -550,7 +550,7 @@ where
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
                 poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
+            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -560,7 +560,7 @@ where
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
         let mut res_ref = &mut *res;
-        poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
             &mut res_ref,
             res_base2k,
             res_k,
@@ -689,7 +689,7 @@ where
         super::ntt4x30::vec_znx_dft::vec_znx_dft_zero(res, res_col)
     }
 
-    type AutomorphismPlan = poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+    type AutomorphismPlan = poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;

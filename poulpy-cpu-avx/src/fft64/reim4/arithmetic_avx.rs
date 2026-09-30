@@ -1156,9 +1156,9 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
-    use poulpy_cpu_portable::reference::fft64::reim4::{
-        reim4_convolution_1coeff_ref, reim4_convolution_2coeffs_ref, reim4_extract_1blk_from_reim_contiguous_ref,
-        reim4_save_1blk_to_reim_contiguous_ref, reim4_vec_mat1col_product_ref, reim4_vec_mat2cols_product_ref,
+    use poulpy_cpu_portable::kernels::fft64::reim4::{
+        reim4_convolution_1coeff_portable, reim4_convolution_2coeffs_portable, reim4_extract_1blk_from_reim_contiguous_portable,
+        reim4_save_1blk_to_reim_contiguous_portable, reim4_vec_mat1col_product_portable, reim4_vec_mat2cols_product_portable,
     };
 
     use super::*;
@@ -1179,7 +1179,7 @@ mod tests {
         let mut dst_ref = vec![0f64; 2 * rows * 4];
 
         unsafe { reim4_extract_1blk_from_reim_contiguous_avx(m, rows, blk, &mut dst_avx, &src) };
-        reim4_extract_1blk_from_reim_contiguous_ref(m, rows, blk, &mut dst_ref, &src);
+        reim4_extract_1blk_from_reim_contiguous_portable(m, rows, blk, &mut dst_ref, &src);
 
         assert_eq!(dst_avx, dst_ref, "reim4_extract_1blk: AVX vs ref mismatch");
 
@@ -1187,7 +1187,7 @@ mod tests {
         let mut out_avx = vec![0f64; 2 * rows * m];
         let mut out_ref = vec![0f64; 2 * rows * m];
         unsafe { reim4_save_1blk_to_reim_contiguous_avx(m, rows, blk, &mut out_avx, &dst_avx) };
-        reim4_save_1blk_to_reim_contiguous_ref(m, rows, blk, &mut out_ref, &dst_ref);
+        reim4_save_1blk_to_reim_contiguous_portable(m, rows, blk, &mut out_ref, &dst_ref);
 
         assert_eq!(out_avx, out_ref, "reim4_save_1blk: AVX vs ref mismatch");
     }
@@ -1202,7 +1202,7 @@ mod tests {
         let mut dst_ref = vec![0f64; 8];
 
         unsafe { reim4_vec_mat1col_product_avx(nrows, &mut dst_avx, &u, &v) };
-        reim4_vec_mat1col_product_ref(nrows, &mut dst_ref, &u, &v);
+        reim4_vec_mat1col_product_portable(nrows, &mut dst_ref, &u, &v);
 
         let tol = 1e-12f64;
         for i in 0..8 {
@@ -1225,7 +1225,7 @@ mod tests {
         let mut dst_ref = vec![0f64; 16];
 
         unsafe { reim4_vec_mat2cols_product_avx(nrows, &mut dst_avx, &u, &v) };
-        reim4_vec_mat2cols_product_ref(nrows, &mut dst_ref, &u, &v);
+        reim4_vec_mat2cols_product_portable(nrows, &mut dst_ref, &u, &v);
 
         let tol = 1e-12f64;
         for i in 0..16 {
@@ -1250,7 +1250,7 @@ mod tests {
             let mut dst_avx = [0f64; 8];
             let mut dst_ref = [0f64; 8];
             unsafe { reim4_convolution_1coeff_avx(k, &mut dst_avx, &a, a_size, &b, b_size) };
-            reim4_convolution_1coeff_ref(k, &mut dst_ref, &a, a_size, &b, b_size);
+            reim4_convolution_1coeff_portable(k, &mut dst_ref, &a, a_size, &b, b_size);
             let tol = 1e-12f64;
             for i in 0..8 {
                 assert!(
@@ -1275,7 +1275,7 @@ mod tests {
             let mut dst_avx = [0f64; 16];
             let mut dst_ref = [0f64; 16];
             unsafe { reim4_convolution_2coeffs_avx(k, &mut dst_avx, &a, a_size, &b, b_size) };
-            reim4_convolution_2coeffs_ref(k, &mut dst_ref, &a, a_size, &b, b_size);
+            reim4_convolution_2coeffs_portable(k, &mut dst_ref, &a, a_size, &b, b_size);
             let tol = 1e-12f64;
             for i in 0..16 {
                 assert!(
@@ -1323,7 +1323,7 @@ mod tests {
                         for blk in 0..n_blk {
                             for k in 0..min_size {
                                 let out: &mut [f64; 8] = (&mut blk_out[8 * k..8 * k + 8]).try_into().unwrap();
-                                reim4_convolution_1coeff_ref(
+                                reim4_convolution_1coeff_portable(
                                     k + offset,
                                     out,
                                     &a[blk * 8 * a_size..],
@@ -1332,7 +1332,7 @@ mod tests {
                                     b_size,
                                 );
                             }
-                            reim4_save_1blk_to_reim_contiguous_ref(m, min_size, blk, &mut dst_ref, &blk_out);
+                            reim4_save_1blk_to_reim_contiguous_portable(m, min_size, blk, &mut dst_ref, &blk_out);
                         }
 
                         let tol = 1e-12f64;
@@ -1365,7 +1365,7 @@ mod tests {
                     unsafe { reim4_convolution_avx(&mut dst_avx, dst_size, offset, &a, a_size, &b, b_size) };
                     for k in 0..dst_size {
                         let blk: &mut [f64; 8] = (&mut dst_ref[8 * k..8 * k + 8]).try_into().unwrap();
-                        reim4_convolution_1coeff_ref(k + offset, blk, &a, a_size, &b, b_size);
+                        reim4_convolution_1coeff_portable(k + offset, blk, &a, a_size, &b, b_size);
                     }
 
                     let tol = 1e-12f64;

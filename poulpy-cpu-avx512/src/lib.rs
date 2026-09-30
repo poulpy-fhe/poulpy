@@ -64,7 +64,7 @@
 //! # Correctness guarantees
 //!
 //! Operations are deterministic across runs. FFT operations are constrained to
-//! preserve the rounding behavior expected by the reference backend, while NTT
+//! preserve the rounding behavior of the portable backend, while NTT
 //! operations are exact modulo their CRT prime sets.
 //!
 //! Integer overflow in limb arithmetic is intentional where the bivariate

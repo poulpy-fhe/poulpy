@@ -1,10 +1,10 @@
 //! Backend extension points for scalar-vector product (SVP) operations
 //! on [`SvpPPol`](poulpy_hal::layouts::SvpPPol).
 
-use crate::reference::fft64::ring_arith::Fft64RingArith;
+use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use crate::reference::{
+use crate::kernels::{
     fft64::{
         module::FFTModuleHandle,
         reim::ReimArith,
@@ -114,7 +114,7 @@ where
     where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttFromZnx64
             + NttCFromB,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,

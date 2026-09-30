@@ -1,11 +1,11 @@
 //! `Znx*` trait impls for [`NTT4x30Neon`](super::NTT4x30Neon).
 
-use poulpy_cpu_portable::reference::znx::{
+use poulpy_cpu_portable::kernels::znx::{
     ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
     ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
     ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-    ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
-    znx_rotate, znx_zero_ref,
+    ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+    znx_copy_portable, znx_rotate, znx_zero_portable,
 };
 
 use super::NTT4x30Neon;
@@ -32,20 +32,22 @@ use crate::neon::{
     },
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::reference::znx::{
-    standard::znx_automorphism_ref as kn_automorphism, znx_add_assign_ref as kn_add_assign, znx_add_ref as kn_add,
-    znx_automorphism_rotate_ref as kn_automorphism_rotate, znx_extract_digit_addmul_ref as kn_extract_digit_addmul,
-    znx_mul_add_power_of_two_ref as kn_mul_add_p2, znx_mul_power_of_two_assign_ref as kn_mul_p2_assign,
-    znx_mul_power_of_two_ref as kn_mul_p2, znx_negate_assign_ref as kn_negate_assign, znx_negate_ref as kn_negate,
-    znx_normalize_digit_ref as kn_normalize_digit, znx_normalize_final_step_assign_ref as kn_normalize_final_step_assign,
-    znx_normalize_final_step_ref as kn_normalize_final_step,
-    znx_normalize_first_step_assign_ref as kn_normalize_first_step_assign,
-    znx_normalize_first_step_carry_only_ref as kn_normalize_first_step_carry_only,
-    znx_normalize_first_step_ref as kn_normalize_first_step,
-    znx_normalize_middle_step_assign_ref as kn_normalize_middle_step_assign,
-    znx_normalize_middle_step_carry_only_ref as kn_normalize_middle_step_carry_only,
-    znx_normalize_middle_step_ref as kn_normalize_middle_step, znx_sub_assign_ref as kn_sub_assign,
-    znx_sub_negate_assign_ref as kn_sub_negate_assign, znx_sub_ref as kn_sub, znx_switch_ring_ref as kn_switch_ring,
+use poulpy_cpu_portable::kernels::znx::{
+    standard::znx_automorphism_portable as kn_automorphism, znx_add_assign_portable as kn_add_assign, znx_add_portable as kn_add,
+    znx_automorphism_rotate_portable as kn_automorphism_rotate, znx_extract_digit_addmul_portable as kn_extract_digit_addmul,
+    znx_mul_add_power_of_two_portable as kn_mul_add_p2, znx_mul_power_of_two_assign_portable as kn_mul_p2_assign,
+    znx_mul_power_of_two_portable as kn_mul_p2, znx_negate_assign_portable as kn_negate_assign, znx_negate_portable as kn_negate,
+    znx_normalize_digit_portable as kn_normalize_digit,
+    znx_normalize_final_step_assign_portable as kn_normalize_final_step_assign,
+    znx_normalize_final_step_portable as kn_normalize_final_step,
+    znx_normalize_first_step_assign_portable as kn_normalize_first_step_assign,
+    znx_normalize_first_step_carry_only_portable as kn_normalize_first_step_carry_only,
+    znx_normalize_first_step_portable as kn_normalize_first_step,
+    znx_normalize_middle_step_assign_portable as kn_normalize_middle_step_assign,
+    znx_normalize_middle_step_carry_only_portable as kn_normalize_middle_step_carry_only,
+    znx_normalize_middle_step_portable as kn_normalize_middle_step, znx_sub_assign_portable as kn_sub_assign,
+    znx_sub_negate_assign_portable as kn_sub_negate_assign, znx_sub_portable as kn_sub,
+    znx_switch_ring_portable as kn_switch_ring,
 };
 
 impl<R: Ring> ZnxAdd for NTT4x30Neon<R> {
@@ -107,7 +109,7 @@ impl<R: Ring> ZnxMulPowerOfTwoAssign for NTT4x30Neon<R> {
 impl<R: Ring> ZnxCopy for NTT4x30Neon<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
-        znx_copy_ref(res, a);
+        znx_copy_portable(res, a);
     }
 }
 
@@ -135,7 +137,7 @@ impl<R: Ring> ZnxRotate for NTT4x30Neon<R> {
 impl<R: Ring> ZnxZero for NTT4x30Neon<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
-        znx_zero_ref(res);
+        znx_zero_portable(res);
     }
 }
 
@@ -209,7 +211,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30Neon<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT4x30Neon<R> {
+impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for NTT4x30Neon<R> {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
@@ -246,7 +248,7 @@ impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for
         #[cfg(target_arch = "aarch64")]
         crate::neon::znx_normalize::znx_extract_digit_mul_neon(base2k, lsh, res, src);
         #[cfg(not(target_arch = "aarch64"))]
-        poulpy_cpu_portable::reference::znx::znx_extract_digit_mul_ref(base2k, lsh, res, src);
+        poulpy_cpu_portable::kernels::znx::znx_extract_digit_mul_portable(base2k, lsh, res, src);
     }
 
     #[inline(always)]
@@ -263,7 +265,7 @@ impl<R: Ring> poulpy_cpu_portable::reference::normalization::I64NormalizeOps for
             base2k, lsh, res_base2k, res, src, carry,
         );
         #[cfg(not(target_arch = "aarch64"))]
-        poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+        poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_portable::<OVERWRITE>(
             base2k, lsh, res_base2k, res, src, carry,
         );
     }

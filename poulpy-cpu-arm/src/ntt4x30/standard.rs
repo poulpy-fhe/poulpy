@@ -1,12 +1,12 @@
 //! Standard-ring items of [`NTT4x30Neon`].
 
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
     },
-    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
 
 use super::NTT4x30Neon;
@@ -16,9 +16,9 @@ use crate::neon::{
     znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate},
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::reference::{
-    ntt4x30::standard::{intt_ref, ntt_ref},
-    znx::{standard::znx_automorphism_ref as kn_automorphism, znx_automorphism_rotate_ref as kn_automorphism_rotate},
+use poulpy_cpu_portable::kernels::{
+    ntt4x30::standard::{intt_portable, ntt_portable},
+    znx::{standard::znx_automorphism_portable as kn_automorphism, znx_automorphism_rotate_portable as kn_automorphism_rotate},
 };
 
 impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon {
@@ -41,7 +41,7 @@ impl ZnxAutomorphism for NTT4x30Neon {
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 
@@ -61,7 +61,7 @@ impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            ntt_ref::<Primes30>(table, data);
+            ntt_portable::<Primes30>(table, data);
         }
     }
 }
@@ -75,7 +75,7 @@ impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            intt_ref::<Primes30>(table, data);
+            intt_portable::<Primes30>(table, data);
         }
     }
 }

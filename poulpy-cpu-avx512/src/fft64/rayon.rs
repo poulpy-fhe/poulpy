@@ -5,7 +5,7 @@ use poulpy_hal::layouts::Ring;
 use super::FFT64Avx512Rayon;
 
 mod standard {
-    use poulpy_cpu_portable::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+    use poulpy_cpu_portable::kernels::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
 
     use super::FFT64Avx512Rayon;
     use crate::FFT64Avx512;
@@ -33,7 +33,7 @@ mod standard {
 }
 
 mod conjugate_invariant {
-    use poulpy_cpu_portable::reference::fft64::ring_arith::Fft64RingArith;
+    use poulpy_cpu_portable::kernels::fft64::ring_arith::Fft64RingArith;
     use poulpy_hal::layouts::ConjugateInvariant;
 
     use super::FFT64Avx512Rayon;

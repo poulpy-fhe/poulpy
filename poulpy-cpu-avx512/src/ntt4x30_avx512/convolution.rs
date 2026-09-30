@@ -4,11 +4,11 @@ use core::arch::x86_64::{
     _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
     _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_srl_epi64, _mm512_srli_epi64,
 };
-use poulpy_cpu_portable::reference::ntt4x30::ntt::{NttTable, NttTableInv};
-use poulpy_cpu_portable::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
+use poulpy_cpu_portable::kernels::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_portable::reference::sparse_log_gap;
+use poulpy_cpu_portable::kernels::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{

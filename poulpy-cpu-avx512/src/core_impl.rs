@@ -18,7 +18,7 @@ use poulpy_core::{
     oep::GLWETensoringImpl,
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},

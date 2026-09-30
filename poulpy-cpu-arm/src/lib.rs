@@ -90,7 +90,7 @@
 //! - **VMP**: O(n · nrows · ncols) over a prime-major prepared-matrix layout.
 //! - **Normalization**: O(n) per limb with vectorized digit extraction.
 //!
-//! ## Speedup over reference backend
+//! ## Speedup over the portable backend
 //!
 //! Speedups depend on the host micro-architecture and on the operation profile of the
 //! workload. Run the benches in `poulpy-bench` (or the bundled `bench_neon_vs_ref` example)

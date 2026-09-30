@@ -52,8 +52,8 @@
 //!    method at a time. The module docs give the implementation order.
 //! 3. **[`delegates`]** -- Blanket `impl` glue that connects each [`api`] trait to
 //!    the corresponding backend family method on [`layouts::Module`].
-//! 4. **Reference implementations** live in the `poulpy-cpu-portable` crate, which provides
-//!    the portable default backend used by tests and benchmarks.
+//! 4. **Backends** live in their own crates: `poulpy-cpu-portable` is the portable default
+//!    backend, and `poulpy-cpu-oracle` is the correctness oracle of the cross-backend tests.
 //!
 //! ## Testing and Benchmarking
 //!

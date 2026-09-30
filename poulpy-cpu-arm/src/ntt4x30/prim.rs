@@ -4,19 +4,19 @@
 // `Primes30::Q[prime]`); on aarch64 the NEON kernels never reference it,
 // hence the allow(unused_imports).
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::reference::ntt4x30::arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref};
+use poulpy_cpu_portable::kernels::ntt4x30::arithmetic::{b_from_znx64_portable, b_to_znx128_portable, c_from_b_portable};
 #[allow(unused_imports)]
-use poulpy_cpu_portable::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
     mat_vec::{
-        BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref, vec_mat1col_product_bbb_ref, vec_mat1col_product_bbc_ref,
-        vec_mat1col_product_x2_bbc_ref, vec_mat2cols_product_x2_bbc_ref,
+        BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_portable, vec_mat1col_product_bbb_portable,
+        vec_mat1col_product_bbc_portable, vec_mat1col_product_x2_bbc_portable, vec_mat2cols_product_x2_bbc_portable,
     },
     ntt::{NttTable, NttTableInv},
     primes::{PrimeSet, Primes30},
-    standard::{intt_ref, ntt_ref},
+    standard::{intt_portable, ntt_portable},
 };
 use poulpy_hal::layouts::Ring;
 
@@ -42,7 +42,7 @@ use crate::neon::{
     },
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::reference::ntt4x30::{arithmetic::add_bbb_ref, types::Q_SHIFTED};
+use poulpy_cpu_portable::kernels::ntt4x30::{arithmetic::add_bbb_portable, types::Q_SHIFTED};
 
 impl<R: Ring> NttFromZnx64 for NTT4x30Neon<R> {
     #[inline(always)]
@@ -53,7 +53,7 @@ impl<R: Ring> NttFromZnx64 for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            b_from_znx64_ref::<Primes30>(a.len(), res, a);
+            b_from_znx64_portable::<Primes30>(a.len(), res, a);
         }
     }
 }
@@ -67,7 +67,7 @@ impl<R: Ring> NttToZnx128 for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            b_to_znx128_ref::<Primes30>(divisor_is_n, res, a);
+            b_to_znx128_portable::<Primes30>(divisor_is_n, res, a);
         }
     }
 }
@@ -81,7 +81,7 @@ impl<R: Ring> NttAdd for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            add_bbb_ref::<Primes30>(res.len() / 4, res, a, b);
+            add_bbb_portable::<Primes30>(res.len() / 4, res, a, b);
         }
     }
 }
@@ -229,7 +229,7 @@ impl<R: Ring> NttMulBbb for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec_mat1col_product_bbb_ref::<Primes30>(meta, ell, res, a, b);
+            vec_mat1col_product_bbb_portable::<Primes30>(meta, ell, res, a, b);
         }
     }
 }
@@ -243,7 +243,7 @@ impl<R: Ring> NttMulBbc for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec_mat1col_product_bbc_ref::<Primes30>(meta, ell, res, ntt_coeff, prepared);
+            vec_mat1col_product_bbc_portable::<Primes30>(meta, ell, res, ntt_coeff, prepared);
         }
     }
 }
@@ -257,7 +257,7 @@ impl<R: Ring> NttCFromB for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            c_from_b_ref::<Primes30>(n, res, a);
+            c_from_b_portable::<Primes30>(n, res, a);
         }
     }
 }
@@ -271,7 +271,7 @@ impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec_mat1col_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
+            vec_mat1col_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
         }
     }
 
@@ -300,7 +300,7 @@ impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Neon<R> {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            vec_mat2cols_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
+            vec_mat2cols_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
         }
     }
 }
@@ -308,7 +308,7 @@ impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Neon<R> {
 impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Neon<R> {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-        extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, dst, src);
+        extract_1blk_from_contiguous_q120b_portable(n, row_max, blk, dst, src);
     }
 }
 

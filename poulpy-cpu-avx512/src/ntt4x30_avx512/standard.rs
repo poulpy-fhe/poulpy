@@ -1,12 +1,12 @@
 //! Standard-ring items of [`NTT4x30Avx512`].
 
-use poulpy_cpu_portable::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
     },
-    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
 
 use super::{
@@ -35,7 +35,7 @@ impl ZnxAutomorphism for NTT4x30Avx512 {
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 

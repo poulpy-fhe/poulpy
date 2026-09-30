@@ -110,8 +110,8 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_portable::reference::fft64::reim::reim_from_znx_i64_ref;
-            reim_from_znx_i64_ref(&mut res[span << 2..], &a[span << 2..])
+            use poulpy_cpu_portable::kernels::fft64::reim::reim_from_znx_i64_portable;
+            reim_from_znx_i64_portable(&mut res[span << 2..], &a[span << 2..])
         }
     }
 }
@@ -193,8 +193,8 @@ pub fn reim_to_znx_i64_bnd63_avx2_fma(res: &mut [i64], divisor: f64, a: &[f64]) 
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_ref;
-            reim_to_znx_i64_ref(&mut res[span << 2..], divisor, &a[span << 2..])
+            use poulpy_cpu_portable::kernels::fft64::reim::reim_to_znx_i64_portable;
+            reim_to_znx_i64_portable(&mut res[span << 2..], divisor, &a[span << 2..])
         }
     }
 }
@@ -220,7 +220,7 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
             _mm256_srli_epi64, _mm256_srlv_epi64, _mm256_sub_epi64, _mm256_xor_si256,
         };
 
-        use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_assign_ref;
+        use poulpy_cpu_portable::kernels::fft64::reim::reim_to_znx_i64_assign_portable;
 
         let sign_mask_256: __m256d = _mm256_castsi256_pd(_mm256_set1_epi64x(sign_mask as i64));
         let expo_mask_256: __m256i = _mm256_set1_epi64x(expo_mask as i64);
@@ -274,7 +274,7 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
         }
 
         if !res.len().is_multiple_of(4) {
-            reim_to_znx_i64_assign_ref(&mut res[span << 2..], divisor)
+            reim_to_znx_i64_assign_portable(&mut res[span << 2..], divisor)
         }
     }
 }
@@ -324,8 +324,8 @@ pub fn reim_to_znx_i64_avx2_bnd50_fma(res: &mut [i64], divisor: f64, a: &[f64]) 
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_ref;
-            reim_to_znx_i64_ref(&mut res[span << 2..], divisor, &a[span << 2..])
+            use poulpy_cpu_portable::kernels::fft64::reim::reim_to_znx_i64_portable;
+            reim_to_znx_i64_portable(&mut res[span << 2..], divisor, &a[span << 2..])
         }
     }
 }
@@ -341,7 +341,7 @@ mod tests {
         poulpy_cpu_portable::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Avx>();
     }
 
-    use poulpy_cpu_portable::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
+    use poulpy_cpu_portable::kernels::fft64::reim::{reim_from_znx_i64_portable, reim_to_znx_i64_portable};
 
     use super::*;
 
@@ -355,7 +355,7 @@ mod tests {
         let mut res_ref = vec![0f64; n];
 
         unsafe { reim_from_znx_i64_bnd50_fma(&mut res_avx, &a) };
-        reim_from_znx_i64_ref(&mut res_ref, &a);
+        reim_from_znx_i64_portable(&mut res_ref, &a);
 
         assert_eq!(res_avx, res_ref, "reim_from_znx_i64: AVX2 vs ref mismatch");
     }
@@ -372,7 +372,7 @@ mod tests {
         let mut res_ref = vec![0i64; n];
 
         unsafe { reim_to_znx_i64_bnd63_avx2_fma(&mut res_avx, divisor, &a) };
-        reim_to_znx_i64_ref(&mut res_ref, divisor, &a);
+        reim_to_znx_i64_portable(&mut res_ref, divisor, &a);
 
         assert_eq!(res_avx, res_ref, "reim_to_znx_i64: AVX2 vs ref mismatch");
     }

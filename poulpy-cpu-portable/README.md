@@ -158,8 +158,8 @@ NTT modules support invariant degrees up to `2^17` with the current prime sets.
 The ring is selected by the backend type. Standard plans leave the CI tables empty,
 and CI plans own their required tables directly. Ring-specific transforms,
 slot products and automorphisms have one implementation per ring
-(`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`), whose reference bodies live in the
-`standard` and `conjugate_invariant` submodules of `reference::{fft64, ntt4x30, znx}`
+(`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`), whose portable bodies live in the
+`standard` and `conjugate_invariant` submodules of `kernels::{fft64, ntt4x30, znx}`
 under the same names. The two rings have distinct
 module handles and prepared-data types; layout compatibility only connects
 implementations of the same ring.

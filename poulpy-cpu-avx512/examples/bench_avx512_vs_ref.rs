@@ -43,7 +43,7 @@ mod avx512 {
     use poulpy_cpu_avx512::{FFT64Avx512, NTT4x30Avx512};
     use poulpy_cpu_portable::{
         FFT64Portable, NTT4x30Portable,
-        reference::{
+        kernels::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             ntt4x30::{
                 I128BigOps, I128NormalizeOps, NttDFTExecute, NttFromZnx64,

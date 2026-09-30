@@ -13,7 +13,7 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_portable::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
@@ -162,8 +162,8 @@ impl<R: Ring> Backend for NTT4x30Avx512<R> {
 /// Panics if the runtime CPU does not support the AVX-512F instruction set.
 unsafe impl<R: Ring> NttHandleFactory for NTT4x30Avx512Handle<R>
 where
-    poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
-        poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+    poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
 {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30Avx512Handle {

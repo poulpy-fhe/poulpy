@@ -1,9 +1,9 @@
 //! Backend extension points for bivariate convolution operations.
 
-use crate::reference::fft64::ring_arith::Fft64RingArith;
+use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use std::mem::size_of;
 
-use crate::reference::{
+use crate::kernels::{
     fft64::{
         convolution::{
             I64Ops, convolution_apply_dft, convolution_apply_dft_add, convolution_apply_dft_tmp_bytes,
@@ -371,7 +371,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttPackLeft1BlkX2
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -400,7 +400,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -651,7 +651,7 @@ where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
             + NttCFromB
             + NttPackLeft1BlkX2
             + 'static,

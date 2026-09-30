@@ -1,6 +1,6 @@
 //! The derived composites at the backend floor, `n = 8`: each one must run
 //! inside the scratch its `_tmp_bytes` advertises, at the smallest degree the
-//! reference backends serve.
+//! portable backends serve.
 //!
 //! At `n = 8` every limb is already a multiple of the 64-byte scratch
 //! alignment, so the rounding of a temporary shorter than one alignment unit

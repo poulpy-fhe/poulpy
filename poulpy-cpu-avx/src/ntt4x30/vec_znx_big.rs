@@ -14,7 +14,7 @@ use super::{
     },
 };
 use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
+use poulpy_cpu_portable::kernels::ntt4x30::{I128BigOps, I128NormalizeOps};
 use poulpy_hal::layouts::Ring;
 
 impl<R: Ring> I128BigOps for NTT4x30Avx<R> {

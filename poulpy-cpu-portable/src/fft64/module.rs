@@ -9,7 +9,7 @@
 //!   handle destruction path.
 //! - The [`FFT64HandleFactory`] implementation, which builds the handle stored
 //!   inside the `Module`.
-//! - The shared [`FFT64ModuleHandle`](crate::reference::fft64::module::FFT64ModuleHandle)
+//! - The shared [`FFT64ModuleHandle`](crate::kernels::fft64::module::FFT64ModuleHandle)
 //!   trait from `poulpy-hal`, which provides typed access to the FFT tables from
 //!   a `Module<FFT64Portable>` and other FFT64-family backends.
 
@@ -20,12 +20,12 @@ use poulpy_hal::{
     layouts::{Backend, Host},
 };
 
-use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use crate::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 use poulpy_hal::layouts::{Ring, Standard};
 
 use super::FFT64Portable;
 
-/// Opaque handle for the FFT64 reference backends over ring `R`
+/// Opaque handle for the FFT64 portable backends over ring `R`
 /// ([`FFT64Portable`](super::FFT64Portable) and [`FFT64CIPortable`](crate::FFT64CIPortable)).
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
@@ -177,7 +177,7 @@ impl<R: Ring> Backend for FFT64Portable<R> {
 /// The returned handle must be fully initialized for `n`.
 unsafe impl<R: Ring> FFT64HandleFactory for FFT64PortableHandle<R>
 where
-    crate::reference::fft64::module::FFT64Plan<f64, R>: crate::reference::fft64::module::FFT64PlanNew,
+    crate::kernels::fft64::module::FFT64Plan<f64, R>: crate::kernels::fft64::module::FFT64PlanNew,
 {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64PortableHandle {
