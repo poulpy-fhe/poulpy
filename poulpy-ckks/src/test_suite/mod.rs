@@ -364,6 +364,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
             );
             run_test!(
+                encoding_determinism,
+                $crate::test_suite::determinism::test_encoding_determinism
+            );
+            run_test!(
                 slots_kind_composition,
                 $crate::test_suite::slots_kind::test_slots_kind_composition
             );
@@ -993,6 +997,7 @@ pub mod compact;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
+pub mod determinism;
 pub mod dft;
 pub mod dot_product;
 pub mod encoding;
