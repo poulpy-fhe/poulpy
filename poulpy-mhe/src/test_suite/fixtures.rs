@@ -7,7 +7,8 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    layouts::{Backend, Module, ZnxView, ZnxViewMut},
+    api::VecZnxAddScalarAssign,
+    layouts::{Backend, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef},
     source::Source,
 };
 
@@ -60,14 +61,18 @@ where
 pub(crate) fn ideal_secret<BE>(module: &Module<BE>, parties: &[Secret<BE>]) -> GLWESecretPrepared<AlignedBuf, BE>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWESecretPreparedFactory<BE> + VecZnxAddScalarAssign<BE>,
 {
     let mut sum: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
     for (sk, _) in parties {
         for col in 0..RANK.as_usize() {
-            for (s, x) in sum.data_mut().at_mut(col, 0).iter_mut().zip(sk.data().at(col, 0)) {
-                *s += x;
-            }
+            module.vec_znx_add_scalar_assign(
+                &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(sum.data_mut()),
+                col,
+                0,
+                &ScalarZnxToBackendRef::<BE>::to_backend_ref(sk.data()),
+                col,
+            );
         }
     }
     *sum.dist_mut() = Distribution::TernaryProb(0.5);

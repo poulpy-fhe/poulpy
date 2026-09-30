@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
     layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
     source::Source,
     test_suite::vec_znx_backend_mut,
@@ -32,6 +32,7 @@ where
         + GLWEPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
+        + VecZnxAddScalarAssign<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEEncryptPk<BE>
         + GLWENoise<BE>

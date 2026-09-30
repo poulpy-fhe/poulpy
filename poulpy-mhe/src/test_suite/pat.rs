@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
     layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
@@ -37,6 +37,7 @@ where
         + GLWEPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
+        + VecZnxAddScalarAssign<BE>
         + GLWECompressedEncryptSk<BE>
         + GLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -96,6 +97,7 @@ where
         + GGLWEPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
+        + VecZnxAddScalarAssign<BE>
         + GGLWECompressedEncryptSk<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
