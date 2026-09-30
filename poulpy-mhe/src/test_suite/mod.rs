@@ -71,8 +71,8 @@ macro_rules! mhe_backend_test_suite {
 
             #[test]
             #[should_panic(expected = "invalid secret")]
-            fn glwe_public_key_share_secret_none() {
-                $crate::test_suite::public_key::test_glwe_public_key_share_secret_none(&Module::<$backend>::new(64));
+            fn glwe_public_key_gen_secret_none() {
+                $crate::test_suite::public_key::test_glwe_public_key_gen_secret_none(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -104,8 +104,8 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_public_key_share_shape_guards() {
-                $crate::test_suite::public_key::test_glwe_public_key_share_shape_guards(&Module::<$backend>::new(64));
+            fn glwe_public_key_gen_shape_guards() {
+                $crate::test_suite::public_key::test_glwe_public_key_gen_shape_guards(&Module::<$backend>::new(64));
             }
 
             #[test]

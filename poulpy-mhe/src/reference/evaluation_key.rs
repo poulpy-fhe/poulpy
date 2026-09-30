@@ -7,17 +7,17 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
+use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 
-pub trait GLWESwitchingKeyShareReference<BE: Backend> {
-    fn glwe_switching_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+pub trait GLWESwitchingKeyProtocolReference<BE: Backend> {
+    fn glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_share_reference<S1, S2, E>(
+    fn glwe_switching_key_gen_reference<S1, S2, E>(
         &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
+        res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -30,11 +30,11 @@ pub trait GLWESwitchingKeyShareReference<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyShareReference<BE> for Module<BE>
+impl<BE: Backend> GLWESwitchingKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWESwitchingKeyCompressedEncryptSk<BE>,
 {
-    fn glwe_switching_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -45,9 +45,9 @@ where
         self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_switching_key_share_reference<S1, S2, E>(
+    fn glwe_switching_key_gen_reference<S1, S2, E>(
         &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
+        res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -83,15 +83,15 @@ where
     }
 }
 
-pub trait GLWEAutomorphismKeyShareReference<BE: Backend> {
-    fn glwe_automorphism_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+pub trait GLWEAutomorphismKeyProtocolReference<BE: Backend> {
+    fn glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_share_reference<S, E>(
+    fn glwe_automorphism_key_gen_reference<S, E>(
         &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -103,11 +103,11 @@ pub trait GLWEAutomorphismKeyShareReference<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyShareReference<BE> for Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWEAutomorphismKeyCompressedEncryptSk<BE>,
 {
-    fn glwe_automorphism_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -118,9 +118,9 @@ where
         self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_automorphism_key_share_reference<S, E>(
+    fn glwe_automorphism_key_gen_reference<S, E>(
         &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],

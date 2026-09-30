@@ -1,21 +1,19 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef},
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
     source::Source,
 };
 
-use crate::layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned};
+use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 
-/// Collective GLWE switching key: every party publishes a share under the
-/// common seed, and any party aggregates and finalizes the shares with
-/// [`GLWESwitchingKeyPatCompressedOps`](crate::api::GLWESwitchingKeyPatCompressedOps)
-/// into the key switching from the sum of the input secrets to the sum of the
-/// output secrets.
-pub trait GLWESwitchingKeyShare<BE: Backend> {
-    fn glwe_switching_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
+/// Collective GLWE switching key: every party generates a share under the
+/// common seed, and any party aggregates the shares and finalizes the key
+/// switching from the sum of the input secrets to the sum of the output secrets.
+pub trait GLWESwitchingKeyProtocol<BE: Backend> {
+    fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
@@ -30,9 +28,9 @@ pub trait GLWESwitchingKeyShare<BE: Backend> {
     /// independently seeded for each party and purpose; never replay its stream
     /// or initialize it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_share<S1, S2, E>(
+    fn glwe_switching_key_gen<S1, S2, E>(
         &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
+        res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -43,15 +41,30 @@ pub trait GLWESwitchingKeyShare<BE: Backend> {
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos;
+
+    /// Adds share `a` into `res`, which starts as the first share. The shares
+    /// must have the same layout, seed and degrees.
+    fn glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>);
+
+    fn glwe_switching_key_finalize_tmp_bytes(&self) -> usize;
+
+    /// Expands the aggregated shares into the canonical key `res` and copies
+    /// their degrees. `res` must have the share's layout.
+    fn glwe_switching_key_finalize<R>(
+        &self,
+        res: &mut R,
+        share: &GLWESwitchingKeyShareOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut;
 }
 
-/// Collective GLWE automorphism key for one Galois element `p`: the shares,
-/// aggregated and finalized with
-/// [`GLWEAutomorphismKeyPatCompressedOps`](crate::api::GLWEAutomorphismKeyPatCompressedOps),
-/// give the key mapping `X -> X^p` under the ideal secret, the sum of the
-/// parties' secrets.
-pub trait GLWEAutomorphismKeyShare<BE: Backend> {
-    fn glwe_automorphism_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
+/// Collective GLWE automorphism key for one Galois element `p`: every party
+/// generates a share under the common seed, and any party aggregates the
+/// shares and finalizes the key mapping `X -> X^p` under the ideal secret, the
+/// sum of the parties' secrets.
+pub trait GLWEAutomorphismKeyProtocol<BE: Backend> {
+    fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
@@ -65,9 +78,9 @@ pub trait GLWEAutomorphismKeyShare<BE: Backend> {
     /// seeded for each party and purpose; never replay its stream or initialize
     /// it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_share<S, E>(
+    fn glwe_automorphism_key_gen<S, E>(
         &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -77,4 +90,20 @@ pub trait GLWEAutomorphismKeyShare<BE: Backend> {
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
+
+    /// Adds share `a` into `res`, which starts as the first share. The shares
+    /// must have the same layout, seed and Galois element.
+    fn glwe_automorphism_key_aggregate(&self, res: &mut GLWEAutomorphismKeyShareOwned<BE>, a: &GLWEAutomorphismKeyShareOwned<BE>);
+
+    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize;
+
+    /// Expands the aggregated shares into the canonical key `res` and copies
+    /// their Galois element. `res` must have the share's layout.
+    fn glwe_automorphism_key_finalize<R>(
+        &self,
+        res: &mut R,
+        share: &GLWEAutomorphismKeyShareOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement;
 }

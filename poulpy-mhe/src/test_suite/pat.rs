@@ -1,6 +1,5 @@
-//! Aggregation, normalization and finalization of every PAT shape over
-//! three parties: the finalized aggregate decrypts under the ideal
-//! secret, and finalizing before or after normalization gives the same result.
+//! Aggregation and finalization of every PAT shape over three parties: the
+//! finalized aggregate decrypts under the ideal secret.
 
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk, GLWENoise,
@@ -22,7 +21,7 @@ use super::fixtures::{
     BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, gglwe_layout, ideal_secret, party_messages, party_secrets, secret_sum,
 };
 use crate::{
-    api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyShare},
+    api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyProtocol},
     layouts::MHEModuleAlloc,
 };
 
@@ -86,7 +85,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.glwe_pat_compressed_normalize_tmp_bytes())
             .max(module.glwe_pat_compressed_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
@@ -102,20 +100,14 @@ where
         }
     }
 
-    let mut lazy: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.glwe_pat_compressed_finalize(&mut lazy, &acc, &mut scratch.borrow());
-    assert!(lazy.is_canonical());
+    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    module.glwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    assert!(res.is_canonical());
     let noise: f64 = module
-        .glwe_noise(&lazy, &pt_want, &sk_ideal, &mut scratch.borrow())
+        .glwe_noise(&res, &pt_want, &sk_ideal, &mut scratch.borrow())
         .std()
         .log2();
     assert!(noise <= aggregate_noise_bound(K.as_usize()), "noise {noise} above bound");
-
-    module.glwe_pat_compressed_normalize_assign(&mut acc, &mut scratch.borrow());
-    let mut eager: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.glwe_pat_compressed_finalize(&mut eager, &acc, &mut scratch.borrow());
-    assert!(eager.is_canonical());
-    assert_eq!(lazy, eager);
 }
 
 pub fn test_gglwe_pat_compressed_ops<BE>(module: &Module<BE>)
@@ -141,7 +133,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .gglwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.gglwe_pat_compressed_normalize_tmp_bytes())
             .max(module.gglwe_pat_compressed_finalize_tmp_bytes())
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
@@ -165,14 +156,9 @@ where
         }
     }
 
-    let mut lazy: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_compressed_finalize(&mut lazy, &acc, &mut scratch.borrow());
-    assert_gglwe_noise(module, &lazy, &pt_want, &sk_ideal, &mut scratch);
-
-    module.gglwe_pat_compressed_normalize_assign(&mut acc, &mut scratch.borrow());
-    let mut eager: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_compressed_finalize(&mut eager, &acc, &mut scratch.borrow());
-    assert_eq!(lazy, eager);
+    let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
+    module.gglwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
 
 /// Unseeded shares of public-key encryptions under the collective key: the
@@ -184,8 +170,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
         + GGLWEPatOps<BE>
-        + GLWEPublicKeyShare<BE>
-        + GLWEPatCompressedOps<BE>
+        + GLWEPublicKeyProtocol<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -217,7 +202,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_pk_tmp_bytes(&pk_layout, &pk_layout)
-            .max(module.gglwe_pat_normalize_tmp_bytes())
             .max(module.gglwe_pat_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&pk_layout)),
     );
@@ -270,8 +254,8 @@ where
         }
     }
 
-    let mut lazy: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut lazy, &acc, &mut scratch.borrow());
+    let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
+    module.gglwe_pat_finalize(&mut res, &acc, &mut scratch.borrow());
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;
     let variance = 2.0 * RANK.as_usize() as f64 * n * 0.5 * (PARTIES * PARTIES) as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
@@ -280,7 +264,7 @@ where
         for col in 0..rank_in {
             let noise: f64 = module
                 .glwe_noise(
-                    &lazy.at_view(row, col),
+                    &res.at_view(row, col),
                     &pts_want[row * rank_in + col],
                     &sk_ideal,
                     &mut scratch.borrow(),
@@ -290,11 +274,6 @@ where
             assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound {bound}");
         }
     }
-
-    module.gglwe_pat_normalize_assign(&mut acc, &mut scratch.borrow());
-    let mut eager: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut eager, &acc, &mut scratch.borrow());
-    assert_eq!(lazy, eager);
 }
 
 /// Aggregating shares drawn under different seeds panics.

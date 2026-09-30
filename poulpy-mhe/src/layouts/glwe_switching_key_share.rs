@@ -12,21 +12,20 @@ use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, W
 
 use crate::layouts::GGLWEPatCompressed;
 
-pub type GLWESwitchingKeyPatCompressedOwned<BE> =
-    GLWESwitchingKeyPatCompressed<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type GLWESwitchingKeyShareOwned<BE> = GLWESwitchingKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
-/// Seeded public aggregatable transcript of a GLWE switching key: a
+/// One party's share of a collective GLWE switching key: a
 /// [`GGLWEPatCompressed`] with the degrees of the input and output secrets.
 ///
 /// Serializes as core's `GLWESwitchingKeyCompressed`.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWESwitchingKeyPatCompressed<D: Data, W: ZnxWord> {
+pub struct GLWESwitchingKeyShare<D: Data, W: ZnxWord> {
     pub(crate) key: GGLWEPatCompressed<D, W>,
     pub(crate) input_degree: Degree,
     pub(crate) output_degree: Degree,
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyShare<D, W> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -36,7 +35,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyPatCompres
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyShare<D, W> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -46,7 +45,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPatComp
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyShare<D, W> {
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -64,13 +63,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyPatCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKeyShare<D, W> {
     fn rank(&self) -> Rank {
         self.key.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyShare<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -92,19 +91,19 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyPatCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GLWESwitchingKeyShare<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         self.key.seed()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyShare<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         self.key.seed_mut()
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for GLWESwitchingKeyPatCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for GLWESwitchingKeyShare<D, BE::ZnxWord>
 where
     GGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendRef<BE>,
 {
@@ -113,7 +112,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GLWESwitchingKeyPatCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GLWESwitchingKeyShare<D, BE::ZnxWord>
 where
     GGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
 {
@@ -122,23 +121,23 @@ where
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "(GLWESwitchingKeyPatCompressed: sk_in_n={} sk_out_n={}) {}",
+            "(GLWESwitchingKeyShare: sk_in_n={} sk_out_n={}) {}",
             self.input_degree, self.output_degree, self.key
         )
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyShare<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let mut degree = [0u8; 4];
         reader.read_exact(&mut degree)?;
@@ -149,7 +148,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyPatCompressed<D,
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyShare<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_all(&self.input_degree.0.to_le_bytes())?;
         writer.write_all(&self.output_degree.0.to_le_bytes())?;

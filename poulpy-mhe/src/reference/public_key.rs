@@ -1,37 +1,38 @@
 use poulpy_core::{
     Distribution, EncryptionInfos, GLWECompressedEncryptSk, GetDistribution,
-    layouts::{GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
+    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
-pub trait GLWEPublicKeyShareReference<BE: Backend> {
-    fn glwe_public_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+use crate::layouts::GLWEPublicKeyShareOwned;
+
+pub trait GLWEPublicKeyProtocolReference<BE: Backend> {
+    fn glwe_public_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_public_key_share_reference<R, S, E>(
+    fn glwe_public_key_gen_reference<S, E>(
         &self,
-        res: &mut R,
+        res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWEPublicKeyShareReference<BE> for Module<BE>
+impl<BE: Backend> GLWEPublicKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWECompressedEncryptSk<BE>,
 {
-    fn glwe_public_key_share_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn glwe_public_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -42,16 +43,15 @@ where
         self.glwe_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_public_key_share_reference<R, S, E>(
+    fn glwe_public_key_gen_reference<S, E>(
         &self,
-        res: &mut R,
+        res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
         E: EncryptionInfos,
     {
@@ -69,6 +69,10 @@ where
             !matches!(sk_ref.dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
             "invalid secret: a public key share needs a samplable distribution"
         );
-        self.glwe_compressed_encrypt_zero_sk(res, sk, seed, enc_infos, source_xe, scratch);
+        // Every party derives the same distinct entry seeds from `seed`.
+        let mut seeds = Source::new(seed);
+        for entry in res.entries.iter_mut() {
+            self.glwe_compressed_encrypt_zero_sk(entry, sk, seeds.new_seed(), enc_infos, source_xe, scratch);
+        }
     }
 }

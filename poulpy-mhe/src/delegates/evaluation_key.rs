@@ -1,6 +1,6 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef},
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
@@ -8,22 +8,22 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEAutomorphismKeyShare, GLWESwitchingKeyShare},
-    layouts::{GLWEAutomorphismKeyPatCompressedOwned, GLWESwitchingKeyPatCompressedOwned},
-    oep::{GLWEAutomorphismKeyShareImpl, GLWESwitchingKeyShareImpl},
+    api::{GLWEAutomorphismKeyProtocol, GLWESwitchingKeyProtocol},
+    layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned},
+    oep::{GLWEAutomorphismKeyProtocolImpl, GLWESwitchingKeyProtocolImpl},
 };
 
-impl<BE: Backend + GLWESwitchingKeyShareImpl> GLWESwitchingKeyShare<BE> for Module<BE> {
-    fn glwe_switching_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
+impl<BE: Backend + GLWESwitchingKeyProtocolImpl> GLWESwitchingKeyProtocol<BE> for Module<BE> {
+    fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        BE::glwe_switching_key_share_tmp_bytes(self, infos)
+        BE::glwe_switching_key_gen_tmp_bytes(self, infos)
     }
 
-    fn glwe_switching_key_share<S1, S2, E>(
+    fn glwe_switching_key_gen<S1, S2, E>(
         &self,
-        res: &mut GLWESwitchingKeyPatCompressedOwned<BE>,
+        res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -35,21 +35,40 @@ impl<BE: Backend + GLWESwitchingKeyShareImpl> GLWESwitchingKeyShare<BE> for Modu
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::glwe_switching_key_share(self, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+        BE::glwe_switching_key_gen(self, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+    }
+
+    fn glwe_switching_key_aggregate(&self, res: &mut GLWESwitchingKeyShareOwned<BE>, a: &GLWESwitchingKeyShareOwned<BE>) {
+        BE::glwe_switching_key_aggregate(self, res, a)
+    }
+
+    fn glwe_switching_key_finalize_tmp_bytes(&self) -> usize {
+        BE::glwe_switching_key_finalize_tmp_bytes(self)
+    }
+
+    fn glwe_switching_key_finalize<R>(
+        &self,
+        res: &mut R,
+        share: &GLWESwitchingKeyShareOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+    {
+        BE::glwe_switching_key_finalize(self, res, share, scratch)
     }
 }
 
-impl<BE: Backend + GLWEAutomorphismKeyShareImpl> GLWEAutomorphismKeyShare<BE> for Module<BE> {
-    fn glwe_automorphism_key_share_tmp_bytes<A>(&self, infos: &A) -> usize
+impl<BE: Backend + GLWEAutomorphismKeyProtocolImpl> GLWEAutomorphismKeyProtocol<BE> for Module<BE> {
+    fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        BE::glwe_automorphism_key_share_tmp_bytes(self, infos)
+        BE::glwe_automorphism_key_gen_tmp_bytes(self, infos)
     }
 
-    fn glwe_automorphism_key_share<S, E>(
+    fn glwe_automorphism_key_gen<S, E>(
         &self,
-        res: &mut GLWEAutomorphismKeyPatCompressedOwned<BE>,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -60,6 +79,29 @@ impl<BE: Backend + GLWEAutomorphismKeyShareImpl> GLWEAutomorphismKeyShare<BE> fo
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::glwe_automorphism_key_share(self, res, p, sk, seed, enc_infos, source_xe, scratch)
+        BE::glwe_automorphism_key_gen(self, res, p, sk, seed, enc_infos, source_xe, scratch)
+    }
+
+    fn glwe_automorphism_key_aggregate(
+        &self,
+        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        a: &GLWEAutomorphismKeyShareOwned<BE>,
+    ) {
+        BE::glwe_automorphism_key_aggregate(self, res, a)
+    }
+
+    fn glwe_automorphism_key_finalize_tmp_bytes(&self) -> usize {
+        BE::glwe_automorphism_key_finalize_tmp_bytes(self)
+    }
+
+    fn glwe_automorphism_key_finalize<R>(
+        &self,
+        res: &mut R,
+        share: &GLWEAutomorphismKeyShareOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
+    {
+        BE::glwe_automorphism_key_finalize(self, res, share, scratch)
     }
 }

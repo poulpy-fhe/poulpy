@@ -10,9 +10,10 @@ defaults in `oep::derived`.
 
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
 the collective public key protocol and `api::evaluation_key` the collective
-switching and automorphism key protocols. All are re-exported by `api` and the crate root.
-Every operation that takes caller scratch has a matching `_tmp_bytes` query in
-the same trait.
+switching and automorphism key protocols. A protocol trait holds `_gen`,
+`_aggregate` and `_finalize` on the protocol's share type. All are re-exported
+by `api` and the crate root. Every operation that takes caller scratch has a
+matching `_tmp_bytes` query in the same trait.
 
 ## Operation map
 
@@ -21,16 +22,15 @@ the same trait.
 | `GLWEPatCompressedOps` | `GLWEPatCompressedImpl` | `reference::GLWEPatCompressedReference` |
 | `GGLWEPatCompressedOps` | `GGLWEPatCompressedImpl` | `reference::GGLWEPatCompressedReference` |
 | `GGLWEPatOps` | `GGLWEPatImpl` | `reference::GGLWEPatReference` |
-| `GLWESwitchingKeyPatCompressedOps` | `GLWESwitchingKeyPatCompressedImpl` | derived defaults over `GGLWEPatCompressedImpl` |
-| `GLWEAutomorphismKeyPatCompressedOps` | `GLWEAutomorphismKeyPatCompressedImpl` | derived defaults over `GGLWEPatCompressedImpl` |
-| `GLWEPublicKeyShare` | `GLWEPublicKeyShareImpl` | `reference::GLWEPublicKeyShareReference`; finalization is a derived default |
-| `GLWESwitchingKeyShare` | `GLWESwitchingKeyShareImpl` | `reference::GLWESwitchingKeyShareReference` |
-| `GLWEAutomorphismKeyShare` | `GLWEAutomorphismKeyShareImpl` | `reference::GLWEAutomorphismKeyShareReference` |
+| `GLWEPublicKeyProtocol` | `GLWEPublicKeyProtocolImpl` | `reference::GLWEPublicKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWESwitchingKeyProtocol` | `GLWESwitchingKeyProtocolImpl` | `reference::GLWESwitchingKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWEAutomorphismKeyProtocol` | `GLWEAutomorphismKeyProtocolImpl` | `reference::GLWEAutomorphismKeyProtocolReference`; aggregation and finalization are derived defaults |
 
 ## Normalization
 
-Aggregation adds limbs without normalizing; normalization and finalization
-produce canonical digits. Headroom for chains of additions follows the
+Aggregation adds limbs without normalizing; finalization, the only
+normalization, produces canonical digits. Headroom for chains of additions
+follows the
 [radix failure estimates](../../docs/base2k-failure-probability.md).
 
 ## Key metadata
@@ -47,10 +47,10 @@ Use a fresh seed for every result, separated by protocol, session and key
 identity (including the Galois element). Derive separate seeds from the CRS
 for a key set. In particular, switching keys for different input secrets and
 one output secret must have different seeds: subtracting same-mask bodies
-reveals the gadget-scaled input-secret difference plus small error. Each of
-the `rank` public key entries is shared under its own seed; finalization
-rejects entries that share one, since common masks would make public-key
-encryption rank 1 in its ephemerals.
+reveals the gadget-scaled input-secret difference plus small error. Public
+key generation derives a distinct seed for each of the `rank` entries from the
+common seed; finalization rejects entries that share one, since common masks
+would make public-key encryption rank 1 in its ephemerals.
 
 Private `source_xe` streams must be independently
 seeded for each party and purpose, kept secret and consumed without replay.
@@ -70,8 +70,6 @@ reference traits stay callable from an override.
 
 ## Workspace
 
-Size scratch with the queries: each PAT type's `*_normalize_tmp_bytes` and
-`*_finalize_tmp_bytes`, `glwe_public_key_share_tmp_bytes`,
-`glwe_public_key_finalize_tmp_bytes`, `glwe_switching_key_share_tmp_bytes` and
-`glwe_automorphism_key_share_tmp_bytes`. A replacement that needs more
-workspace replaces the matching query.
+Size scratch with the queries: each PAT type's `*_finalize_tmp_bytes`, and
+each protocol's `*_gen_tmp_bytes` and `*_finalize_tmp_bytes`. A replacement
+that needs more workspace replaces the matching query.
