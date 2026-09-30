@@ -21,7 +21,7 @@ use super::fixtures::{
     BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, gglwe_layout, ideal_secret, party_messages, party_secrets, secret_sum,
 };
 use crate::{
-    api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyProtocol},
+    api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
     layouts::MHEModuleAlloc,
 };
 
@@ -170,7 +170,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
         + GGLWEPatOps<BE>
-        + GLWEPublicKeyProtocol<BE>
+        + GLWEPublicKeyMHEProtocol<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>

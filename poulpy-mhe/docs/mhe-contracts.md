@@ -22,9 +22,9 @@ matching `_tmp_bytes` query in the same trait.
 | `GLWEPatCompressedOps` | `GLWEPatCompressedImpl` | `reference::GLWEPatCompressedReference` |
 | `GGLWEPatCompressedOps` | `GGLWEPatCompressedImpl` | `reference::GGLWEPatCompressedReference` |
 | `GGLWEPatOps` | `GGLWEPatImpl` | `reference::GGLWEPatReference` |
-| `GLWEPublicKeyProtocol` | `GLWEPublicKeyProtocolImpl` | `reference::GLWEPublicKeyProtocolReference`; aggregation and finalization are derived defaults |
-| `GLWESwitchingKeyProtocol` | `GLWESwitchingKeyProtocolImpl` | `reference::GLWESwitchingKeyProtocolReference`; aggregation and finalization are derived defaults |
-| `GLWEAutomorphismKeyProtocol` | `GLWEAutomorphismKeyProtocolImpl` | `reference::GLWEAutomorphismKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWEPublicKeyMHEProtocol` | `GLWEPublicKeyMHEProtocolImpl` | `reference::GLWEPublicKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWESwitchingKeyMHEProtocol` | `GLWESwitchingKeyMHEProtocolImpl` | `reference::GLWESwitchingKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
+| `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 
 ## Normalization
 
@@ -33,12 +33,14 @@ normalization, produces canonical digits. Headroom for chains of additions
 follows the
 [radix failure estimates](../../docs/base2k-failure-probability.md).
 
-## Key metadata
+## Share metadata
 
-Switching key shares carry the input and output degrees, automorphism key
-shares the Galois element, as core's compressed keys do. Aggregation asserts
-that both shares carry the same metadata, and finalization copies it into the
-key.
+Public key shares carry the distribution of the secret they were generated
+with, which the finalized key draws its ephemerals from, as core's key takes
+its secret's. Switching key shares carry the input and output degrees,
+automorphism key shares the Galois element, as core's compressed keys do.
+Aggregation asserts that both shares carry the same metadata, and finalization
+copies it into the key.
 
 ## Randomness and seeds
 

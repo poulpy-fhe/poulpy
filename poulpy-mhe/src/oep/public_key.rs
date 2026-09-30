@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GetDistributionMut,
+    EncryptionInfos, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -13,7 +13,7 @@ use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 /// # Safety
 /// Reproduce the reference share, entry seeds included, within the queried
 /// scratch budget.
-pub unsafe trait GLWEPublicKeyProtocolImpl: GLWEPatCompressedImpl {
+pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
     fn glwe_public_key_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -47,12 +47,11 @@ pub unsafe trait GLWEPublicKeyProtocolImpl: GLWEPatCompressedImpl {
         module: &Module<Self>,
         res: &mut R,
         share: &GLWEPublicKeyShareOwned<Self>,
-        dist: Distribution,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEPublicKeyAtViewMut<Self> + GetDistributionMut + GLWEInfos,
     {
-        derived::glwe_public_key_finalize_derived(module, res, share, dist, scratch)
+        derived::glwe_public_key_finalize_derived(module, res, share, scratch)
     }
 }
 
@@ -61,12 +60,12 @@ pub unsafe trait GLWEPublicKeyProtocolImpl: GLWEPatCompressedImpl {
 #[macro_export]
 macro_rules! impl_mhe_public_key_reference {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEPublicKeyProtocolImpl for $be {
+        unsafe impl $crate::oep::GLWEPublicKeyMHEProtocolImpl for $be {
             fn glwe_public_key_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyProtocolReference<$be>>::glwe_public_key_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::glwe_public_key_gen_tmp_bytes_reference(module, infos)
             }
 
             fn glwe_public_key_gen<S, E>(
@@ -81,7 +80,7 @@ macro_rules! impl_mhe_public_key_reference {
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be>,
                 E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyProtocolReference<$be>>::glwe_public_key_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::glwe_public_key_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
             }
         }
     };

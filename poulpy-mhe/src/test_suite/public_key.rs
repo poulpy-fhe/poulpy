@@ -17,7 +17,7 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, ideal_secret, party_secrets};
-use crate::{api::GLWEPublicKeyProtocol, layouts::MHEModuleAlloc};
+use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub fn test_glwe_public_key<BE>(module: &Module<BE>)
 where
@@ -25,7 +25,7 @@ where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPublicKeyProtocol<BE>
+        + GLWEPublicKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
@@ -79,13 +79,13 @@ where
     assert!(noise <= bound, "noise {noise} above bound {bound}");
 }
 
-/// Finalizing with a non-samplable distribution panics.
+/// Finalizing a share without a samplable distribution panics; a fresh share has `NONE`.
 pub fn test_glwe_public_key_finalize_dist_none<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -97,7 +97,7 @@ where
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_finalize_tmp_bytes());
-    module.glwe_public_key_finalize(&mut pk, &share, Distribution::NONE, &mut scratch.borrow());
+    module.glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
 }
 
 /// Entries sharing a seed share their masks, which makes encryption rank 1 in the ephemerals; a fresh share has zero seeds.
@@ -106,7 +106,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -115,10 +115,29 @@ where
         k: K,
         rank: RANK,
     };
-    let share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    share.dist = Distribution::TernaryProb(0.5);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_public_key_finalize_tmp_bytes());
-    module.glwe_public_key_finalize(&mut pk, &share, Distribution::TernaryProb(0.5), &mut scratch.borrow());
+    module.glwe_public_key_finalize(&mut pk, &share, &mut scratch.borrow());
+}
+
+/// Aggregating shares generated under secrets of different distributions panics.
+pub fn test_glwe_public_key_aggregate_dist_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+{
+    let layout = GLWELayout {
+        n: module.n().into(),
+        base2k: BASE2K,
+        k: K,
+        rank: RANK,
+    };
+    let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
+    b.dist = Distribution::TernaryProb(0.5);
+    module.glwe_public_key_aggregate(&mut a, &b);
 }
 
 /// Sharing under a secret without a samplable distribution panics.
@@ -127,7 +146,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -154,7 +173,7 @@ where
 pub fn test_glwe_public_key_gen_shape_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: ModuleNew<BE> + MHEModuleAlloc<BE> + GLWEPublicKeyProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {

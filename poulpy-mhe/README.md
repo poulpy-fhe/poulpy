@@ -14,7 +14,8 @@ Parties exchange public aggregatable transcripts (PATs), one type per shape:
 
 Each protocol has its own share type, a wrapper of these PATs:
 
-- `GLWEPublicKeyShare`: one `GLWEPatCompressed` per public key entry.
+- `GLWEPublicKeyShare`: one `GLWEPatCompressed` per public key entry, with
+  the distribution of the secret it was generated with.
 - `GLWESwitchingKeyShare`, `GLWEAutomorphismKeyShare`: a `GGLWEPatCompressed`
   with core's key metadata (degrees, Galois element).
 
@@ -30,8 +31,8 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 - `GLWEPatCompressedOps`, `GGLWEPatCompressedOps`, `GGLWEPatOps`: one trait
   per PAT type to sum PATs and expand one into the canonical ciphertext it
   transcribes.
-- `GLWEPublicKeyProtocol`, `GLWESwitchingKeyProtocol`,
-  `GLWEAutomorphismKeyProtocol`: one trait per protocol, `_gen` a party's
+- `GLWEPublicKeyMHEProtocol`, `GLWESwitchingKeyMHEProtocol`,
+  `GLWEAutomorphismKeyMHEProtocol`: one trait per protocol, `_gen` a party's
   share, `_aggregate` two shares, `_finalize` the core `GLWEPublicKey`,
   `GLWESwitchingKey` or `GLWEAutomorphismKey` of the ideal secrets.
 

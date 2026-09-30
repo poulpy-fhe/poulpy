@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GetDistributionMut,
+    EncryptionInfos, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -7,9 +7,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GLWEPublicKeyProtocol, layouts::GLWEPublicKeyShareOwned, oep::GLWEPublicKeyProtocolImpl};
+use crate::{api::GLWEPublicKeyMHEProtocol, layouts::GLWEPublicKeyShareOwned, oep::GLWEPublicKeyMHEProtocolImpl};
 
-impl<BE: Backend + GLWEPublicKeyProtocolImpl> GLWEPublicKeyProtocol<BE> for Module<BE> {
+impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> for Module<BE> {
     fn glwe_public_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -40,15 +40,10 @@ impl<BE: Backend + GLWEPublicKeyProtocolImpl> GLWEPublicKeyProtocol<BE> for Modu
         BE::glwe_public_key_finalize_tmp_bytes(self)
     }
 
-    fn glwe_public_key_finalize<R>(
-        &self,
-        res: &mut R,
-        share: &GLWEPublicKeyShareOwned<BE>,
-        dist: Distribution,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_public_key_finalize<R>(&self, res: &mut R, share: &GLWEPublicKeyShareOwned<BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEPublicKeyAtViewMut<BE> + GetDistributionMut + GLWEInfos,
     {
-        BE::glwe_public_key_finalize(self, res, share, dist, scratch)
+        BE::glwe_public_key_finalize(self, res, share, scratch)
     }
 }

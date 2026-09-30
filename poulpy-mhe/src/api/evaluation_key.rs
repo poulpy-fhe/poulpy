@@ -12,7 +12,7 @@ use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 /// Collective GLWE switching key: every party generates a share under the
 /// common seed, and any party aggregates the shares and finalizes the key
 /// switching from the sum of the input secrets to the sum of the output secrets.
-pub trait GLWESwitchingKeyProtocol<BE: Backend> {
+pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -63,7 +63,7 @@ pub trait GLWESwitchingKeyProtocol<BE: Backend> {
 /// generates a share under the common seed, and any party aggregates the
 /// shares and finalizes the key mapping `X -> X^p` under the ideal secret, the
 /// sum of the parties' secrets.
-pub trait GLWEAutomorphismKeyProtocol<BE: Backend> {
+pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;

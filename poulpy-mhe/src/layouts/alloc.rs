@@ -1,5 +1,8 @@
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+use poulpy_core::{
+    Distribution,
+    layouts::{
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+    },
 };
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -12,8 +15,9 @@ use crate::layouts::{
 /// PAT and share allocation on a backend module.
 ///
 /// Every method is default-bodied over the core allocation supertraits, so the
-/// blanket impl for `Module<BE>` is empty. A fresh PAT or share is zero; key
-/// metadata starts as in core (degrees `0`, Galois element `0`).
+/// blanket impl for `Module<BE>` is empty. A fresh PAT or share is zero; share
+/// metadata starts as in core (degrees `0`, Galois element `0`, distribution
+/// `NONE`).
 pub trait MHEModuleAlloc<BE: Backend>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -75,6 +79,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
             entries: (0..infos.rank().as_usize())
                 .map(|_| self.glwe_pat_compressed_alloc_from_infos(infos))
                 .collect(),
+            dist: Distribution::NONE,
         }
     }
 
@@ -83,6 +88,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
             entries: (0..rank.as_usize())
                 .map(|_| self.glwe_pat_compressed_alloc(base2k, k, rank))
                 .collect(),
+            dist: Distribution::NONE,
         }
     }
 

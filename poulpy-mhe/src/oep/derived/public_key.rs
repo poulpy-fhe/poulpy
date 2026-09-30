@@ -11,6 +11,7 @@ pub(crate) fn glwe_public_key_aggregate_derived<BE: GLWEPatCompressedImpl>(
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
 ) {
+    assert!(res.dist == a.dist, "invalid aggregation: secret distributions differ");
     // Entry layouts carry the rank, so equal layouts mean equal entry counts.
     for (res, a) in res.entries.iter_mut().zip(&a.entries) {
         BE::glwe_pat_compressed_aggregate_assign(module, res, a);
@@ -21,12 +22,11 @@ pub(crate) fn glwe_public_key_finalize_derived<BE: GLWEPatCompressedImpl, R>(
     module: &Module<BE>,
     res: &mut R,
     share: &GLWEPublicKeyShareOwned<BE>,
-    dist: Distribution,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEPublicKeyAtViewMut<BE> + GetDistributionMut + GLWEInfos,
 {
-    let entries = &share.entries;
+    let (entries, dist) = (&share.entries, share.dist);
     assert!(
         !matches!(dist, Distribution::NONE | Distribution::ENCAPSULATED(_)),
         "invalid distribution: a public key needs a samplable distribution"

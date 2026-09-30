@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWEPublicKeyShareOwned;
 
-pub trait GLWEPublicKeyProtocolReference<BE: Backend> {
+pub trait GLWEPublicKeyMHEProtocolReference<BE: Backend> {
     fn glwe_public_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -28,7 +28,7 @@ pub trait GLWEPublicKeyProtocolReference<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWEPublicKeyProtocolReference<BE> for Module<BE>
+impl<BE: Backend> GLWEPublicKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWECompressedEncryptSk<BE>,
 {
@@ -69,6 +69,7 @@ where
             !matches!(sk_ref.dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
             "invalid secret: a public key share needs a samplable distribution"
         );
+        res.dist = *sk_ref.dist();
         // Every party derives the same distinct entry seeds from `seed`.
         let mut seeds = Source::new(seed);
         for entry in res.entries.iter_mut() {

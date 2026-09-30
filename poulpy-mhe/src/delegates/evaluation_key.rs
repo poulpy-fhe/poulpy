@@ -8,12 +8,12 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEAutomorphismKeyProtocol, GLWESwitchingKeyProtocol},
+    api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},
     layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned},
-    oep::{GLWEAutomorphismKeyProtocolImpl, GLWESwitchingKeyProtocolImpl},
+    oep::{GLWEAutomorphismKeyMHEProtocolImpl, GLWESwitchingKeyMHEProtocolImpl},
 };
 
-impl<BE: Backend + GLWESwitchingKeyProtocolImpl> GLWESwitchingKeyProtocol<BE> for Module<BE> {
+impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<BE> for Module<BE> {
     fn glwe_switching_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -58,7 +58,7 @@ impl<BE: Backend + GLWESwitchingKeyProtocolImpl> GLWESwitchingKeyProtocol<BE> fo
     }
 }
 
-impl<BE: Backend + GLWEAutomorphismKeyProtocolImpl> GLWEAutomorphismKeyProtocol<BE> for Module<BE> {
+impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEProtocol<BE> for Module<BE> {
     fn glwe_automorphism_key_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,

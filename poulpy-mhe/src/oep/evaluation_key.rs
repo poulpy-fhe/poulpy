@@ -16,7 +16,7 @@ use crate::{
 /// # Safety
 /// Reproduce the reference share, mask seeds and degrees included, within the
 /// queried scratch budget.
-pub unsafe trait GLWESwitchingKeyProtocolImpl: GGLWEPatCompressedImpl {
+pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     fn glwe_switching_key_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -63,7 +63,7 @@ pub unsafe trait GLWESwitchingKeyProtocolImpl: GGLWEPatCompressedImpl {
 /// # Safety
 /// Reproduce the reference share, mask seeds and Galois element included,
 /// within the queried scratch budget.
-pub unsafe trait GLWEAutomorphismKeyProtocolImpl: GGLWEPatCompressedImpl {
+pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     fn glwe_automorphism_key_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -111,12 +111,12 @@ pub unsafe trait GLWEAutomorphismKeyProtocolImpl: GGLWEPatCompressedImpl {
 #[macro_export]
 macro_rules! impl_mhe_evaluation_key_reference {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWESwitchingKeyProtocolImpl for $be {
+        unsafe impl $crate::oep::GLWESwitchingKeyMHEProtocolImpl for $be {
             fn glwe_switching_key_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyProtocolReference<$be>>::glwe_switching_key_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::glwe_switching_key_gen_tmp_bytes_reference(module, infos)
             }
 
             fn glwe_switching_key_gen<S1, S2, E>(
@@ -135,16 +135,16 @@ macro_rules! impl_mhe_evaluation_key_reference {
                     + ::poulpy_core::layouts::GLWEInfos,
                 E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyProtocolReference<$be>>::glwe_switching_key_gen_reference(module, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::glwe_switching_key_gen_reference(module, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
             }
         }
 
-        unsafe impl $crate::oep::GLWEAutomorphismKeyProtocolImpl for $be {
+        unsafe impl $crate::oep::GLWEAutomorphismKeyMHEProtocolImpl for $be {
             fn glwe_automorphism_key_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyProtocolReference<$be>>::glwe_automorphism_key_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::glwe_automorphism_key_gen_tmp_bytes_reference(module, infos)
             }
 
             fn glwe_automorphism_key_gen<S, E>(
@@ -160,7 +160,7 @@ macro_rules! impl_mhe_evaluation_key_reference {
                 S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyProtocolReference<$be>>::glwe_automorphism_key_gen_reference(module, res, p, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::glwe_automorphism_key_gen_reference(module, res, p, sk, seed, enc_infos, source_xe, scratch)
             }
         }
     };

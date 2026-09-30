@@ -64,6 +64,12 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            #[should_panic(expected = "invalid aggregation: secret distributions differ")]
+            fn glwe_public_key_aggregate_dist_mismatch() {
+                $crate::test_suite::public_key::test_glwe_public_key_aggregate_dist_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             #[should_panic(expected = "invalid finalization: public key entries share a seed")]
             fn glwe_public_key_finalize_shared_seed() {
                 $crate::test_suite::public_key::test_glwe_public_key_finalize_shared_seed(&Module::<$backend>::new(64));

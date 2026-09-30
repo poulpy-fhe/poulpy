@@ -23,7 +23,7 @@ use super::{
     pat::assert_gglwe_noise,
 };
 use crate::{
-    api::{GLWEAutomorphismKeyProtocol, GLWESwitchingKeyProtocol},
+    api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},
     layouts::MHEModuleAlloc,
 };
 
@@ -33,7 +33,7 @@ where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
-        + GLWESwitchingKeyProtocol<BE>
+        + GLWESwitchingKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -85,7 +85,7 @@ where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: MHEModuleAlloc<BE>
-        + GLWEAutomorphismKeyProtocol<BE>
+        + GLWEAutomorphismKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -127,7 +127,7 @@ where
 pub fn test_glwe_switching_key_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
@@ -140,7 +140,7 @@ where
 pub fn test_glwe_switching_key_out_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
@@ -153,7 +153,7 @@ where
 pub fn test_glwe_automorphism_key_p_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyMHEProtocol<BE>,
 {
     let layout = gglwe_layout(module);
     let mut a = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
@@ -191,8 +191,8 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
         + MHEModuleAlloc<BE>
-        + GLWESwitchingKeyProtocol<BE>
-        + GLWEAutomorphismKeyProtocol<BE>
+        + GLWESwitchingKeyMHEProtocol<BE>
+        + GLWEAutomorphismKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

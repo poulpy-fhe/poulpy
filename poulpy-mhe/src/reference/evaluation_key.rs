@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
 
-pub trait GLWESwitchingKeyProtocolReference<BE: Backend> {
+pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
     fn glwe_switching_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -30,7 +30,7 @@ pub trait GLWESwitchingKeyProtocolReference<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyProtocolReference<BE> for Module<BE>
+impl<BE: Backend> GLWESwitchingKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESwitchingKeyCompressedEncryptSk<BE>,
 {
@@ -83,7 +83,7 @@ where
     }
 }
 
-pub trait GLWEAutomorphismKeyProtocolReference<BE: Backend> {
+pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
     fn glwe_automorphism_key_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -103,7 +103,7 @@ pub trait GLWEAutomorphismKeyProtocolReference<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyProtocolReference<BE> for Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWEAutomorphismKeyCompressedEncryptSk<BE>,
 {

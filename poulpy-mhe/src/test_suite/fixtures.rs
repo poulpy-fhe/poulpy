@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GetDistributionMut,
+    Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GLWELayout, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
         GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -12,7 +12,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GLWEPublicKeyProtocol, layouts::MHEModuleAlloc};
+use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub(crate) const BASE2K: Base2K = Base2K(12);
 pub(crate) const K: TorusPrecision = TorusPrecision(33);
@@ -114,7 +114,7 @@ pub(crate) fn collective_public_key<BE>(
 ) -> GLWEPublicKeyPrepared<AlignedBuf, BE>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
@@ -135,7 +135,11 @@ where
         }
     }
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
-    module.glwe_public_key_finalize(&mut pk, &acc, Distribution::TernaryProb(0.5), &mut scratch.borrow());
+    module.glwe_public_key_finalize(&mut pk, &acc, &mut scratch.borrow());
+    assert!(
+        pk.dist() == parties[0].0.dist(),
+        "the key takes the parties' secret distribution"
+    );
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
     pk_prepared
