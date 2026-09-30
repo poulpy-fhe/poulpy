@@ -9,23 +9,23 @@ use poulpy_ckks::{
 };
 use poulpy_hal::api::NegacyclicFFTNew;
 
-use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle, fft::ComplexFft};
+use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle, ckks_fft::EncodingFft};
 
 /// Encoding plans at precision `S`: the slot permutation and the transform
 /// for every power-of-two slot count up to the module capacity, by `log2(slots)`.
 pub struct EncodingPlans<S> {
-    plans: Vec<(EncodingPermutation, ComplexFft<S>)>,
+    plans: Vec<(EncodingPermutation, EncodingFft<S>)>,
 }
 
 impl<S: CKKSEncodingScalar> EncodingPlans<S> {
     fn new(max_slots: usize) -> CKKSResult<Self> {
         let plans = (0..=max_slots.ilog2())
-            .map(|log_slots| Ok((EncodingPermutation::new(1 << log_slots)?, ComplexFft::new(1 << log_slots))))
+            .map(|log_slots| Ok((EncodingPermutation::new(1 << log_slots)?, EncodingFft::new(1 << log_slots))))
             .collect::<anyhow::Result<_>>()?;
         Ok(Self { plans })
     }
 
-    fn for_slots(&self, slots: usize) -> CKKSResult<(&EncodingPermutation, &ComplexFft<S>)> {
+    fn for_slots(&self, slots: usize) -> CKKSResult<(&EncodingPermutation, &EncodingFft<S>)> {
         if !slots.is_power_of_two() || slots.ilog2() as usize >= self.plans.len() {
             return Err(CKKSError::Internal(anyhow::anyhow!(
                 "slot count {slots} is not a power of two within the module capacity"

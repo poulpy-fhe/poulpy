@@ -6,20 +6,19 @@ use poulpy_hal::layouts::Ring;
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Portable);
 impl_ckks_encapsulated_mod_up_reference!(NTT4x30Portable);
-// The portable backends have no accelerated transform, so they select the
-// generic scalar table for every precision at once.
+// The portable backends encode every precision with the canonical table.
 impl<R: Ring, F> CKKSEncodingTransform<F> for FFT64Portable<R>
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 
 impl<R: Ring, F> CKKSEncodingTransform<F> for NTT4x30Portable<R>
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 
 crate::impl_cpu_ckks_defaults!(super::FFT64Portable);
