@@ -1,14 +1,16 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSFoldKeys, CKKSPlaintextOwned,
+        EncodedLut,
     },
+    reference::fold::CKKSFoldRing,
 };
 
 /// CKKS bootstrapping.
@@ -176,4 +178,53 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ) -> Result<()>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+}
+
+/// Bootstraps a batch of standard or conjugate-invariant ciphertexts: folds them
+/// with [`CKKSFoldOps`](crate::api::CKKSFoldOps), refreshes each folded ciphertext
+/// with [`CKKSBootstrappingOps::ckks_bootstrap`] and unfolds the results.
+///
+/// The inputs belong to `input_module`, and `fold_keys` carries the switches between
+/// their secret and the bootstrap secret ([`CKKSFoldKeys`]). Outputs are allocated
+/// at the bootstrap width and keep the input scale and sparsity; outputs of real
+/// pairs are one bit narrower. The context's slot count must match the folded
+/// ciphertexts, so merged or conjugate-invariant inputs need full-slot transforms.
+pub trait CKKSBootstrapBatchOps<BE: Backend> {
+    /// Scratch bound of [`Self::ckks_bootstrap_batch`] for outputs like `ct_out`
+    /// and inputs like `ct_in`; the folded ciphertexts are allocated on the heap.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_bootstrap_batch_tmp_bytes<IN, C1, C2, F, K>(
+        &self,
+        input_module: &Module<IN>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+        fold_keys: &K,
+    ) -> usize
+    where
+        IN: Backend,
+        IN::Ring: CKKSFoldRing<BE, IN>,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+        K: CKKSFoldKeys<BE, IN>;
+
+    /// Refreshes `ins` into `outs`.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_bootstrap_batch<IN, F, K, FK>(
+        &self,
+        input_module: &Module<IN>,
+        outs: &mut [CKKSCiphertextOwned<IN>],
+        ins: &[CKKSCiphertextOwned<IN>],
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        fold_keys: &FK,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        IN: Backend,
+        IN::Ring: CKKSFoldRing<BE, IN>,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        FK: CKKSFoldKeys<BE, IN>;
 }

@@ -26,15 +26,17 @@
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 
-use crate::api::CKKSEncodingOps;
-use crate::layouts::CKKSCiphertextOwned;
+use crate::api::{CKKSBootstrapBatchOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps};
 use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::{BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSFoldKeySet, CKKSFoldKeys};
+use crate::reference::fold::CKKSFoldRing;
 use poulpy_hal::AlignedBuf;
 use std::time::Instant;
 
+use poulpy_core::EncryptionLayout;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWESecretPrepared, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -60,9 +62,10 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, assert_canonical_at_k,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, assert_canonical_at_k,
+            ckks_encrypt_with_prec, ckks_spec, gen_atk, gen_sk_with_raw, precision_stats, test_vector_1,
         },
+        presets::{PRECISION_LOG_BUDGET, ring_switched_setup},
     },
 };
 
@@ -1258,6 +1261,199 @@ fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKS
                 want.data().at(col, limb),
                 "bootstrap output col={col} limb={limb}"
             );
+        }
+    }
+}
+
+/// Refreshes batches through [`CKKSBootstrapBatchOps`] on a module of degree `2n`:
+/// inputs under the bootstrap secret at its degree, then inputs of degree `n` under
+/// their own secret, merged two per bootstrap. Each batch holds a complex input and
+/// two real pairs.
+pub fn test_bootstrapping_batch_e2e<BE, F, E>(
+    mut params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSBootstrapBatchOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>,
+    Standard: CKKSFoldRing<BE, BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let n = module.n();
+    let bootstrap_module = Module::<BE>::new(2 * n as u64);
+    let bootstrap_host = Module::<HostBytesBackend>::new(2 * n as u64);
+    params.prec_meta = CKKSMeta {
+        log_delta: 0,
+        log_sparsity: 0,
+        slots: SlotsKind::Complex,
+    };
+    let setup = ring_switched_setup(params, 2 * n, true, true, false, 6);
+    let params = setup.params;
+    let bootstrap_params = CKKSTestParams { n: 2 * n, ..params };
+    let mut scratch = alloc_scratch(&params, module);
+    let mut bootstrap_scratch = alloc_scratch(&bootstrap_params, &bootstrap_module);
+    let ctx = BootstrappingContext::<BE, f64>::compile(
+        &bootstrap_module,
+        params.base2k.into(),
+        &setup.plan,
+        &mut bootstrap_scratch.borrow(),
+    )
+    .unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
+    let (bootstrap_sk_raw, bootstrap_sk) = gen_sk_with_raw(&bootstrap_params, &bootstrap_module, &bootstrap_host, [32; 32]);
+    let (mut source_xs, mut source_xe, mut source_xa) = (Source::new([33; 32]), Source::new([34; 32]), Source::new([35; 32]));
+    let keys = ctx
+        .generate_keys(
+            &bootstrap_module,
+            &bootstrap_sk_raw,
+            &setup.keys_layout,
+            &mut source_xs,
+            &mut source_xe,
+            &mut source_xa,
+            &mut bootstrap_scratch.borrow(),
+        )
+        .unwrap()
+        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow());
+    let ring_switch = setup
+        .ring_switch_layout
+        .generate(
+            &bootstrap_module,
+            &sk_raw,
+            &bootstrap_sk_raw,
+            &mut source_xe,
+            &mut source_xa,
+            &mut bootstrap_scratch.borrow(),
+        )
+        .unwrap()
+        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow())
+        .unwrap();
+    let conjugation = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
+    let input_k = setup
+        .plan
+        .input_k(params.prec_meta.log_delta + setup.plan.eval_mod().log_msg_ratio);
+    let batch = BatchCase {
+        bootstrap_module: &bootstrap_module,
+        ctx: &ctx,
+        keys: &keys,
+        keys_layout: &setup.keys_layout,
+        params,
+        input_k,
+    };
+    batch.check(&bootstrap_module, &bootstrap_sk, &keys, &mut source_xe, &mut source_xa);
+    let fold_keys = CKKSFoldKeySet {
+        ring_switch: &ring_switch,
+        conjugation: &conjugation,
+    };
+    batch.check(module, &sk, &fold_keys, &mut source_xe, &mut source_xa);
+}
+
+struct BatchCase<'a, BE: Backend> {
+    bootstrap_module: &'a Module<BE>,
+    ctx: &'a BootstrappingContext<BE, f64>,
+    keys: &'a BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
+    keys_layout: &'a BootstrappingKeysLayout,
+    params: CKKSTestParams,
+    input_k: usize,
+}
+
+impl<BE> BatchCase<'_, BE>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSBootstrapBatchOps<BE>,
+    Standard: CKKSFoldRing<BE, BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    /// Encrypts a complex input and two real pairs under `sk`, refreshes them as
+    /// one batch and checks every output.
+    fn check<K: CKKSFoldKeys<BE, BE>>(
+        &self,
+        input_module: &Module<BE>,
+        sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+        fold_keys: &K,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+    ) {
+        let params = CKKSTestParams {
+            n: input_module.n(),
+            ..self.params
+        };
+        let log_delta = params.prec_meta.log_delta;
+        let mut scratch = alloc_scratch(&params, input_module);
+        let slots = input_module.n() / 2;
+        let (v0, v1) = test_vector_1::<f64>(slots);
+        let reversed = |v: &[f64]| v.iter().rev().copied().collect::<Vec<_>>();
+        let zero = vec![0.0; slots];
+        let wants = [
+            (v0.clone(), v1.clone(), SlotsKind::Complex),
+            (v1.clone(), zero.clone(), SlotsKind::Real),
+            (reversed(&v0), zero.clone(), SlotsKind::Real),
+            (v0.clone(), zero.clone(), SlotsKind::Real),
+            (reversed(&v1), zero, SlotsKind::Real),
+        ];
+        let ins: Vec<_> = wants
+            .iter()
+            .map(|(re, im, slots_kind)| {
+                let mut pt = input_module.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), self.input_k.into());
+                pt.set_meta(CKKSMeta {
+                    slots: *slots_kind,
+                    ..params.prec_meta
+                });
+                input_module
+                    .ckks_encode_reim_into(&mut pt, re, im, &mut scratch.borrow())
+                    .unwrap();
+                let mut ct = input_module.ckks_ciphertext_alloc(params.base2k.into(), self.input_k.into());
+                let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
+                input_module
+                    .ckks_encrypt_sk(&mut ct, &pt, sk, &enc, source_xe, source_xa, &mut scratch.borrow())
+                    .unwrap();
+                ct
+            })
+            .collect();
+        let mut outs: Vec<_> = (0..wants.len())
+            .map(|_| input_module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into()))
+            .collect();
+        let bytes = self.bootstrap_module.ckks_bootstrap_batch_tmp_bytes(
+            input_module,
+            &outs[0],
+            &ins[0],
+            self.ctx,
+            self.keys_layout,
+            fold_keys,
+        );
+        self.bootstrap_module
+            .ckks_bootstrap_batch(
+                input_module,
+                &mut outs,
+                &ins,
+                self.ctx,
+                self.keys,
+                fold_keys,
+                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+            )
+            .unwrap();
+        for (index, (ct, (re, im, slots_kind))) in outs.iter().zip(&wants).enumerate() {
+            assert_eq!((ct.slots(), ct.log_delta()), (*slots_kind, log_delta), "output {index}");
+            let mut pt = input_module.ckks_pt_vec_alloc(ct.base2k(), (log_delta + PRECISION_LOG_BUDGET).into());
+            pt.set_meta(ct.meta());
+            input_module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
+            let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
+            input_module
+                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.borrow())
+                .unwrap();
+            for (got, want) in [(&got_re, re), (&got_im, im)] {
+                let stats = precision_stats(got, want, log_delta);
+                assert!(
+                    stats.min_log2_prec > 17.0,
+                    "batch output {index} of degree {}: {stats:?}",
+                    params.n
+                );
+            }
         }
     }
 }

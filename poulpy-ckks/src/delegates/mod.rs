@@ -8,6 +8,7 @@ pub(crate) mod dft;
 pub(crate) mod encoding;
 mod encryption;
 pub(crate) mod eval_mod;
+pub(crate) mod fold;
 pub(crate) mod imag;
 pub(crate) mod mul;
 pub(crate) mod neg;

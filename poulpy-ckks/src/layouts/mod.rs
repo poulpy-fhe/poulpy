@@ -138,7 +138,8 @@ pub use bootstrapping::{
     SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeySet, CKKSFoldKeys,
+    EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;

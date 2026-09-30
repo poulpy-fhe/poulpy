@@ -336,3 +336,171 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         })
     }
 }
+
+/// Switching keys between an input secret of degree `n`, lifted to the bootstrap
+/// degree `N` through `X -> X^(N/n)`, and the bootstrap secret. A conjugate-invariant
+/// input secret enters unfolded, as `a_0 + Σ a_k(X^k - X^(2n-k))` of degree `2n`.
+#[derive(Clone, Copy, Debug)]
+pub struct RingSwitchKeys<S> {
+    /// From the input secret to the bootstrap secret.
+    pub inbound: S,
+    /// From the bootstrap secret to the input secret.
+    pub outbound: S,
+}
+
+/// Unprepared ring-switch keys.
+pub type RingSwitchKeySet<D, W> = RingSwitchKeys<GLWESwitchingKey<D, W>>;
+
+/// Prepared ring-switch keys.
+pub type RingSwitchKeysPrepared<D, BE> = RingSwitchKeys<GLWESwitchingKeyPrepared<D, BE>>;
+
+/// Ring-switch key layouts, at the bootstrap degree.
+pub type RingSwitchKeysLayout = RingSwitchKeys<GLWESwitchingKeyLayout>;
+
+impl<D: Data, W: ZnxWord> RingSwitchKeySet<D, W> {
+    /// Prepares both keys under the bootstrap module.
+    pub fn prepare<BE: Backend<Ring = Standard>>(
+        &self,
+        module: &Module<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RingSwitchKeysPrepared<BE::OwnedBuf, BE>>
+    where
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: GLWESwitchingKeyPreparedFactory<BE>,
+    {
+        anyhow::ensure!(
+            self.inbound.n().as_usize() == module.n() && self.outbound.n().as_usize() == module.n(),
+            "invalid ring-switch key degree"
+        );
+        let mut prepare = |key: &GLWESwitchingKey<D, W>| {
+            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
+            module.glwe_switching_key_prepare(&mut prepared, key, scratch);
+            prepared
+        };
+        Ok(RingSwitchKeys {
+            inbound: prepare(&self.inbound),
+            outbound: prepare(&self.outbound),
+        })
+    }
+}
+
+impl RingSwitchKeysLayout {
+    /// Generates both keys between `sk_in`, whose degree divides that of `module`,
+    /// and the bootstrap secret `sk`.
+    pub fn generate<BE: Backend<Ring = Standard>>(
+        &self,
+        module: &Module<BE>,
+        sk_in: &BackendGLWESecret<BE>,
+        sk: &BackendGLWESecret<BE>,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RingSwitchKeySet<BE::OwnedBuf, BE::ZnxWord>>
+    where
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWESwitchingKeyEncryptSk<BE>,
+    {
+        anyhow::ensure!(sk.n().as_usize() == module.n(), "invalid bootstrap secret degree");
+        anyhow::ensure!(
+            module.n().is_multiple_of(sk_in.n().as_usize()),
+            "the input secret degree must divide the bootstrap degree"
+        );
+        anyhow::ensure!(
+            sk_in.rank().as_usize() == 1 && sk.rank().as_usize() == 1,
+            "ring switching requires rank-1 secrets"
+        );
+        for key in [&self.inbound, &self.outbound] {
+            anyhow::ensure!(
+                key.n.as_usize() == module.n() && key.rank_in.as_usize() == 1 && key.rank_out.as_usize() == 1,
+                "invalid ring-switch key layout"
+            );
+        }
+        let mut encrypt = |layout: GLWESwitchingKeyLayout, sk_in: &BackendGLWESecret<BE>, sk_out: &BackendGLWESecret<BE>| {
+            let enc = EncryptionLayout::new_from_default_sigma(layout)?;
+            let mut key = module.glwe_switching_key_alloc_from_infos(&enc);
+            module.glwe_switching_key_encrypt_sk(&mut key, sk_in, sk_out, &enc, source_xe, source_xa, scratch);
+            Ok::<_, anyhow::Error>(key)
+        };
+        Ok(RingSwitchKeys {
+            inbound: encrypt(self.inbound, sk_in, sk)?,
+            outbound: encrypt(self.outbound, sk, sk_in)?,
+        })
+    }
+}
+
+/// Keys a [`CKKSFoldOps`](crate::api::CKKSFoldOps) fold consumes, for inputs of
+/// backend `IN` refreshed on backend `BE`.
+pub trait CKKSFoldKeys<BE: Backend, IN: Backend> {
+    /// Prepared ring-switch key type.
+    type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    /// Conjugation key type of the input secret.
+    type ConjugationKeys: GetAutomorphismKey<IN>;
+
+    /// Ring-switch keys, or `None` when the inputs are under the bootstrap secret
+    /// at its degree.
+    fn ring_switch(&self) -> Option<&RingSwitchKeys<Self::SwitchingKey>>;
+
+    /// Conjugation keys of the input secret, which split standard real pairs.
+    fn conjugation(&self) -> Option<&Self::ConjugationKeys>;
+}
+
+/// Inputs under the bootstrap secret at its degree: no ring switch, and real pairs
+/// split with the bootstrap conjugation key.
+impl<D: Data, BE: Backend> CKKSFoldKeys<BE, BE> for BootstrappingKeysPrepared<D, BE>
+where
+    BootstrappingKeysPrepared<D, BE>: BootstrappingKeys<BE>,
+    <BootstrappingKeysPrepared<D, BE> as BootstrappingKeys<BE>>::SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    type SwitchingKey = <Self as BootstrappingKeys<BE>>::SwitchingKey;
+    type ConjugationKeys = <Self as BootstrappingKeys<BE>>::RotationKeys;
+
+    fn ring_switch(&self) -> Option<&RingSwitchKeys<Self::SwitchingKey>> {
+        None
+    }
+
+    fn conjugation(&self) -> Option<&Self::ConjugationKeys> {
+        Some(self.rotation_keys())
+    }
+}
+
+/// Inputs under their own secret, without real pairs to split.
+impl<BE: Backend, IN: Backend, S> CKKSFoldKeys<BE, IN> for RingSwitchKeys<S>
+where
+    S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<IN::OwnedBuf, IN>: GetAutomorphismKey<IN>,
+{
+    type SwitchingKey = S;
+    type ConjugationKeys = GLWEAutomorphismKeyPrepared<IN::OwnedBuf, IN>;
+
+    fn ring_switch(&self) -> Option<&RingSwitchKeys<S>> {
+        Some(self)
+    }
+
+    fn conjugation(&self) -> Option<&Self::ConjugationKeys> {
+        None
+    }
+}
+
+/// Inputs under their own secret, with the conjugation keys of that secret.
+pub struct CKKSFoldKeySet<'a, S, H> {
+    pub ring_switch: &'a RingSwitchKeys<S>,
+    pub conjugation: &'a H,
+}
+
+impl<BE: Backend, IN: Backend, S, H> CKKSFoldKeys<BE, IN> for CKKSFoldKeySet<'_, S, H>
+where
+    S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetAutomorphismKey<IN>,
+{
+    type SwitchingKey = S;
+    type ConjugationKeys = H;
+
+    fn ring_switch(&self) -> Option<&RingSwitchKeys<S>> {
+        Some(self.ring_switch)
+    }
+
+    fn conjugation(&self) -> Option<&H> {
+        Some(self.conjugation)
+    }
+}

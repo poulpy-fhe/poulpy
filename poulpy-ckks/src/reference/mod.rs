@@ -20,6 +20,7 @@ pub mod encoding;
 pub mod encryption;
 pub mod eval_mod;
 mod eval_mod_scratch;
+pub mod fold;
 pub mod imag;
 pub mod linear_transformation;
 pub mod linear_transformation_diagonals;
