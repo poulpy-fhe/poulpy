@@ -88,7 +88,8 @@ from the sum of the ephemeral secrets to the ideal secret built with
 switch of the negated second half plus the first half in mask column `j`, and
 decrypts to the message times component `j` of the ideal secret. Column 0 has
 seeded masks, so only its bodies are normalized. One ephemeral key serves
-every GGSW of a key set. Every GGSW needs its own seed and the ephemeral key a
+every GGSW of a key set, so a party reuses its ephemeral secret for its key
+share and every GGSW share. Every GGSW needs its own seed and the ephemeral key a
 seed distinct from all of them: shares over the same masks and the same
 ephemeral secret reveal the difference of their messages. The ephemeral secret
 must be freshly sampled, independent of the party's secret, and kept as

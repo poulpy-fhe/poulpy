@@ -13,10 +13,12 @@ use crate::layouts::GGSWShareOwned;
 /// one round, the GGSW of `Sum_i m_i` under the ideal secret `s = Sum_i s_i`.
 ///
 /// Column `j >= 1` encrypts `m * s_j`, which no party can encrypt alone: every
-/// party also holds an ephemeral secret `u_i` (rank 1), and the shares of the
-/// collective switching key from `u = Sum_i u_i` to `s`
-/// ([`GLWESwitchingKeyMHEProtocol`](crate::api::GLWESwitchingKeyMHEProtocol))
-/// form the ephemeral key that finalization consumes.
+/// party also holds an ephemeral secret `u_i` (rank 1), used in two places:
+/// as the `u` of every GGSW share it generates, and as the input secret of its
+/// share of the collective switching key from `u = Sum_i u_i` to `s`
+/// ([`GLWESwitchingKeyMHEProtocol`](crate::api::GLWESwitchingKeyMHEProtocol)).
+/// That key, the ephemeral key, is what finalization consumes; one serves every
+/// GGSW of a key set, so `u_i` is reused across shares, never drawn per share.
 ///
 /// The ephemeral secret must be freshly sampled, independent of the party's
 /// secret, and kept as private as it: with `u_i = s_i`, the two halves of a
@@ -33,7 +35,8 @@ pub trait GGSWMHEProtocol<BE: Backend> {
     /// Writes this party's share of the GGSW of `pt` into `res`: column 0 as
     /// the bodies of a seeded encryption of `pt` under `sk`, and for every
     /// column `j >= 1` the bodies of seeded encryptions of `pt` under `u` and of
-    /// zero under the component `j` of `sk`, over common masks.
+    /// zero under the component `j` of `sk`, over common masks. `u` is the
+    /// ephemeral secret this party's ephemeral key share was generated from.
     #[allow(clippy::too_many_arguments)]
     fn mhe_ggsw_share_gen<P, S, U, E>(
         &self,
