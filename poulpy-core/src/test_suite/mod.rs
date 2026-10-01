@@ -126,3 +126,20 @@ macro_rules! core_backend_test_suite {
 }
 
 pub use crate::core_backend_test_suite;
+
+/// Runs `op` on exactly `bytes` of poisoned scratch and asserts it left every
+/// byte zero, as an operation that handles a secret must.
+pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
+    bytes: usize,
+    op: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+) {
+    let mut scratch: poulpy_hal::layouts::ScratchOwned<BE> = poulpy_hal::layouts::ScratchOwned {
+        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    };
+    op(&mut scratch.arena());
+    assert!(
+        BE::to_host_bytes(&scratch.data).iter().all(|&b| b == 0),
+        "the operation left data in its scratch"
+    );
+}

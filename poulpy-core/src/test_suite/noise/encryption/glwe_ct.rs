@@ -16,9 +16,9 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise,
-    GLWENormalize, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut,
-    ScalarZnxFillDistribution, VecZnxBigAddNormal,
+    EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill,
+    GLWENoise, GLWENormalize, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution,
+    GetDistributionMut, ScalarZnxFillDistribution, VecZnxBigAddNormal,
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -116,7 +116,12 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE> + GLWESub<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWENoise<BE>
+        + GLWESecretPreparedFactory<BE>
+        + VecZnxFillUniformSource<BE>
+        + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -187,6 +192,23 @@ where
             noise_have <= noise_want,
             "noise_have: {noise_have} > noise_want: {noise_want}"
         );
+
+        // The products of the masks and the secret would reveal it from the scratch.
+        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos), |scratch| {
+            module.glwe_encrypt_sk(
+                &mut ct,
+                &pt_want,
+                &sk_prepared,
+                &glwe_infos,
+                &mut source_xe,
+                &mut source_xa,
+                scratch,
+            )
+        });
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&pt_infos);
+        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_decrypt_tmp_bytes(&ct), |scratch| {
+            module.glwe_decrypt(&ct, &mut pt_have, &sk_prepared, scratch)
+        });
     }
 }
 
@@ -780,31 +802,18 @@ where
         }
         assert_eq!(ct, want, "rank={rank}");
 
-        // The ephemerals, their DFT, the product and its scratch lead the arena; left there they would decrypt `ct`.
-        let bytes: usize = module.glwe_encrypt_pk_tmp_bytes(&infos, &infos);
-        let mut zeroed: ScratchOwned<BE> = ScratchOwned {
-            data: BE::from_host_bytes(&vec![0u8; bytes]),
-            _phantom: std::marker::PhantomData,
-        };
-        module.glwe_encrypt_pk(
-            &mut ct,
-            &pt,
-            &pk_prepared,
-            &infos,
-            &mut Source::new([5u8; 32]),
-            &mut Source::new([6u8; 32]),
-            &mut zeroed.borrow(),
-        );
-        let u_dft_start: usize = BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank));
-        let product_start: usize = BE::scratch_aligned(u_dft_start + module.bytes_of_vec_znx_dft(n, rank, 1));
-        let tail_start: usize = BE::scratch_aligned(product_start + module.bytes_of_vec_znx_dft(n, rank + 1, size));
-        let vmp: usize = module.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
-        let wiped: usize = tail_start + BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)));
-        let arena: Vec<u8> = BE::to_host_bytes(&zeroed.data);
-        assert!(
-            arena[..wiped].iter().all(|&b| b == 0),
-            "rank={rank}: ephemerals or their products left in scratch"
-        );
+        // The ephemerals and their products would decrypt `ct` from the scratch.
+        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos), |scratch| {
+            module.glwe_encrypt_pk(
+                &mut ct,
+                &pt,
+                &pk_prepared,
+                &infos,
+                &mut Source::new([5u8; 32]),
+                &mut Source::new([6u8; 32]),
+                scratch,
+            )
+        });
     }
 }
 

@@ -6,6 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- `ScratchArena::wipe(len)` zeroes the first `len` bytes the arena can carve out, through `Backend::copy_host_to_view`.
 - **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
 - `impl_backend_from!` accepts a trailing `; generic R: Ring` to forward every instantiation of a generic backend marker.
 - **Breaking:** `HostBytesBackend<R: Ring = Standard>` takes the ring as a type parameter; associated calls through the bare name use `<HostBytesBackend>::`.
@@ -103,6 +104,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Add the switching keys between an embedded conjugate-invariant secret and a standard secret: `GLWECIKey<D, W, M>` with the aliases `GLWECIEmbedKey` and `GLWECITraceKey`, their prepared forms (`GLWECIKeyPreparedFactory`), module allocators, and `GLWECIKeyEncryptSk`, derived from `GLWESecretCIEmbed` and `GLWESwitchingKeyEncryptSk`, which embeds the conjugate-invariant secret itself.
 - `GLWEEncryptPk::glwe_encrypt_pk_at_col`: public-key encryption with the message added to a chosen column instead of the body, under `glwe_encrypt_pk`'s precondition and scratch. `GGSWEncryptPk` encrypts a GGSW under a public key, entry `(row, col)` being that encryption of the message's row limb into column `col`; the row plaintext is normalized first, as in `ggsw_encrypt_sk`, since the encryption adds a plaintext's limbs as they are and requires a normalized one. `EncryptionImpl::glwe_encrypt_pk_at_col`, taking an optional message and its column, is the only public-key encryption primitive: `glwe_encrypt_pk` (column 0), `glwe_encrypt_zero_pk` (no message) and `ggsw_encrypt_pk` are default bodies over it, and their outputs are unchanged. **Breaking** for implementers of `EncryptionImpl`, which must implement `glwe_encrypt_pk_at_col`, and for callers of `GLWEEncryptPkReference`, which keeps only `glwe_encrypt_pk_tmp_bytes_reference` and `glwe_encrypt_pk_at_col_reference`.
 - `GLWEEncryptSk::glwe_encrypt_sk_with_mask`: secret-key encryption over the mask columns already in the output, which it keeps; `glwe_encrypt_sk` is that encryption over masks drawn from `source_xa`. **Breaking** for implementers of `EncryptionImpl`, which gains `glwe_encrypt_sk_with_mask`.
+- **Behaviour:** the reference secret-key, public-key and key encryptions, the public-key GGSW and tensor key encryptions and the decryptions zero the scratch they were given, over their own `_tmp_bytes`, before returning, so no secret-derived temporary (mask-secret products, lifted or prepared secrets, key plaintexts, ephemerals) outlives the call; public-key encryption's partial zeroing is replaced by the full wipe.
 
 ### `poulpy-ckks`
 

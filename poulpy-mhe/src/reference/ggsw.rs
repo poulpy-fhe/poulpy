@@ -140,63 +140,67 @@ where
             u.rank() == rank,
             "invalid share: ephemeral secret rank differs from the secret's"
         );
-        let (n, r) = (res.n().as_usize(), rank.as_usize());
-        let (dnum, dsize, base2k) = (res.dnum().as_usize(), res.dsize().as_usize(), res.base2k().as_usize());
-        let circ = ggsw_share_part_layout(&*res, rank, rank);
-        let k = circ.k().as_usize();
-        let mut seeds = Source::new(seed);
-        let (mut zero, scratch_1) = scratch.borrow().take_scalar_znx_scratch(n, r);
-        let (mut mask, mut rest) = scratch_1.take_glwe_scratch(&circ);
-        let mut cols = Vec::with_capacity(r);
-        for _ in 0..r {
-            let (ct, scratch) = rest.take_glwe_scratch(&circ);
-            cols.push(ct);
-            rest = scratch;
-        }
-        let (mut row_pt, mut scratch_2) = rest.take_glwe_plaintext_scratch(&circ);
-        for col in 0..r {
-            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), col);
-        }
-        self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), enc_infos, source_xe, &mut scratch_2);
-        for j in 0..r {
-            // Entry (row, i) of `circ_s[j]` encrypts zero under `sk` over row `i` of
-            // the gadget row's common mask matrix; entry (row, l) of `circ_u[j]`
-            // encrypts the message (at `l == j`, zero elsewhere) under `u` over its column `l`.
-            self.gglwe_compressed_encrypt_sk(
-                &mut res.circ_s[j],
-                &zero,
-                sk,
-                seeds.new_seed(),
-                enc_infos,
-                source_xe,
-                &mut scratch_2,
-            );
-            let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
-            circ_u.seed_mut().copy_from_slice(circ_s.seed());
-            for row in 0..dnum {
-                for i in 0..r {
-                    self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
+        let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
+        {
+            let (n, r) = (res.n().as_usize(), rank.as_usize());
+            let (dnum, dsize, base2k) = (res.dnum().as_usize(), res.dsize().as_usize(), res.base2k().as_usize());
+            let circ = ggsw_share_part_layout(&*res, rank, rank);
+            let k = circ.k().as_usize();
+            let mut seeds = Source::new(seed);
+            let (mut zero, scratch_1) = scratch.borrow().take_scalar_znx_scratch(n, r);
+            let (mut mask, mut rest) = scratch_1.take_glwe_scratch(&circ);
+            let mut cols = Vec::with_capacity(r);
+            for _ in 0..r {
+                let (ct, scratch) = rest.take_glwe_scratch(&circ);
+                cols.push(ct);
+                rest = scratch;
+            }
+            let (mut row_pt, mut scratch_2) = rest.take_glwe_plaintext_scratch(&circ);
+            for col in 0..r {
+                self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), col);
+            }
+            self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), enc_infos, source_xe, &mut scratch_2);
+            for j in 0..r {
+                // Entry (row, i) of `circ_s[j]` encrypts zero under `sk` over row `i` of
+                // the gadget row's common mask matrix; entry (row, l) of `circ_u[j]`
+                // encrypts the message (at `l == j`, zero elsewhere) under `u` over its column `l`.
+                self.gglwe_compressed_encrypt_sk(
+                    &mut res.circ_s[j],
+                    &zero,
+                    sk,
+                    seeds.new_seed(),
+                    enc_infos,
+                    source_xe,
+                    &mut scratch_2,
+                );
+                let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
+                circ_u.seed_mut().copy_from_slice(circ_s.seed());
+                for row in 0..dnum {
+                    for i in 0..r {
+                        self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
+                        for (l, col) in cols.iter_mut().enumerate() {
+                            self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
+                        }
+                    }
                     for (l, col) in cols.iter_mut().enumerate() {
-                        self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
+                        self.vec_znx_zero(row_pt.data_mut(), 0);
+                        if l == j {
+                            self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
+                            self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
+                        }
+                        self.glwe_encrypt_sk_with_mask(col, &row_pt, u, enc_infos, source_xe, &mut scratch_2);
+                        let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);
+                        self.vec_znx_copy(
+                            dst.at_view_mut(row, l).data_mut(),
+                            0,
+                            &vec_znx_backend_ref_from_mut::<BE>(col.data()),
+                            0,
+                        );
                     }
-                }
-                for (l, col) in cols.iter_mut().enumerate() {
-                    self.vec_znx_zero(row_pt.data_mut(), 0);
-                    if l == j {
-                        self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
-                        self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
-                    }
-                    self.glwe_encrypt_sk_with_mask(col, &row_pt, u, enc_infos, source_xe, &mut scratch_2);
-                    let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);
-                    self.vec_znx_copy(
-                        dst.at_view_mut(row, l).data_mut(),
-                        0,
-                        &vec_znx_backend_ref_from_mut::<BE>(col.data()),
-                        0,
-                    );
                 }
             }
         }
+        scratch.wipe(tmp_bytes);
     }
 
     fn mhe_ggsw_share_finalize_tmp_bytes_reference<R, K>(&self, res_infos: &R, key_infos: &K) -> usize

@@ -220,34 +220,38 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
         "insufficient scratch for GGSW public-key encryption"
     );
-    let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
-    let dsize: usize = res.dsize().into();
-    let rank: usize = res.rank().into();
-    let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
-    for row in 0..res.dnum().into() {
-        module.vec_znx_zero(&mut tmp_pt.data, 0);
-        module.vec_znx_add_scalar_assign(
-            &mut tmp_pt.to_backend_mut().data,
-            0,
-            (dsize - 1) + row * dsize,
-            &pt.to_backend_ref(),
-            0,
-        );
-        // The encryption adds the plaintext's limbs to its accumulator as they are.
-        module.vec_znx_normalize_assign(base2k, k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
-        for col in 0..rank + 1 {
-            BE::glwe_encrypt_pk_at_col(
-                module,
-                &mut res.at_view_mut(row, col),
-                Some((&tmp_pt, col)),
-                pk,
-                enc_infos,
-                source_xu,
-                source_xe,
-                &mut scratch_1.borrow(),
+    let tmp_bytes: usize = ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk);
+    {
+        let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
+        let dsize: usize = res.dsize().into();
+        let rank: usize = res.rank().into();
+        let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
+        for row in 0..res.dnum().into() {
+            module.vec_znx_zero(&mut tmp_pt.data, 0);
+            module.vec_znx_add_scalar_assign(
+                &mut tmp_pt.to_backend_mut().data,
+                0,
+                (dsize - 1) + row * dsize,
+                &pt.to_backend_ref(),
+                0,
             );
+            // The encryption adds the plaintext's limbs to its accumulator as they are.
+            module.vec_znx_normalize_assign(base2k, k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+            for col in 0..rank + 1 {
+                BE::glwe_encrypt_pk_at_col(
+                    module,
+                    &mut res.at_view_mut(row, col),
+                    Some((&tmp_pt, col)),
+                    pk,
+                    enc_infos,
+                    source_xu,
+                    source_xe,
+                    &mut scratch_1.borrow(),
+                );
+            }
         }
     }
+    scratch.wipe(tmp_bytes);
 }
 
 pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
@@ -291,26 +295,29 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for GLWE tensor key encryption"
     );
+    let tmp_bytes: usize = glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res);
+    {
+        let scratch = scratch.borrow();
+        let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
+        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
+        let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
+        module.glwe_secret_prepare(&mut sk_prepared, sk);
+        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
-    let scratch = scratch.borrow();
-    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
-    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
-    let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
-    module.glwe_secret_prepare(&mut sk_prepared, sk);
-    module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
-
-    let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_encrypt_sk_tmp_bytes(module, res));
-    let sk_tensor_data = sk_tensor.data_mut();
-    BE::gglwe_encrypt_sk(
-        module,
-        res,
-        &sk_tensor_data,
-        &sk_prepared,
-        enc_infos,
-        source_xe,
-        source_xa,
-        &mut enc_scratch,
-    );
+        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_encrypt_sk_tmp_bytes(module, res));
+        let sk_tensor_data = sk_tensor.data_mut();
+        BE::gglwe_encrypt_sk(
+            module,
+            res,
+            &sk_tensor_data,
+            &sk_prepared,
+            enc_infos,
+            source_xe,
+            source_xa,
+            &mut enc_scratch,
+        );
+    }
+    scratch.wipe(tmp_bytes);
 }
 
 pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
@@ -354,24 +361,27 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for compressed GLWE tensor key encryption"
     );
+    let tmp_bytes: usize = glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res);
+    {
+        let scratch = scratch.borrow();
+        let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
+        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
+        let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
+        module.glwe_secret_prepare(&mut sk_prepared, sk);
+        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
-    let scratch = scratch.borrow();
-    let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(module, res.rank());
-    let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(module.n().into(), res.rank());
-    let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
-    module.glwe_secret_prepare(&mut sk_prepared, sk);
-    module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
-
-    let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, res));
-    let sk_tensor_data = sk_tensor.data_mut();
-    BE::gglwe_compressed_encrypt_sk(
-        module,
-        res,
-        &sk_tensor_data,
-        &sk_prepared,
-        seed_xa,
-        enc_infos,
-        source_xe,
-        &mut enc_scratch,
-    );
+        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, res));
+        let sk_tensor_data = sk_tensor.data_mut();
+        BE::gglwe_compressed_encrypt_sk(
+            module,
+            res,
+            &sk_tensor_data,
+            &sk_prepared,
+            seed_xa,
+            enc_infos,
+            source_xe,
+            &mut enc_scratch,
+        );
+    }
+    scratch.wipe(tmp_bytes);
 }

@@ -158,7 +158,10 @@ where
     for (i, (((_, sk), (_, u)), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_ggsw_share_gen(dst, m, sk, u, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        // The message and the secret-derived products would be left in the scratch.
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(module.mhe_ggsw_share_gen_tmp_bytes(layout), |scratch| {
+            module.mhe_ggsw_share_gen(dst, m, sk, u, SEEDS[0], &enc_infos, &mut source_xe, scratch)
+        });
         if i > 0 {
             module.mhe_ggsw_share_aggregate(&mut acc, &share);
         }

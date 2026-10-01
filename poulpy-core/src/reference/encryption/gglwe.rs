@@ -157,5 +157,7 @@ where
                 );
             }
         }
+        drop(tmp_pt);
+        scratch.wipe(GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res));
     }
 }

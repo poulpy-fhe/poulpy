@@ -135,22 +135,23 @@ where
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
         let mut source_xa: Source = Source::new([0u8; 32]);
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos));
-
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
         let mut sk_out: GLWESecret<AlignedBuf, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
-        module.glwe_switching_key_encrypt_sk(
-            &mut ksk,
-            &sk_in,
-            &sk_out,
-            &gglwe_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.arena(),
-        );
+        // The lifted and prepared secrets would be left in the scratch.
+        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos), |scratch| {
+            module.glwe_switching_key_encrypt_sk(
+                &mut ksk,
+                &sk_in,
+                &sk_out,
+                &gglwe_infos,
+                &mut source_xe,
+                &mut source_xa,
+                scratch,
+            )
+        });
     }
 }
 
