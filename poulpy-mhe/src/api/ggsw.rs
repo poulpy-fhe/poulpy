@@ -1,6 +1,9 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWESecretToBackendRef, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
+    },
 };
 use poulpy_hal::{
     layouts::{Backend, ScalarZnxToBackendRef, ScratchArena},
@@ -59,8 +62,8 @@ pub trait GGSWMHEProtocol<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        U: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares

@@ -1,6 +1,9 @@
 use poulpy_core::{
     EncryptionInfos, GetDistribution,
-    layouts::{GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWESecretToBackendRef, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
+    },
 };
 use poulpy_hal::{
     layouts::{Module, ScalarZnxToBackendRef, ScratchArena},
@@ -31,8 +34,8 @@ pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         P: ScalarZnxToBackendRef<Self>,
-        S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        U: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution + GLWEInfos,
+        U: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos;
 
     fn mhe_ggsw_share_aggregate(module: &Module<Self>, res: &mut GGSWShareOwned<Self>, a: &GGSWShareOwned<Self>) {
@@ -80,12 +83,10 @@ macro_rules! impl_mhe_ggsw_reference {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 P: ::poulpy_hal::layouts::ScalarZnxToBackendRef<$be>,
-                S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be>
+                S: ::poulpy_core::layouts::prepared::GLWESecretPreparedToBackendRef<$be>
                     + ::poulpy_core::GetDistribution
                     + ::poulpy_core::layouts::GLWEInfos,
-                U: ::poulpy_core::layouts::GLWESecretToBackendRef<$be>
-                    + ::poulpy_core::GetDistribution
-                    + ::poulpy_core::layouts::GLWEInfos,
+                U: ::poulpy_core::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 E: ::poulpy_core::EncryptionInfos,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GGSWMHEProtocolReference<$be>>::mhe_ggsw_share_gen_reference(module, res, pt, sk, u, seed, enc_infos, source_xe, scratch)

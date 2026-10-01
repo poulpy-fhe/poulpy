@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
+    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopy, SvpPrepare},
     layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
 };
 
@@ -114,6 +114,39 @@ impl<B: Backend> GLWESecretPreparedFactory<B> for Module<B> where
 }
 
 // module-only API: allocation/size helpers are provided by `GLWESecretPreparedFactory` on `Module`.
+
+/// Component extraction from a [`GLWESecretPrepared`], without a transform.
+pub trait GLWESecretPreparedExtract<B: Backend> {
+    /// Writes component `col` of `a` into the rank-1 `res`, which takes `a`'s distribution.
+    fn glwe_secret_prepared_extract<R, A>(&self, res: &mut R, a: &A, col: usize)
+    where
+        R: GLWESecretPreparedToBackendMut<B> + GetDistributionMut,
+        A: GLWESecretPreparedToBackendRef<B> + GetDistribution;
+}
+
+impl<B: Backend> GLWESecretPreparedExtract<B> for Module<B>
+where
+    Self: SvpPPolCopy<B>,
+{
+    fn glwe_secret_prepared_extract<R, A>(&self, res: &mut R, a: &A, col: usize)
+    where
+        R: GLWESecretPreparedToBackendMut<B> + GetDistributionMut,
+        A: GLWESecretPreparedToBackendRef<B> + GetDistribution,
+    {
+        {
+            let mut res = res.to_backend_mut();
+            let a = a.to_backend_ref();
+            assert!(res.rank() == Rank(1), "invalid extraction: destination rank differs from 1");
+            assert!(
+                col < a.rank().as_usize(),
+                "invalid extraction: component out of the secret's rank"
+            );
+            assert!(res.n() == a.n(), "invalid extraction: degrees differ");
+            self.svp_ppol_copy(&mut res.data, 0, &a.data, col);
+        }
+        *res.dist_mut() = *a.dist();
+    }
+}
 
 impl<D: Data, B: Backend> GLWESecretPrepared<D, B> {
     pub fn n(&self) -> Degree {

@@ -5,7 +5,7 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
     layouts::{
-        Dnum, Dsize, GGLWELayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWESecretLayout, GLWESecretPrepared,
+        Dnum, Dsize, GGLWELayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWESecretPrepared,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedToBackendRef},
@@ -154,7 +154,7 @@ where
 
     let mut acc = module.ggsw_share_alloc_from_infos(layout);
     let mut share = module.ggsw_share_alloc_from_infos(layout);
-    for (i, (((sk, _), (u, _)), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
+    for (i, (((_, sk), (_, u)), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.mhe_ggsw_share_gen(dst, m, sk, u, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
@@ -324,8 +324,8 @@ where
         module.mhe_ggsw_share_gen(
             &mut share,
             &m,
-            &secrets[i].0,
-            &ephemerals[i].0,
+            &secrets[i].1,
+            &ephemerals[i].1,
             SEEDS[i],
             &enc_infos,
             &mut source_xe,
@@ -352,8 +352,8 @@ where
     module.mhe_ggsw_share_gen(
         &mut share,
         &m,
-        &secrets[0].0,
-        &secrets[1].0,
+        &secrets[0].1,
+        &secrets[1].1,
         SEEDS[0],
         &enc_infos,
         &mut Source::new([10u8; 32]),
@@ -397,7 +397,7 @@ where
     module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow());
 }
 
-/// Shape errors are rejected before preparation or key switching can print operands.
+/// Shape errors are rejected before encryption or key switching can print operands.
 pub fn test_ggsw_share_shape_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -433,20 +433,14 @@ where
                 module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow());
                 return;
             }
-            let small_sk = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-                n: (module.n() / 2).into(),
-                rank: layout.rank,
-            });
-            let small_u = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-                n: (module.n() / 2).into(),
-                rank: Rank(1),
-            });
+            let small_sk = small_module.glwe_secret_prepared_alloc(layout.rank);
+            let small_u = small_module.glwe_secret_prepared_alloc(Rank(1));
             let pt = module.scalar_znx_alloc(
                 if case == 2 { module.n() / 2 } else { module.n() },
                 if case == 3 { 2 } else { 1 },
             );
-            let sk = if case == 0 { &small_sk } else { &secrets[0].0 };
-            let u = if case == 1 { &small_u } else { &ephemerals[0].0 };
+            let sk = if case == 0 { &small_sk } else { &secrets[0].1 };
+            let u = if case == 1 { &small_u } else { &ephemerals[0].1 };
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
             module.mhe_ggsw_share_gen(
                 &mut pat,

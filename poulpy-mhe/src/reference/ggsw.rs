@@ -1,20 +1,19 @@
 use poulpy_core::{
     EncryptionInfos, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEKeyswitch, GLWEMaskFill, GLWENormalize, GetDistribution,
-    GetDistributionMut, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
-        GLWESecretToBackendRef, LWEInfos, Rank,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory},
+        LWEInfos, Rank,
+        prepared::{
+            GGLWEPreparedToBackendRef, GLWESecretPreparedExtract, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
-    layouts::{
-        Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref,
-    },
+    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut},
     source::Source,
 };
 
@@ -38,8 +37,8 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        U: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
 
     fn mhe_ggsw_share_finalize_tmp_bytes_reference<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
@@ -61,6 +60,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
 impl<BE: Backend> GGSWMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
+        + GLWESecretPreparedExtract<BE>
         + GGLWECompressedEncryptSk<BE>
         + GLWEBytesOf<BE>
         + GLWEKeyswitch<BE>
@@ -83,9 +83,8 @@ where
         );
         let col0 = ggsw_share_part_layout(infos, infos.rank());
         let circ = ggsw_share_part_layout(infos, Rank(1));
-        BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(infos.rank()))
-            + 2 * BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(Rank(1)))
-            + 2 * BE::scratch_aligned(BE::bytes_of_scalar_znx(infos.n().as_usize(), 1))
+        BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(Rank(1)))
+            + BE::scratch_aligned(BE::bytes_of_scalar_znx(infos.n().as_usize(), 1))
             + self
                 .gglwe_compressed_encrypt_sk_tmp_bytes(&col0)
                 .max(self.gglwe_compressed_encrypt_sk_tmp_bytes(&circ))
@@ -103,8 +102,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        U: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
         assert!(
@@ -130,53 +129,16 @@ where
         assert!(u.rank() == Rank(1), "invalid share: ephemeral secret rank differs from 1");
         let n = res.n();
         let mut seeds = Source::new(seed);
-        let (mut sk_prepared, scratch_1) = scratch.borrow().take_glwe_secret_prepared_scratch(self, rank);
-        let (mut u_prepared, scratch_2) = scratch_1.take_glwe_secret_prepared_scratch(self, Rank(1));
-        let (mut sk_j, scratch_3) = scratch_2.take_glwe_secret_scratch(n, Rank(1));
-        let (mut sk_j_prepared, scratch_4) = scratch_3.take_glwe_secret_prepared_scratch(self, Rank(1));
-        let (mut zero, mut scratch_5) = scratch_4.take_scalar_znx_scratch(n.as_usize(), 1);
-        self.glwe_secret_prepare(&mut sk_prepared, sk);
-        self.glwe_secret_prepare(&mut u_prepared, u);
+        let (mut sk_j, scratch_1) = scratch.borrow().take_glwe_secret_prepared_scratch(self, Rank(1));
+        let (mut zero, mut scratch_2) = scratch_1.take_scalar_znx_scratch(n.as_usize(), 1);
         self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), 0);
-        self.gglwe_compressed_encrypt_sk(
-            &mut res.col0,
-            pt,
-            &sk_prepared,
-            seeds.new_seed(),
-            enc_infos,
-            source_xe,
-            &mut scratch_5,
-        );
-        let sk_ref = sk.to_backend_ref();
+        self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), enc_infos, source_xe, &mut scratch_2);
         for j in 0..rank.as_usize() {
             // The two halves of column j + 1 share their masks, hence the seed.
             let seed_j = seeds.new_seed();
-            self.gglwe_compressed_encrypt_sk(
-                &mut res.circ_u[j],
-                pt,
-                &u_prepared,
-                seed_j,
-                enc_infos,
-                source_xe,
-                &mut scratch_5,
-            );
-            self.vec_znx_copy(
-                &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_j.data_mut()),
-                0,
-                &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_ref.data()),
-                j,
-            );
-            *sk_j.dist_mut() = *sk.dist();
-            self.glwe_secret_prepare(&mut sk_j_prepared, &sk_j);
-            self.gglwe_compressed_encrypt_sk(
-                &mut res.circ_s[j],
-                &zero,
-                &sk_j_prepared,
-                seed_j,
-                enc_infos,
-                source_xe,
-                &mut scratch_5,
-            );
+            self.gglwe_compressed_encrypt_sk(&mut res.circ_u[j], pt, u, seed_j, enc_infos, source_xe, &mut scratch_2);
+            self.glwe_secret_prepared_extract(&mut sk_j, sk, j);
+            self.gglwe_compressed_encrypt_sk(&mut res.circ_s[j], &zero, &sk_j, seed_j, enc_infos, source_xe, &mut scratch_2);
         }
     }
 
