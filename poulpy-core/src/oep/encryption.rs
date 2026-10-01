@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
+    api::{VecZnxAddScalarAssign, VecZnxZero},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -134,6 +135,22 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
+    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        P: GLWEToBackendRef<Self> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
+
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -221,6 +238,33 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self> + LWEInfos + GLWEInfos;
+
+    fn ggsw_encrypt_pk_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GGSWInfos,
+        K: GLWEInfos,
+    {
+        super::derived::encryption::ggsw_encrypt_pk_tmp_bytes_derived(module, res_infos, pk_infos)
+    }
+
+    fn ggsw_encrypt_pk<R, P, K, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGSWInfos + GGSWAtViewMut<Self>,
+        P: ScalarZnxToBackendRef<Self> + ZnxInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
+        Module<Self>: VecZnxZero<Self> + VecZnxAddScalarAssign<Self>,
+    {
+        super::derived::encryption::ggsw_encrypt_pk_derived(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+    }
 
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -794,6 +838,24 @@ macro_rules! impl_encryption_reference_full {
         E: $crate::api::EncryptionInfos,
         K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_zero_pk_reference::<R, K, E>(module, res, pk, enc_infos, source_xu, source_xe, scratch)
+        }
+
+    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+        module: &::poulpy_hal::layouts::Module<$be>,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut ::poulpy_hal::source::Source,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+        E: $crate::api::EncryptionInfos,
+        K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, col, pk, enc_infos, source_xu, source_xe, scratch)
         }
 
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

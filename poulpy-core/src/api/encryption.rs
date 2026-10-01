@@ -150,6 +150,25 @@ pub trait GLWEEncryptPk<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+
+    /// [`Self::glwe_encrypt_pk`] with `pt` added to column `col` of the output
+    /// (`0` is the body), under the same precondition and scratch. Panics if
+    /// `col` exceeds the rank.
+    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GLWEPublicKeyGenerate<BE: Backend> {
@@ -241,6 +260,34 @@ pub trait GGSWEncryptSk<BE: Backend> {
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
+}
+
+/// Public-key GGSW encryption: entry `(row, col)` is
+/// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt` at limb
+/// `(dsize - 1) + row * dsize` into column `col`, entries in row then column
+/// order.
+pub trait GGSWEncryptPk<BE: Backend> {
+    /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
+    fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GGSWInfos,
+        K: GLWEInfos;
+
+    /// Panics if `pk` is less precise than `res`.
+    fn ggsw_encrypt_pk<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWInfos + GGSWAtViewMut<BE>,
+        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {

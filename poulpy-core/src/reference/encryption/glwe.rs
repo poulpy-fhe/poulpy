@@ -246,6 +246,22 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
@@ -320,6 +336,38 @@ where
             "insufficient scratch for GLWE public-key encryption"
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
+    }
+
+    fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        assert!(col <= res.rank().as_usize(), "invalid column: exceeds the output rank");
+        assert!(
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
+            "insufficient scratch for GLWE public-key encryption"
+        );
+        self.glwe_encrypt_pk_internal(
+            res,
+            Some((pt.to_backend_ref(), col)),
+            pk,
+            enc_infos,
+            source_xu,
+            source_xe,
+            scratch,
+        );
     }
 }
 

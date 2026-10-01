@@ -9,16 +9,17 @@ use crate::{
     Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyAtViewMut,
-        GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut,
-        LWEToBackendMut,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos, GLWEInfos,
+        GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory,
+        GLWESecretToBackendRef, GLWEToBackendMut, LWEToBackendMut,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
-        prepared::GLWESecretPreparedToBackendRef,
+        prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    layouts::{Module, ScratchArena},
+    api::{VecZnxAddScalarAssign, VecZnxZero},
+    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
 
@@ -143,6 +144,67 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, E>(
     }
     res.seed_mut().copy_from_slice(&entry_seeds);
     *res.dist_mut() = *sk.dist();
+}
+
+pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos, K: GLWEInfos>(
+    module: &Module<BE>,
+    res_infos: &R,
+    pk_infos: &K,
+) -> usize {
+    assert_eq!(res_infos.n(), module.n() as u32);
+    BE::scratch_aligned(module.glwe_plaintext_bytes_of_from_infos(res_infos))
+        + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos)
+}
+
+pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
+    module: &Module<BE>,
+    res: &mut R,
+    pt: &P,
+    pk: &K,
+    enc_infos: &E,
+    source_xu: &mut Source,
+    source_xe: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: EncryptionImpl,
+    R: GGSWInfos + GGSWAtViewMut<BE>,
+    P: ScalarZnxToBackendRef<BE> + ZnxInfos,
+    E: EncryptionInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE>,
+{
+    assert_eq!(res.n(), module.n() as u32);
+    assert_eq!(pt.n(), module.n());
+    assert!(
+        scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
+        "insufficient scratch for GGSW public-key encryption"
+    );
+    let dsize: usize = res.dsize().into();
+    let rank: usize = res.rank().into();
+    let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
+    for row in 0..res.dnum().into() {
+        module.vec_znx_zero(&mut tmp_pt.data, 0);
+        module.vec_znx_add_scalar_assign(
+            &mut tmp_pt.to_backend_mut().data,
+            0,
+            (dsize - 1) + row * dsize,
+            &pt.to_backend_ref(),
+            0,
+        );
+        for col in 0..rank + 1 {
+            BE::glwe_encrypt_pk_at_col(
+                module,
+                &mut res.at_view_mut(row, col),
+                &tmp_pt,
+                col,
+                pk,
+                enc_infos,
+                source_xu,
+                source_xe,
+                &mut scratch_1.borrow(),
+            );
+        }
+    }
 }
 
 pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
