@@ -1,9 +1,9 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{Degree, GGLWEInfos, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
-    CKKSCtBounds, CKKSLayout,
+    CKKSCtBounds,
     layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
 };
 
@@ -14,7 +14,7 @@ use crate::{
 /// Implementations must answer for the fold they register with
 /// [`CKKSFoldImpl`]: its key elements, layouts and scratch.
 pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
-    fn ckks_fold_layout_impl<C>(module: &Module<Self>, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> CKKSLayout
+    fn ckks_fold_layout_impl<C>(module: &Module<Self>, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds;
 
@@ -78,7 +78,7 @@ macro_rules! impl_ckks_fold_reference {
                 ct_in: &C,
                 degree: ::poulpy_core::layouts::Degree,
                 keys: &$crate::layouts::CKKSFoldKeysLayout,
-            ) -> $crate::CKKSLayout
+            ) -> ::poulpy_core::layouts::GLWELayout
             where
                 C: $crate::CKKSCtBounds,
             {

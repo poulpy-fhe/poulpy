@@ -1486,19 +1486,9 @@ where
         let folded_layout = module.ckks_fold_layout(&ins[0], module.n().into(), &keys_layout);
         let refreshed_layout = GLWELayout {
             k: outs[0].k(),
-            ..folded_layout.glwe_layout
+            ..folded_layout
         };
-        let bytes = module
-            .ckks_fold_tmp_bytes(&outs[0], &ins[0], module.n().into(), &keys_layout)
-            .max(module.ckks_bootstrap_tmp_bytes(
-                &CKKSLayout {
-                    glwe_layout: refreshed_layout,
-                    meta: folded_layout.meta,
-                },
-                &folded_layout,
-                self.ctx,
-                self.keys_layout,
-            ));
+        let bytes = module.ckks_fold_tmp_bytes(&outs[0], &ins[0], module.n().into(), &keys_layout);
         let mut fold_scratch = ScratchOwned::<BE>::alloc(bytes);
         let mut folded: Vec<_> = (0..module.ckks_fold_count(&ins, module.n().into()))
             .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
@@ -1511,6 +1501,18 @@ where
                 &mut fold_scratch.borrow(),
             )
             .unwrap();
+        let bytes = folded.iter().fold(bytes, |bytes, ct| {
+            let input = CKKSLayout {
+                glwe_layout: folded_layout,
+                meta: ct.meta(),
+            };
+            let output = CKKSLayout {
+                glwe_layout: refreshed_layout,
+                meta: ct.meta(),
+            };
+            bytes.max(module.ckks_bootstrap_tmp_bytes(&output, &input, self.ctx, self.keys_layout))
+        });
+        fold_scratch = ScratchOwned::<BE>::alloc(bytes);
         let mut refreshed: Vec<_> = folded
             .iter()
             .map(|ct| {

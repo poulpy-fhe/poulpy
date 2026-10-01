@@ -278,7 +278,7 @@ Three key roles are used:
 
 ## Batches
 
-A batch is refreshed with as few bootstraps as possible by folding it into standard ciphertexts of the bootstrap degree `N` (`CKKSFoldOps::ckks_fold`), bootstrapping each with `ckks_bootstrap`, and unfolding the results (`ckks_unfold`) into outputs labeled like the inputs.
+A batch of standard ciphertexts is refreshed with as few bootstraps as possible by folding it into standard ciphertexts of the bootstrap degree `N` (`CKKSFoldOps::ckks_fold`), bootstrapping each with `ckks_bootstrap`, and unfolding the results (`ckks_unfold`) into outputs labeled like the inputs.
 The fold packs real inputs of the bootstrap degree in pairs `x + i·y`, merges inputs of a smaller degree `n` by `N/n`, and lets sparse inputs of the bootstrap degree share coefficient positions; unfolding reverses each step, and paired outputs lose one bit to the split.
 
 The keys are passed directly:
@@ -286,7 +286,9 @@ The keys are passed directly:
 - The ring-switch keys (`RingSwitchKeysLayout::generate`) switch between the input secret and the bootstrap secret: the fold takes the inbound one and the unfold the outbound one; inputs under the bootstrap secret at its degree pass `None`.
 - `automorphisms`, keys of the input secret for the elements of `ckks_unfold_galois_elements`, split real pairs and sparse inputs; for sparse inputs they cover `log_sparsity` bits beyond the refreshed width. Inputs under the bootstrap secret use its rotation keys.
 
-The fold takes the bootstrap degree explicitly, as the degree of the folded ciphertexts: the module only bounds it. `CKKSFoldLayoutOps` gives the folded layout of that degree and sizes the fold from layouts (`ckks_fold_count` gives the number of folded ciphertexts), and the context's slot count must match the folded ciphertexts: merged ones need full-slot transforms (`log_slots = log2(N) − 1`).
+The fold takes the bootstrap degree explicitly, as the degree of the folded ciphertexts: the module only bounds it. `CKKSFoldLayoutOps` gives the allocation-only `GLWELayout` of that degree and sizes the fold from layouts (`ckks_fold_count` gives the number of folded ciphertexts), and the context's slot count must match the folded ciphertexts: merged ones need full-slot transforms (`log_slots = log2(N) − 1`). The fold sets scale, sparsity and slot kind on each folded ciphertext; pairing or merging marks it complex, and merging clears sparsity.
+
+The reference fold supports standard inputs. For conjugate-invariant inputs of degree `n`, first call `CKKSCIRingMapOps::ckks_ci_embed` on a standard module of degree `2n`, fold and refresh the resulting standard ciphertexts, then call `ckks_ci_trace` after unfolding. The ring maps use their own embedding and trace keys; the trace spends one additional bit of budget.
 
 ## Cost and where to look
 

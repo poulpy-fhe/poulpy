@@ -1,19 +1,20 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{Degree, GGLWEInfos, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSLayout,
+    CKKSCtBounds,
     layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
 };
 
 /// Planning queries of [`CKKSFoldOps`], from layouts only and for inputs of any ring:
-/// the layout of the folded ciphertexts and the scratch bound. `degree` is the degree
-/// the batch folds into, the bootstrap degree, at most the module's.
+/// the allocation layout of the folded ciphertexts and the scratch bound. `degree`
+/// is the degree the batch folds into, the bootstrap degree, at most the module's.
 pub trait CKKSFoldLayoutOps<BE: Backend> {
-    /// Layout of the ciphertexts of `degree` that inputs like `ct_in` fold into with
-    /// keys like `keys`.
-    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> CKKSLayout
+    /// Allocation layout of the ciphertexts of `degree` that inputs like `ct_in`
+    /// fold into with keys like `keys`. The fold sets CKKS metadata from the batch:
+    /// merging clears sparsity, and merging or pairing sets complex slots.
+    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds;
 
@@ -30,10 +31,14 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 /// degree that a bootstrap refreshes, and unfolds the refreshed ones. The bootstrap
 /// degree is the degree of the folded ciphertexts, at most the module's.
 ///
-/// The strategy follows the inputs: complex standard inputs are packed alone and
-/// real standard inputs in pairs `x + i·y`; conjugate-invariant inputs are embedded
-/// in the standard ring of twice their degree, then paired. Ring packing merges
-/// `g = N/n` of the resulting ciphertexts of degree `n` as `Σ_j X^j·ct_j(X^g)` and
+/// The reference implementation supports `Standard` inputs: complex inputs are
+/// packed alone, and real inputs of the bootstrap degree in pairs `x + i·y`.
+/// Conjugate-invariant inputs can first be embedded with
+/// [`ckks_ci_embed`](crate::api::CKKSCIRingMapOps::ckks_ci_embed), then folded as
+/// standard inputs; after unfolding,
+/// [`ckks_ci_trace`](crate::api::CKKSCIRingMapOps::ckks_ci_trace) maps them back.
+/// Ring packing merges `g = N/n` of the resulting ciphertexts of degree `n` as
+/// `Σ_j X^j·ct_j(X^g)` and
 /// switches them to the bootstrap secret with an inbound ring-switch key; unfolding
 /// switches back with an outbound one, splits and converts. Inputs under the
 /// bootstrap secret at its degree need no ring-switch key. Inputs must share their
@@ -73,7 +78,10 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
 
     /// Unfolds `folded`, the ciphertexts of [`Self::ckks_fold`] once bootstrapped, into
     /// `outs`, labeled like the inputs they were folded from: their slot kinds give the
-    /// pairs, their scale and sparsity the split. `folded` is overwritten.
+    /// pairs, their scale and sparsity the split. Each output must have a requested
+    /// width `k` at least as large as every refreshed ciphertext. `folded` is
+    /// overwritten. Invalid layouts and missing or incompatible keys are rejected
+    /// before any ciphertext is changed.
     ///
     /// `outbound` switches `folded` back from the bootstrap secret to the input secret:
     /// the prepared [`RingSwitchKeys::outbound`](crate::layouts::RingSwitchKeys::outbound),

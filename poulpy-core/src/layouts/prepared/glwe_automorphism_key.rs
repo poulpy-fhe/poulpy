@@ -194,6 +194,15 @@ where
     }
 }
 
+impl<B: Backend> GLWEAutomorphismKeyPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'_>, B> {
+    fn to_backend_ref(&self) -> GLWEAutomorphismKeyPreparedBackendRef<'_, B> {
+        GLWEAutomorphismKeyPrepared {
+            key: GGLWEPreparedToBackendRef::to_backend_ref(self),
+            p: self.p,
+        }
+    }
+}
+
 impl<D: Data, B: Backend> GGLWEPreparedToBackendRef<B> for GLWEAutomorphismKeyPrepared<D, B>
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,

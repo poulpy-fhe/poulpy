@@ -1,16 +1,16 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{Degree, GGLWEInfos, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSLayout,
+    CKKSCtBounds,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
     layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
 };
 
 impl<BE: Backend + CKKSFoldLayoutImpl> CKKSFoldLayoutOps<BE> for Module<BE> {
-    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> CKKSLayout
+    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds,
     {

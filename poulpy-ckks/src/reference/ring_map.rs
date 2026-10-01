@@ -1,6 +1,5 @@
 //! Maps between conjugate-invariant and standard ciphertexts, composed from the
-//! core conjugate-invariant maps and a key switch. The keyless maps also serve the
-//! batch fold, which switches once after merging.
+//! core conjugate-invariant maps and a key switch.
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEBytesOf, GLWECIEmbed, GLWECITrace, GLWEKeyswitch,
