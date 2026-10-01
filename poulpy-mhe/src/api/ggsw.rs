@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    EncryptionInfos,
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
@@ -16,12 +16,20 @@ use crate::layouts::GGSWShareOwned;
 /// one round, the GGSW of `Sum_i m_i` under the ideal secret `s = Sum_i s_i`.
 ///
 /// Column `j >= 1` encrypts `m * s_j`, which no party can encrypt alone: every
-/// party also holds an ephemeral secret `u_i` (rank 1), used in two places:
-/// as the `u` of every GGSW share it generates, and as the input secret of its
-/// share of the collective switching key from `u = Sum_i u_i` to `s`
+/// party also holds an ephemeral secret `u_i` of the GGSW's rank, used in two
+/// places: as the `u` of every GGSW share it generates, and as the input secret
+/// of its share of the collective switching key from `u = Sum_i u_i` to `s`
 /// ([`GLWESwitchingKeyMHEProtocol`](crate::api::GLWESwitchingKeyMHEProtocol)).
 /// That key, the ephemeral key, is what finalization consumes; one serves every
 /// GGSW of a key set, so `u_i` is reused across shares, never drawn per share.
+///
+/// Every gadget row of column `j` draws a common `r x r` mask matrix `A` from
+/// the seed. A party publishes the bodies of `r` encryptions of zero under
+/// `s_i` over the rows of `A`, and of `r` encryptions under `u_i` over its
+/// columns, the one of column `j` carrying the message. The key switch of the
+/// first from `u` to `s` cancels the cross term `Sum_i u_i <A_i, s>` of the
+/// second, so every published body is a rank-`r` encryption under the whole of
+/// `s_i` or `u_i`, never under a single component.
 ///
 /// The ephemeral secret must be freshly sampled, independent of the party's
 /// secret, and kept as private as it: with `u_i = s_i`, the two halves of a
@@ -46,9 +54,10 @@ pub trait GGSWMHEProtocol<BE: Backend> {
 
     /// Writes this party's share of the GGSW of `pt` into `res`: column 0 as
     /// the bodies of a seeded encryption of `pt` under `sk`, and for every
-    /// column `j >= 1` the bodies of seeded encryptions of `pt` under `u` and of
-    /// zero under the component `j` of `sk`, over common masks. `u` is the
-    /// ephemeral secret this party's ephemeral key share was generated from.
+    /// column `j >= 1` the bodies of the encryptions of zero under `sk` over the
+    /// rows of the common mask matrices and of `pt` under `u` over their
+    /// columns. `u` is the ephemeral secret, of `sk`'s rank, this party's
+    /// ephemeral key share was generated from.
     #[allow(clippy::too_many_arguments)]
     fn mhe_ggsw_share_gen<P, S, U, E>(
         &self,
@@ -62,7 +71,7 @@ pub trait GGSWMHEProtocol<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
 
@@ -77,9 +86,10 @@ pub trait GGSWMHEProtocol<BE: Backend> {
         K: GGLWEInfos;
 
     /// Expands the aggregated shares into the canonical `res`, a GGSW at the share's
-    /// layout: column 0 from the seeds, column `j >= 1` as the key switch of
-    /// the negated second half from `u` to `s` under `key`, plus the first half
-    /// in mask column `j`. `key` is the prepared ephemeral key; its gadget
+    /// layout: column 0 from the seeds, column `j >= 1` as the key switch from
+    /// `u` to `s` under `key` of the negated zero-encryption bodies in the mask
+    /// columns, plus the message-encryption bodies in the mask columns. `key` is
+    /// the prepared ephemeral key, from the GGSW's rank to itself; its gadget
     /// (`dnum * dsize * base2k`) must cover the GGSW precision.
     fn mhe_ggsw_share_finalize<R, K>(&self, res: &mut R, share: &GGSWShareOwned<BE>, key: &K, scratch: &mut ScratchArena<'_, BE>)
     where

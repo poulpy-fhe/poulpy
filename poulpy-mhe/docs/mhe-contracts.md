@@ -60,7 +60,7 @@ key generation derives a distinct seed for each of the `rank` entries from the
 common seed; finalization rejects entries that share one, since common masks
 would make public-key encryption rank 1 in its ephemerals. GGSW generation
 derives its sub-seeds and intentionally shares each circular column's mask
-between its two halves; its finalized ephemeral key may be reused under the
+matrix between its two halves, by rows and by columns; its finalized ephemeral key may be reused under the
 GGSW conditions below.
 
 Private `source_xe` and `source_xu` streams must be independently
@@ -79,14 +79,19 @@ share.
 ## Collective GGSW
 
 A GGSW share holds seeded GGLWE PATs: column 0 transcribes a seeded encryption
-of the party's message under its secret, and every column `j >= 1` two seeded
-halves over common masks, an encryption of the message under the party's
-ephemeral secret (rank 1) and an encryption of zero under component `j` of its
-secret. Finalization takes the ephemeral key, the collective switching key
-from the sum of the ephemeral secrets to the ideal secret built with
+of the party's message under its secret, and every column `j >= 1` two halves
+over one common `r x r` mask matrix `A` per gadget row, drawn from the seeds:
+`r` encryptions of zero under the party's secret over the rows of `A`, and `r`
+encryptions under its ephemeral secret, of the same rank, over the columns of
+`A`, the one of column `j` carrying the message. Every published body is thus
+a rank-`r` encryption under a whole secret, never under one component.
+Finalization takes the ephemeral key, the collective switching key from the
+sum of the ephemeral secrets to the ideal secret built with
 `GLWESwitchingKeyMHEProtocol`, prepared: an entry of column `j` is the key
-switch of the negated second half plus the first half in mask column `j`, and
-decrypts to the message times component `j` of the ideal secret. Column 0 has
+switch of the negated first half in the mask columns, whose phase is the
+cross term `Sum_i u_i <A_i, s>`, plus the second half in the mask columns,
+which cancels it, and decrypts to the message times component `j` of the
+ideal secret. Column 0 has
 seeded masks, so only its bodies are normalized. One ephemeral key serves
 every GGSW of a key set, so a party reuses its ephemeral secret for its key
 share and every GGSW share. Every GGSW needs its own seed and the ephemeral key a

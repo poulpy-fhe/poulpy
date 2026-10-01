@@ -1,19 +1,21 @@
 use poulpy_core::{
-    EncryptionInfos, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEKeyswitch, GLWEMaskFill, GLWENormalize, GetDistribution,
+    EncryptionInfos, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
     ScratchArenaTakeCore,
     layouts::{
-        GGLWECompressedSeed, GGLWECompressedToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
-        LWEInfos, Rank,
-        prepared::{
-            GGLWEPreparedToBackendRef, GLWESecretPreparedExtract, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef,
-        },
+        GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
+        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank,
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxZero,
+        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
-    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut},
+    layouts::{
+        Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        vec_znx_backend_ref_from_mut,
+    },
     source::Source,
 };
 
@@ -37,7 +39,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
 
@@ -60,13 +62,15 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
 impl<BE: Backend> GGSWMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
-        + GLWESecretPreparedExtract<BE>
+        + GLWEEncryptSk<BE>
         + GGLWECompressedEncryptSk<BE>
         + GLWEBytesOf<BE>
         + GLWEKeyswitch<BE>
         + GLWEMaskFill<BE>
         + GLWENormalize<BE>
         + VecZnxAddAssign<BE>
+        + VecZnxAddScalarAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxCopy<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeTmpBytes
@@ -81,13 +85,19 @@ where
             infos.n().as_usize() == self.n(),
             "invalid layout: degree differs from the module's"
         );
-        let col0 = ggsw_share_part_layout(infos, infos.rank());
-        let circ = ggsw_share_part_layout(infos, Rank(1));
-        BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(Rank(1)))
-            + BE::scratch_aligned(BE::bytes_of_scalar_znx(infos.n().as_usize(), 1))
+        let rank = infos.rank();
+        let col0 = ggsw_share_part_layout(infos, Rank(1), rank);
+        let circ = ggsw_share_part_layout(infos, rank, rank);
+        let n = infos.n().as_usize();
+        // The zero plaintext of `circ_s`, then the `rank + 1` mask holders and the row plaintext of `circ_u`.
+        BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank.as_usize()))
+            + (rank.as_usize() + 1) * BE::scratch_aligned(self.glwe_bytes_of_from_infos(&circ))
+            + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, circ.size()))
             + self
                 .gglwe_compressed_encrypt_sk_tmp_bytes(&col0)
                 .max(self.gglwe_compressed_encrypt_sk_tmp_bytes(&circ))
+                .max(self.glwe_encrypt_sk_tmp_bytes(&circ))
+                .max(self.vec_znx_normalize_tmp_bytes())
     }
 
     fn mhe_ggsw_share_gen_reference<P, S, U, E>(
@@ -102,7 +112,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
@@ -126,19 +136,66 @@ where
         assert!(pt_ref.cols() == 1, "invalid share: message must have one column");
         let rank = res.rank();
         assert!(sk.rank() == rank, "invalid share: secret rank differs from the transcript's");
-        assert!(u.rank() == Rank(1), "invalid share: ephemeral secret rank differs from 1");
-        let n = res.n();
+        assert!(
+            u.rank() == rank,
+            "invalid share: ephemeral secret rank differs from the secret's"
+        );
+        let (n, r) = (res.n().as_usize(), rank.as_usize());
+        let (dnum, dsize, base2k) = (res.dnum().as_usize(), res.dsize().as_usize(), res.base2k().as_usize());
+        let circ = ggsw_share_part_layout(&*res, rank, rank);
+        let k = circ.k().as_usize();
         let mut seeds = Source::new(seed);
-        let (mut sk_j, scratch_1) = scratch.borrow().take_glwe_secret_prepared_scratch(self, Rank(1));
-        let (mut zero, mut scratch_2) = scratch_1.take_scalar_znx_scratch(n.as_usize(), 1);
-        self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), 0);
+        let (mut zero, scratch_1) = scratch.borrow().take_scalar_znx_scratch(n, r);
+        let (mut mask, mut rest) = scratch_1.take_glwe_scratch(&circ);
+        let mut cols = Vec::with_capacity(r);
+        for _ in 0..r {
+            let (ct, scratch) = rest.take_glwe_scratch(&circ);
+            cols.push(ct);
+            rest = scratch;
+        }
+        let (mut row_pt, mut scratch_2) = rest.take_glwe_plaintext_scratch(&circ);
+        for col in 0..r {
+            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), col);
+        }
         self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), enc_infos, source_xe, &mut scratch_2);
-        for j in 0..rank.as_usize() {
-            // The two halves of column j + 1 share their masks, hence the seed.
-            let seed_j = seeds.new_seed();
-            self.gglwe_compressed_encrypt_sk(&mut res.circ_u[j], pt, u, seed_j, enc_infos, source_xe, &mut scratch_2);
-            self.glwe_secret_prepared_extract(&mut sk_j, sk, j);
-            self.gglwe_compressed_encrypt_sk(&mut res.circ_s[j], &zero, &sk_j, seed_j, enc_infos, source_xe, &mut scratch_2);
+        for j in 0..r {
+            // Entry (row, i) of `circ_s[j]` encrypts zero under `sk` over row `i` of
+            // the gadget row's common mask matrix; entry (row, l) of `circ_u[j]`
+            // encrypts the message (at `l == j`, zero elsewhere) under `u` over its column `l`.
+            self.gglwe_compressed_encrypt_sk(
+                &mut res.circ_s[j],
+                &zero,
+                sk,
+                seeds.new_seed(),
+                enc_infos,
+                source_xe,
+                &mut scratch_2,
+            );
+            let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
+            circ_u.seed_mut().copy_from_slice(circ_s.seed());
+            for row in 0..dnum {
+                for i in 0..r {
+                    self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
+                    for (l, col) in cols.iter_mut().enumerate() {
+                        self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
+                    }
+                }
+                for (l, col) in cols.iter_mut().enumerate() {
+                    self.vec_znx_zero(row_pt.data_mut(), 0);
+                    if l == j {
+                        self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
+                        self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
+                    }
+                    self.glwe_encrypt_sk_with_mask(col, &row_pt, u, enc_infos, source_xe, &mut scratch_2);
+                    let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);
+                    self.vec_znx_copy(
+                        dst.at_view_mut(row, l).data_mut(),
+                        0,
+                        &vec_znx_backend_ref_from_mut::<BE>(col.data()),
+                        0,
+                    );
+                }
+            }
         }
     }
 
@@ -152,7 +209,7 @@ where
             "invalid layout: degree differs from the module's"
         );
         assert!(key_infos.n() == res_infos.n(), "invalid layout: key and GGSW degrees differ");
-        let tmp = rank_one_layout(res_infos);
+        let tmp = glwe_layout(res_infos);
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(&tmp))
             + self
                 .glwe_keyswitch_tmp_bytes(res_infos, &tmp, key_infos)
@@ -180,8 +237,8 @@ where
             "invalid finalization: layouts differ"
         );
         assert!(
-            key.rank_in() == Rank(1),
-            "invalid finalization: key input rank differs from 1"
+            key.rank_in() == share.rank(),
+            "invalid finalization: key input rank differs from the GGSW's"
         );
         assert!(
             key.rank_out() == share.rank(),
@@ -194,7 +251,7 @@ where
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
         let key = key.to_backend_ref();
         let mut res = res.to_backend_mut();
-        let (mut tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(&rank_one_layout(share));
+        let (mut tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(&glwe_layout(share));
         {
             let col0 = GGLWECompressedToBackendRef::<BE>::to_backend_ref(&share.col0);
             let (base2k, k): (usize, usize) = (share.base2k().into(), share.k().into());
@@ -216,28 +273,33 @@ where
                 self.fill_glwe_mask_from_seed(&mut cell, share.col0.seed()[row]);
             }
         }
-        // tmp's mask column stays zero for the whole loop; only the body is rewritten per row.
+        // tmp's body stays zero; its masks are rewritten per entry.
         self.vec_znx_zero(tmp.data_mut(), 0);
         for j in 1..=rank {
             let circ_u = GGLWECompressedToBackendRef::<BE>::to_backend_ref(&share.circ_u[j - 1]);
             let circ_s = GGLWECompressedToBackendRef::<BE>::to_backend_ref(&share.circ_s[j - 1]);
             for row in 0..dnum {
-                // (0, -b2) decrypts under u to u * (a s_j - e2).
-                self.vec_znx_negate(tmp.data_mut(), 1, circ_s.at_view(row, 0).data(), 0);
+                // (0, -b_1, .., -b_r) over the `circ_s` bodies decrypts under `u` to the
+                // cross term that the `circ_u` bodies in the mask columns cancel.
+                for i in 0..rank {
+                    self.vec_znx_negate(tmp.data_mut(), i + 1, circ_s.at_view(row, i).data(), 0);
+                }
                 let mut cell = res.at_view_mut(row, j);
                 self.glwe_keyswitch(&mut cell, &tmp, &key, &mut scratch_1);
-                self.vec_znx_add_assign(cell.data_mut(), j, circ_u.at_view(row, 0).data(), 0);
+                for l in 0..rank {
+                    self.vec_znx_add_assign(cell.data_mut(), l + 1, circ_u.at_view(row, l).data(), 0);
+                }
                 self.glwe_normalize_assign(&mut cell, &mut scratch_1);
             }
         }
     }
 }
 
-fn rank_one_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
+fn glwe_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
     GLWELayout {
         n: infos.n(),
         base2k: infos.base2k(),
         k: infos.k(),
-        rank: Rank(1),
+        rank: infos.rank(),
     }
 }

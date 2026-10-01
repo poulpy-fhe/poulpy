@@ -7,15 +7,15 @@ use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, W
 
 use crate::layouts::GGLWEPatCompressed;
 
-/// The rank-1-in `GGLWELayout` of a `GGSWShare` part: `col0` at `rank_out
-/// = infos.rank()`, `circ_u`/`circ_s` at `rank_out = Rank(1)`.
-pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_out: Rank) -> GGLWELayout {
+/// The `GGLWELayout` of a `GGSWShare` part: `col0` at `rank_in = 1`,
+/// `circ_u`/`circ_s` at `rank_in = rank`, all at `rank_out = infos.rank()`.
+pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, rank_out: Rank) -> GGLWELayout {
     GGLWELayout {
         n: infos.n(),
         base2k: infos.base2k(),
         dnum: infos.dnum(),
         k_aux: infos.k_aux(),
-        rank_in: Rank(1),
+        rank_in,
         rank_out,
         dsize: infos.dsize(),
         stride: 1,
@@ -28,8 +28,10 @@ pub type GGSWShareOwned<BE> = GGSWShare<<BE as Backend>::OwnedBuf, <BE as Backen
 ///
 /// `col0` transcribes column 0, a GGLWE of the message (`rank_in = 1`,
 /// `rank_out = r`). For every column `j >= 1`, `circ_u[j - 1]` and
-/// `circ_s[j - 1]` (`rank_in = rank_out = 1`) hold the two halves of the
-/// circular product, sharing their per-entry seeds.
+/// `circ_s[j - 1]` (`rank_in = rank_out = r`) hold the two halves of the
+/// circular product over one `r x r` mask matrix per gadget row: entry `i` of
+/// `circ_s` is over row `i`, drawn from its seed, and entry `l` of `circ_u` over
+/// column `l`. Both carry the `circ_s` seeds.
 ///
 /// Serializes as `col0`, then every `circ_u`, then every `circ_s`.
 #[derive(PartialEq, Eq, Clone)]
@@ -112,8 +114,8 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWShare<D, W> {
         self.parts_mut().try_for_each(|part| part.read_from(reader))?;
         // A compressed part's size does not depend on its output rank, so a share of another rank reads without error.
         let (col0, circ) = (
-            ggsw_share_part_layout(self, self.rank()),
-            ggsw_share_part_layout(self, Rank(1)),
+            ggsw_share_part_layout(self, Rank(1), self.rank()),
+            ggsw_share_part_layout(self, self.rank(), self.rank()),
         );
         if self.circ_u.len() != self.rank().as_usize()
             || self.col0.gglwe_layout() != col0

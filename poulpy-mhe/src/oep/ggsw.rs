@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    EncryptionInfos,
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
@@ -34,7 +34,7 @@ pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         P: ScalarZnxToBackendRef<Self>,
-        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos;
 
@@ -83,9 +83,7 @@ macro_rules! impl_mhe_ggsw_reference {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 P: ::poulpy_hal::layouts::ScalarZnxToBackendRef<$be>,
-                S: ::poulpy_core::layouts::prepared::GLWESecretPreparedToBackendRef<$be>
-                    + ::poulpy_core::GetDistribution
-                    + ::poulpy_core::layouts::GLWEInfos,
+                S: ::poulpy_core::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 U: ::poulpy_core::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 E: ::poulpy_core::EncryptionInfos,
             {

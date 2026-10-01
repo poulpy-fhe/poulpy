@@ -121,7 +121,7 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: ephemeral secret rank differs from 1")]
+            #[should_panic(expected = "invalid share: ephemeral secret rank differs from the secret's")]
             fn ggsw_share_ephemeral_rank_mismatch() {
                 $crate::test_suite::ggsw::test_ggsw_share_ephemeral_rank_mismatch(&Module::<$backend>::new(64));
             }

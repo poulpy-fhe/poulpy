@@ -33,14 +33,15 @@ use crate::{
     layouts::MHEModuleAlloc,
 };
 
-/// Log2 noise bound of a column `j >= 1`: `u * e2 + e1 * s_j` summed over
-/// `PARTIES` parties with ternary secrets of variance 1/2 has variance
-/// `n * PARTIES^2 * sigma^2`; the key switching noise lies far below.
-fn circular_noise_bound(n: usize, k: usize) -> f64 {
-    (DEFAULT_SIGMA_XE * PARTIES as f64 * (n as f64).sqrt()).log2() - k as f64 + 0.5
+/// Log2 noise bound of a column `j >= 1`: `Sum_l e1_l s_l - Sum_i e2_i u_i`, `rank`
+/// terms each, summed over `PARTIES` parties with ternary secrets of variance
+/// 1/2 has variance `rank * n * PARTIES^2 * sigma^2`; the key switching noise
+/// lies far below.
+fn circular_noise_bound(n: usize, rank: usize, k: usize) -> f64 {
+    (DEFAULT_SIGMA_XE * PARTIES as f64 * ((rank * n) as f64).sqrt()).log2() - k as f64 + 0.5
 }
 
-/// The ephemeral key layout for `layout`: rank 1 to the GGSW rank, covering the
+/// The ephemeral key layout for `layout`: the GGSW rank to itself, covering the
 /// GGSW precision with one guard digit.
 fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -> GGLWELayout {
     GGLWELayout {
@@ -48,7 +49,7 @@ fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -
         base2k: layout.base2k,
         dnum: Dnum(layout.k().as_u32().div_ceil(layout.base2k.as_u32())),
         k_aux: TorusPrecision(layout.base2k.as_u32() + module.log_n() as u32),
-        rank_in: Rank(1),
+        rank_in: layout.rank,
         rank_out: layout.rank,
         dsize: Dsize(1),
         stride: 1,
@@ -64,7 +65,7 @@ where
         .map(|i| secret_from_seed_at(module, rank, [100 + i as u8; 32]))
         .collect();
     let ephemerals = (0..PARTIES)
-        .map(|i| secret_from_seed_at(module, Rank(1), [170 + i as u8; 32]))
+        .map(|i| secret_from_seed_at(module, rank, [170 + i as u8; 32]))
         .collect();
     (secrets, ephemerals)
 }
@@ -203,7 +204,7 @@ where
             let bound = if col == 0 {
                 aggregate_noise_bound(k)
             } else {
-                circular_noise_bound(module.n(), k)
+                circular_noise_bound(module.n(), layout.rank.as_usize(), k)
             };
             assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound {bound}");
         }
@@ -346,6 +347,7 @@ where
     let layout = ggsw_layout(module);
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (secrets, _) = parties(module, layout.rank);
+    let u = secret_from_seed_at(module, Rank(1), [9u8; 32]);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     let mut share = module.ggsw_share_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
@@ -353,7 +355,7 @@ where
         &mut share,
         &m,
         &secrets[0].1,
-        &secrets[1].1,
+        &u.1,
         SEEDS[0],
         &enc_infos,
         &mut Source::new([10u8; 32]),
@@ -434,7 +436,7 @@ where
                 return;
             }
             let small_sk = small_module.glwe_secret_prepared_alloc(layout.rank);
-            let small_u = small_module.glwe_secret_prepared_alloc(Rank(1));
+            let small_u = small_module.glwe_secret_prepared_alloc(layout.rank);
             let pt = module.scalar_znx_alloc(
                 if case == 2 { module.n() / 2 } else { module.n() },
                 if case == 3 { 2 } else { 1 },

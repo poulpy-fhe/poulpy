@@ -16,8 +16,8 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWENormalize,
-    GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut,
+    EncryptionInfos, EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise,
+    GLWENormalize, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut,
     ScalarZnxFillDistribution, VecZnxBigAddNormal,
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
@@ -39,6 +39,75 @@ fn assert_canonical(ct: &GLWE<AlignedBuf, i64>) {
     let low_mask = (1i64 << padding) - 1;
     for col in 0..ct.data().cols() {
         assert!(ct.data().at(col, ct.max_size() - 1).iter().all(|value| value & low_mask == 0));
+    }
+}
+
+/// Encryption over caller-set masks equals `glwe_encrypt_sk` drawing the same masks.
+pub fn test_glwe_encrypt_sk_with_mask<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptSk<BE> + GLWEMaskFill<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    for rank in 1_usize..3 {
+        let n: usize = module.n();
+        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: (base2k * 4 + 1).into(),
+            rank: rank.into(),
+        })
+        .unwrap();
+        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: (base2k * 2 + 1).into(),
+        });
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            pt.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+            0,
+            &mut Source::new([1u8; 32]),
+        );
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([2u8; 32]));
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk_prepared, &sk);
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos));
+
+        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_encrypt_sk(
+            &mut want,
+            &pt,
+            &sk_prepared,
+            &glwe_infos,
+            &mut Source::new([3u8; 32]),
+            &mut Source::new([4u8; 32]),
+            &mut scratch.borrow(),
+        );
+        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.fill_glwe_mask_from_source(&mut have, &mut Source::new([4u8; 32]));
+        module.glwe_encrypt_sk_with_mask(
+            &mut have,
+            &pt,
+            &sk_prepared,
+            &glwe_infos,
+            &mut Source::new([3u8; 32]),
+            &mut scratch.borrow(),
+        );
+        for col in 0..rank + 1 {
+            for limb in 0..have.size() {
+                assert_eq!(
+                    have.data().at(col, limb),
+                    want.data().at(col, limb),
+                    "rank={rank} col={col} limb={limb}"
+                );
+            }
+        }
     }
 }
 

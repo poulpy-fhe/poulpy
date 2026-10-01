@@ -98,6 +98,20 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWEEncryptSkReference<BE> for Module<BE>
@@ -207,6 +221,47 @@ where
             self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
         }
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
+    }
+
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>,
+    {
+        res.set_canonical(true);
+        let res = &mut res.to_backend_mut();
+        let pt_backend = pt.to_backend_ref();
+        let sk_ref = sk.to_backend_ref();
+
+        assert_eq!(res.rank(), sk_ref.rank());
+        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
+        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
+        assert_eq!(pt_backend.n(), self.n() as u32, "GLWE plaintext degree must match the module");
+        assert!(
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+            scratch.available(),
+            self.glwe_encrypt_sk_tmp_bytes_reference(res)
+        );
+
+        self.glwe_encrypt_sk_internal(
+            res.base2k().into(),
+            &mut res.data,
+            Some((pt_backend, 0)),
+            sk,
+            enc_infos,
+            source_xe,
+            scratch,
+        );
     }
 }
 

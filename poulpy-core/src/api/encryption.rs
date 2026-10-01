@@ -107,6 +107,25 @@ pub trait GLWEEncryptSk<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    /// Encrypts `pt` under `sk` over the mask columns already in `res`, which
+    /// are kept: the body becomes `pt - Sum_k mask_k s_k + e`. The masks must be
+    /// uniform, and two encryptions over the same masks under the same secret
+    /// reveal the difference of their plaintexts. `pt` must be normalized.
+    /// Scratch is [`glwe_encrypt_sk_tmp_bytes`](Self::glwe_encrypt_sk_tmp_bytes).
+    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 /// Public-key encryption under a [`GLWEPublicKeyPrepared`](crate::layouts::GLWEPublicKeyPrepared)

@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    EncryptionInfos,
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
@@ -32,7 +32,7 @@ impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {

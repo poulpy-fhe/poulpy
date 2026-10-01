@@ -152,11 +152,11 @@ pub trait MHEModuleAlloc<BE: Backend>:
     fn ggsw_share_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWShareOwned<BE> {
         let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
             (0..infos.rank().as_usize())
-                .map(|_| self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, Rank(1))))
+                .map(|_| self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, infos.rank(), infos.rank())))
                 .collect()
         };
         GGSWShare {
-            col0: self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, infos.rank())),
+            col0: self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, Rank(1), infos.rank())),
             circ_u: circ(),
             circ_s: circ(),
         }
@@ -172,7 +172,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ) -> GGSWShareOwned<BE> {
         let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
             (0..rank.as_usize())
-                .map(|_| self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, Rank(1), Rank(1)))
+                .map(|_| self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank, rank))
                 .collect()
         };
         GGSWShare {
