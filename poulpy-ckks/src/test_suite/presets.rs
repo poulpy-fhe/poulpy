@@ -20,7 +20,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
         CKKSEncryptOps,
@@ -97,21 +97,7 @@ where
         let keys_layout = *preset.keys_layout();
         let module = Module::<BE>::new(n as u64);
 
-        let scratch_size = {
-            let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
-            ct.set_meta(bootstrap_layout.meta);
-            module.ckks_all_ops_with_atk_tmp_bytes(
-                &ct,
-                &keys_layout.tensor_key,
-                &keys_layout.automorphism_key,
-                &ckks_spec(
-                    n,
-                    base2k,
-                    plan.eval_mod().coeffs_meta.log_delta(),
-                    plan.eval_mod().coeffs_meta.log_budget(),
-                ),
-            )
-        };
+        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
         let context = BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
         let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
@@ -283,6 +269,31 @@ where
     }
 }
 
+/// Scratch for context compilation and key preparation, before the compiled
+/// context is available for the bootstrap execution query.
+pub(crate) fn bootstrap_setup_tmp_bytes<BE: Backend>(
+    module: &Module<BE>,
+    layout: &CKKSLayout,
+    plan: &BootstrappingPlan,
+    keys: &BootstrappingKeysLayout,
+) -> usize
+where
+    Module<BE>: CKKSAllOpsTmpBytes<BE>,
+{
+    let coeffs = plan.eval_mod().coeffs_meta;
+    module.ckks_all_ops_with_atk_tmp_bytes(
+        layout,
+        &keys.tensor_key,
+        &keys.automorphism_key,
+        &ckks_spec(
+            layout.n().as_usize(),
+            layout.base2k().as_usize(),
+            coeffs.log_delta(),
+            coeffs.log_budget(),
+        ),
+    )
+}
+
 /// Plan, parameters and key layouts of the ring-switched bootstrapping tests.
 pub(crate) struct RingSwitchedSetup {
     pub(crate) plan: BootstrappingPlan,
@@ -292,45 +303,26 @@ pub(crate) struct RingSwitchedSetup {
     pub(crate) ring_switch_layout: RingSwitchKeysLayout,
 }
 
-/// Builds a full-slot plan on a standard module of degree `standard_n` for inputs
-/// of degree `params.n` at scale `2^35`, with the ring-switch key layouts.
-pub(crate) fn ring_switched_setup(
-    mut params: CKKSTestParams,
-    standard_n: usize,
-    s2c_first: bool,
-    encapsulate: bool,
-    eval_round: bool,
-    guard_bits: usize,
-) -> RingSwitchedSetup {
+/// Full-slot S2C-first fixture at scale `2^35`, with sparse-secret encapsulation
+/// and six C2S guard bits. Inputs have degree `params.n`; bootstrap keys use `standard_n`.
+pub(crate) fn ring_switched_setup(mut params: CKKSTestParams, standard_n: usize) -> RingSwitchedSetup {
     use crate::{
         CoeffsMeta,
         layouts::{
             BootstrappingPipeline, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-            EvalModPlan, EvalModType, EvalRoundPlus, RingSwitchKeys, SparseSecretEncapsulation,
+            EvalModPlan, EvalModType, RingSwitchKeys, SparseSecretEncapsulation,
         },
         polynomial::SplitStrategy,
     };
     let layers = standard_n.ilog2() as usize - 1;
     let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
     let log_delta = 35;
-    let log_msg_ratio = if s2c_first { 13 } else { 8 };
+    let log_msg_ratio = 13;
     let plan = BootstrappingPlan::new(
-        if s2c_first {
-            BootstrappingPipeline::S2CFirst
-        } else {
-            BootstrappingPipeline::C2SFirst
-        },
+        BootstrappingPipeline::S2CFirst,
         BootstrappingTechniques {
-            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 32 }),
-            eval_round_plus: eval_round.then(|| EvalRoundPlus {
-                coeffs_to_slots_bypass: DFTPlan::new(
-                    DFTType::Encode,
-                    vec![(1, 1); layers],
-                    DFTOutputFormat::SplitRealAndImag,
-                    CoeffsMeta::from_delta_budget(96, 4),
-                )
-                .unwrap(),
-            }),
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: None,
         },
         DFTPlan::new(
             DFTType::Encode,
@@ -358,27 +350,24 @@ pub(crate) fn ring_switched_setup(
             CoeffsMeta::from_delta_budget(28, 2),
         )
         .unwrap()
-        .with_scaling(if s2c_first { 0.5 } else { 256.0 })
+        .with_scaling(0.5)
         .unwrap(),
     )
+    .unwrap()
+    .with_c2s_guard_bits(6)
     .unwrap();
-    let plan = if s2c_first {
-        plan.with_c2s_guard_bits(guard_bits).unwrap()
-    } else {
-        plan
-    };
     let output_k = 4 * params.base2k - 1;
     let input_k = plan.input_k(log_delta + log_msg_ratio);
     params.k = plan.bootstrap_k(output_k + 1, log_delta);
     params.prec_meta.log_delta = log_delta;
     params.prec_log_budget = 8;
     params.dsize = if params.base2k < 40 { 7 } else { 3 };
-    params.hw = if encapsulate { 128 } else { 32 };
+    params.hw = 128;
     let standard_params = CKKSTestParams { n: standard_n, ..params };
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: standard_params.atk_layout().layout,
         tensor_key: standard_params.tsk_layout().layout,
-        encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
+        encapsulation: Some(EncapsulationKeysLayout {
             dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
             sparse_to_dense: standard_params.ksk_layout(params.k).layout,
         }),

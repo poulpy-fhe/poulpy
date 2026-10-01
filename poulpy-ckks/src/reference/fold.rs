@@ -50,13 +50,6 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
     /// Metadata of the standard ciphertext that represents an input labeled `meta`.
     fn packed_meta(meta: CKKSMeta) -> CKKSMeta;
 
-    /// Scratch bound of [`Self::to_standard`] and [`Self::from_standard`] for
-    /// outputs like `ct_out` split from standard ciphertexts like `part`.
-    fn tmp_bytes<C1, C2>(module: &Module<BE>, ct_out: &C1, part: &C2, keys: &CKKSFoldKeysLayout) -> usize
-    where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds;
-
     /// Writes `src` into `dst`, a standard ciphertext of the packed degree.
     fn to_standard(
         module: &Module<BE>,
@@ -67,11 +60,12 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
 
     /// Writes the unit `outs` from `part`, its refreshed standard ciphertext of the
     /// packed degree under the input secret, keeping the labels of `outs`.
+    /// `part` is canonical at the output radix; required keys are prevalidated.
     fn from_standard<H>(
         module: &Module<BE>,
         outs: &mut [CKKSRingCiphertext<BE, Self>],
         part: &CKKSCiphertextOwned<BE>,
-        automorphisms: Option<&H>,
+        automorphisms: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -85,18 +79,12 @@ impl<BE> FoldRing<BE> for Standard
 where
     BE: Backend<Ring = Standard>,
     Module<BE>: ModuleN
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxSwitchRing<BE>
-        + GLWERotate<BE>
-        + GLWENormalize<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEShift<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSModuleAlloc<BE>,
-    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     fn units(module: &Module<BE>, ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
@@ -121,29 +109,6 @@ where
         meta
     }
 
-    fn tmp_bytes<C1, C2>(module: &Module<BE>, ct_out: &C1, part: &C2, keys: &CKKSFoldKeysLayout) -> usize
-    where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds,
-    {
-        let size = ct_out.size().max(part.size());
-        // Pairs and sparse parts are split at the bootstrap degree, sparse parts
-        // `log_sparsity` bits wider.
-        let split = keys.automorphism.filter(|key| key.n() == part.n()).map_or(0, |key| {
-            let wide = layout(part.n().as_usize(), part.base2k(), part.k() + part.log_sparsity() as u32);
-            module
-                .ckks_conjugate_tmp_bytes(part, &key)
-                .max(module.glwe_automorphism_tmp_bytes(&wide, &wide, &key))
-                .max(module.glwe_shift_tmp_bytes(wide.size()))
-        });
-        module
-            .glwe_normalize_tmp_bytes()
-            .max(split)
-            .max(module.ckks_add_tmp_bytes(size))
-            .max(module.ckks_sub_tmp_bytes(size))
-            .max(module.ckks_div_i_tmp_bytes(size))
-    }
-
     fn to_standard(
         module: &Module<BE>,
         dst: &mut CKKSCiphertextOwned<BE>,
@@ -159,7 +124,7 @@ where
         module: &Module<BE>,
         outs: &mut [CKKSCiphertextOwned<BE>],
         part: &CKKSCiphertextOwned<BE>,
-        automorphisms: Option<&H>,
+        automorphisms: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -169,16 +134,10 @@ where
         match outs {
             [out] => {
                 out.set_k(part.k());
-                if part.is_canonical() {
-                    switch_ring(module, out, part);
-                } else {
-                    module.glwe_normalize(out, part, scratch);
-                }
+                switch_ring(module, out, part);
                 out.set_meta(meta);
             }
             [left, right] => {
-                let automorphisms =
-                    automorphisms.ok_or_else(|| anyhow::anyhow!("real pairs need the automorphism keys of the input secret"))?;
                 let mut conj = module.ckks_ciphertext_alloc_from_glwe_infos(part);
                 module.ckks_conjugate_into(&mut conj, part, automorphisms, scratch)?;
                 module.ckks_add_into(left, part, &conj, scratch)?;
@@ -186,12 +145,8 @@ where
                 module.ckks_div_i_assign(right, scratch)?;
                 // Both hold twice their part; relabeling at the input scale drops that bit.
                 for out in [left, right] {
-                    out.set_meta(CKKSMeta {
-                        log_delta: meta.log_delta + 1,
-                        slots: SlotsKind::Real,
-                        ..meta
-                    });
-                    out.set_log_delta(meta.log_delta);
+                    out.set_meta(meta);
+                    out.set_k(out.k() - 1);
                 }
             }
             _ => unreachable!("a unit has one or two ciphertexts"),
@@ -213,8 +168,14 @@ pub trait CKKSFoldLayoutReference<BE: Backend> {
 impl<BE> CKKSFoldLayoutReference<BE> for Module<BE>
 where
     BE: Backend,
-    Module<BE>: ModuleN + GLWEKeyswitch<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
-    Standard: FoldRing<BE>,
+    Module<BE>: GLWEKeyswitch<BE>
+        + GLWENormalize<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEShift<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>,
 {
     fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout {
         let base2k = keys.ring_switch.map_or(ct_in.base2k(), |keys| keys.inbound.base2k());
@@ -228,30 +189,36 @@ where
         C2: CKKSCtBounds,
     {
         let folded = self.ckks_fold_layout_reference(ct_in, degree, keys);
-        let refreshed = CKKSLayout {
-            glwe_layout: GLWELayout { k: ct_out.k(), ..folded },
-            meta: CKKSMeta {
-                log_sparsity: ct_in.log_sparsity(),
-                ..ct_out.meta()
-            },
-        };
+        let refreshed = GLWELayout { k: ct_out.k(), ..folded };
         let packed = layout(degree.as_usize(), ct_in.base2k(), ct_in.k());
         let size = packed.size().max(folded.size()).max(refreshed.size());
         let switches = keys.ring_switch.map_or(0, |keys| {
             self.glwe_keyswitch_tmp_bytes(&folded, &packed, &keys.inbound)
                 .max(self.glwe_keyswitch_tmp_bytes(&refreshed, &refreshed, &keys.outbound))
         });
-        let split = CKKSLayout {
-            glwe_layout: GLWELayout {
-                base2k: ct_out.base2k(),
-                ..refreshed.glwe_layout
+        // Unfold converts to the output radix before splitting. Sparse parts need
+        // log_sparsity guard bits; real pairs also need conjugation and division by i.
+        let part = CKKSLayout {
+            glwe_layout: layout(degree.as_usize(), ct_out.base2k(), ct_out.k()),
+            meta: CKKSMeta {
+                log_sparsity: ct_in.log_sparsity(),
+                ..ct_out.meta()
             },
-            meta: refreshed.meta,
         };
+        let split = keys.automorphism.filter(|key| key.n() == degree).map_or(0, |key| {
+            let wide = layout(degree.as_usize(), part.base2k(), part.k() + part.log_sparsity() as u32);
+            self.ckks_conjugate_tmp_bytes(&part, &key)
+                .max(self.glwe_automorphism_tmp_bytes(&wide, &wide, &key))
+                .max(self.glwe_shift_tmp_bytes(wide.size()))
+        });
         switches
             .max(self.ckks_add_tmp_bytes(size))
             .max(self.ckks_mul_i_tmp_bytes(size))
-            .max(Standard::tmp_bytes(self, ct_out, &split, keys))
+            .max(split)
+            .max(self.glwe_normalize_tmp_bytes())
+            .max(self.ckks_add_tmp_bytes(part.size()))
+            .max(self.ckks_sub_tmp_bytes(part.size()))
+            .max(self.ckks_div_i_tmp_bytes(part.size()))
     }
 }
 
@@ -386,6 +353,8 @@ where
             merge(module, &mut packed, parts.iter().enumerate().map(|(j, ct)| (j as i64, ct)));
             packed.set_meta(meta);
             if !imags.is_empty() {
+                // Keep component sums separate: interleaving them can overflow
+                // intermediate limbs at large radices even when each sum fits.
                 let positions = group.iter().enumerate().filter(|(_, u)| u.1.is_some()).map(|(j, _)| j as i64);
                 let mut imag = module.ckks_ciphertext_alloc_from_glwe_infos(&packed);
                 merge(module, &mut imag, positions.zip(&imags));
@@ -503,7 +472,7 @@ where
                 extract(module, &mut part, &*src, t);
                 part.set_meta(meta);
                 let parts = if log_g > 0 {
-                    split_sparse(module, &part, log_g, Some(&keys), scratch)?
+                    split_sparse(module, &part, log_g, &keys, scratch)?
                 } else {
                     vec![part]
                 };
@@ -512,7 +481,7 @@ where
                         continue;
                     };
                     let end = im.unwrap_or(re) + 1;
-                    R::from_standard(module, &mut outs[re..end], part, Some(&keys), scratch)?;
+                    R::from_standard(module, &mut outs[re..end], part, &keys, scratch)?;
                 }
             }
         }
@@ -537,7 +506,7 @@ where
 
 /// Elements that split sparse parts of degree `n` merged `2^log_g` at a time, from
 /// the order-2 automorphism down: level `l` fixes `Z[X^(2^l)]` and negates `X^(2^(l−1))`.
-pub(crate) fn sparse_split_galois_elements(n: usize, log_g: usize) -> impl Iterator<Item = i64> {
+fn sparse_split_galois_elements(n: usize, log_g: usize) -> impl Iterator<Item = i64> {
     (1..=log_g).map(move |l| galois_element(1 << (n.ilog2() as usize - 1 - l), 2 * n as i64))
 }
 
@@ -552,7 +521,7 @@ fn split_sparse<BE, H>(
     module: &Module<BE>,
     part: &CKKSCiphertextOwned<BE>,
     log_g: usize,
-    automorphisms: Option<&H>,
+    automorphisms: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
@@ -568,8 +537,6 @@ where
         + CKKSModuleAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let automorphisms =
-        automorphisms.ok_or_else(|| anyhow::anyhow!("sparse inputs need the automorphism keys of the input secret"))?;
     let n = part.n().as_usize();
     let wide = layout(n, part.base2k(), part.k() + log_g as u32);
     let mut root = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
@@ -696,7 +663,7 @@ where
     Ok(())
 }
 
-pub(crate) fn layout(n: usize, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
+fn layout(n: usize, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
     GLWELayout {
         n: n.into(),
         base2k,
@@ -707,7 +674,7 @@ pub(crate) fn layout(n: usize, base2k: Base2K, k: TorusPrecision) -> GLWELayout 
 
 /// Writes `Σ X^shift·src(X^g)` into `dst`, whose degree is `g` times that of each
 /// `src`; all share the radix of `dst`.
-pub(crate) fn merge<'s, BE, D, S>(module: &Module<BE>, dst: &mut D, srcs: impl IntoIterator<Item = (i64, &'s S)>)
+fn merge<'s, BE, D, S>(module: &Module<BE>, dst: &mut D, srcs: impl IntoIterator<Item = (i64, &'s S)>)
 where
     BE: Backend,
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -732,7 +699,7 @@ where
 /// Writes the component of `src` at `X^j`, `X^(-j)·src` restricted to `X^g`, into
 /// `dst` of `1/g` its degree. The kept coefficients are copies, so `dst` inherits
 /// the canonical flag of `src`.
-pub(crate) fn extract<BE, D, S>(module: &Module<BE>, dst: &mut D, src: &S, j: usize)
+fn extract<BE, D, S>(module: &Module<BE>, dst: &mut D, src: &S, j: usize)
 where
     BE: Backend,
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxSwitchRing<BE> + GLWERotate<BE>,
@@ -747,7 +714,7 @@ where
 }
 
 /// Copies `src` into `dst`, inserting or selecting coefficients when the degrees differ.
-pub(crate) fn switch_ring<BE, D, S>(module: &Module<BE>, dst: &mut D, src: &S)
+fn switch_ring<BE, D, S>(module: &Module<BE>, dst: &mut D, src: &S)
 where
     BE: Backend,
     Module<BE>: VecZnxSwitchRing<BE>,
