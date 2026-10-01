@@ -10,6 +10,7 @@
 mod alloc;
 mod gglwe_pat;
 mod gglwe_pat_compressed;
+mod ggsw_share;
 mod glwe_automorphism_key_share;
 mod glwe_pat_compressed;
 mod glwe_public_key_share;
@@ -19,6 +20,7 @@ mod glwe_tensor_key_share;
 pub use alloc::*;
 pub use gglwe_pat::*;
 pub use gglwe_pat_compressed::*;
+pub use ggsw_share::*;
 pub use glwe_automorphism_key_share::*;
 pub use glwe_pat_compressed::*;
 pub use glwe_public_key_share::*;

@@ -1,6 +1,7 @@
 //! User-facing multiparty operation contracts.
 //!
 //! - [`evaluation_key`]: the collective switching and automorphism key protocols.
+//! - [`ggsw`]: the collective GGSW protocol.
 //! - [`pat`]: aggregation and finalization of every PAT shape.
 //! - [`public_key`]: the collective public key protocol.
 //! - [`tensor_key`]: the collective tensor (relinearization) key protocol.
@@ -11,10 +12,12 @@
 //!
 //! Every trait delegates through [`crate::oep`].
 pub mod evaluation_key;
+pub mod ggsw;
 pub mod pat;
 pub mod public_key;
 pub mod tensor_key;
 pub use evaluation_key::*;
+pub use ggsw::*;
 pub use pat::*;
 pub use public_key::*;
 pub use tensor_key::*;

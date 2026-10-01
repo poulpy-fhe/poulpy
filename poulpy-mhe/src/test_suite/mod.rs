@@ -3,6 +3,7 @@
 
 pub mod evaluation_key;
 pub(crate) mod fixtures;
+pub mod ggsw;
 pub mod pat;
 pub mod public_key;
 pub mod tensor_key;
@@ -94,6 +95,50 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn ggsw_share_read_rank_mismatch() {
+                $crate::test_suite::ggsw::test_ggsw_share_read_rank_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn ggsw_share() {
+                $crate::test_suite::ggsw::test_ggsw_share(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn ggsw_share_rank_one() {
+                $crate::test_suite::ggsw::test_ggsw_share_rank_one(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn ggsw_share_external_product() {
+                $crate::test_suite::ggsw::test_ggsw_share_external_product(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: seeds differ")]
+            fn ggsw_share_seed_mismatch() {
+                $crate::test_suite::ggsw::test_ggsw_share_seed_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: ephemeral secret rank differs from 1")]
+            fn ggsw_share_ephemeral_rank_mismatch() {
+                $crate::test_suite::ggsw::test_ggsw_share_ephemeral_rank_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: key output rank differs from the GGSW's")]
+            fn ggsw_share_key_rank_mismatch() {
+                $crate::test_suite::ggsw::test_ggsw_share_key_rank_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: key does not cover the GGSW precision")]
+            fn ggsw_share_key_precision_mismatch() {
+                $crate::test_suite::ggsw::test_ggsw_share_key_precision_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_switching_key() {
                 $crate::test_suite::evaluation_key::test_glwe_switching_key(&Module::<$backend>::new(256));
             }
@@ -129,6 +174,11 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_tensor_key_pk_shape_guards() {
                 $crate::test_suite::tensor_key::test_glwe_tensor_key_pk_shape_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn ggsw_share_shape_guards() {
+                $crate::test_suite::ggsw::test_ggsw_share_shape_guards(&Module::<$backend>::new(64));
             }
 
             #[test]

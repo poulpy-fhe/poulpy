@@ -1,12 +1,13 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
+    TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::layouts::{
-    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GLWEAutomorphismKeyShare,
+    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
     GLWEAutomorphismKeyShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
-    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned,
+    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
 };
 
 /// PAT and share allocation on a backend module.
@@ -145,6 +146,39 @@ pub trait MHEModuleAlloc<BE: Backend>:
         let pairs = Rank(rank.0 * (rank.0 + 1) / 2);
         GLWETensorKeyShare {
             key: self.gglwe_pat_alloc(base2k, dnum, dsize, k_aux, pairs, rank),
+        }
+    }
+
+    fn ggsw_share_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWShareOwned<BE> {
+        let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
+            (0..infos.rank().as_usize())
+                .map(|_| self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, Rank(1))))
+                .collect()
+        };
+        GGSWShare {
+            col0: self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, infos.rank())),
+            circ_u: circ(),
+            circ_s: circ(),
+        }
+    }
+
+    fn ggsw_share_alloc(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> GGSWShareOwned<BE> {
+        let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
+            (0..rank.as_usize())
+                .map(|_| self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, Rank(1), Rank(1)))
+                .collect()
+        };
+        GGSWShare {
+            col0: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, Rank(1), rank),
+            circ_u: circ(),
+            circ_s: circ(),
         }
     }
 }
