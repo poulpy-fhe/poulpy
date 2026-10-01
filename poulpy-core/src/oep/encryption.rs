@@ -120,7 +120,10 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
+    {
+        super::derived::encryption::glwe_encrypt_pk_derived(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+    }
 
     fn glwe_encrypt_zero_pk<R, K, E>(
         module: &Module<Self>,
@@ -133,13 +136,18 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
+    {
+        super::derived::encryption::glwe_encrypt_zero_pk_derived(module, res, pk, enc_infos, source_xu, source_xe, scratch)
+    }
 
+    /// Encrypts under `pk` with `pt.0` added to column `pt.1` (`0` is the
+    /// body), or zero when `pt` is `None`: every public-key encryption derives
+    /// from it.
     fn glwe_encrypt_pk_at_col<R, P, K, E>(
         module: &Module<Self>,
         res: &mut R,
-        pt: &P,
-        col: usize,
+        pt: Option<(&P, usize)>,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -808,43 +816,10 @@ macro_rules! impl_encryption_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_tmp_bytes_reference::<R, K>(module, res_infos, pk_infos)
         }
 
-    fn glwe_encrypt_pk<R, P, K, E>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        res: &mut R,
-        pt: &P,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut ::poulpy_hal::source::Source,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-        P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-        E: $crate::api::EncryptionInfos,
-        K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_reference::<R, P, K, E>(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
-        }
-
-    fn glwe_encrypt_zero_pk<R, K, E>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut ::poulpy_hal::source::Source,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-        E: $crate::api::EncryptionInfos,
-        K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_zero_pk_reference::<R, K, E>(module, res, pk, enc_infos, source_xu, source_xe, scratch)
-        }
-
     fn glwe_encrypt_pk_at_col<R, P, K, E>(
         module: &::poulpy_hal::layouts::Module<$be>,
         res: &mut R,
-        pt: &P,
-        col: usize,
+        pt: Option<(&P, usize)>,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut ::poulpy_hal::source::Source,
@@ -855,7 +830,7 @@ macro_rules! impl_encryption_reference_full {
         P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
         E: $crate::api::EncryptionInfos,
         K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, col, pk, enc_infos, source_xu, source_xe, scratch)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
         }
 
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

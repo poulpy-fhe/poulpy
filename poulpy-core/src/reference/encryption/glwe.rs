@@ -219,39 +219,10 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         R: GLWEInfos,
         K: GLWEInfos;
 
-    fn glwe_encrypt_pk_reference<R, P, K, E>(
-        &self,
-        res: &mut R,
-        pt: &P,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
-
     fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
         &self,
         res: &mut R,
-        pt: &P,
-        col: usize,
+        pt: Option<(&P, usize)>,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -287,62 +258,10 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_reference<R, P, K, E>(
-        &self,
-        res: &mut R,
-        pt: &P,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    {
-        assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
-            "insufficient scratch for GLWE public-key encryption"
-        );
-        self.glwe_encrypt_pk_internal(
-            res,
-            Some((pt.to_backend_ref(), 0)),
-            pk,
-            enc_infos,
-            source_xu,
-            source_xe,
-            scratch,
-        );
-    }
-
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    {
-        assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
-            "insufficient scratch for GLWE public-key encryption"
-        );
-        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
-    }
-
     fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
         &self,
         res: &mut R,
-        pt: &P,
-        col: usize,
+        pt: Option<(&P, usize)>,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -354,14 +273,16 @@ where
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        assert!(col <= res.rank().as_usize(), "invalid column: exceeds the output rank");
+        if let Some((_, col)) = pt {
+            assert!(col <= res.rank().as_usize(), "invalid column: exceeds the output rank");
+        }
         assert!(
             scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res, pk),
             "insufficient scratch for GLWE public-key encryption"
         );
         self.glwe_encrypt_pk_internal(
             res,
-            Some((pt.to_backend_ref(), col)),
+            pt.map(|(pt, col)| (pt.to_backend_ref(), col)),
             pk,
             enc_infos,
             source_xu,

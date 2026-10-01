@@ -10,8 +10,8 @@ use crate::{
     api::GLWEBytesOf,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos, GLWEInfos,
-        GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory,
-        GLWESecretToBackendRef, GLWEToBackendMut, LWEToBackendMut,
+        GLWEPlaintext, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory,
+        GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEToBackendMut,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -146,6 +146,44 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, E>(
     *res.dist_mut() = *sk.dist();
 }
 
+pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K, E>(
+    module: &Module<BE>,
+    res: &mut R,
+    pt: &P,
+    pk: &K,
+    enc_infos: &E,
+    source_xu: &mut Source,
+    source_xe: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: EncryptionImpl,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + GLWEInfos,
+    E: EncryptionInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+{
+    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), pk, enc_infos, source_xu, source_xe, scratch);
+}
+
+pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K, E>(
+    module: &Module<BE>,
+    res: &mut R,
+    pk: &K,
+    enc_infos: &E,
+    source_xu: &mut Source,
+    source_xe: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: EncryptionImpl,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    E: EncryptionInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+{
+    BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K, E>(
+        module, res, None, pk, enc_infos, source_xu, source_xe, scratch,
+    );
+}
+
 pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos, K: GLWEInfos>(
     module: &Module<BE>,
     res_infos: &R,
@@ -195,8 +233,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
             BE::glwe_encrypt_pk_at_col(
                 module,
                 &mut res.at_view_mut(row, col),
-                &tmp_pt,
-                col,
+                Some((&tmp_pt, col)),
                 pk,
                 enc_infos,
                 source_xu,
