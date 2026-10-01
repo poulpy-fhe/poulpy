@@ -10,18 +10,16 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
+    EncryptionLayout, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWETensorKey, GLWETensorKeyLayout,
+        ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
-    test_suite::noise::{
-        download_scalar_znx, upload_gglwe_to_ggsw_key, upload_ggsw, upload_glwe_automorphism_key, upload_glwe_secret,
-        upload_scalar_znx,
-    },
+    test_suite::noise::{download_scalar_znx, upload_ggsw, upload_glwe_automorphism_key, upload_glwe_secret, upload_scalar_znx},
 };
 use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
@@ -35,7 +33,7 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWAutomorphism<BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GLWETensorKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAutomorphismAssign<BE>
         + GGSWNoise<BE>,
@@ -77,7 +75,7 @@ where
             })
             .unwrap();
 
-            let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_layout = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -87,7 +85,7 @@ where
             })
             .unwrap();
 
-            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -99,7 +97,6 @@ where
 
             let ct_in_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
             let ct_out_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
             let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
             let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
@@ -111,7 +108,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_in_layout)
                     | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&auto_key_layout)
-                    | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout)
+                    | (module).glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_layout)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_layout)
                     | module.ggsw_automorphism_tmp_bytes(&ggsw_out_layout, &ggsw_in_layout, &auto_key_layout, &tsk_layout),
             );
 
@@ -125,7 +123,7 @@ where
             module.glwe_secret_prepare(&mut sk_prepared, &sk_backend);
 
             let mut auto_key = upload_glwe_automorphism_key(module, &auto_key_template);
-            let mut tsk = upload_gglwe_to_ggsw_key(module, &tsk_template);
+            let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
 
             module.glwe_automorphism_key_encrypt_sk(
                 &mut auto_key,
@@ -136,7 +134,7 @@ where
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
-            module.gglwe_to_ggsw_key_encrypt_sk(
+            module.glwe_tensor_key_encrypt_sk(
                 &mut tsk,
                 &sk_backend,
                 &tsk_layout,
@@ -236,7 +234,7 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWAutomorphism<BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GLWETensorKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAutomorphismAssign<BE>
         + GGSWNoise<BE>,
@@ -266,7 +264,7 @@ where
             })
             .unwrap();
 
-            let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_layout = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -276,7 +274,7 @@ where
             })
             .unwrap();
 
-            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -287,7 +285,6 @@ where
             .unwrap();
 
             let ct_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
             let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
             let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
@@ -299,7 +296,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_out_layout)
                     | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&auto_key_layout)
-                    | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout)
+                    | (module).glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_layout)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_layout)
                     | module.ggsw_automorphism_tmp_bytes(&ggsw_out_layout, &ggsw_out_layout, &auto_key_layout, &tsk_layout),
             );
 
@@ -313,7 +311,7 @@ where
             module.glwe_secret_prepare(&mut sk_prepared, &sk_backend);
 
             let mut auto_key = upload_glwe_automorphism_key(module, &auto_key_template);
-            let mut tsk = upload_gglwe_to_ggsw_key(module, &tsk_template);
+            let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
 
             module.glwe_automorphism_key_encrypt_sk(
                 &mut auto_key,
@@ -324,7 +322,7 @@ where
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
-            module.gglwe_to_ggsw_key_encrypt_sk(
+            module.glwe_tensor_key_encrypt_sk(
                 &mut tsk,
                 &sk_backend,
                 &tsk_layout,

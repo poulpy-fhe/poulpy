@@ -8,11 +8,10 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut, NoiseInfos,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut,
-        GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
-        GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
-        SetGaloisElement,
+        GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
+        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
+        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{
             GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GLWEPublicKeyCompressedSeedMut,
             GLWEPublicKeyCompressedToBackendMut,
@@ -290,25 +289,6 @@ pub trait GGSWEncryptPk<BE: Backend> {
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn gglwe_to_ggsw_key_encrypt_sk<R, S, E>(
-        &self,
-        res: &mut R,
-        sk: &S,
-        enc_infos: &E,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-}
-
 pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -567,25 +547,6 @@ pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWEInfos + GGLWECompressedSeedMut,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-}
-
-pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend> {
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S, E>(
-        &self,
-        res: &mut R,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }

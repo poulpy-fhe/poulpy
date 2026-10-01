@@ -10,7 +10,7 @@ use crate::{
 use poulpy_core::{
     EncryptionLayout, LWEEncryptSk, TransferInto,
     layouts::{
-        Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWESecretSampling, LWELayout, LWESecretSampling,
+        Dsize, GGSWLayout, GLWEAutomorphismKeyLayout, GLWESecretSampling, GLWETensorKeyLayout, LWELayout, LWESecretSampling,
         ModuleCoreAlloc,
     },
 };
@@ -56,7 +56,7 @@ where
                 dsize: Dsize(1),
                 rank: rank.into(),
             },
-            tsk_layout: GGLWEToGGSWKeyLayout {
+            tsk_layout: GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: 12usize.into(),
                 dnum: 4usize.into(),

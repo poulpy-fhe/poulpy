@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use poulpy_core::{
     EncryptionLayout, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
+        Base2K, Degree, Dnum, Dsize, GLWETensorKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
         ModuleCoreAlloc, Rank, TorusPrecision,
     },
@@ -182,7 +182,7 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
                     dsize: Dsize(1),
                     rank: Rank(RANK),
                 },
-                tsk_layout: GGLWEToGGSWKeyLayout {
+                tsk_layout: GLWETensorKeyLayout {
                     n: Degree(N_GLWE),
                     base2k: Base2K(BASE2K),
                     k_aux: TorusPrecision(K_AUX),

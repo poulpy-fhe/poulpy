@@ -6,19 +6,17 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     api::{
-        EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
-        GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill,
-        GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
-        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
-        LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
+        EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk,
+        GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk,
+        GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk,
+        GLWESwitchingKeyEncryptSk, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk,
+        LWEEncryptSk, LWEFillMask, LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
     },
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
-        GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
-        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
-        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
+        GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -367,31 +365,6 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GGLWEToGGSWKeyEncryptSk<BE>,
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(self, infos)
-    },
-    fn gglwe_to_ggsw_key_encrypt_sk<R, S, E>(
-        &self,
-        res: &mut R,
-        sk: &S,
-        enc_infos: &E,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        BE::gglwe_to_ggsw_key_encrypt_sk(self, res, sk, enc_infos, source_xe, source_xa, scratch)
-    }
-);
-
-impl_encryption_delegate!(
     GLWESwitchingKeyEncryptSk<BE>,
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -643,31 +616,6 @@ impl_encryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         BE::ggsw_compressed_encrypt_sk(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
-    }
-);
-
-impl_encryption_delegate!(
-    GGLWEToGGSWKeyCompressedEncryptSk<BE>,
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(self, infos)
-    },
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S, E>(
-        &self,
-        res: &mut R,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        BE::gglwe_to_ggsw_key_compressed_encrypt_sk(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
     }
 );
 

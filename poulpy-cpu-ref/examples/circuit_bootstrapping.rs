@@ -3,8 +3,8 @@ use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
-        GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
-        GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWETensorKeyLayout, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
@@ -94,7 +94,7 @@ fn main() {
             dsize: 1_u32.into(),
             rank: rank.into(),
         },
-        tsk_layout: GGLWEToGGSWKeyLayout {
+        tsk_layout: GLWETensorKeyLayout {
             n: n_glwe.into(),
             base2k: base2k.into(),
             dnum: rows_tsk.into(),

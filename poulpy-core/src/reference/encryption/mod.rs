@@ -12,9 +12,8 @@
 //!   generating keys that enable switching between different secret keys or
 //!   between LWE and GLWE domains.
 //!
-//! - **Evaluation keys**: [`GLWEAutomorphismKeyEncryptSk`](crate::api::GLWEAutomorphismKeyEncryptSk), [`GLWETensorKeyEncryptSk`](crate::api::GLWETensorKeyEncryptSk),
-//!   [`GGLWEToGGSWKeyEncryptSk`](crate::api::GGLWEToGGSWKeyEncryptSk) for generating keys used in automorphism,
-//!   tensor product, and GGLWE-to-GGSW conversion operations.
+//! - **Evaluation keys**: [`GLWEAutomorphismKeyEncryptSk`](crate::api::GLWEAutomorphismKeyEncryptSk), [`GLWETensorKeyEncryptSk`](crate::api::GLWETensorKeyEncryptSk)
+//!   for generating keys used in automorphism, tensor product, and GGLWE-to-GGSW conversion operations.
 //!
 //! - **Public keys**: [`GLWEPublicKeyGenerate`](crate::api::GLWEPublicKeyGenerate) for generating GLWE public keys
 //!   from secret keys.
@@ -31,7 +30,6 @@
 
 pub mod compressed;
 pub mod gglwe;
-pub mod gglwe_to_ggsw_key;
 pub mod ggsw;
 pub mod glwe;
 pub mod glwe_automorphism_key;
@@ -44,7 +42,6 @@ pub mod lwe_to_glwe_key;
 pub use crate::api::{EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
 pub use compressed::*;
 pub use gglwe::*;
-pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;

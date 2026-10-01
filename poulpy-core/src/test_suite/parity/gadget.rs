@@ -6,8 +6,8 @@ use crate::{
     GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWLayout,
-        GLWEAutomorphismKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGSWAtViewMut, GGSWLayout, GLWEAutomorphismKeyLayout,
+        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GGLWEPreparedFactory, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedFactory, GGLWEToGGSWKeyPreparedToBackendRef,
             GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyPreparedFactory,
@@ -232,7 +232,7 @@ where
                 k_aux: k.k_aux,
                 rank: g.rank,
             };
-            let tk = GGLWEToGGSWKeyLayout {
+            let tk = GLWETensorKeyLayout {
                 n: k.n,
                 base2k: k.base2k,
                 dnum: k.dnum,
@@ -272,11 +272,9 @@ where
                 &auto_t,
                 &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_prepare_tmp_bytes(&ak)).borrow(),
             );
-            let mut tensor_r = r.gglwe_to_ggsw_key_alloc_from_infos(&tk);
-            for key in tensor_r.keys.iter_mut() {
-                fill_by_digit(r, key, 1, &mut source);
-            }
-            let mut tensor_t = t.gglwe_to_ggsw_key_alloc_from_infos(&tk);
+            let mut tensor_r = r.glwe_tensor_key_alloc_from_infos(&tk);
+            fill_by_digit(r, &mut tensor_r, 1, &mut source);
+            let mut tensor_t = t.glwe_tensor_key_alloc_from_infos(&tk);
             tensor_r.transfer_into(&mut tensor_t);
             let mut tensorp_r = r.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tk);
             let mut tensorp_t = t.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tk);

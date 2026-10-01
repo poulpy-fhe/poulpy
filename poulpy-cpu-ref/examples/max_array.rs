@@ -12,8 +12,9 @@ use poulpy_bin_fhe::{
 use poulpy_core::{
     EncryptionLayout, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank,
+        TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -99,7 +100,7 @@ where
                 dsize: Dsize(1),
                 rank: Rank(RANK),
             },
-            tsk_layout: GGLWEToGGSWKeyLayout {
+            tsk_layout: GLWETensorKeyLayout {
                 n: Degree(N_GLWE),
                 base2k: Base2K(BASE2K),
                 dnum: Dnum(3),

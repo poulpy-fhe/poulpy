@@ -20,8 +20,8 @@ use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
-        Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretPreparedFactory, LWELayout, ModuleCoreAlloc,
+        Dsize, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretPreparedFactory,
+        GLWETensorKeyLayout, LWELayout, ModuleCoreAlloc,
     },
 };
 
@@ -105,7 +105,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
             rank: rank.into(),
             dsize: Dsize(1),
         },
-        tsk_layout: GGLWEToGGSWKeyLayout {
+        tsk_layout: GLWETensorKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
             dnum: rows_tsk.into(),
@@ -315,7 +315,7 @@ pub fn test_circuit_bootstrapping_to_constant<
             rank: rank.into(),
             dsize: Dsize(1),
         },
-        tsk_layout: GGLWEToGGSWKeyLayout {
+        tsk_layout: GLWETensorKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
             dnum: rows_tsk.into(),

@@ -2,8 +2,8 @@ use anyhow::Result;
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GetDistribution, NoiseInfos, TransferInto,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
+        GGLWEInfos, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, GLWETensorKey,
+        GLWETensorKeyLayout, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -58,7 +58,7 @@ pub trait CircuitBootstrappingKeyInfos {
     /// Dimensional layout of the automorphism (Galois) key component.
     fn atk_infos(&self) -> GLWEAutomorphismKeyLayout;
     /// Dimensional layout of the tensor-switching key component.
-    fn tsk_infos(&self) -> GGLWEToGGSWKeyLayout;
+    fn tsk_infos(&self) -> GLWETensorKeyLayout;
 }
 
 /// Plain-old-data dimension descriptor for a circuit bootstrapping key bundle.
@@ -75,7 +75,7 @@ pub trait CircuitBootstrappingKeyInfos {
 pub struct CircuitBootstrappingKeyLayout {
     pub brk_layout: BlindRotationKeyLayout,
     pub atk_layout: GLWEAutomorphismKeyLayout,
-    pub tsk_layout: GGLWEToGGSWKeyLayout,
+    pub tsk_layout: GLWETensorKeyLayout,
 }
 
 impl CircuitBootstrappingKeyInfos for CircuitBootstrappingKeyLayout {
@@ -91,7 +91,7 @@ impl CircuitBootstrappingKeyInfos for CircuitBootstrappingKeyLayout {
         self.brk_layout
     }
 
-    fn tsk_infos(&self) -> GGLWEToGGSWKeyLayout {
+    fn tsk_infos(&self) -> GLWETensorKeyLayout {
         self.tsk_layout
     }
 }
@@ -115,11 +115,11 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         &mut self.brk
     }
     /// Coefficient-domain row-expansion key.
-    pub fn tensor_key(&self) -> &GGLWEToGGSWKey<D, W> {
+    pub fn tensor_key(&self) -> &GLWETensorKey<D, W> {
         &self.tsk
     }
     /// Mutable row-expansion key for lifecycle implementations.
-    pub fn tensor_key_mut(&mut self) -> &mut GGLWEToGGSWKey<D, W> {
+    pub fn tensor_key_mut(&mut self) -> &mut GLWETensorKey<D, W> {
         &mut self.tsk
     }
     /// Coefficient-domain trace and packing keys, indexed by Galois element.
@@ -137,7 +137,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
     {
         let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
         let brk_infos: &BlindRotationKeyLayout = &infos.brk_infos();
-        let trk_infos: &GGLWEToGGSWKeyLayout = &infos.tsk_infos();
+        let trk_infos: &GLWETensorKeyLayout = &infos.tsk_infos();
         let gal_els: Vec<i64> = trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64);
 
         assert!(
@@ -155,7 +155,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
                     (gal_el, key)
                 })
                 .collect(),
-            tsk: module.gglwe_to_ggsw_key_alloc_from_infos(trk_infos),
+            tsk: module.glwe_tensor_key_alloc_from_infos(trk_infos),
         }
     }
 }
@@ -180,7 +180,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
 /// 3. Prepare with `CircuitBootstrappingKeyPrepared::prepare`.
 pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> {
     pub(crate) brk: BlindRotationKey<D, BRA, W>,
-    pub(crate) tsk: GGLWEToGGSWKey<D, W>,
+    pub(crate) tsk: GLWETensorKey<D, W>,
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKey<D, W>>,
 }
 
@@ -251,8 +251,8 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos f
         }
     }
 
-    fn tsk_infos(&self) -> GGLWEToGGSWKeyLayout {
-        GGLWEToGGSWKeyLayout {
+    fn tsk_infos(&self) -> GLWETensorKeyLayout {
+        GLWETensorKeyLayout {
             n: self.tsk.n(),
             base2k: self.tsk.base2k(),
             dnum: self.tsk.dnum(),

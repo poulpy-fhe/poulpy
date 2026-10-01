@@ -10,12 +10,12 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
+    EncryptionLayout, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout,
-        GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret,
+        GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, GLWETensorKey,
+        GLWETensorKeyLayout, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -30,7 +30,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GLWETensorKeyEncryptSk<BE>
         + GGSWKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
@@ -72,7 +72,7 @@ where
                 rank: rank.into(),
             };
 
-            let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -95,7 +95,7 @@ where
 
             let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
-            let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_infos);
+            let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
             let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_switching_key_alloc_from_infos(&ksk_apply_infos);
             let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
@@ -107,7 +107,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_in_infos)
                     | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_apply_infos)
-                    | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_infos)
+                    | (module).glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_infos)
                     | module.ggsw_keyswitch_tmp_bytes(&ggsw_out_infos, &ggsw_in_infos, &ksk_apply_infos, &tsk_infos),
             );
 
@@ -134,7 +135,7 @@ where
                 &mut source_xa,
                 &mut scratch.arena(),
             );
-            module.gglwe_to_ggsw_key_encrypt_sk(
+            module.glwe_tensor_key_encrypt_sk(
                 &mut tsk,
                 &sk_out,
                 &tsk_infos,
@@ -225,7 +226,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GLWETensorKeyEncryptSk<BE>
         + GGSWKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
@@ -256,7 +257,7 @@ where
             })
             .unwrap();
 
-            let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -278,7 +279,7 @@ where
             .unwrap();
 
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
-            let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_infos);
+            let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
             let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_switching_key_alloc_from_infos(&ksk_apply_infos);
             let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
@@ -290,7 +291,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_out_infos)
                     | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_apply_infos)
-                    | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_infos)
+                    | (module).glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_infos)
                     | module.ggsw_keyswitch_tmp_bytes(&ggsw_out_infos, &ggsw_out_infos, &ksk_apply_infos, &tsk_infos),
             );
 
@@ -317,7 +319,7 @@ where
                 &mut source_xa,
                 &mut scratch.arena(),
             );
-            module.gglwe_to_ggsw_key_encrypt_sk(
+            module.glwe_tensor_key_encrypt_sk(
                 &mut tsk,
                 &sk_out,
                 &tsk_infos,

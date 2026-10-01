@@ -295,12 +295,12 @@ where
                 gglwe_to_ggsw_key_prepared_alloc_from_infos,
                 bytes_of_gglwe_to_ggsw,
                 bytes_of_gglwe_to_ggsw_from_infos,
-                gadget,
+                tensor_infos,
                 [b, dn, ds, aux, rank],
                 p,
                 p.keys.iter().map(|key| BE::len_bytes(key.data.data())).sum::<usize>()
             );
-            let source = m.gglwe_to_ggsw_key_alloc_from_infos(&gadget);
+            let source = m.glwe_tensor_key_alloc_from_infos(&tensor_infos);
             m.gglwe_to_ggsw_key_prepare(
                 &mut prepared,
                 &source,

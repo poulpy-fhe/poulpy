@@ -16,12 +16,12 @@ use crate::{
 };
 use itertools::Itertools;
 use poulpy_core::{
-    Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
-    GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
+    Distribution, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking, GLWERotate,
+    GLWETensorKeyEncryptSk, GLWETrace, GetDistribution, ScratchArenaTakeCore,
     layouts::{
-        GGLWELayout, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
-        GGSWToBackendMut, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        GGLWELayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecretPreparedFactory,
+        GLWESecretToBackendRef, GLWETensorKeyLayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement, prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
 };
@@ -104,7 +104,7 @@ where
     A: CircuitBootstrappingKeyInfos,
     BRA: BlindRotationAlgo,
     BE: Backend,
-    M: GGLWEToGGSWKeyEncryptSk<BE>
+    M: GLWETensorKeyEncryptSk<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
@@ -118,7 +118,7 @@ where
                 .next_multiple_of(BE::SCRATCH_ALIGN)
                 + module.blind_rotation_key_encrypt_sk_tmp_bytes(&infos.brk_infos()),
         )
-        .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&infos.tsk_infos()))
+        .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&infos.tsk_infos()))
 }
 pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     module: &M,
@@ -134,7 +134,7 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
     BRA: BlindRotationAlgo,
     BE: Backend,
-    M: GGLWEToGGSWKeyEncryptSk<BE>
+    M: GLWETensorKeyEncryptSk<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
@@ -142,7 +142,7 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
 {
     let brk_infos: &BlindRotationKeyLayout = &res.brk_infos();
     let atk_infos: &GLWEAutomorphismKeyLayout = &res.atk_infos();
-    let tsk_infos: &GGLWEToGGSWKeyLayout = &res.tsk_infos();
+    let tsk_infos: &GLWETensorKeyLayout = &res.tsk_infos();
 
     assert_eq!(sk_lwe.n(), brk_infos.n_lwe());
     assert_eq!(sk_glwe.n(), brk_infos.n_glwe());
@@ -171,7 +171,7 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
             &mut op_scratch,
         );
     }
-    module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, &enc_infos.tsk, source_xe, source_xa, scratch);
+    module.glwe_tensor_key_encrypt_sk(&mut res.tsk, sk_glwe, &enc_infos.tsk, source_xe, source_xa, scratch);
 }
 pub fn circuit_bootstrapping_key_prepared_alloc_from_infos_reference<A, M, BRA, BE>(
     module: &M,

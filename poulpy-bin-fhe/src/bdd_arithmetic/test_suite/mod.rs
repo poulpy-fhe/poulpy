@@ -41,8 +41,8 @@ pub use swap::*;
 pub use xor::*;
 
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-    GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
+    Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret, GLWESecretPrepared,
+    GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GLWEToLWEKeyLayout, LWESecret,
     LWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
 };
 
@@ -194,7 +194,7 @@ pub(crate) static TEST_BDD_KEY_LAYOUT: BDDKeyLayout = BDDKeyLayout {
             k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_ATK_BASE2K),
             dsize: Dsize(1),
         },
-        tsk_layout: GGLWEToGGSWKeyLayout {
+        tsk_layout: GLWETensorKeyLayout {
             n: Degree(TEST_N_GLWE),
             base2k: Base2K(TEST_TSK_BASE2K),
             rank: Rank(TEST_RANK),

@@ -1,22 +1,23 @@
 use poulpy_hal::{
-    api::VmpPrepare,
-    layouts::{Backend, Data, Module, ScratchArena},
+    api::{ScratchArenaTakeBasic, VecZnxCopy, VmpPrepare, VmpPrepareTmpBytes},
+    layouts::{
+        Backend, Data, MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchArena, mat_znx_at_backend_mut_from_mut,
+        mat_znx_at_backend_ref_from_ref,
+    },
 };
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToGGSWKeyToBackendRef, GLWEInfos,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank,
+    TorusPrecision,
 };
 
-/// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
+/// [`GLWETensorKey`](crate::layouts::GLWETensorKey) prepared for
+/// [`GGSWExpandRows`](crate::api::GGSWExpandRows): one [`GGLWEPrepared`] per
+/// rank element, whose input column `j` of key `i` encrypts `s[i]*s[j]`.
 ///
-/// Stores a collection of [`GGLWEPrepared`] matrices (one per rank element)
-/// with polynomials in the frequency domain of the backend's DFT/NTT transform,
-/// enabling O(N log N) polynomial multiplication. Used for GGLWE-to-GGSW
-/// key-switching operations.
-///
-/// Requires `rank_in == rank_out`. Tied to a specific backend via `BE: Backend`.
+/// Each key has `rank_in == rank_out`, so expanding a GGSW column is one
+/// vector-matrix product. Tied to a specific backend via `BE: Backend`.
 pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend> {
     pub(crate) keys: Vec<GGLWEPrepared<D, BE>>,
 }
@@ -76,9 +77,8 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
 
 /// Factory trait for allocating and preparing [`GGLWEToGGSWKeyPrepared`] instances.
 pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
-    /// Allocates a new [`GGLWEToGGSWKeyPrepared`] matching the parameters of `infos`.
-    ///
-    /// Panics if `rank_in != rank_out`.
+    /// Allocates a new [`GGLWEToGGSWKeyPrepared`] for the tensor key layout
+    /// `infos`; only its rank, gadget and precision are read.
     fn gglwe_to_ggsw_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>
     where
         A: GGLWEInfos;
@@ -108,28 +108,22 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    /// Transforms a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey) into the DFT domain, writing into `res`.
-    ///
-    /// Iterates over each key element and prepares it individually.
-    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    /// Prepares the [`GLWETensorKey`](crate::layouts::GLWETensorKey) `tsk` into `res`:
+    /// input column `j` of key `i` is the tensor key entry of `s[min(i, j)]*s[max(i, j)]`.
+    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, tsk: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>;
+        O: GGLWEToBackendRef<BE> + GGLWEInfos;
 }
 
 impl<BE: Backend> GGLWEToGGSWKeyPreparedFactory<BE> for Module<BE>
 where
-    Self: GGLWEPreparedFactory<BE>,
+    Self: GGLWEPreparedFactory<BE> + VecZnxCopy<BE>,
 {
     fn gglwe_to_ggsw_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>
     where
         A: GGLWEInfos,
     {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
-        );
         self.gglwe_to_ggsw_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 
@@ -152,11 +146,6 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
-        );
         self.bytes_of_gglwe_to_ggsw(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 
@@ -168,19 +157,23 @@ where
     where
         A: GGLWEInfos,
     {
-        let lvl_0: usize = self.gglwe_prepare_tmp_bytes(infos);
-        lvl_0
+        let rank: usize = infos.rank_out().as_usize();
+        let key = BE::bytes_of_mat_znx(infos.n().as_usize(), infos.dnum().as_usize(), rank, rank + 1, infos.size());
+        BE::scratch_aligned(key) + self.vmp_prepare_tmp_bytes(infos.dnum().as_usize(), rank, rank + 1, infos.size())
     }
 
-    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, tsk: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>,
+        O: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        let needed = {
-            let res_infos = res.to_backend_mut();
-            self.gglwe_to_ggsw_key_prepare_tmp_bytes(&res_infos)
-        };
+        let rank: usize = tsk.rank_out().as_usize();
+        assert_eq!(
+            tsk.rank_in().as_usize(),
+            (rank * (rank + 1) / 2).max(1),
+            "tsk must be a GLWETensorKey"
+        );
+        let needed = self.gglwe_to_ggsw_key_prepare_tmp_bytes(tsk);
         assert!(
             scratch.available() >= needed,
             "scratch.available(): {} < GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepare_tmp_bytes: {}",
@@ -189,11 +182,28 @@ where
         );
 
         let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
+        let tsk = tsk.to_backend_ref();
+        assert_eq!(res.keys.len(), rank);
 
-        assert_eq!(res.keys.len(), other.keys.len());
-        for (a, b) in res.keys.iter_mut().zip(other.keys.iter()) {
-            self.vmp_prepare(&mut a.data, &b.data, &mut scratch.borrow());
+        let (mut key, mut scratch_1) =
+            scratch
+                .borrow()
+                .take_mat_znx_scratch(tsk.n().as_usize(), tsk.dnum().as_usize(), rank, rank + 1, tsk.size());
+        for (i, res_i) in res.keys.iter_mut().enumerate() {
+            {
+                let mut key_mut = key.to_backend_mut();
+                for row in 0..tsk.dnum().as_usize() {
+                    for j in 0..rank {
+                        let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
+                        let src = mat_znx_at_backend_ref_from_ref::<BE>(&tsk.data, row, lo * rank + hi - lo * (lo + 1) / 2);
+                        let mut dst = mat_znx_at_backend_mut_from_mut::<BE>(&mut key_mut, row, j);
+                        for col in 0..rank + 1 {
+                            self.vec_znx_copy(&mut dst, col, &src, col);
+                        }
+                    }
+                }
+            }
+            self.vmp_prepare(&mut res_i.data, &key.to_backend_ref(), &mut scratch_1.borrow());
         }
     }
 }

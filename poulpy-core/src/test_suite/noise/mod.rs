@@ -37,8 +37,8 @@ use crate::{
     GLWEDecrypt, GLWENoise,
     api::TransferInto,
     layouts::{
-        GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext, GLWESecret,
-        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetBase2k,
+        GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext, GLWESecret, GLWESecretPreparedToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetBase2k,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -303,14 +303,5 @@ pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWo
     GLWEAutomorphismKey {
         key: upload_gglwe(module, &src.key),
         p: src.p,
-    }
-}
-
-pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
-    module: &Module<BE>,
-    src: &GGLWEToGGSWKey<AlignedBuf, i64>,
-) -> GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
-    GGLWEToGGSWKey {
-        keys: src.keys.iter().map(|key| upload_gglwe(module, key)).collect(),
     }
 }

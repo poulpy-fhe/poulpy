@@ -149,8 +149,7 @@ mod ggsw {
         T: GGLWEInfos,
     {
         assert_eq!(key_infos.rank_in(), key_infos.rank_out());
-        assert_eq!(tsk_infos.rank_in(), tsk_infos.rank_out());
-        assert_eq!(key_infos.rank_in(), tsk_infos.rank_in());
+        assert_eq!(key_infos.rank_in(), tsk_infos.rank_out());
         assert_eq!(module.n() as u32, res_infos.n());
         assert_eq!(module.n() as u32, a_infos.n());
         assert_eq!(module.n() as u32, key_infos.n());

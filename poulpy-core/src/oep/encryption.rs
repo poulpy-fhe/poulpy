@@ -9,11 +9,10 @@ use poulpy_hal::{
 use crate::{
     EncryptionInfos, GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
-        GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
-        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
-        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
+        GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -275,23 +274,6 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::ggsw_encrypt_pk_derived(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     }
 
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn gglwe_to_ggsw_key_encrypt_sk<R, S, E>(
-        module: &Module<Self>,
-        res: &mut R,
-        sk: &S,
-        enc_infos: &E,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGLWEToGGSWKeyToBackendMut<Self>,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
-
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -480,23 +462,6 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
-
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S, E>(
-        module: &Module<Self>,
-        res: &mut R,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<Self> + GGLWEInfos,
-        E: EncryptionInfos,
-        S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -834,27 +799,6 @@ macro_rules! impl_encryption_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
         }
 
-    fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
-    where
-        A: $crate::layouts::GGLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyEncryptSkReference<$be>>::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
-        }
-
-    fn gglwe_to_ggsw_key_encrypt_sk<R, S, E>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        res: &mut R,
-        sk: &S,
-        enc_infos: &E,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        source_xa: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GGLWEToGGSWKeyToBackendMut<$be>,
-        E: $crate::api::EncryptionInfos,
-        S: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyEncryptSkReference<$be>>::gglwe_to_ggsw_key_encrypt_sk_reference::<R, S, E>(module, res, sk, enc_infos, source_xe, source_xa, scratch)
-        }
-
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GGLWEInfos,
@@ -990,27 +934,6 @@ macro_rules! impl_encryption_reference_full {
         E: $crate::api::EncryptionInfos,
         S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWECompressedEncryptSkReference<$be>>::gglwe_compressed_encrypt_sk_reference::<R, P, S, E>(module, res, pt, sk, seed, enc_infos, source_xe, scratch)
-        }
-
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
-    where
-        A: $crate::layouts::GGLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkReference<$be>>::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
-        }
-
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S, E>(
-        module: &::poulpy_hal::layouts::Module<$be>,
-        res: &mut R,
-        sk: &S,
-        seed_xa: [u8; 32],
-        enc_infos: &E,
-        source_xe: &mut ::poulpy_hal::source::Source,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-    ) where
-        R: $crate::layouts::GGLWEToGGSWKeyCompressedToBackendMut<$be> + $crate::layouts::GGLWEInfos,
-        E: $crate::api::EncryptionInfos,
-        S: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkReference<$be>>::gglwe_to_ggsw_key_compressed_encrypt_sk_reference::<R, S, E>(module, res, sk, seed_xa, enc_infos, source_xe, scratch)
         }
 
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

@@ -32,7 +32,6 @@ mod macros;
 
 mod diagonals;
 mod gglwe;
-mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
 mod glwe_automorphism_key;
@@ -61,8 +60,7 @@ pub mod prepared;
 
 pub use self::compressed::{
     GGLWECompressed, GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
-    GGLWEDecompress, GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef,
-    GGLWEToGGSWKeyDecompress, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
+    GGLWEDecompress, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
     GGSWCompressedToBackendRef, GGSWDecompress, GLWEAutomorphismKeyCompressed, GLWEAutomorphismKeyDecompress, GLWECompressed,
     GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEDecompress,
     GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut,
@@ -73,7 +71,6 @@ pub use self::compressed::{
 };
 pub use diagonals::*;
 pub use gglwe::*;
-pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;
@@ -252,16 +249,6 @@ pub trait ModuleCoreAlloc {
         k_aux: TorusPrecision,
         rank_in: Rank,
     ) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord>;
-
-    fn gglwe_to_ggsw_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEToGGSWKey<Self::OwnedBuf, Self::ZnxWord>;
-    fn gglwe_to_ggsw_key_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        dsize: Dsize,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GGLWEToGGSWKey<Self::OwnedBuf, Self::ZnxWord>;
 
     fn lwe_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWE<Self::OwnedBuf, Self::ZnxWord>;
     fn lwe_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> LWE<Self::OwnedBuf, Self::ZnxWord>;
@@ -628,38 +615,6 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         })
     }
 
-    fn gglwe_to_ggsw_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEToGGSWKey<B::OwnedBuf, B::ZnxWord> {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for GGLWEToGGSWKey"
-        );
-        GGLWEToGGSWKey {
-            keys: (0..infos.rank().as_usize())
-                .map(|_| self.gglwe_alloc_from_infos(infos))
-                .collect(),
-        }
-    }
-    fn gglwe_to_ggsw_key_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        dsize: Dsize,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GGLWEToGGSWKey<B::OwnedBuf, B::ZnxWord> {
-        self.gglwe_to_ggsw_key_alloc_from_infos(&GGLWELayout {
-            n: self.ring_degree(),
-            base2k,
-            dnum,
-            k_aux,
-            rank_in: rank,
-            rank_out: rank,
-            dsize,
-            stride: 1,
-        })
-    }
-
     fn lwe_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWE<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let n = infos.n().as_usize();
@@ -896,19 +851,6 @@ pub trait ModuleCoreCompressedAlloc {
         dnum: Dnum,
         k_aux: TorusPrecision,
     ) -> LWESwitchingKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
-
-    fn gglwe_to_ggsw_key_compressed_alloc_from_infos<A: GGLWEInfos>(
-        &self,
-        infos: &A,
-    ) -> GGLWEToGGSWKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
-    fn gglwe_to_ggsw_key_compressed_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        dsize: Dsize,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GGLWEToGGSWKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
@@ -1071,23 +1013,6 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         k_aux: TorusPrecision,
     ) -> LWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         LWESwitchingKeyCompressed::alloc::<B>(n, base2k, dnum, k_aux)
-    }
-
-    fn gglwe_to_ggsw_key_compressed_alloc_from_infos<A: GGLWEInfos>(
-        &self,
-        infos: &A,
-    ) -> GGLWEToGGSWKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GGLWEToGGSWKeyCompressed::alloc_from_infos::<B, _>(infos)
-    }
-    fn gglwe_to_ggsw_key_compressed_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        dsize: Dsize,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GGLWEToGGSWKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GGLWEToGGSWKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, dsize, k_aux, rank)
     }
 }
 

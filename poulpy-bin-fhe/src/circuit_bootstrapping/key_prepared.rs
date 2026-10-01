@@ -1,6 +1,6 @@
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSWInfos, GLWEAutomorphismKeyLayout, GLWEInfos,
-    GetAutomorphismKey, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
+    GGLWEInfos, GGLWEToGGSWKeyPrepared, GGSWInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWETensorKeyLayout, GetAutomorphismKey,
+    LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
 };
 use std::collections::HashMap;
 
@@ -106,8 +106,8 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
         }
     }
 
-    fn tsk_infos(&self) -> GGLWEToGGSWKeyLayout {
-        GGLWEToGGSWKeyLayout {
+    fn tsk_infos(&self) -> GLWETensorKeyLayout {
+        GLWETensorKeyLayout {
             n: self.tsk.n(),
             base2k: self.tsk.base2k(),
             dnum: self.tsk.dnum(),

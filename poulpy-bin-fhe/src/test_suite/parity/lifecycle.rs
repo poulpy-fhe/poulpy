@@ -13,11 +13,11 @@ use crate::{
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
 use poulpy_core::{
-    GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
+    GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     GLWEToLWESwitchingKeyEncryptSk, TransferInto,
     layouts::{
-        Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWPreparedToBackendRef,
-        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout,
+        Dsize, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWEInfos,
+        GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
         GLWEToLWEKeyLayout, LWEInfos, LWESecretSampling, ModuleCoreAlloc,
     },
 };
@@ -71,7 +71,7 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
                 k_aux: (11 + aux).into(),
                 rank: rank.into(),
             },
-            tsk_layout: GGLWEToGGSWKeyLayout {
+            tsk_layout: GLWETensorKeyLayout {
                 n: n.into(),
                 base2k: 12usize.into(),
                 dnum: 4usize.into(),
@@ -330,7 +330,7 @@ where
     Module<B>: BDDKeyEncryptSk<CGGI, B>
         + CircuitBootstrappingKeyEncryptSk<CGGI, B>
         + BlindRotationKeyEncryptSk<CGGI, B>
-        + GGLWEToGGSWKeyEncryptSk<B>
+        + GLWETensorKeyEncryptSk<B>
         + GLWEAutomorphismKeyEncryptSk<B>
         + GLWEToLWESwitchingKeyEncryptSk<B>
         + GLWESwitchingKeyEncryptSk<B>

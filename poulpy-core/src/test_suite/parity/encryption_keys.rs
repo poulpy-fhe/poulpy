@@ -284,42 +284,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         module.decompress_tensor_key(&mut tensor, &compact);
         result.push(gglwe_snapshot::<B, _>("glwe_tensor_key_compressed_encrypt_sk", &tensor));
         result.push(source_snapshot("tensor_compressed_sources", &mut e, &mut a));
-        let mut rows = module.gglwe_to_ggsw_key_alloc_from_infos(&key);
-        for row in &mut rows.keys {
-            poison_gglwe::<B, _>(row);
-        }
-        module.gglwe_to_ggsw_key_encrypt_sk(
-            &mut rows,
-            &sk,
-            &enc,
-            &mut e,
-            &mut a,
-            &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&key)).arena(),
-        );
-        for row in &rows.keys {
-            result.push(gglwe_snapshot::<B, _>("gglwe_to_ggsw_key_encrypt_sk", row));
-        }
-        result.push(source_snapshot("row_key_sources", &mut e, &mut a));
-        let mut compact = module.gglwe_to_ggsw_key_compressed_alloc_from_infos(&key);
-        for row in &mut compact.keys {
-            poison_compressed::<B, _>(row);
-        }
-        module.gglwe_to_ggsw_key_compressed_encrypt_sk(
-            &mut compact,
-            &sk,
-            seed,
-            &enc,
-            &mut e,
-            &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
-        );
-        for row in &compact.keys {
-            result.push(seeds_snapshot("row_key_compressed_seeds", &row.seed));
-        }
-        module.decompress_gglwe_to_ggsw_key(&mut rows, &compact);
-        for row in &rows.keys {
-            result.push(gglwe_snapshot::<B, _>("gglwe_to_ggsw_key_compressed_encrypt_sk", row));
-        }
-        result.push(source_snapshot("row_key_compressed_sources", &mut e, &mut a));
         // These three wrappers expose decompression without a corresponding
         // compressed-encryption entry point. Stage the body and seeds explicitly.
         macro_rules! decompress_wrapper {

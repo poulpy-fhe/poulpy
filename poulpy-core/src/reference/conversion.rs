@@ -18,9 +18,9 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef, Rank,
-        glwe_backend_ref_from_mut,
+        GGLWEInfos, GGLWELayout, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
+        LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
     reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
@@ -379,6 +379,18 @@ where
     assert_eq!(module.n() as u32, res_infos.n());
     assert_eq!(module.n() as u32, tsk_infos.n());
 
+    // `tsk_infos` may describe the tensor key or its prepared form; every
+    // product reads one prepared key, `rank_in == rank_out`.
+    let tsk_infos = &GGLWELayout {
+        n: tsk_infos.n(),
+        base2k: tsk_infos.base2k(),
+        dnum: tsk_infos.dnum(),
+        k_aux: tsk_infos.k_aux(),
+        rank_in: tsk_infos.rank_out(),
+        rank_out: tsk_infos.rank_out(),
+        dsize: tsk_infos.dsize(),
+        stride: tsk_infos.stride(),
+    };
     let tsk_base2k: usize = tsk_infos.base2k().into();
 
     let rank: usize = res_infos.rank().into();

@@ -57,7 +57,7 @@ It defines the ciphertext, plaintext, and key types under `layouts/`, and their 
 
 The ciphertext family is `LWE` (a scalar ciphertext), `GLWE` (its polynomial-ring generalization with `rank` mask polynomials), and the gadget-carrying `GGLWE` and `GGSW` used as the left operands of external products.
 Plaintexts are `LWEPlaintext` and `GLWEPlaintext`, and secret keys are `LWESecret` and `GLWESecret`.
-On top of these sits a family of evaluation keys, each a thin wrapper over a `GGLWE`: `GLWESwitchingKey` for key-switching, `GLWEAutomorphismKey` for Galois automorphisms, `GLWETensorKey` for relinearization after a tensor product, `GGLWEToGGSWKey` for promoting a GGLWE to a GGSW, and the bridges `GLWEToLWEKey` and `LWEToGLWEKey`.
+On top of these sits a family of evaluation keys, each a thin wrapper over a `GGLWE`: `GLWESwitchingKey` for key-switching, `GLWEAutomorphismKey` for Galois automorphisms, `GLWETensorKey` for relinearization after a tensor product and, prepared as a `GGLWEToGGSWKeyPrepared`, for promoting a GGLWE to a GGSW, and the bridges `GLWEToLWEKey` and `LWEToGLWEKey`.
 
 Two cross-cutting variants exist for most of these types.
 A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in the backend's transform domain so repeated products are cheap, and is produced from the standard form by a `prepare` step.

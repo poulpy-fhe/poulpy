@@ -5,8 +5,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
+        Base2K, Dnum, Dsize, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyLayout, LWE, LWEInfos, LWELayout,
         LWESecret, LWESecretSampling, ModuleCoreAlloc, TorusPrecision,
     },
 };
@@ -169,7 +169,7 @@ pub fn runner_circuit_bootstrapping<
             dsize: Dsize(params.atk_dsize),
             rank: params.bin_fhe_params.rank.into(),
         },
-        tsk_layout: GGLWEToGGSWKeyLayout {
+        tsk_layout: GLWETensorKeyLayout {
             n: params.bin_fhe_params.n_glwe.into(),
             base2k: params.bin_fhe_params.base2k.into(),
             k_aux: params.bin_fhe_params.k_aux.into(),

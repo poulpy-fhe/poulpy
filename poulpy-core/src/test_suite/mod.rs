@@ -87,7 +87,6 @@ macro_rules! core_backend_test_suite {
                 gglwe_tensor_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_tensor_key_encrypt_sk,
                 gglwe_tensor_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_tensor_key_compressed_encrypt_sk,
-                gglwe_to_ggsw_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_to_ggsw_key_encrypt_sk,
                 gglwe_switching_key_keyswitch => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch,
                 gglwe_switching_key_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_assign,
                 gglwe_switching_key_external_product =>

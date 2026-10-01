@@ -202,7 +202,7 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         }
 
         let n: f64 = tsk.n().as_usize() as f64;
-        let rank: f64 = tsk.rank_in().as_usize() as f64;
+        let rank: f64 = tsk.rank_out().as_usize() as f64;
         // sum_j Var(s_j * s_col) over the rank masks: (rank-1) off-diagonal at
         // n*var_xs^2, and the j = col square at twice that.
         let var_s_x_s_col: f64 = (rank + 1.0) * n * var_xs_out * var_xs_out;
