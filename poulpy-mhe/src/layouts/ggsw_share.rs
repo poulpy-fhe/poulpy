@@ -42,11 +42,26 @@ pub struct GGSWShare<D: Data, W: ZnxWord> {
 }
 
 impl<D: Data, W: ZnxWord> GGSWShare<D, W> {
-    pub(crate) fn parts(&self) -> impl Iterator<Item = &GGLWEPatCompressed<D, W>> {
+    /// Iterates over the `1 + 2 * r` parts in serialization order: `col0`,
+    /// then `circ_u[0..r]`, then `circ_s[0..r]`, where `r = self.rank()`.
+    /// The circular parts at index `j - 1` belong to GGSW column `j`.
+    ///
+    /// Backends can read each part's bodies through
+    /// [`GGLWECompressedToBackendRef`](poulpy_core::layouts::GGLWECompressedToBackendRef)
+    /// and its seeds through [`GGLWECompressedSeed`](poulpy_core::layouts::GGLWECompressedSeed).
+    pub fn parts(&self) -> impl Iterator<Item = &GGLWEPatCompressed<D, W>> {
         std::iter::once(&self.col0).chain(&self.circ_u).chain(&self.circ_s)
     }
 
-    pub(crate) fn parts_mut(&mut self) -> impl Iterator<Item = &mut GGLWEPatCompressed<D, W>> {
+    /// Mutably iterates over the parts in the same order as [`Self::parts`].
+    ///
+    /// Backends can write each part's bodies through
+    /// [`GGLWECompressedToBackendMut`](poulpy_core::layouts::GGLWECompressedToBackendMut)
+    /// and its seeds through [`GGLWECompressedSeedMut`](poulpy_core::layouts::GGLWECompressedSeedMut).
+    /// Update seeds on the part itself: backend views hold cloned seeds.
+    /// Callers must preserve the parts' layouts and seed counts, and keep
+    /// the seeds of each `circ_u[j]`/`circ_s[j]` pair equal.
+    pub fn parts_mut(&mut self) -> impl Iterator<Item = &mut GGLWEPatCompressed<D, W>> {
         std::iter::once(&mut self.col0)
             .chain(&mut self.circ_u)
             .chain(&mut self.circ_s)
