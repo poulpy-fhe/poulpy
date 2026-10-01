@@ -1,4 +1,4 @@
-use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, LWEInfos, Rank, TorusPrecision};
+use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, LWEInfos, Rank, TorusPrecision, prepared::GLWESecretPrepared};
 use poulpy_hal::layouts::{Backend, Data, VecZnx, ZnxWord};
 
 pub type GLWEWideSecretOwned<BE> = GLWEWideSecret<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
@@ -30,5 +30,30 @@ impl<D: Data, W: ZnxWord> GLWEWideSecret<D, W> {
 
     pub fn data(&self) -> &VecZnx<D, W> {
         self.inner.data()
+    }
+}
+
+pub type GLWEWideSecretPreparedOwned<BE> = GLWEWideSecretPrepared<<BE as Backend>::OwnedBuf, BE>;
+
+/// A [`GLWEWideSecret`] split into its base-`2^base2k` digits, each prepared
+/// as a small secret: `digits[l]` has weight `2^(k - (l + 1) * base2k)`, the
+/// last one weight 1.
+pub struct GLWEWideSecretPrepared<D: Data, BE: Backend> {
+    pub(crate) digits: Vec<GLWESecretPrepared<D, BE>>,
+    pub(crate) base2k: Base2K,
+    pub(crate) k: TorusPrecision,
+}
+
+impl<D: Data, BE: Backend> GLWEWideSecretPrepared<D, BE> {
+    pub fn base2k(&self) -> Base2K {
+        self.base2k
+    }
+
+    pub fn k(&self) -> TorusPrecision {
+        self.k
+    }
+
+    pub fn rank(&self) -> Rank {
+        self.digits[0].rank()
     }
 }

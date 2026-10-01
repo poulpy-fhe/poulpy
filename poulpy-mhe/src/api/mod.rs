@@ -8,7 +8,7 @@
 //! - [`refresh`]: the collective refresh protocol.
 //! - [`sharing`]: the encryption-to-shares and shares-to-encryption protocols.
 //! - [`tensor_key`]: the collective tensor (relinearization) key protocol.
-//! - [`threshold`]: Shamir thresholdization and combination of secrets.
+//! - [`threshold`]: Shamir thresholdization and threshold key switching.
 //!
 //! A protocol trait, `*MHEProtocol`, holds the protocol's `mhe_*_share_gen`,
 //! `mhe_*_share_aggregate` and `mhe_*_share_finalize` operations on its share

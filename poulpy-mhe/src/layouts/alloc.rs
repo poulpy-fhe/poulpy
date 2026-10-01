@@ -1,6 +1,6 @@
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
-    Rank, TorusPrecision,
+    Rank, TorusPrecision, prepared::GLWESecretPreparedFactory,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -11,7 +11,7 @@ use crate::layouts::{
     GLWEPublicKeyswitchShareOwned, GLWERefreshShare, GLWERefreshShareOwned, GLWEShamirLayout, GLWEShamirPolynomial,
     GLWEShamirPolynomialOwned, GLWEShamirShare, GLWEShamirShareOwned, GLWEShareToEncShare, GLWEShareToEncShareOwned,
     GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, GLWEWideSecret,
-    GLWEWideSecretOwned, ggsw_share_part_layout,
+    GLWEWideSecretOwned, GLWEWideSecretPrepared, GLWEWideSecretPreparedOwned, ggsw_share_part_layout,
 };
 
 /// PAT and share allocation on a backend module.
@@ -273,6 +273,22 @@ pub trait MHEModuleAlloc<BE: Backend>:
     fn glwe_wide_secret_alloc(&self, layout: &GLWEShamirLayout) -> GLWEWideSecretOwned<BE> {
         GLWEWideSecret {
             inner: shamir_columns_alloc(self, layout, layout.rank.as_usize()),
+        }
+    }
+
+    fn glwe_wide_secret_prepared_alloc(&self, layout: &GLWEShamirLayout) -> GLWEWideSecretPreparedOwned<BE>
+    where
+        Self: GLWESecretPreparedFactory<BE>,
+    {
+        assert!(
+            layout.n == self.ring_degree(),
+            "invalid layout: degree differs from the module's"
+        );
+        let size = layout.k.as_usize().div_ceil(layout.base2k.as_usize());
+        GLWEWideSecretPrepared {
+            digits: (0..size).map(|_| self.glwe_secret_prepared_alloc(layout.rank)).collect(),
+            base2k: layout.base2k,
+            k: layout.k,
         }
     }
 }

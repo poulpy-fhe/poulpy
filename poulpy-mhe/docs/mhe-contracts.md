@@ -14,7 +14,8 @@ switching and automorphism key protocols, `api::keyswitch` the collective key
 switching protocols, `api::tensor_key` the collective tensor key protocol,
 `api::ggsw` the collective GGSW protocol, `api::sharing` the
 encryption-to-shares and shares-to-encryption protocols, `api::refresh` the
-collective refresh protocol and `api::threshold` Shamir thresholdization. A protocol
+collective refresh protocol and `api::threshold` Shamir thresholdization and
+threshold key switching. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -40,6 +41,9 @@ same trait.
 | `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
 | `GLWERefreshMHEProtocol` | `GLWERefreshMHEProtocolImpl` | `reference::GLWERefreshMHEProtocolReference` |
 | `GLWEShamirMHEProtocol` | `GLWEShamirMHEProtocolImpl` | `reference::GLWEShamirMHEProtocolReference`; finalization runs on the host |
+| `GLWEWideSecretPrepare` | `GLWEWideSecretPrepareImpl` | `reference::GLWEWideSecretPrepareReference`; runs on the host |
+| `GLWEThresholdKeyswitchMHEProtocol` | `GLWEThresholdKeyswitchMHEProtocolImpl` | `reference::GLWEThresholdKeyswitchMHEProtocolReference`; aggregation and finalization are `GLWEKeyswitchMHEProtocolImpl`'s |
+| `GLWEThresholdPublicKeyswitchMHEProtocol` | `GLWEThresholdPublicKeyswitchMHEProtocolImpl` | `reference::GLWEThresholdPublicKeyswitchMHEProtocolReference`; aggregation and finalization are `GLWEPublicKeyswitchMHEProtocolImpl`'s |
 
 ## Normalization
 
@@ -121,7 +125,7 @@ share.
 
 ## Smudging parameters
 
-Secret and public key switching,
+Secret and public key switching (including threshold decryption),
 encryption-to-shares and refresh require `flood: &impl SmudgingInfos`.
 `SmudgingNoise` provides two full-width distributions:
 
@@ -143,8 +147,8 @@ An observable sampling-time side channel is outside this distribution claim.
 
 Set `k` to the sampling destination's precision to hide errors on its full
 integer grid. A smaller `k` leaves a coarser sampling lattice and may expose
-low error bits. Sampling precision is `res.k` for secret-key switching,
-and `ct.k` for public-key switching, E2S and refresh.
+low error bits. Sampling precision is `res.k` for secret-key switching
+(plain and threshold), and `ct.k` for public-key switching, E2S and refresh.
 E2S adds its flood to the public partial decryption, never to the private mask.
 The API checks this precision, distribution bounds and coefficient headroom
 before sampling. It cannot infer the input error or certify statistical hiding.
@@ -164,7 +168,7 @@ A Gaussian cutoff omits probability at most `tau = 2 exp(-cutoff^2 / 2)` per
 coefficient. Conditioning `M` samples changes their distribution by at most
 `M * tau`; comparing two conditioned worlds can cost `2 * M * tau`.
 Choose the cutoff for the complete transcript, separately from its shift
-budget. Statistical tests cannot
+budget and the backend's numerical `failure_bits`. Statistical tests cannot
 certify a `2^-128` tail or shift bound.
 
 Correctness needs the sum of all parties' absolute flood bounds, input and
@@ -182,7 +186,9 @@ serve as flood descriptors. A former power-of-two sigma `2^s` with bound
 `c * 2^s` migrates to `SmudgingNoise::gaussian(k, s, c)`; the new sampler uses
 an exact conditional discrete Gaussian rather than a rounded real Gaussian.
 
-Small-sigma tests check forwarding and noise presence. These
+Small-sigma tests check forwarding and noise presence. Wide protocol tests
+reconstruct full integers and replay private sampler draws, so they detect
+lost low bits or cancellation even when the flood exceeds 128 bits. These
 functional checks complement the distribution argument and parameter bounds.
 
 ## Additive shares and refresh
@@ -239,6 +245,38 @@ its reference needs host-readable buffers; a device backend replaces
 secret to the party and never be replayed, and shares travel over private
 channels: any `t` shares reveal the aggregate secret.
 
+The active parties then switch ciphertexts with their wide secrets in place
+of their secrets. A wide secret splits into its base-`2^base2k` digits,
+`GLWEWideSecretPrepare` prepares each as a small secret, and the masks' inner
+product with the wide secret is the sum over the digits of the masks shifted
+left by the digit's weight, times the digit. The masks of a ciphertext of
+precision `k` lie in `2^-k Z`, so only the wide secret modulo `2^k` matters:
+the shares require the wide secret to be at least as precise as the
+ciphertext. The wide secret's base is the digit base: the prepared digit
+products must fit the backend's product budget. Both threshold switching
+share generators take a positive `failure_bits` numerical target, separate
+from the smudging margin `lambda`. The reference allocates this target across
+contributing digits and ciphertext limbs with a union bound, then checks
+`base2k_ct + base2k <= 2 * Module::max_base2k(n, rank, per_output_bits, false)`.
+It rejects unavailable models and radices exceeding the budget. This is an
+estimate under the backend's documented input assumptions, covering the wide
+mask product; budget other operations and multiple calls separately. A share
+base no larger than the ciphertext base meets the product condition whenever
+the ciphertext base fits the backend's model at this adjusted per-output
+failure target.
+
+The reference also guards the lazy accumulation of the `D` contributing
+digit products: `base2k_ct + ceil(log2(D + 1)) <= word_bits - 2`.
+Each digit contributes a difference bounded by `2^base2k_ct`; the extra term
+reserves room for the CKS output-secret product. This is separate from the
+multiplication budget and ensures the result fits normalization's coefficient
+range. Both threshold protocols normalize before adding flood noise.
+`GLWEThresholdKeyswitchMHEProtocol` and
+`GLWEThresholdPublicKeyswitchMHEProtocol` generate `GLWEKeyswitchShare`s and
+`GLWEPublicKeyswitchShare`s, aggregated and finalized as the key switching
+protocols' shares; switching to the zero secret is threshold decryption, the
+finalized body being the plaintext plus noise.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
@@ -255,5 +293,7 @@ reference traits stay callable from an override.
 ## Workspace
 
 Size scratch with the queries: each PAT type's `*_finalize_tmp_bytes`, and each
-protocol's `mhe_*_share_gen_tmp_bytes` and `mhe_*_share_finalize_tmp_bytes`. A
+protocol's `mhe_*_share_gen_tmp_bytes` and `mhe_*_share_finalize_tmp_bytes`, and
+`mhe_glwe_shamir_polynomial_gen_tmp_bytes` and
+`mhe_glwe_wide_secret_prepare_tmp_bytes`. A
 replacement that needs more workspace replaces the matching query.
