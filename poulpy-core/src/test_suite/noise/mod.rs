@@ -18,12 +18,14 @@ pub mod linear_transformation;
 mod conversion;
 mod glwe_packing;
 mod rotate;
+mod scratch;
 mod shift;
 mod trace;
 
 pub use conversion::*;
 pub use glwe_packing::*;
 pub use rotate::*;
+pub use scratch::*;
 pub use shift::*;
 pub use trace::*;
 

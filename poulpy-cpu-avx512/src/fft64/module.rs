@@ -129,6 +129,10 @@ impl<R: Ring> Backend for FFT64Avx512<R> {
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
     }
+    fn wipe_view(buf: &mut Self::BufMut<'_>) {
+        poulpy_hal::layouts::wipe_bytes(buf);
+    }
+
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
     }

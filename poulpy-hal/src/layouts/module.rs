@@ -163,6 +163,18 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// `src.len()` is at most the byte length of `buf`; the bytes past
     /// `src.len()` are zeroed.
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]);
+    /// Erases every byte of a mutable view, even if the buffer is immediately
+    /// released and its contents are never read again.
+    ///
+    /// Host backends can use [`crate::layouts::wipe_bytes`]. An ordinary fill
+    /// or copy is insufficient: the compiler may remove dead stores. Device
+    /// backends must complete the erasure before returning, including any
+    /// synchronization needed before the storage can be reused or released.
+    fn wipe_view(buf: &mut Self::BufMut<'_>);
+    /// Erases an owned buffer through [`Self::wipe_view`].
+    fn wipe(buf: &mut Self::OwnedBuf) {
+        Self::wipe_view(&mut Self::view_mut(buf));
+    }
     /// Returns the number of bytes stored in a backend-owned buffer.
     fn len_bytes(buf: &Self::OwnedBuf) -> usize;
     /// Returns the number of bytes spanned by a shared borrowed view.

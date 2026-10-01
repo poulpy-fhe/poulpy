@@ -1,6 +1,22 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use std::{
+    marker::PhantomData,
+    ptr::NonNull,
+    sync::atomic::{Ordering, compiler_fence},
+};
 
 use crate::layouts::Backend;
+
+/// Erases host bytes with volatile stores that survive dead-store elimination.
+///
+/// The compiler fence keeps subsequent memory accesses after the erasure.
+/// This erases the supplied region, not other copies of its contents.
+pub fn wipe_bytes(bytes: &mut [u8]) {
+    for byte in bytes {
+        // Safety: each pointer comes from an exclusive reference to a live byte.
+        unsafe { std::ptr::write_volatile(byte, 0) };
+    }
+    compiler_fence(Ordering::SeqCst);
+}
 
 /// Owned scratch buffer for temporary workspace during polynomial operations.
 ///
@@ -108,8 +124,11 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
     /// secret-derived temporary outlives it.
     pub fn wipe(&mut self, len: usize) {
         let len: usize = len.min(self.available());
+        if len == 0 {
+            return;
+        }
         let (mut region, _) = self.borrow().take_region(len);
-        B::copy_host_to_view(&mut region, &[]);
+        B::wipe_view(&mut region);
     }
 
     /// Returns the number of aligned bytes that can still be carved out.
@@ -182,4 +201,51 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
 fn align_up<B: Backend>(offset: usize) -> usize {
     assert!(B::SCRATCH_ALIGN != 0, "B::SCRATCH_ALIGN must be non-zero");
     B::scratch_aligned(offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layouts::HostBytesBackend;
+
+    fn poisoned(bytes: usize) -> ScratchOwned<HostBytesBackend> {
+        ScratchOwned {
+            data: <HostBytesBackend>::from_host_bytes(&vec![0xA5; bytes]),
+            _phantom: PhantomData,
+        }
+    }
+
+    #[test]
+    fn wipe_preserves_bytes_outside_aligned_prefix() {
+        let mut scratch = poisoned(256);
+        let (_, mut rest) = scratch.arena().split_at(1);
+        let available = rest.available();
+        rest.wipe(17);
+        assert_eq!(rest.available(), available);
+        assert!(scratch.data[..64].iter().all(|&b| b == 0xA5));
+        assert!(scratch.data[64..81].iter().all(|&b| b == 0));
+        assert!(scratch.data[81..].iter().all(|&b| b == 0xA5));
+    }
+
+    #[test]
+    fn wipe_caps_length_to_available_region() {
+        let mut scratch = poisoned(256);
+        let (_, rest) = scratch.arena().split_at(1);
+        let (mut region, _) = rest.split_at(17);
+        region.wipe(usize::MAX);
+        assert!(scratch.data[..64].iter().all(|&b| b == 0xA5));
+        assert!(scratch.data[64..81].iter().all(|&b| b == 0));
+        assert!(scratch.data[81..].iter().all(|&b| b == 0xA5));
+    }
+
+    #[test]
+    fn wipe_empty_unaligned_remainder_is_a_noop() {
+        let mut scratch = poisoned(64);
+        let (one_byte, _) = scratch.arena().split_at(1);
+        let (_, mut empty) = one_byte.split_at(1);
+        assert_eq!(empty.available(), 0);
+        empty.wipe(0);
+        empty.wipe(usize::MAX);
+        assert!(scratch.data.iter().all(|&b| b == 0xA5));
+    }
 }

@@ -427,6 +427,7 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl> SecretConversion<B> for Module<B
                 written += take;
             }
         }
+        B::wipe(&mut tmp.data.data);
         res
     }
 }

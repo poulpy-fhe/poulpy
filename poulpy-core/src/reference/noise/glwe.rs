@@ -97,22 +97,27 @@ where
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
+        let tmp_bytes = self.glwe_noise_tmp_bytes(res);
         assert!(
-            scratch.available() >= self.glwe_noise_tmp_bytes(res),
+            scratch.available() >= tmp_bytes,
             "scratch.available(): {} < GLWENoise::glwe_noise_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_noise_tmp_bytes(res)
+            tmp_bytes
         );
-        let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
-        let res = if res.is_canonical() {
-            res.to_backend_ref()
-        } else {
-            self.glwe_normalize(&mut res_tmp, res, &mut scratch.borrow());
-            res_tmp.to_backend_ref()
+        let stats = {
+            let (mut res_tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
+            let res = if res.is_canonical() {
+                res.to_backend_ref()
+            } else {
+                self.glwe_normalize(&mut res_tmp, res, &mut scratch_1.borrow());
+                res_tmp.to_backend_ref()
+            };
+            let pt_want_backend = pt_want.to_backend_ref();
+            let sk_backend = sk_prepared.to_backend_ref();
+            glwe_noise_backend_inner(self, &res, &pt_want_backend, &sk_backend, &mut scratch_1)
         };
-        let pt_want_backend = pt_want.to_backend_ref();
-        let sk_backend = sk_prepared.to_backend_ref();
-        glwe_noise_backend_inner(self, &res, &pt_want_backend, &sk_backend, &mut scratch)
+        scratch.wipe(tmp_bytes);
+        stats
     }
 }
 

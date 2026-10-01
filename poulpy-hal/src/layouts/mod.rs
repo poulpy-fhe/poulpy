@@ -159,7 +159,7 @@ where
 {
 }
 
-/// Host-resident, storage-only backend of ring `R` (default [`Standard`](crate::layouts::Standard));
+/// Host-resident, storage-only backend of ring `R` (default [`Standard`]);
 /// the default instance adapts host byte-slice views in generic helper code.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct HostBytesBackend<R: Ring = Standard>(PhantomData<R>);
@@ -223,6 +223,10 @@ macro_rules! impl_host_byte_storage {
             let src_len = src.len();
             buf[..src_len].copy_from_slice(src);
             buf[src_len..].fill(0);
+        }
+
+        fn wipe_view(buf: &mut Self::BufMut<'_>) {
+            crate::layouts::wipe_bytes(buf);
         }
 
         fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -570,6 +574,10 @@ macro_rules! impl_backend_from {
 
             fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
                 <$from as poulpy_hal::layouts::Backend>::copy_host_to_view(buf, src)
+            }
+
+            fn wipe_view(buf: &mut Self::BufMut<'_>) {
+                <$from as poulpy_hal::layouts::Backend>::wipe_view(buf)
             }
 
             fn len_bytes(buf: &Self::OwnedBuf) -> usize {

@@ -116,9 +116,13 @@ borrowing traits come from `poulpy_hal::api`.
   public compressed-encryption operation.
 * **Decryption** → Available for `LWE`, `GLWE`, LWE matrices and GLWE tensors.
   `GGLWE` and `GGSW` objects contain GLWE entries that can be decrypted individually.
-* **Scratch** → Encryption, key generation and decryption zero the scratch
-  they were given before returning (`ScratchArena::wipe` over their own
-  `_tmp_bytes`), so no secret-derived temporary outlives the call.
+* **Scratch** → Encryption, key generation, decryption, secret tensor preparation
+  and noise diagnostics securely erase their own `_tmp_bytes` prefix of caller
+  scratch before returning normally. Tensor preparation keeps its temporary
+  secret transforms and products in that scratch; secret-key conversions erase
+  their internal secret copies before releasing them. The guarantee covers these
+  buffers; the arbitrary-precision heap arithmetic used by noise statistics
+  retains its existing allocation lifetimes.
 
 ```rust
 let mut atk = module.glwe_automorphism_key_alloc_from_infos(&key_layout);

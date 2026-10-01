@@ -34,6 +34,7 @@ macro_rules! core_backend_test_suite {
             backend = $backend,
             params = $params,
             tests = {
+                noise_wipes_scratch => $crate::test_suite::noise::test_noise_wipes_scratch,
                 glwe_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_sk,
                 glwe_encrypt_sk_with_mask => $crate::test_suite::noise::encryption::test_glwe_encrypt_sk_with_mask,
                 glwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk,

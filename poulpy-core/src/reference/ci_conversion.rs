@@ -113,8 +113,9 @@ where
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos,
     {
-        let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
+        let mut sk_embedded = self.glwe_secret_ci_embed(sk_ci);
         self.glwe_switching_key_encrypt_sk(res, &sk_embedded, sk, enc_infos, source_xe, source_xa, scratch);
+        BE::wipe(&mut sk_embedded.data.data);
     }
 
     fn glwe_ci_trace_key_encrypt_sk<D, S1, S2, E>(
@@ -133,7 +134,8 @@ where
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         E: EncryptionInfos,
     {
-        let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
+        let mut sk_embedded = self.glwe_secret_ci_embed(sk_ci);
         self.glwe_switching_key_encrypt_sk(res, sk, &sk_embedded, enc_infos, source_xe, source_xa, scratch);
+        BE::wipe(&mut sk_embedded.data.data);
     }
 }

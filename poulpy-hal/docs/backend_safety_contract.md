@@ -21,6 +21,12 @@ Implementors must uphold all of the following for **every** call:
   valid for the duration of the call; it may be reused by the caller
   afterwards. Do not retain pointers past return.
 
+* **Erasure**: `Backend::wipe_view` must erase the entire supplied region even
+  when no subsequent read occurs and the allocation is immediately released.
+  Host implementations use compiler-resistant stores (`layouts::wipe_bytes`);
+  device implementations complete the erasure before returning. Ordinary
+  zero-filling transfer operations do not satisfy this contract.
+
 * **Synchronization**: The call must appear **logically synchronous** to the
   caller. If you enqueue asynchronous work (e.g., CUDA streams), you must
   ensure completion before returning or clearly document and implement a

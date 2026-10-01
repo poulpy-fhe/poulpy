@@ -1,10 +1,12 @@
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssign,
+        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxIdftApplyTmpA, VecZnxSubAssign,
     },
     layouts::{
-        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats, ZnxZero,
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats, ZnxView,
+        ZnxZero,
     },
 };
 
@@ -67,7 +69,7 @@ where
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1: usize = glwe_noise_body_tmp_bytes(self, infos);
 
-        lvl_0 + lvl_1
+        BE::scratch_aligned(BE::bytes_of_scalar_znx(self.n(), 1)) + BE::scratch_aligned(lvl_0) + lvl_1
     }
 
     fn gglwe_noise<R, S>(
@@ -86,32 +88,38 @@ where
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
+        let tmp_bytes = self.gglwe_noise_tmp_bytes(res);
         assert!(
-            scratch.available() >= self.gglwe_noise_tmp_bytes(res),
+            scratch.available() >= tmp_bytes,
             "scratch.available(): {} < GGLWENoise::gglwe_noise_tmp_bytes: {}",
             scratch.available(),
-            self.gglwe_noise_tmp_bytes(res)
+            tmp_bytes
         );
 
         let res_backend = res.to_backend_ref();
         let sk_backend = sk_prepared.to_backend_ref();
         let dsize: usize = res_backend.dsize().into();
-        let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);
-        pt.data_mut().zero();
-        let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> =
-            ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
-        {
-            let mut pt_backend = pt.to_backend_mut();
-            self.vec_znx_add_scalar_assign(
-                &mut pt_backend.data,
-                0,
-                (dsize - 1) + res_row * dsize,
-                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
-                res_col,
-            );
-        }
-        let res_at_backend: GLWEViewRef<'_, BE> = res_backend.at_view(res_row, res_col);
-        let pt_backend = pt.to_backend_ref();
-        glwe_noise_backend_inner(self, &res_at_backend, &pt_backend, &sk_backend, &mut scratch_1)
+        assert!(pt_want.n() <= self.n(), "invalid plaintext: degree exceeds the module's");
+        let stats = {
+            let (mut pt_want_backend, scratch_1) = scratch.borrow().take_scalar_znx_scratch(pt_want.n(), 1);
+            BE::copy_host_to_view(&mut pt_want_backend.data, bytemuck::cast_slice(pt_want.at(res_col, 0)));
+            let (mut pt, mut scratch_1) = scratch_1.take_glwe_plaintext_scratch(&res_backend);
+            pt.data_mut().zero();
+            {
+                let mut pt_backend = pt.to_backend_mut();
+                self.vec_znx_add_scalar_assign(
+                    &mut pt_backend.data,
+                    0,
+                    (dsize - 1) + res_row * dsize,
+                    &pt_want_backend.to_backend_ref(),
+                    0,
+                );
+            }
+            let res_at_backend: GLWEViewRef<'_, BE> = res_backend.at_view(res_row, res_col);
+            let pt_backend = pt.to_backend_ref();
+            glwe_noise_backend_inner(self, &res_at_backend, &pt_backend, &sk_backend, &mut scratch_1)
+        };
+        scratch.wipe(tmp_bytes);
+        stats
     }
 }

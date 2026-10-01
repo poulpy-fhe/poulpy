@@ -134,11 +134,9 @@ where
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc(rank.into());
-        module.glwe_secret_tensor_prepare(
-            &mut sk_tensor,
-            &sk,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
-        );
+        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()), |scratch| {
+            module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, scratch);
+        });
 
         let mut sk_tensor_prep: GLWESecretTensorPrepared<BE::OwnedBuf, BE> =
             module.glwe_secret_tensor_prepared_alloc(rank.into());

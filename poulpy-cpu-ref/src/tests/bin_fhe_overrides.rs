@@ -262,6 +262,10 @@ impl Backend for OpaqueBackend<'_> {
         buf.0[..src.len()].copy_from_slice(src);
         buf.0[src.len()..].fill(0);
     }
+    fn wipe_view(buf: &mut OpaqueMut<'_>) {
+        poulpy_hal::layouts::wipe_bytes(buf.0);
+    }
+
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.0.len()
     }
