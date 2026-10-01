@@ -1,9 +1,10 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GLWEEncryptPk, GLWENormalize, GetDistribution,
+    Distribution, EncryptionInfos, GLWEEncryptPk, GetDistribution, ScratchArenaTakeCore,
+    api::GLWEBytesOf,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::VecZnxAddScalarAssign,
+    api::{VecZnxAddScalarAssign, VecZnxZero},
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
@@ -34,7 +35,7 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
 
 impl<BE: Backend> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPk<BE> + GLWENormalize<BE> + VecZnxAddScalarAssign<BE>,
+    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxZero<BE> + VecZnxAddScalarAssign<BE>,
 {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
@@ -45,8 +46,8 @@ where
             res_infos.n().as_usize() == self.n(),
             "invalid layout: degree differs from the module's"
         );
-        self.glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)
-            .max(self.glwe_normalize_tmp_bytes())
+        BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(res_infos))
+            + self.glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)
     }
 
     fn mhe_glwe_tensor_key_share_gen_reference<S, K, E>(
@@ -96,15 +97,24 @@ where
         );
         let (dnum, dsize): (usize, usize) = (res.dnum().into(), res.dsize().into());
         let sk = sk.to_backend_ref();
+        let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&*res);
         let mut res_be = GGLWEToBackendMut::<BE>::to_backend_mut(&mut res.key);
         for row in 0..dnum {
             for a in 0..rank {
                 for b in a..rank {
-                    let mut entry = res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2);
-                    self.glwe_encrypt_zero_pk(&mut entry, pk, enc_infos, source_xu, source_xe, scratch);
+                    self.vec_znx_zero(pt.data_mut(), 0);
+                    self.vec_znx_add_scalar_assign(pt.data_mut(), 0, (dsize - 1) + row * dsize, sk.data(), b);
                     // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
-                    self.vec_znx_add_scalar_assign(entry.data_mut(), 1 + a, (dsize - 1) + row * dsize, sk.data(), b);
-                    self.glwe_normalize_assign(&mut entry, scratch);
+                    self.glwe_encrypt_pk_at_col(
+                        &mut res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2),
+                        &pt,
+                        1 + a,
+                        pk,
+                        enc_infos,
+                        source_xu,
+                        source_xe,
+                        &mut scratch_1.borrow(),
+                    );
                 }
             }
         }
