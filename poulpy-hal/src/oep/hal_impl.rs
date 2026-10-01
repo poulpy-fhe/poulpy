@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::{
-    Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    Backend, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
 };
 use crate::source::Source;
 
@@ -384,6 +384,29 @@ pub unsafe trait HalVecZnxMonomialImpl: HalVecZnxImpl {
     ) {
         crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<Self>(module, k, res, res_col, scratch)
     }
+}
+
+/// Maps between the conjugate-invariant ring of degree `N` and the standard ring
+/// of degree `2N`, executed by a standard backend of degree at least `2N`.
+///
+/// # Safety
+/// Same contract as [`HalVecZnxImpl`].
+pub unsafe trait HalVecZnxCIImpl: HalVecZnxImpl + Backend<Ring = Standard> {
+    fn vec_znx_ci_embed(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    );
+
+    fn vec_znx_ci_trace(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    );
 }
 
 /// Big-coefficient `VecZnxBig` extension point.

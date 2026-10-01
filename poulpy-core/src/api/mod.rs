@@ -19,6 +19,7 @@
 
 mod automorphism;
 mod bytes_of;
+mod ci_conversion;
 mod conversion;
 mod decryption;
 mod encryption;
@@ -33,6 +34,7 @@ mod transfer;
 
 pub use automorphism::*;
 pub use bytes_of::*;
+pub use ci_conversion::*;
 pub use conversion::*;
 pub use decryption::*;
 pub use encryption::*;

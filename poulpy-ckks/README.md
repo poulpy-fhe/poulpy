@@ -409,6 +409,11 @@ compile error. Real linear transformations reject nonzero imaginary diagonals.
 Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
 producing ring and backend.
 
+Standard modules embed CI ciphertexts of degree `N` into the standard ring of degree
+`2N` and map them back by the relative trace (`CKKSCIRingMapOps`), which CI modules do not implement.
+Each map switches between the CI secret and a standard secret with its key,
+`GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
+
 ## Where to look next
 
 - [Implementing CKKS operations](docs/ckks-contracts.md) for reference ownership, overrides, scratch, and parity.
