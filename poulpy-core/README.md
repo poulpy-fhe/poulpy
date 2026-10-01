@@ -116,6 +116,10 @@ borrowing traits come from `poulpy_hal::api`.
   public compressed-encryption operation.
 * **Decryption** → Available for `LWE`, `GLWE`, LWE matrices and GLWE tensors.
   `GGLWE` and `GGSW` objects contain GLWE entries that can be decrypted individually.
+* **Scratch** → Operations that take a secret leave secret-derived temporaries
+  (products of masks and secret components, lifted or prepared secrets, key
+  plaintexts) in the scratch arena they are given; public-key encryption wipes
+  its ephemerals. Wipe the arena before releasing it.
 
 ```rust
 let mut atk = module.glwe_automorphism_key_alloc_from_infos(&key_layout);

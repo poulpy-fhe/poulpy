@@ -41,73 +41,44 @@ follows the
 
 ## Share metadata
 
-Public key shares carry the distribution of the secret they were generated
-with, which the finalized key draws its ephemerals from, as core's key takes
-its secret's. Switching key shares carry the input and output degrees,
-automorphism key shares the Galois element, as core's compressed keys do.
-Aggregation asserts that both shares carry the same metadata, and finalization
-copies it into the key.
+A share carries the metadata of the core object it finalizes into, as listed
+on each protocol trait. Aggregation asserts that both shares carry the same
+metadata, and finalization copies it into the result.
 
 ## Randomness and seeds
 
-A public mask seed is common to all parties contributing to one result.
-Use a fresh seed for every result, separated by protocol, session and key
-identity (including the Galois element). Derive separate seeds from the CRS
-for a key set. In particular, switching keys for different input secrets and
-one output secret must have different seeds: subtracting same-mask bodies
-reveals the gadget-scaled input-secret difference plus small error. Public
-key generation derives a distinct seed for each of the `rank` entries from the
-common seed; finalization rejects entries that share one, since common masks
-would make public-key encryption rank 1 in its ephemerals. GGSW generation
-derives its sub-seeds and intentionally shares each circular column's mask
-matrix between its two halves, by rows and by columns; its finalized ephemeral key may be reused under the
-GGSW conditions below.
+A public mask seed is common to all parties contributing to one result. Use a
+fresh seed for every result, separated by protocol, session and key identity;
+choosing distinct seeds is the caller's responsibility. Derive separate seeds
+from the CRS for a key set. Each protocol trait states what its seed derives
+and what reusing it reveals. Choosing the secret distribution, which public-key
+encryption also draws its ephemerals from, is the caller's responsibility too.
 
-Private `source_xe` and `source_xu` streams must be independently
-seeded for each party and purpose, kept secret and consumed without replay.
-Never initialize a private stream from a public mask seed. An advancing error
-stream can supply successive fresh samples.
+Private `source_xe` and `source_xu` streams must be independently seeded for
+each party and purpose, kept secret and consumed without replay. Never
+initialize a private stream from a public mask seed. An advancing error stream
+can supply successive fresh samples.
 
-## Tensor key shares
+## Threat model
 
-A tensor key share is a `GGLWEPat` laid out as core's `GLWETensorKey`: every
-entry is an encryption of zero under the collective public key with a component
-of the party's secret added to its masks. Its masks are sums, so finalization
-normalizes every column. The public key must be at least as precise as the
-share.
+The protocols are secure against passive (semi-honest) adversaries: when every
+party follows the protocol, any coalition of all parties but one learns nothing
+about the ideal secret beyond the finalized outputs. Nothing is proven or
+authenticated:
 
-## Collective GGSW
+- Aggregation adds whatever shares it receives. A malicious party can bias the
+  result or cancel the other shares, for instance by sending the target minus
+  the others' sum, which makes a collective key one it alone holds.
+- Inputs are trusted. Keys and ciphertexts passed to a protocol must be the
+  honestly finalized collective objects of the session; a share encrypted
+  under another key reveals its secret part to that key's holder.
+- `read_from` checks a share's layout, not its provenance.
+- Share generation leaves secret-derived temporaries in the scratch it is
+  given, as core's secret-key operations do; wipe the arena before releasing
+  it.
 
-A GGSW share holds seeded GGLWE PATs: column 0 transcribes a seeded encryption
-of the party's message under its secret, and every column `j >= 1` two halves
-over one common `r x r` mask matrix `A` per gadget row, drawn from the seeds:
-`r` encryptions of zero under the party's secret over the rows of `A`, and `r`
-encryptions under its ephemeral secret, of the same rank, over the columns of
-`A`, the one of column `j` carrying the message. Every published body is thus
-a rank-`r` encryption under a whole secret, never under one component.
-Finalization takes the ephemeral key, the collective switching key from the
-sum of the ephemeral secrets to the ideal secret built with
-`GLWESwitchingKeyMHEProtocol`, prepared: an entry of column `j` is the key
-switch of the negated first half in the mask columns, whose phase is the
-cross term `Sum_i u_i <A_i, s>`, plus the second half in the mask columns,
-which cancels it, and decrypts to the message times component `j` of the
-ideal secret. Column 0 has
-seeded masks, so only its bodies are normalized. One ephemeral key serves
-every GGSW of a key set, so a party reuses its ephemeral secret for its key
-share and every GGSW share. Every GGSW needs its own seed and the ephemeral key a
-seed distinct from all of them: shares over the same masks and the same
-ephemeral secret reveal the difference of their messages. The ephemeral secret
-must be freshly sampled, independent of the party's secret, and kept as
-private as it: with `u_i = s_i`, the two halves of a column reveal the message.
-The ephemeral key's gadget (`dnum * dsize * base2k`) must cover the GGSW
-precision; one guard digit (`k_aux >= base2k + log2 n`) keeps its noise far
-below the circular term.
-
-A key set that already holds the collective tensor key can build a GGSW
-without the ephemeral key: the parties produce a collective GGLWE of the
-message, column 0 of a GGSW share alone, and core's `GGSWFromGGLWE` expands it
-with the tensor key laid out as a `GGLWEToGGSWKey`, whose key `i` column `j`
-is the tensor key entry of `s_i * s_j`.
+Active security requires commitments or proofs on the shares, outside this
+crate.
 
 ## Replacing an operation
 

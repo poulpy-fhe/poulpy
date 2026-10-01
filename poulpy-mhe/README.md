@@ -43,23 +43,9 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   or `GGSW` of the ideal secrets. The GGSW finalizes with an ephemeral key, in
   one round.
 
-## Randomness
+## Security
 
-A public mask seed is common to all parties contributing to one protocol
-result. Use a fresh seed for every new result, separated by protocol, session
-and key identity, including the Galois element. A key set therefore needs
-separate seeds derived from the common reference string. Reusing masks for
-switching keys with different input secrets and one output secret exposes the
-gadget-scaled difference of those input secrets plus small error.
-
-Keep `source_xe` (errors) and `source_xu` (public-key ephemeral secrets)
-private. Seed their streams
-independently for each party and purpose, and consume fresh samples without
-replaying a stream. Never initialize a private stream from a public mask seed.
-
-The GGSW protocol derives its sub-seeds internally and intentionally uses the
-same mask matrix for the two halves of each circular column, by rows and by
-columns. An already finalized
-ephemeral key can serve multiple GGSWs as described in the
-[collective GGSW contract](docs/mhe-contracts.md#collective-ggsw); each GGSW still
-needs its own seed.
+The protocols are secure against passive adversaries. Seed rules, private
+streams and the threat model common to every protocol are in the
+[operation contracts](docs/mhe-contracts.md); each protocol trait documents
+its own.
