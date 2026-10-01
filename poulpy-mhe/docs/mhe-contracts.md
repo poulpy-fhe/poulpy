@@ -98,6 +98,12 @@ The ephemeral key's gadget (`dnum * dsize * base2k`) must cover the GGSW
 precision; one guard digit (`k_aux >= base2k + log2 n`) keeps its noise far
 below the circular term.
 
+A key set that already holds the collective tensor key can build a GGSW
+without the ephemeral key: the parties produce a collective GGLWE of the
+message, column 0 of a GGSW share alone, and core's `GGSWFromGGLWE` expands it
+with the tensor key laid out as a `GGLWEToGGSWKey`, whose key `i` column `j`
+is the tensor key entry of `s_i * s_j`.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its

@@ -27,6 +27,15 @@ use crate::layouts::GGSWShareOwned;
 /// Every GGSW needs its own seed, and the ephemeral key a seed distinct from
 /// all of them: two shares over the same masks and the same `u_i` reveal the
 /// difference of their messages.
+///
+/// A key set that already holds the collective tensor key
+/// ([`GLWETensorKeyMHEProtocol`](crate::api::GLWETensorKeyMHEProtocol)) can
+/// instead build the GGSW from a collective GGLWE of `m` alone: every party
+/// shares the seeded encryption of `m_i` under `s_i` (column 0 of this share),
+/// and [`GGSWFromGGLWE`](poulpy_core::GGSWFromGGLWE) expands the finalized
+/// GGLWE with the tensor key, laid out as a
+/// [`GGLWEToGGSWKey`](poulpy_core::layouts::GGLWEToGGSWKey), whose key `i`
+/// column `j` is the tensor key entry of `s_i * s_j`.
 pub trait GGSWMHEProtocol<BE: Backend> {
     fn mhe_ggsw_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
