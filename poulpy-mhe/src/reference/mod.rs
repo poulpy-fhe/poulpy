@@ -5,6 +5,8 @@
 pub mod evaluation_key;
 pub mod pat;
 pub mod public_key;
+pub mod tensor_key;
 pub use evaluation_key::*;
 pub use pat::*;
 pub use public_key::*;
+pub use tensor_key::*;

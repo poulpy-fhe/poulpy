@@ -7,11 +7,11 @@ use crate::{
     GetDistribution, GetDistributionMut,
     api::{
         EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
-        GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
-        GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyCompressedGenerate,
-        GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyCompressedEncryptSk,
-        GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask, LWESwitchingKeyEncrypt,
-        LWEToGLWESwitchingKeyEncryptSk,
+        GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk,
+        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill,
+        GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
+        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
+        LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -31,6 +31,18 @@ macro_rules! impl_encryption_delegate {
         where
             BE: Backend + EncryptionImpl,
             Module<BE>: crate::layouts::GLWESecretPreparedFactory<BE> + crate::layouts::GLWESecretTensorFactory<BE>,
+        {
+            $($body)+
+        }
+    };
+    (vec_znx $trait:ty, $($body:item),+ $(,)?) => {
+        impl<BE> $trait for Module<BE>
+        where
+            BE: Backend + EncryptionImpl,
+            Module<BE>: poulpy_hal::api::VecZnxZero<BE>
+                + poulpy_hal::api::VecZnxAddScalarAssign<BE>
+                + poulpy_hal::api::VecZnxNormalizeAssign<BE>
+                + poulpy_hal::api::VecZnxNormalizeTmpBytes,
         {
             $($body)+
         }
@@ -201,6 +213,24 @@ impl_encryption_delegate!(
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_encrypt_zero_pk(self, res, pk, enc_infos, source_xu, source_xe, scratch)
+    },
+    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), pk, enc_infos, source_xu, source_xe, scratch)
     }
 );
 
@@ -305,6 +335,34 @@ impl_encryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
         BE::ggsw_encrypt_sk(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+    }
+);
+
+impl_encryption_delegate!(
+    vec_znx GGSWEncryptPk<BE>,
+    fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GGSWInfos,
+        K: GLWEInfos,
+    {
+        BE::ggsw_encrypt_pk_tmp_bytes(self, res_infos, pk_infos)
+    },
+    fn ggsw_encrypt_pk<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<BE>,
+    ) where
+        R: GGSWInfos + GGSWAtViewMut<BE>,
+        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        BE::ggsw_encrypt_pk(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     }
 );
 
