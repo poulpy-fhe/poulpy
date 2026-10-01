@@ -12,8 +12,9 @@ defaults in `oep::derived`.
 the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
 switching protocols, `api::tensor_key` the collective tensor key protocol,
-`api::ggsw` the collective GGSW protocol and `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols. A protocol
+`api::ggsw` the collective GGSW protocol, `api::sharing` the
+encryption-to-shares and shares-to-encryption protocols and `api::refresh` the
+collective refresh protocol. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -37,6 +38,7 @@ same trait.
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
 | `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
 | `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
+| `GLWERefreshMHEProtocol` | `GLWERefreshMHEProtocolImpl` | `reference::GLWERefreshMHEProtocolReference` |
 
 ## Normalization
 
@@ -72,7 +74,8 @@ GGSW conditions below.
 Private `source_xe`, `source_xu` and `source_xm` streams must be independently
 seeded for each party and purpose, kept secret and consumed without replay.
 Never initialize a private stream from a public mask seed. An advancing error
-stream can supply successive fresh samples.
+stream can supply successive fresh samples, including refresh's flood and
+S2E encryption errors.
 
 ## Tensor key shares
 
@@ -117,8 +120,8 @@ share.
 
 ## Smudging parameters
 
-Secret and public key switching and
-encryption-to-shares require `flood: &impl SmudgingInfos`.
+Secret and public key switching,
+encryption-to-shares and refresh require `flood: &impl SmudgingInfos`.
 `SmudgingNoise` provides two full-width distributions:
 
 - `SmudgingNoise::gaussian(k, log_sigma, cutoff)` samples an integer discrete
@@ -140,7 +143,7 @@ An observable sampling-time side channel is outside this distribution claim.
 Set `k` to the sampling destination's precision to hide errors on its full
 integer grid. A smaller `k` leaves a coarser sampling lattice and may expose
 low error bits. Sampling precision is `res.k` for secret-key switching,
-and `ct.k` for public-key switching and E2S.
+and `ct.k` for public-key switching, E2S and refresh.
 E2S adds its flood to the public partial decryption, never to the private mask.
 The API checks this precision, distribution bounds and coefficient headroom
 before sampling. It cannot infer the input error or certify statistical hiding.
@@ -170,7 +173,10 @@ Increasing ciphertext precision alone does not create decoding margin when
 the encoded integer message and error scales remain unchanged. Lazy
 aggregation still requires its ordinary coefficient headroom.
 
-`NoiseInfos` and `EncryptionLayout` continue to describe ordinary encryption; they no longer
+Refresh encrypts only that mask in S2E, so flooding survives cancellation and
+the precision raise. Its flood is in the input frame, while `enc_infos`
+controls ordinary S2E encryption noise in the output frame. `NoiseInfos` and
+`EncryptionLayout` continue to describe ordinary encryption; they no longer
 serve as flood descriptors. A former power-of-two sigma `2^s` with bound
 `c * 2^s` migrates to `SmudgingNoise::gaussian(k, s, c)`; the new sampler uses
 an exact conditional discrete Gaussian rather than a rounded real Gaussian.
@@ -178,7 +184,7 @@ an exact conditional discrete Gaussian rather than a rounded real Gaussian.
 Small-sigma tests check forwarding and noise presence. These
 functional checks complement the distribution argument and parameter bounds.
 
-## Additive shares
+## Additive shares and refresh
 
 An additive share is a plaintext read as a signed integer in its top-`k`
 window, the torus value `M * 2^-k`. Raising a share or a ciphertext to a
@@ -197,10 +203,13 @@ the remaining terms must also fit.
 An encryption-to-shares public share wraps a rank-0 core `GLWE`; the
 finalizing party adds the ciphertext's body and the aggregate to its mask, the
 other parties keep their masks as their shares. A shares-to-encryption share
-wraps a `GLWEPatCompressed`.
+wraps a `GLWEPatCompressed`. A refresh share holds both parts, built from one
+mask that never leaves the call; the finalized ciphertext encrypts the input's
+integers, input noise and aggregate flood at the output precision under the
+same ideal secret, plus fresh S2E encryption noise.
 
 `source_xm` must stay secret to the party and never be replayed. Every
-shares-to-encryption invocation needs a fresh `seed`, common to
+shares-to-encryption or refresh invocation needs a fresh `seed`, common to
 its participants: two encryptions under one secret and one seed reveal the
 difference of their plaintexts. Bounded masks hide the additive shares;
 independent flooding hides the input-dependent decryption noise when those
@@ -214,8 +223,9 @@ parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!` or
-`impl_mhe_sharing_reference!` alone when replacing another one. The
+`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!`,
+`impl_mhe_sharing_reference!` or `impl_mhe_refresh_reference!` alone when
+replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
