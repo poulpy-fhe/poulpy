@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut,
+    Distribution, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, SmudgingNoise,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
         GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
@@ -23,13 +23,19 @@ pub(crate) const RANK: Rank = Rank(2);
 pub(crate) const DNUM: Dnum = Dnum(3);
 pub(crate) const DSIZE: Dsize = Dsize(1);
 pub(crate) const SEEDS: [[u8; 32]; 2] = [[1u8; 32], [2u8; 32]];
+pub(crate) const SEED_XE: [u8; 32] = [3u8; 32];
 pub(crate) const PARTIES: usize = 3;
 
 /// Galois element of the automorphism key tests.
 pub(crate) const P: i64 = -5;
 
-/// Bits of the integer plaintexts of the GGSW tests.
+/// Bits of the integer plaintexts of the sharing tests.
 pub(crate) const LOG_MESSAGE: usize = 10;
+/// Bits of the masks: `LOG_MESSAGE` plus a hiding margin, with room for the
+/// parties' sum below `K`.
+pub(crate) const LOG_BOUND: usize = 28;
+/// Output precision of the shares-to-encryption tests.
+pub(crate) const K_OUT: TorusPrecision = TorusPrecision(K.0 + 2 * BASE2K.0);
 
 pub(crate) type Secret<BE> = (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>);
 
@@ -253,6 +259,34 @@ pub(crate) fn assert_decrypts_to<BE>(
     for (got, want) in plaintext_integers(&pt).iter().zip(want) {
         assert!((got - want).abs() <= bound, "decrypted {got}, want {want} within {bound}");
     }
+}
+
+/// Small functional-test flooding parameters, not a production security margin.
+pub(crate) fn integer_flood_infos(layout: GLWELayout, sigma: f64) -> SmudgingNoise {
+    let log_sigma = sigma.log2() as usize;
+    assert_eq!(sigma, 2.0f64.powi(log_sigma as i32));
+    SmudgingNoise::gaussian(layout.k.as_usize(), log_sigma, 6)
+}
+
+/// Checks both correctness and the presence of caller-sized, per-party flooding.
+pub(crate) fn assert_flooded_integers(got: &[i64], want: &[i64], sigma: f64, other_variance: f64, bound: i64) {
+    assert_eq!(got.len(), want.len());
+    let errors: Vec<f64> = got
+        .iter()
+        .zip(want)
+        .map(|(&got, &want)| {
+            let error = got - want;
+            assert!(error.abs() <= bound, "integer error {error} exceeds {bound}");
+            error as f64
+        })
+        .collect();
+    let mean = errors.iter().sum::<f64>() / errors.len() as f64;
+    let variance = errors.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / errors.len() as f64;
+    let flood_variance = PARTIES as f64 * sigma * sigma;
+    assert!(
+        variance >= 0.5 * flood_variance && variance <= 2.0 * (flood_variance + other_variance),
+        "integer noise variance {variance} outside the expected flooding interval"
+    );
 }
 
 /// Assert a protocol boundary rejects a layout with the exact static message.
