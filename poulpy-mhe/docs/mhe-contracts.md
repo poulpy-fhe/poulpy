@@ -10,8 +10,9 @@ defaults in `oep::derived`.
 
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
 the collective public key protocol, `api::evaluation_key` the collective
-switching and automorphism key protocols, `api::tensor_key` the collective
-tensor key protocol and `api::ggsw` the collective GGSW protocol. A protocol
+switching and automorphism key protocols, `api::keyswitch` the collective key
+switching protocols, `api::tensor_key` the collective tensor key protocol and
+`api::ggsw` the collective GGSW protocol. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -31,6 +32,8 @@ same trait.
 | `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 | `GLWETensorKeyMHEProtocol` | `GLWETensorKeyMHEProtocolImpl` | `reference::GLWETensorKeyMHEProtocolReference`; aggregation and finalization are derived defaults over `GGLWEPatImpl` |
 | `GGSWMHEProtocol` | `GGSWMHEProtocolImpl` | `reference::GGSWMHEProtocolReference`; aggregation is a derived default over `GGLWEPatCompressedImpl` |
+| `GLWEKeyswitchMHEProtocol` | `GLWEKeyswitchMHEProtocolImpl` | `reference::GLWEKeyswitchMHEProtocolReference` |
+| `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
 
 ## Normalization
 
@@ -98,6 +101,79 @@ The ephemeral key's gadget (`dnum * dsize * base2k`) must cover the GGSW
 precision; one guard digit (`k_aux >= base2k + log2 n`) keeps its noise far
 below the circular term.
 
+## Key switching shares
+
+A key switching share wraps one core `GLWE`: rank 0 for a switch to a secret
+key, the output public key's rank for a switch to a public key. It carries the
+party's smudging noise, drawn with the `flood` noise parameters, so that the
+aggregate reveals nothing about the parties' secrets beyond the switched
+ciphertext when the smudging contract below is met. Aggregation adds the
+shares; finalization adds the ciphertext body and normalizes.
+`GLWEPublicKeyswitchMHEProtocol` needs a public key at least as precise as the
+share.
+
+## Smudging parameters
+
+Secret and public key switching
+require `flood: &impl SmudgingInfos`.
+`SmudgingNoise` provides two full-width distributions:
+
+- `SmudgingNoise::gaussian(k, log_sigma, cutoff)` samples an integer discrete
+  Gaussian with mass proportional to `exp(-z^2 / (2 sigma^2))`, where
+  `sigma = 2^log_sigma`, conditioned on `|z| <= cutoff * sigma`.
+- `SmudgingNoise::uniform(k, bits)` samples exactly uniformly from
+  `[-2^(bits-1), 2^(bits-1)-1]`. This interval has mean `-1/2`.
+
+Both add `z * 2^-k`. The CPU sampler generates a complete integer per
+coefficient and decomposes it across balanced limbs, preserving all low bits.
+The Gaussian implementation uses the exact integer rejection algorithm of
+[Canonne, Kamath and Steinke, section 5](https://arxiv.org/pdf/2004.00010#page=30).
+It has variable runtime and allocates scalar big integers. There is no
+floating-point sampling, machine-word truncation or fixed retry limit.
+The sampler's exact-distribution claim assumes independent uniform source bits;
+using private seeded streams adds the source's computational security assumption.
+An observable sampling-time side channel is outside this distribution claim.
+
+Set `k` to the sampling destination's precision to hide errors on its full
+integer grid. A smaller `k` leaves a coarser sampling lattice and may expose
+low error bits. Sampling precision is `res.k` for secret-key switching,
+and `ct.k` for public-key switching.
+The API checks this precision, distribution bounds and coefficient headroom
+before sampling. It cannot infer the input error or certify statistical hiding.
+
+For a statistical hiding margin `lambda`, each party must provision its own
+flood; the model allows every other party to be corrupt. The Gaussian scale
+must dominate the input encryption, evaluation and rounding noise by at least
+`2^lambda`, in common units, with dimensions and the full transcript accounted
+for. More explicitly, for a fixed integer discrepancy vector `e`, the
+untruncated product Gaussian has shift distance at most `||e||_2 / (2 sigma)`.
+The uniform distribution has shift distance at most `||e||_1 / 2^bits`.
+Thus, for `M` shifted coordinates bounded by `H`, uniform width satisfying
+`2^bits >= 2^lambda * M * H` budgets the shift term. Random input-error tails
+and repeated or adaptive calls require their own bounds in the security proof.
+
+A Gaussian cutoff omits probability at most `tau = 2 exp(-cutoff^2 / 2)` per
+coefficient. Conditioning `M` samples changes their distribution by at most
+`M * tau`; comparing two conditioned worlds can cost `2 * M * tau`.
+Choose the cutoff for the complete transcript, separately from its shift
+budget. Statistical tests cannot
+certify a `2^-128` tail or shift bound.
+
+Correctness needs the sum of all parties' absolute flood bounds, input and
+conversion errors, and fresh encryption noise to fit the decoding margin.
+The integer bounds are `cutoff * 2^log_sigma` and `2^(bits-1)`, respectively.
+Increasing ciphertext precision alone does not create decoding margin when
+the encoded integer message and error scales remain unchanged. Lazy
+aggregation still requires its ordinary coefficient headroom.
+
+`NoiseInfos` and `EncryptionLayout` continue to describe ordinary encryption; they no longer
+serve as flood descriptors. A former power-of-two sigma `2^s` with bound
+`c * 2^s` migrates to `SmudgingNoise::gaussian(k, s, c)`; the new sampler uses
+an exact conditional discrete Gaussian rather than a rounded real Gaussian.
+
+Small-sigma tests check forwarding and noise presence. These
+functional checks complement the distribution argument and parameter bounds.
+
 ## Replacing an operation
 
 An override must compute the same result as the reference, including its
@@ -106,8 +182,8 @@ parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!` or `impl_mhe_ggsw_reference!` alone when
-replacing another one. The
+`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!` or
+`impl_mhe_keyswitch_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
