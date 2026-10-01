@@ -28,6 +28,7 @@ poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
 #poulpy-bench = {workspace = true}
 dashu-float = {workspace = true}
+dashu-int = {workspace = true}
 bytemuck = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true}
@@ -71,7 +72,6 @@ required-features = ["enable-bin-fhe"]
 
 [dev-dependencies]
 paste = {workspace = true}
-dashu-int = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 criterion = {workspace = true}
