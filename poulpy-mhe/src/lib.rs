@@ -11,6 +11,7 @@
 //! `API -> delegate -> OEP`; [`reference`](mod@crate::reference) is the default implementation.
 pub mod api;
 mod delegates;
+mod galois_ring;
 pub mod layouts;
 pub mod oep;
 pub mod reference;

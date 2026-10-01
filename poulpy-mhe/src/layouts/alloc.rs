@@ -1,6 +1,6 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
-    TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+    Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -8,8 +8,10 @@ use crate::layouts::{
     GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
     GLWEAutomorphismKeyShareOwned, GLWEEncToShareShare, GLWEEncToShareShareOwned, GLWEKeyswitchShare, GLWEKeyswitchShareOwned,
     GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned, GLWEPublicKeyswitchShare,
-    GLWEPublicKeyswitchShareOwned, GLWERefreshShare, GLWERefreshShareOwned, GLWEShareToEncShare, GLWEShareToEncShareOwned,
-    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
+    GLWEPublicKeyswitchShareOwned, GLWERefreshShare, GLWERefreshShareOwned, GLWEShamirLayout, GLWEShamirPolynomial,
+    GLWEShamirPolynomialOwned, GLWEShamirShare, GLWEShamirShareOwned, GLWEShareToEncShare, GLWEShareToEncShareOwned,
+    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, GLWEWideSecret,
+    GLWEWideSecretOwned, ggsw_share_part_layout,
 };
 
 /// PAT and share allocation on a backend module.
@@ -248,10 +250,54 @@ pub trait MHEModuleAlloc<BE: Backend>:
             s2e: self.glwe_share_to_enc_share_alloc_from_infos(res_infos),
         }
     }
+
+    fn glwe_shamir_polynomial_alloc(&self, layout: &GLWEShamirLayout) -> GLWEShamirPolynomialOwned<BE> {
+        GLWEShamirPolynomial {
+            inner: shamir_columns_alloc(self, layout, layout.threshold * layout.rank.as_usize() * layout.gr_degree),
+            rank: layout.rank,
+            gr_degree: layout.gr_degree,
+            threshold: layout.threshold,
+        }
+    }
+
+    fn glwe_shamir_share_alloc(&self, layout: &GLWEShamirLayout) -> GLWEShamirShareOwned<BE> {
+        GLWEShamirShare {
+            inner: shamir_columns_alloc(self, layout, layout.rank.as_usize() * layout.gr_degree),
+            rank: layout.rank,
+            gr_degree: layout.gr_degree,
+            threshold: layout.threshold,
+        }
+    }
+
+    /// An additive share at the layout's precision and base.
+    fn glwe_wide_secret_alloc(&self, layout: &GLWEShamirLayout) -> GLWEWideSecretOwned<BE> {
+        GLWEWideSecret {
+            inner: shamir_columns_alloc(self, layout, layout.rank.as_usize()),
+        }
+    }
 }
 
 impl<BE: Backend> MHEModuleAlloc<BE> for Module<BE> where
     Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
+}
+
+fn shamir_columns_alloc<M: ModuleCoreAlloc + ?Sized>(
+    module: &M,
+    layout: &GLWEShamirLayout,
+    cols: usize,
+) -> GLWE<M::OwnedBuf, M::ZnxWord> {
+    assert!(
+        (1..=8).contains(&layout.gr_degree),
+        "invalid layout: Galois ring degree outside 1..=8"
+    );
+    assert!(layout.threshold >= 1, "invalid layout: threshold below 1");
+    assert!(layout.k.0 >= layout.base2k.0, "invalid layout: precision below the base");
+    module.glwe_alloc_from_infos(&GLWELayout {
+        n: layout.n,
+        base2k: layout.base2k,
+        k: layout.k,
+        rank: Rank(cols as u32 - 1),
+    })
 }

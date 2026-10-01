@@ -12,3 +12,4 @@ documentation = "https://docs.rs/poulpy-mhe"
 [dependencies]
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
+dashu-int = {workspace = true}

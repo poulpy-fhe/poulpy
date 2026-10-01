@@ -29,6 +29,10 @@ Each protocol has its own share type, a wrapper of these PATs:
   `GLWEPatCompressed`, the share of a shares-to-encryption conversion.
 - `GLWERefreshShare`: both conversion shares of one mask, for a refresh.
 
+Threshold sharing adds `GLWEShamirPolynomial` (party-local), `GLWEShamirShare`
+(secret, sent over a private channel) and `GLWEWideSecret` (a combined
+additive share, coefficients modulo `2^k`), allocated the same way.
+
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
 
@@ -54,6 +58,9 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   a ciphertext and additive shares of its plaintext, read as bounded integers.
 - `GLWERefreshMHEProtocol`: the collective refresh of a ciphertext to a larger
   precision, in one round.
+- `GLWEShamirMHEProtocol`: t-out-of-N Shamir sharing of the parties' secrets
+  over a Galois ring, finalized by any active set into additive shares
+  (`GLWEWideSecret`).
 
 ## Smudging
 
@@ -79,7 +86,7 @@ switching keys with different input secrets and one output secret exposes the
 gadget-scaled difference of those input secrets plus small error.
 
 Keep `source_xe` (errors), `source_xu` (public-key ephemeral secrets), and
-`source_xm` (masks) private. Seed their streams
+`source_xm` (masks and Shamir coefficients) private. Seed their streams
 independently for each party and purpose, and consume fresh samples without
 replaying a stream. Never initialize a private stream from a public mask seed.
 

@@ -10,6 +10,7 @@ pub mod public_key;
 pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
+pub mod threshold;
 pub use evaluation_key::*;
 pub use ggsw::*;
 pub use keyswitch::*;
@@ -18,6 +19,7 @@ pub use public_key::*;
 pub use refresh::*;
 pub use sharing::*;
 pub use tensor_key::*;
+pub use threshold::*;
 
 /// Validates a wide flood before adding its balanced digits to canonical coefficients.
 fn assert_flood<BE: poulpy_hal::layouts::Backend, E: poulpy_core::SmudgingInfos>(

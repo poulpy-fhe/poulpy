@@ -755,6 +755,7 @@ dependencies = [
 name = "poulpy-mhe"
 version = "0.8.3"
 dependencies = [
+ "dashu-int",
  "poulpy-core",
  "poulpy-hal",
 ]
