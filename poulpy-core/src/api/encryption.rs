@@ -121,7 +121,7 @@ pub trait GLWEEncryptPk<BE: Backend> {
         R: GLWEInfos,
         K: GLWEInfos;
 
-    /// Panics if `pk` is less precise than `res`.
+    /// `pt` must be normalized. Panics if `pk` is less precise than `res`.
     fn glwe_encrypt_pk<R, P, K, E>(
         &self,
         res: &mut R,

@@ -100,6 +100,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_encrypt_pk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk,
+                ggsw_encrypt_pk_unnormalized_plaintext =>
+                    $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk_unnormalized_plaintext,
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
                 ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
                 ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,

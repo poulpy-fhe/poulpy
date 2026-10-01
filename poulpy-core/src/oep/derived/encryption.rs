@@ -18,7 +18,7 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssign, VecZnxZero},
+    api::{VecZnxAddScalarAssign, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
     layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -188,10 +188,13 @@ pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos
     module: &Module<BE>,
     res_infos: &R,
     pk_infos: &K,
-) -> usize {
+) -> usize
+where
+    Module<BE>: VecZnxNormalizeTmpBytes,
+{
     assert_eq!(res_infos.n(), module.n() as u32);
     BE::scratch_aligned(module.glwe_plaintext_bytes_of_from_infos(res_infos))
-        + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos)
+        + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
 }
 
 pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
@@ -209,7 +212,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
     P: ScalarZnxToBackendRef<BE> + ZnxInfos,
     E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE>,
+    Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
     assert_eq!(res.n(), module.n() as u32);
     assert_eq!(pt.n(), module.n());
@@ -217,6 +220,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
         "insufficient scratch for GGSW public-key encryption"
     );
+    let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
     let dsize: usize = res.dsize().into();
     let rank: usize = res.rank().into();
     let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
@@ -229,6 +233,8 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
             &pt.to_backend_ref(),
             0,
         );
+        // The encryption adds the plaintext's limbs to its accumulator as they are.
+        module.vec_znx_normalize_assign(base2k, k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
         for col in 0..rank + 1 {
             BE::glwe_encrypt_pk_at_col(
                 module,

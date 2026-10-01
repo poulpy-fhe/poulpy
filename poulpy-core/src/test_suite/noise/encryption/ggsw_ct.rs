@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned},
+    layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -223,6 +223,86 @@ where
             }
         }
     }
+}
+
+/// A message with coefficients past the radix encrypts as its reduction modulo `2^base2k`.
+pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    Module<BE>: GGSWEncryptPk<BE> + GLWEPublicKeyGenerate<BE> + GLWEPublicKeyPreparedFactory<BE> + GLWESecretPreparedFactory<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let rank: usize = 2;
+    let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: 1_usize.into(),
+        k_aux: (base2k + module.log_n()).into(),
+        dsize: 1_usize.into(),
+        rank: rank.into(),
+    })
+    .unwrap();
+    let pk_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: ggsw_infos.k(),
+        rank: rank.into(),
+    })
+    .unwrap();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_public_key_generate_tmp_bytes(&pk_infos)
+            .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
+    );
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([0u8; 32]));
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+    module.glwe_secret_prepare(&mut sk_prepared, &sk);
+    let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
+    module.glwe_public_key_generate(
+        &mut pk,
+        &sk_prepared,
+        &pk_infos,
+        &mut Source::new([1u8; 32]),
+        &mut Source::new([2u8; 32]),
+        &mut scratch.borrow(),
+    );
+    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
+    module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+
+    let mut pt_wide: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
+    let mut pt_reduced: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
+    let (modulus, half) = (1i128 << base2k, 1i128 << (base2k - 1));
+    for (i, (wide, reduced)) in pt_wide.at_mut(0, 0).iter_mut().zip(pt_reduced.at_mut(0, 0)).enumerate() {
+        *wide = i64::MAX - i as i64;
+        *reduced = ((*wide as i128 + half).rem_euclid(modulus) - half) as i64;
+    }
+
+    let mut enc_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_encrypt_pk_tmp_bytes(&ggsw_infos, &pk_infos));
+    let mut encrypt = |pt: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>| {
+        let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
+        module.ggsw_encrypt_pk(
+            &mut ct,
+            pt,
+            &pk_prepared,
+            &ggsw_infos,
+            &mut Source::new([3u8; 32]),
+            &mut Source::new([4u8; 32]),
+            &mut enc_scratch.borrow(),
+        );
+        ct
+    };
+    assert!(
+        encrypt(&pt_wide) == encrypt(&pt_reduced),
+        "unnormalized message changed the ciphertext"
+    );
 }
 
 pub fn test_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
