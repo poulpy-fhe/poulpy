@@ -63,6 +63,7 @@ where
     fn vec_znx_add_smudging(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         noise: crate::SmudgingNoise,
@@ -79,7 +80,8 @@ where
             .size()
             .checked_mul(base2k)
             .expect("invalid smudging: destination precision overflow");
-        noise.assert_valid_for(base2k, capacity);
-        BE::vec_znx_add_smudging(self, base2k, res, res_col, noise, source.new_seed());
+        assert!(k <= capacity, "invalid smudging: precision outside the destination");
+        noise.assert_valid_for(base2k, k);
+        BE::vec_znx_add_smudging(self, base2k, k, res, res_col, noise, source.new_seed());
     }
 }

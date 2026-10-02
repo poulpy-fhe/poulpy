@@ -52,16 +52,17 @@ pub trait VecZnxBigAddNormal<BE: Backend> {
 
 /// Adds independent bounded smudging coefficients across all necessary limbs.
 ///
-/// Each coefficient is one full integer sample from `noise`, scaled by
-/// `2^-noise.k`. The selected column must have canonical balanced digits;
-/// adding one canonical noise polynomial leaves it unnormalized with enough
-/// coefficient headroom for normalization. Other columns are untouched.
+/// Each coefficient is one full integer sample from `noise`, scaled by `2^-k`,
+/// the precision of `res`. The selected column must have canonical balanced
+/// digits; adding one canonical noise polynomial leaves it unnormalized with
+/// enough coefficient headroom for normalization. Other columns are untouched.
 /// Sampling consumes a fresh private child seed. See
 /// [`SmudgingSamplingImpl`](crate::oep::SmudgingSamplingImpl).
 pub trait VecZnxAddSmudging<BE: Backend> {
     fn vec_znx_add_smudging(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         noise: crate::SmudgingNoise,

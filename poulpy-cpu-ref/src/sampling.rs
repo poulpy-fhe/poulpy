@@ -105,6 +105,7 @@ macro_rules! impl_smudging_host {
             fn vec_znx_add_smudging(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 base2k: usize,
+                k: usize,
                 res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
                 res_col: usize,
                 noise: ::poulpy_core::SmudgingNoise,
@@ -112,7 +113,7 @@ macro_rules! impl_smudging_host {
             ) {
                 assert!(res.n() == module.n(), "invalid smudging: degree mismatch");
                 let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::reference::smudging::vec_znx_add_smudging_ref::<$be>(base2k, res, res_col, noise, &mut source);
+                $crate::reference::smudging::vec_znx_add_smudging_ref::<$be>(base2k, k, res, res_col, noise, &mut source);
             }
         }
     };

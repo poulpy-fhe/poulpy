@@ -8,7 +8,7 @@
 //! Gaussian outputs are conditioned on the descriptor's symmetric bound.
 
 use dashu_int::UBig;
-use poulpy_core::{SmudgingDistribution, SmudgingNoise};
+use poulpy_core::SmudgingNoise;
 use poulpy_hal::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
     source::Source,
@@ -130,10 +130,10 @@ enum Sampler {
 }
 
 impl Sampler {
-    fn new(distribution: SmudgingDistribution) -> Self {
-        match distribution {
-            SmudgingDistribution::Gaussian { log_sigma, cutoff } => Self::Gaussian(Gaussian::new(log_sigma, cutoff)),
-            SmudgingDistribution::Uniform { bits } => Self::Uniform {
+    fn new(noise: SmudgingNoise) -> Self {
+        match noise {
+            SmudgingNoise::Gaussian { log_sigma, cutoff } => Self::Gaussian(Gaussian::new(log_sigma, cutoff)),
+            SmudgingNoise::Uniform { bits } => Self::Uniform {
                 bits,
                 half: UBig::ONE << (bits - 1),
             },
@@ -202,6 +202,7 @@ impl Encoding {
 /// caller must normalize before another call on the same destination column.
 pub fn vec_znx_add_smudging_ref<'r, BE>(
     base2k: usize,
+    k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     noise: SmudgingNoise,
@@ -210,8 +211,9 @@ pub fn vec_znx_add_smudging_ref<'r, BE>(
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
-    let precision = res.size().checked_mul(base2k).expect("invalid smudging: precision overflow");
-    noise.assert_valid_for(base2k, precision);
+    let capacity = res.size().checked_mul(base2k).expect("invalid smudging: precision overflow");
+    assert!(k <= capacity, "invalid smudging: precision outside the destination");
+    noise.assert_valid_for(base2k, k);
     assert!(res.n() > 0, "invalid smudging: empty degree");
     assert!(res_col < res.cols(), "invalid smudging: column outside allocation");
     let half = 1i64 << (base2k - 1);
@@ -222,8 +224,8 @@ pub fn vec_znx_add_smudging_ref<'r, BE>(
         );
     }
 
-    let sampler = Sampler::new(noise.distribution);
-    let encoding = Encoding::new(base2k, noise.k);
+    let sampler = Sampler::new(noise);
+    let encoding = Encoding::new(base2k, k);
     let mut digits = vec![0; encoding.size];
     for coefficient in 0..res.n() {
         encoding.digits(sampler.sample(source), &mut digits);
@@ -277,7 +279,7 @@ mod tests {
             }
         }
 
-        let sampler = Sampler::new(SmudgingDistribution::Uniform { bits: 3 });
+        let sampler = Sampler::new(SmudgingNoise::Uniform { bits: 3 });
         let mut source = Source::new([91; 32]);
         let mut counts = [0; 8];
         for _ in 0..COUNT {
@@ -360,7 +362,13 @@ mod tests {
         for (base2k, initial) in [(17, 7), (62, -(1i64 << 61))] {
             let target_size = K.div_ceil(base2k);
             let size = target_size + 2;
-            for noise in [SmudgingNoise::gaussian(K, 128, 16), SmudgingNoise::uniform(K, 132)] {
+            for noise in [
+                SmudgingNoise::Gaussian {
+                    log_sigma: 128,
+                    cutoff: 16,
+                },
+                SmudgingNoise::Uniform { bits: 132 },
+            ] {
                 let make = || {
                     let mut value = VecZnx::from_data(
                         BE::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(n, 2, size)),
@@ -379,6 +387,7 @@ mod tests {
                 BE::vec_znx_add_smudging(
                     module,
                     base2k,
+                    K,
                     &mut vec_znx_backend_mut::<BE>(&mut result),
                     1,
                     noise,
@@ -387,6 +396,7 @@ mod tests {
                 BE::vec_znx_add_smudging(
                     module,
                     base2k,
+                    K,
                     &mut vec_znx_backend_mut::<BE>(&mut repeated),
                     1,
                     noise,
@@ -399,7 +409,7 @@ mod tests {
                         assert!(result.at(1, limb).iter().all(|&v| v == initial));
                     }
                 }
-                let sampler = Sampler::new(noise.distribution);
+                let sampler = Sampler::new(noise);
                 let mut source = Source::new([23; 32]);
                 let padding = target_size * base2k - K;
                 let modulus = IBig::ONE << (target_size * base2k);
@@ -423,6 +433,7 @@ mod tests {
                     let mut expected = make();
                     module.vec_znx_add_smudging(
                         base2k,
+                        K,
                         &mut vec_znx_backend_mut::<BE>(&mut actual),
                         1,
                         noise,
@@ -431,6 +442,7 @@ mod tests {
                     BE::vec_znx_add_smudging(
                         module,
                         base2k,
+                        K,
                         &mut vec_znx_backend_mut::<BE>(&mut expected),
                         1,
                         noise,
@@ -469,42 +481,13 @@ mod tests {
         use poulpy_hal::layouts::{VecZnx, vec_znx_backend_mut};
         use std::panic::{AssertUnwindSafe, catch_unwind};
 
-        for (base2k, col, noise, noncanonical, message) in [
-            (
-                17,
-                2,
-                SmudgingNoise::uniform(100, 80),
-                false,
-                "invalid smudging: column outside allocation",
-            ),
-            (
-                0,
-                1,
-                SmudgingNoise::uniform(100, 80),
-                false,
-                "invalid smudging: precision outside the destination",
-            ),
-            (
-                63,
-                1,
-                SmudgingNoise::uniform(100, 80),
-                false,
-                "invalid smudging: radix outside the coefficient headroom",
-            ),
-            (
-                17,
-                1,
-                SmudgingNoise::uniform(120, 80),
-                false,
-                "invalid smudging: precision outside the destination",
-            ),
-            (
-                17,
-                1,
-                SmudgingNoise::uniform(100, 80),
-                true,
-                "invalid smudging: destination column is not canonical",
-            ),
+        let noise = SmudgingNoise::Uniform { bits: 80 };
+        for (base2k, k, col, noncanonical, message) in [
+            (17, 100, 2, false, "invalid smudging: column outside allocation"),
+            (0, 100, 1, false, "invalid smudging: precision outside the destination"),
+            (63, 100, 1, false, "invalid smudging: radix outside the coefficient headroom"),
+            (17, 120, 1, false, "invalid smudging: precision outside the destination"),
+            (17, 100, 1, true, "invalid smudging: destination column is not canonical"),
         ] {
             let mut result = VecZnx::from_data(
                 <crate::FFT64Ref as Backend>::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(8, 2, 6)),
@@ -524,6 +507,7 @@ mod tests {
             let error = catch_unwind(AssertUnwindSafe(|| {
                 vec_znx_add_smudging_ref::<crate::FFT64Ref>(
                     base2k,
+                    k,
                     &mut vec_znx_backend_mut::<crate::FFT64Ref>(&mut result),
                     col,
                     noise,

@@ -148,10 +148,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-
 ## Full-precision smudging
 
 `VecZnxAddSmudging` dispatches to the optional `SmudgingSamplingImpl`. It adds
-one independent integer sample per coefficient, scaled by `2^-noise.k`, to a
-canonical input column. Each sample is decomposed across all necessary
-balanced limbs; drawing independent Gaussian limbs or shifting a small
-machine-word sample is not equivalent. Other columns remain untouched, and
+one independent integer sample per coefficient, scaled by `2^-k` at the
+destination's precision `k`, to a canonical input column. Each sample is
+decomposed across all necessary balanced limbs; drawing independent Gaussian
+limbs or shifting a small machine-word sample is not equivalent. Other columns remain untouched, and
 padding below the sampling precision contributes zero. Adding two bounded
 balanced digits leaves enough headroom for normalization; the result is
 unnormalized and callers must normalize before another smudging addition.

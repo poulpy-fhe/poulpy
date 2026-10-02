@@ -77,18 +77,20 @@ pub unsafe trait SamplingImpl: Backend {
 /// Optional backend sampling of full-precision bounded smudging noise.
 ///
 /// Coefficients are independent integer samples from [`crate::SmudgingNoise`],
-/// then scaled by `2^-noise.k` and decomposed into balanced radix digits. The
-/// distribution is on complete integers, not on independently sampled limbs.
+/// then scaled by `2^-k`, the destination's precision, and decomposed into
+/// balanced radix digits. The distribution is on complete integers, not on
+/// independently sampled limbs.
 /// A backend may select this extension without changing ordinary encryption's
 /// [`SamplingImpl`] contract. Fixed seeds reproduce draws within that backend.
 ///
 /// # Safety
 /// The selected input column has canonical balanced digits. Implementations
-/// must validate degree, column, radix and noise capacity before mutation, and
-/// add at most one bounded balanced noise digit per coefficient and limb.
+/// must validate degree, column, radix, precision and noise bounds before
+/// mutation, and add at most one bounded balanced noise digit per coefficient
+/// and limb.
 /// They must not alter other columns, discard low noise bits, truncate samples
 /// to a machine word, or bias rejection sampling by an unaccounted runtime cap.
-/// Padding below `noise.k` in the added polynomial is zero. Noise must follow
+/// Padding below `k` in the added polynomial is zero. Noise must follow
 /// the declared conditional Gaussian or exact uniform distribution, assuming
 /// uniform private source bits. Big integer scalar temporaries may allocate;
 /// no scratch arena is required. The reference CPU algorithm has variable runtime.
@@ -96,6 +98,7 @@ pub unsafe trait SmudgingSamplingImpl: Backend {
     fn vec_znx_add_smudging(
         module: &Module<Self>,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
         noise: crate::SmudgingNoise,
