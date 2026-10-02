@@ -321,25 +321,6 @@ where
             .unwrap();
             assert_eq!(before, snapshot::<B, _>(&input));
             results.push(snapshot::<B, _>(&out));
-            let other = fixture_ciphertext(module, &layout, 153);
-            let other_before = snapshot::<B, _>(&other);
-            let mut right = fixture_ciphertext(module, &layout, 157);
-            let mut expected_right = fixture_ciphertext(module, &layout, 157);
-            with_scratch::<B, _>(
-                module.ckks_eval_mod_tmp_bytes(&expected_right, &other, &compiled, &key),
-                |scratch| module.ckks_eval_mod(&mut expected_right, &other, &compiled, &prepared_key, scratch),
-            )
-            .unwrap();
-            let mut left = fixture_ciphertext(module, &layout, 151);
-            let pair_bytes = module.ckks_eval_mod_pair_tmp_bytes(&left, &right, &input, &other, &compiled, &key);
-            with_scratch::<B, _>(pair_bytes, |scratch| {
-                module.ckks_eval_mod_pair(&mut left, &mut right, &input, &other, &compiled, &prepared_key, scratch)
-            })
-            .unwrap();
-            assert_eq!(snapshot::<B, _>(&left), snapshot::<B, _>(&out));
-            assert_eq!(snapshot::<B, _>(&right), snapshot::<B, _>(&expected_right));
-            assert_eq!(snapshot::<B, _>(&input), before);
-            assert_eq!(snapshot::<B, _>(&other), other_before);
         }
     }
     results

@@ -114,7 +114,7 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
 }
 
 use super::OverrideBackend;
-use poulpy_ckks::api::LtDiagonalScale;
+use poulpy_ckks::api::LtDiagonalMeta;
 use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
@@ -179,7 +179,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
@@ -199,7 +199,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
@@ -273,6 +273,7 @@ impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncoding
 }
 crate::impl_ckks_encoding!(OverrideBackend);
 poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_bootstrapping_reference!(OverrideBackend);
 unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::dft::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
     for OverrideBackend
 {
@@ -335,11 +336,9 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());
     DFT_QUERIES.set(0);
-    super::EVAL_MOD_PAIR_QUERIES.set(0);
     let bytes = module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
-    assert!(bytes >= DFT_EXTRA_SCRATCH.max(super::PAIR_SCRATCH));
+    assert!(bytes >= DFT_EXTRA_SCRATCH);
     assert!(DFT_QUERIES.get() >= 2);
-    assert!(super::EVAL_MOD_PAIR_QUERIES.get() > 0);
 }
 
 #[test]

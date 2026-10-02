@@ -742,7 +742,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
         factors: Vec<LinearTransformation<P>>,
     ) -> crate::CKKSResult<DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>>
     where
-        P: GLWEInfos + crate::api::LtDiagonalScale,
+        P: GLWEInfos + crate::api::LtDiagonalMeta,
     {
         check_factor_operands(module, self.plan(), &factors)?;
         Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(self.plan().clone(), factors)))
@@ -767,7 +767,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
 
 impl<BE: Backend, Dir: DftDirection, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>
 where
-    P: GLWEInfos + crate::api::LtDiagonalScale,
+    P: GLWEInfos + crate::api::LtDiagonalMeta,
 {
     /// Builds a typed matrix from a resolved plan and its factors in evaluation order.
     /// Checks direction, format, ring capacity, factor count and diagonal layouts.
@@ -784,7 +784,7 @@ where
     }
 }
 
-fn check_factor_operands<BE: Backend, P: GLWEInfos + crate::api::LtDiagonalScale>(
+fn check_factor_operands<BE: Backend, P: GLWEInfos + crate::api::LtDiagonalMeta>(
     module: &Module<BE>,
     plan: &DFTPlan,
     factors: &[LinearTransformation<P>],

@@ -14,16 +14,10 @@ use std::cell::{Cell, RefCell};
 thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
- static EVAL_MOD_PAIR_CALLS: Cell<usize> = const { Cell::new(0) };
- static EVAL_MOD_PAIR_QUERIES: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
-const PAIR_SCRATCH: usize = 1 << 26;
-use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, layouts::eval_mod::EvalMod};
-use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, SetBSGSMeta};
-use poulpy_hal::layouts::ScratchArena;
 poulpy_ckks::impl_ckks_plaintext_reference!(OverrideBackend);
 const COPY_WORKSPACE: usize = 1 << 20;
 unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
@@ -120,56 +114,6 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
 }
 
 unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
-    fn ckks_eval_mod_pair_tmp_bytes_impl<R1, R2, C1, C2, P, F, T>(
-        module: &Module<Self>,
-        left_out: &R1,
-        right_out: &R2,
-        left_in: &C1,
-        right_in: &C2,
-        params: &EvalMod<F, P>,
-        tsk: &T,
-    ) -> usize
-    where
-        R1: CKKSCtBounds,
-        R2: CKKSCtBounds,
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds,
-        P: CKKSCtBounds,
-        T: poulpy_core::layouts::GGLWEInfos,
-    {
-        let _ = (module, left_out, right_out, left_in, right_in, params, tsk);
-        EVAL_MOD_PAIR_QUERIES.set(EVAL_MOD_PAIR_QUERIES.get() + 1);
-        PAIR_SCRATCH
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_eval_mod_pair_impl<R1, R2, C1, C2, P, F, H>(
-        module: &Module<Self>,
-        left_out: &mut R1,
-        right_out: &mut R2,
-        left_in: &C1,
-        right_in: &C2,
-        params: &EvalMod<F, P>,
-        tsk: &H,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
-    where
-        R1: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        R2: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        C1: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        C2: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta + Sync,
-        F: Sync,
-        H: GetTensorKey<Self> + Sync,
-    {
-        let _ = (module, left_out, right_out, left_in, right_in, params, tsk);
-        EVAL_MOD_PAIR_CALLS.set(EVAL_MOD_PAIR_CALLS.get() + 1);
-        let (region, _) = scratch.borrow().take_region(PAIR_SCRATCH);
-        region[0] = 0x6A;
-        region[PAIR_SCRATCH - 1] = 0x6A;
-        Err(anyhow::anyhow!("paired EvalMod override probe").into())
-    }
-
     fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &R,
@@ -341,35 +285,6 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
             .is_err()
     );
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
-    let mut right = module.ckks_ciphertext_alloc_from_infos(&src);
-    let bytes = module.ckks_eval_mod_pair_tmp_bytes(&dst, &right, &src, &src, &params, &key_infos);
-    assert_eq!(bytes, PAIR_SCRATCH);
-    let mut owned = ScratchOwned::<OverrideBackend>::alloc(bytes);
-    let (mut exact, _) = owned.borrow().split_at(bytes);
-    EVAL_MOD_PAIR_CALLS.set(0);
-    EVAL_MOD_CALLS.set(0);
-    let error = module
-        .ckks_eval_mod_pair(&mut dst, &mut right, &src, &src, &params, &NoTensorKey, &mut exact)
-        .unwrap_err();
-    assert!(error.to_string().contains("paired EvalMod override probe"));
-    assert_eq!(EVAL_MOD_PAIR_CALLS.get(), 1);
-    assert_eq!(EVAL_MOD_CALLS.get(), 0);
-    let bytes = poulpy_ckks::oep::defaults::ckks_eval_mod_pair_tmp_bytes(&module, &dst, &right, &src, &src, &params, &key_infos);
-    assert_eq!(bytes, OVERRIDE_SCRATCH);
-    let error = poulpy_ckks::oep::defaults::ckks_eval_mod_pair(
-        &module,
-        &mut dst,
-        &mut right,
-        &src,
-        &src,
-        &params,
-        &NoTensorKey,
-        &mut ScratchOwned::<OverrideBackend>::alloc(bytes).borrow(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("EvalMod override probe"));
-    assert_eq!(EVAL_MOD_CALLS.get(), 1);
-    assert_eq!(EVAL_MOD_PAIR_CALLS.get(), 1);
 }
 
 #[test]

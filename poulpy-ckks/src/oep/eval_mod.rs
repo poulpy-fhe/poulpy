@@ -17,51 +17,6 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSEvalModImpl: Backend<Ring = Standard> {
-    /// Workspace for the selected paired evaluation, including both branches.
-    fn ckks_eval_mod_pair_tmp_bytes_impl<R1, R2, C1, C2, P, F, T>(
-        module: &Module<Self>,
-        left_out: &R1,
-        right_out: &R2,
-        left_in: &C1,
-        right_in: &C2,
-        params: &EvalMod<F, P>,
-        tsk: &T,
-    ) -> usize
-    where
-        R1: CKKSCtBounds,
-        R2: CKKSCtBounds,
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds,
-        P: CKKSCtBounds,
-        T: poulpy_core::layouts::GGLWEInfos,
-    {
-        crate::oep::defaults::ckks_eval_mod_pair_tmp_bytes(module, left_out, right_out, left_in, right_in, params, tsk)
-    }
-
-    /// Paired evaluation; conditional overrides can call `oep::defaults` explicitly.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_eval_mod_pair_impl<R1, R2, C1, C2, P, F, H>(
-        module: &Module<Self>,
-        left_out: &mut R1,
-        right_out: &mut R2,
-        left_in: &C1,
-        right_in: &C2,
-        params: &EvalMod<F, P>,
-        tsk: &H,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
-    where
-        R1: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        R2: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        C1: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        C2: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta + Sync,
-        F: Sync,
-        H: GetTensorKey<Self> + Sync,
-    {
-        crate::oep::defaults::ckks_eval_mod_pair(module, left_out, right_out, left_in, right_in, params, tsk, scratch)
-    }
-
     fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
         module: &Module<Self>,
         res: &R,

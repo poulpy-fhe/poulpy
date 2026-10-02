@@ -73,7 +73,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
@@ -91,7 +91,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
@@ -248,16 +248,12 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
         };
 
-        let eval_mod_tmp = self
-            .ckks_eval_mod_pair_tmp_bytes(
-                &boot_layout,
-                &boot_layout,
-                &boot_layout,
-                &boot_layout,
-                ctx.eval_mod(),
-                &keys_layout.tensor_key,
-            )
-            .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+        let eval_mod_tmp = self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
+            2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
+        } else {
+            eval_mod_tmp
+        };
         let mut nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
                 &boot_layout,
