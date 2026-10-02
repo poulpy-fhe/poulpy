@@ -151,17 +151,14 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-
 one independent integer sample per coefficient, scaled by `2^-k` at the
 destination's precision `k`, to a canonical input column. Each sample is
 decomposed across all necessary balanced limbs; drawing independent Gaussian
-limbs or shifting a small machine-word sample is not equivalent. Other columns remain untouched, and
-padding below the sampling precision contributes zero. Adding two bounded
+limbs or shifting a small machine-word sample is not equivalent. Other columns
+remain untouched, and padding below the sampling precision contributes zero. Adding two bounded
 balanced digits leaves enough headroom for normalization; the result is
 unnormalized and callers must normalize before another smudging addition.
 
 Ordinary encryption's `SamplingImpl` and `NoiseInfos` retain their existing
-contract. CPU backends select the new hook through `impl_smudging_host!`,
-included by `impl_cpu_core_defaults!`.
-The CPU implementation allocates scalar big integers and requires no arena
-scratch. Its rejection algorithm is variable time; distributional exactness
-assumes uniform private bits and does not assert timing independence.
+contract. `SmudgingSamplingImpl` takes no scratch arena, and sampling need not
+run in constant time; distributional exactness assumes uniform private bits.
 
 The delegate only derives a private child seed and dispatches. Backend
 implementations validate their input before drawing randomness or mutating

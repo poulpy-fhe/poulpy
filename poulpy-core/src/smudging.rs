@@ -26,8 +26,7 @@ pub enum SmudgingNoise {
     ///
     /// The omitted tail is at most `2 exp(-cutoff^2 / 2)` per coefficient.
     /// Choose the cutoff for the complete transcript's statistical budget;
-    /// a small fixed cutoff is only suitable for functional tests. The CPU
-    /// implementation uses exact integer rejection sampling with variable runtime.
+    /// a small fixed cutoff is only suitable for functional tests.
     Gaussian { log_sigma: usize, cutoff: usize },
     /// Exactly uniform on the consecutive integers `[-2^(bits-1), 2^(bits-1)-1]`.
     /// Its mean is `-1/2`. Every bit down to the unit integer bit is sampled.

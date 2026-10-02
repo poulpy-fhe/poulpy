@@ -92,8 +92,8 @@ pub unsafe trait SamplingImpl: Backend {
 /// to a machine word, or bias rejection sampling by an unaccounted runtime cap.
 /// Padding below `k` in the added polynomial is zero. Noise must follow
 /// the declared conditional Gaussian or exact uniform distribution, assuming
-/// uniform private source bits. Big integer scalar temporaries may allocate;
-/// no scratch arena is required. The reference CPU algorithm has variable runtime.
+/// uniform private source bits. No scratch arena is provided, and sampling
+/// need not run in constant time.
 pub unsafe trait SmudgingSamplingImpl: Backend {
     fn vec_znx_add_smudging(
         module: &Module<Self>,
