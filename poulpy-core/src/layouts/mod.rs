@@ -148,6 +148,25 @@ impl<B: Backend> GetDegree for Module<B> {
     }
 }
 
+/// Returns the degree the operands share, which a module of degree `module_n`
+/// serves when it is at most `module_n`.
+#[track_caller]
+pub(crate) fn operand_degree(module_n: usize, degrees: &[Degree]) -> usize {
+    let n = degrees[0].as_usize();
+    assert!(degrees.iter().all(|d| d.as_usize() == n), "operand degrees differ");
+    assert!(n <= module_n, "operand degree exceeds the module degree");
+    n
+}
+
+/// Galois element of `generator` in the ring of an operand of degree `n`.
+pub(crate) fn operand_galois_element<M: poulpy_hal::layouts::GaloisElement + ?Sized>(
+    module: &M,
+    n: usize,
+    generator: i64,
+) -> i64 {
+    poulpy_hal::layouts::galois_element(generator, module.cyclotomic_order() / (module.n() / n) as i64)
+}
+
 /// Backend-native wrapper allocation helpers hung off a [`Module`].
 ///
 /// This mirrors the `poulpy-hal` allocation model: callers allocate through a

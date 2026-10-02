@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWERotate, GLWEShift,
-    layouts::{GLWEInfos, GLWEToBackendMut},
+    layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos},
 };
 use poulpy_hal::{
     api::ModuleN,
@@ -33,7 +33,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
         let log_budget = checked_log_budget_sub("mul_i", src.log_budget(), offset)?;
-        let k = (self.n() / 2) as i64;
+        let k = (src.n().as_usize() / 2) as i64;
         // Stamp before the write: the shift normalizes at `dst.k()`.
         dst.set_meta(src.meta());
         dst.set_log_budget(log_budget);
@@ -53,7 +53,8 @@ pub trait CKKSImagReference<BE: Backend> {
         Self: GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
-        self.glwe_rotate_assign((self.n() / 2) as i64, dst, scratch);
+        let k = (dst.to_backend_mut().n().as_usize() / 2) as i64;
+        self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
         Ok(())
     }
@@ -75,7 +76,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
         let log_budget = checked_log_budget_sub("div_i", src.log_budget(), offset)?;
-        let k = -((self.n() / 2) as i64);
+        let k = -((src.n().as_usize() / 2) as i64);
         // Stamp before the write: the shift normalizes at `dst.k()`.
         dst.set_meta(src.meta());
         dst.set_log_budget(log_budget);
@@ -95,7 +96,8 @@ pub trait CKKSImagReference<BE: Backend> {
         Self: GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
-        self.glwe_rotate_assign(-((self.n() / 2) as i64), dst, scratch);
+        let k = -((dst.to_backend_mut().n().as_usize() / 2) as i64);
+        self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
         Ok(())
     }

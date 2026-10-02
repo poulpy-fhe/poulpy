@@ -12,6 +12,7 @@ use poulpy_hal::{
 
 use crate::ScratchArenaTakeCore;
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::layouts::{GGSW, GGSWInfos, GGSWToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GLWEViewRef, LWEInfos};
 use crate::noise::glwe::{glwe_noise_backend_inner, glwe_noise_body_tmp_bytes};
 use crate::{
@@ -67,12 +68,12 @@ where
     where
         A: GGSWInfos,
     {
-        assert_eq!(self.n() as u32, infos.n());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
 
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1_glwe_noise: usize = glwe_noise_body_tmp_bytes(self, infos);
-        let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(self.n(), 1, infos.size())
-            + self.bytes_of_vec_znx_big(self.n(), 1, infos.size())
+        let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(n, 1, infos.size())
+            + self.bytes_of_vec_znx_big(n, 1, infos.size())
             + self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_glwe_noise.max(lvl_1_mul);
 
@@ -126,13 +127,13 @@ where
         // mul with sk[col_j-1]
         if res_col > 0 {
             let scratch_mul = scratch_1.borrow();
-            let (mut pt_dft, scratch_2) = scratch_mul.take_vec_znx_dft_scratch(self.n(), 1, res_backend.size());
+            let (mut pt_dft, scratch_2) = scratch_mul.take_vec_znx_dft_scratch(res.n().as_usize(), 1, res_backend.size());
             self.vec_znx_dft_apply(1, 0, &mut pt_dft, 0, &pt.to_backend_ref().data, 0);
             {
                 let mut pt_dft_backend = pt_dft.to_backend_mut();
                 self.svp_apply_dft_to_dft_assign(&mut pt_dft_backend, 0, &sk_backend.data, res_col - 1);
             }
-            let (mut pt_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), 1, res_backend.size());
+            let (mut pt_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_backend.size());
             {
                 let mut pt_big_backend = pt_big.to_backend_mut();
                 let mut pt_dft_backend = pt_dft.to_backend_mut();

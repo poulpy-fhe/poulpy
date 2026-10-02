@@ -8,6 +8,7 @@ use poulpy_hal::{
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
 };
+use crate::layouts::{GGSWLayout, operand_degree};
 
 /// DFT-domain (prepared) variant of [`GGSW`](crate::layouts::GGSW).
 ///
@@ -77,57 +78,69 @@ where
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWPrepared<B::OwnedBuf, B> {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
-
-        GGSWPrepared {
-            data: self.vmp_pmat_alloc(
-                self.ring_degree().into(),
-                dnum.into(),
-                (rank + 1).into(),
-                (rank + 1).into(),
-                size,
-                PrepareHint::Reuse,
-            ),
+        self.ggsw_prepared_alloc_from_infos(&GGSWLayout {
+            n: self.ring_degree(),
             base2k,
-            dsize,
+            dnum,
             k_aux,
-        }
+            rank,
+            dsize,
+        })
     }
 
     fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<B::OwnedBuf, B>
     where
         A: GGSWInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        GGSWPrepared {
+            data: self.vmp_pmat_alloc(
+                n,
+                infos.dnum().into(),
+                (infos.rank() + 1).into(),
+                (infos.rank() + 1).into(),
+                size,
+                PrepareHint::Reuse,
+            ),
+            base2k: infos.base2k(),
+            dsize: infos.dsize(),
+            k_aux: infos.k_aux(),
+        }
     }
 
     fn ggsw_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
-
-        self.bytes_of_vmp_pmat(
-            self.ring_degree().into(),
-            dnum.into(),
-            (rank + 1).into(),
-            (rank + 1).into(),
-            size,
-            PrepareHint::Reuse,
-        )
+        self.ggsw_prepared_bytes_of_from_infos(&GGSWLayout {
+            n: self.ring_degree(),
+            base2k,
+            dnum,
+            k_aux,
+            rank,
+            dsize,
+        })
     }
 
     fn ggsw_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        self.bytes_of_vmp_pmat(
+            n,
+            infos.dnum().into(),
+            (infos.rank() + 1).into(),
+            (infos.rank() + 1).into(),
+            size,
+            PrepareHint::Reuse,
+        )
     }
 
     fn ggsw_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
+        operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         let lvl_0: usize = self.vmp_prepare_tmp_bytes(
             infos.dnum().into(),
             (infos.rank() + 1).into(),
@@ -143,8 +156,7 @@ where
     {
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
-        assert_eq!(res.n(), self.ring_degree());
-        assert_eq!(other.n(), self.ring_degree());
+        operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
         assert_eq!(res.base2k, other.base2k);
         assert_eq!(res.dsize, other.dsize);
         assert!(

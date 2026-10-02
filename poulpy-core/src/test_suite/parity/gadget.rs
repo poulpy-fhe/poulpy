@@ -39,7 +39,7 @@ where
     for &rank in &shapes.ranks {
         for dsize in shapes.dsizes(2 * b + 1, b) {
             let g = GGSWLayout {
-                n: Degree(r.n() as u32),
+                n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
                 dsize: Dsize(1),
@@ -207,7 +207,7 @@ where
     for &rank in &shapes.ranks {
         for dsize in shapes.dsizes(2 * b + 1, b) {
             let g = GGSWLayout {
-                n: Degree(r.n() as u32),
+                n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
                 dsize: Dsize(1),

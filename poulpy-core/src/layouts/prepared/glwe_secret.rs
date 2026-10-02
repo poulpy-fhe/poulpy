@@ -5,6 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
 };
 
+use crate::layouts::{GLWESecretLayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
@@ -67,28 +68,34 @@ where
     Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPrepare<B>,
 {
     fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
-        GLWESecretPrepared {
-            data: self.svp_ppol_alloc(self.ring_degree().into(), rank.into(), PrepareHint::Reuse),
-            dist: Distribution::NONE,
-        }
+        self.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout {
+            n: self.ring_degree(),
+            rank,
+        })
     }
     fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<B::OwnedBuf, B>
     where
         A: GLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.glwe_secret_prepared_alloc(infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        GLWESecretPrepared {
+            data: self.svp_ppol_alloc(n, infos.rank().into(), PrepareHint::Reuse),
+            dist: Distribution::NONE,
+        }
     }
 
     fn glwe_secret_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(self.ring_degree().into(), rank.into(), PrepareHint::Reuse)
+        self.glwe_secret_prepared_bytes_of_from_infos(&GLWESecretLayout {
+            n: self.ring_degree(),
+            rank,
+        })
     }
     fn glwe_secret_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.glwe_secret_prepared_bytes_of(infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        self.bytes_of_svp_ppol(n, infos.rank().into(), PrepareHint::Reuse)
     }
 
     fn glwe_secret_prepare<R, O>(&self, res: &mut R, other: &O)

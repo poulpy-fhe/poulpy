@@ -33,7 +33,7 @@ use anyhow::Result;
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
-        BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
+        BackendGLWESecret, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
         GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
         GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
@@ -335,4 +335,116 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             encapsulation_keys,
         })
     }
+}
+
+/// Switching keys between an input secret of degree `n`, lifted to the bootstrap
+/// degree `N` through `X -> X^(N/n)`, and the bootstrap secret. A conjugate-invariant
+/// input secret enters embedded, as `a_0 + Σ a_k(X^k - X^(2n-k))` of degree `2n`.
+#[derive(Clone, Copy, Debug)]
+pub struct RingSwitchKeys<S> {
+    /// From the input secret to the bootstrap secret.
+    pub inbound: S,
+    /// From the bootstrap secret to the input secret.
+    pub outbound: S,
+}
+
+impl<S: GGLWEInfos> RingSwitchKeys<S> {
+    /// Layouts of both keys.
+    pub fn gglwe_layout(&self) -> RingSwitchKeys<GGLWELayout> {
+        RingSwitchKeys {
+            inbound: self.inbound.gglwe_layout(),
+            outbound: self.outbound.gglwe_layout(),
+        }
+    }
+}
+
+/// Unprepared ring-switch keys.
+pub type RingSwitchKeySet<D, W> = RingSwitchKeys<GLWESwitchingKey<D, W>>;
+
+/// Prepared ring-switch keys.
+pub type RingSwitchKeysPrepared<D, BE> = RingSwitchKeys<GLWESwitchingKeyPrepared<D, BE>>;
+
+/// Ring-switch key layouts, at the bootstrap degree.
+pub type RingSwitchKeysLayout = RingSwitchKeys<GLWESwitchingKeyLayout>;
+
+impl<D: Data, W: ZnxWord> RingSwitchKeySet<D, W> {
+    /// Prepares both keys under the bootstrap module.
+    pub fn prepare<BE: Backend<Ring = Standard>>(
+        &self,
+        module: &Module<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RingSwitchKeysPrepared<BE::OwnedBuf, BE>>
+    where
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: GLWESwitchingKeyPreparedFactory<BE>,
+    {
+        anyhow::ensure!(
+            self.inbound.n().as_usize() == module.n() && self.outbound.n().as_usize() == module.n(),
+            "invalid ring-switch key degree"
+        );
+        let mut prepare = |key: &GLWESwitchingKey<D, W>| {
+            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
+            module.glwe_switching_key_prepare(&mut prepared, key, scratch);
+            prepared
+        };
+        Ok(RingSwitchKeys {
+            inbound: prepare(&self.inbound),
+            outbound: prepare(&self.outbound),
+        })
+    }
+}
+
+impl RingSwitchKeysLayout {
+    /// Generates both keys between `sk_in`, whose degree divides that of `module`,
+    /// and the bootstrap secret `sk`.
+    pub fn generate<BE: Backend<Ring = Standard>>(
+        &self,
+        module: &Module<BE>,
+        sk_in: &BackendGLWESecret<BE>,
+        sk: &BackendGLWESecret<BE>,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RingSwitchKeySet<BE::OwnedBuf, BE::ZnxWord>>
+    where
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWESwitchingKeyEncryptSk<BE>,
+    {
+        anyhow::ensure!(sk.n().as_usize() == module.n(), "invalid bootstrap secret degree");
+        anyhow::ensure!(
+            module.n().is_multiple_of(sk_in.n().as_usize()),
+            "the input secret degree must divide the bootstrap degree"
+        );
+        anyhow::ensure!(
+            sk_in.rank().as_usize() == 1 && sk.rank().as_usize() == 1,
+            "ring switching requires rank-1 secrets"
+        );
+        for key in [&self.inbound, &self.outbound] {
+            anyhow::ensure!(
+                key.n.as_usize() == module.n() && key.rank_in.as_usize() == 1 && key.rank_out.as_usize() == 1,
+                "invalid ring-switch key layout"
+            );
+        }
+        let mut encrypt = |layout: GLWESwitchingKeyLayout, sk_in: &BackendGLWESecret<BE>, sk_out: &BackendGLWESecret<BE>| {
+            let enc = EncryptionLayout::new_from_default_sigma(layout)?;
+            let mut key = module.glwe_switching_key_alloc_from_infos(&enc);
+            module.glwe_switching_key_encrypt_sk(&mut key, sk_in, sk_out, &enc, source_xe, source_xa, scratch);
+            Ok::<_, anyhow::Error>(key)
+        };
+        Ok(RingSwitchKeys {
+            inbound: encrypt(self.inbound, sk_in, sk)?,
+            outbound: encrypt(self.outbound, sk, sk_in)?,
+        })
+    }
+}
+
+/// Layouts of the keys a fold takes, which size it before or without them.
+#[derive(Clone, Copy, Debug)]
+pub struct CKKSFoldKeysLayout {
+    /// Ring-switch key layouts, or `None` when the inputs are under the bootstrap
+    /// secret at its degree.
+    pub ring_switch: Option<RingSwitchKeys<GGLWELayout>>,
+    /// Layout of the automorphism keys of the input secret, which split real pairs
+    /// and sparse inputs.
+    pub automorphism: Option<GGLWELayout>,
 }

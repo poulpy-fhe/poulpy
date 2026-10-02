@@ -5,6 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, ScratchArena, VecZnxDft},
 };
 
+use crate::layouts::{GLWELayout, operand_degree};
 use crate::{
     GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore,
     layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
@@ -56,29 +57,41 @@ where
 {
     /// Allocates a new prepared GLWE with the given parameters.
     fn glwe_prepared_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPrepared<B::OwnedBuf, B> {
-        GLWEPrepared {
-            data: self.vec_znx_dft_alloc(self.ring_degree().into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize),
+        self.glwe_prepared_alloc_from_infos(&GLWELayout {
+            n: self.ring_degree(),
             base2k,
             k,
-        }
+            rank,
+        })
     }
 
     fn glwe_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPrepared<B::OwnedBuf, B>
     where
         A: GLWEInfos,
     {
-        self.glwe_prepared_alloc(infos.base2k(), infos.k(), infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        GLWEPrepared {
+            data: self.vec_znx_dft_alloc(n, (infos.rank() + 1).into(), infos.size()),
+            base2k: infos.base2k(),
+            k: infos.k(),
+        }
     }
 
     fn glwe_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.bytes_of_vec_znx_dft(self.ring_degree().into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+        self.glwe_prepared_bytes_of_from_infos(&GLWELayout {
+            n: self.ring_degree(),
+            base2k,
+            k,
+            rank,
+        })
     }
 
     fn glwe_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        self.glwe_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        self.bytes_of_vec_znx_dft(n, (infos.rank() + 1).into(), infos.size())
     }
 
     fn glwe_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -102,8 +115,7 @@ where
         };
         let mut res = res.to_backend_mut();
 
-        assert_eq!(res.n(), self.ring_degree());
-        assert_eq!(other.n(), self.ring_degree());
+        operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
         assert_eq!(res.size(), other.size());
         assert_eq!(res.k(), other.k());
         assert_eq!(res.base2k(), other.base2k());

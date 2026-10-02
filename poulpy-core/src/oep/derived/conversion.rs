@@ -1,5 +1,6 @@
 //! Conversions expressed by composing core operations.
 use crate::ScratchArenaTakeCore;
+use crate::layouts::operand_degree;
 use crate::{
     api::{GGSWExpandRows, GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWERotate, LWESampleExtract},
     layouts::{
@@ -42,9 +43,7 @@ pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
 
     assert_eq!(res_backend.rank(), a_backend.rank_out());
     assert_eq!(res_backend.dnum(), a_backend.dnum());
-    assert_eq!(res_backend.n(), module.n() as u32);
-    assert_eq!(a_backend.n(), module.n() as u32);
-    assert_eq!(tsk.n(), module.n() as u32);
+    operand_degree(module.n(), &[res_backend.n(), a_backend.n(), tsk.n()]);
     assert_eq!(res_backend.base2k(), a_backend.base2k());
     assert!(
         scratch.available() >= ggsw_from_gglwe_tmp_bytes_derived::<BE, _, _, _, _>(module, &res_backend, &a_backend, tsk),
@@ -70,17 +69,16 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, glwe_infos.n());
-    assert_eq!(module.n() as u32, key_infos.n());
+    operand_degree(module.n(), &[glwe_infos.n(), key_infos.n()]);
 
     let res_infos: GLWELayout = GLWELayout {
-        n: module.n().into(),
+        n: glwe_infos.n(),
         base2k: lwe_infos.base2k(),
         k: lwe_infos.k(),
         rank: Rank(1),
     };
 
-    let lvl_0: usize = module.glwe_bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
+    let lvl_0: usize = module.glwe_bytes_of_from_infos(&res_infos);
     let lvl_1: usize = module.glwe_keyswitch_tmp_bytes(&res_infos, glwe_infos, key_infos);
     let lvl_2: usize = module.glwe_rotate_tmp_bytes();
 
@@ -102,9 +100,8 @@ pub(crate) fn lwe_from_glwe_derived<BE, M, R, A>(
 {
     let a_backend = a.to_backend_ref();
 
-    assert_eq!(a.n(), module.n() as u32);
-    assert_eq!(key.n(), module.n() as u32);
-    assert!(res.n() <= module.n() as u32);
+    operand_degree(module.n(), &[a.n(), key.n()]);
+    assert!(res.n() <= a.n());
     assert!(
         scratch.available() >= lwe_from_glwe_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, key),
         "scratch.available(): {} < LWEFromGLWE::lwe_from_glwe_tmp_bytes: {}",
@@ -113,7 +110,7 @@ pub(crate) fn lwe_from_glwe_derived<BE, M, R, A>(
     );
 
     let glwe_layout: GLWELayout = GLWELayout {
-        n: module.n().into(),
+        n: a.n(),
         base2k: res.base2k(),
         k: res.k(),
         rank: Rank(1),

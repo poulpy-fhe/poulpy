@@ -193,6 +193,7 @@ macro_rules! core_parity_test_suite {
         backend_test = $backend_test:ty,
         params = $params:expr,
         $(shapes = $shapes:expr,)?
+        $(test_size = $test_size:expr,)?
         tests = {
             $( $(#[$attr:meta])* $test_name:ident => $impl:path ),+ $(,)?
         }
@@ -210,7 +211,12 @@ macro_rules! core_parity_test_suite {
                 shapes
             });
             static MODULE_REF: Lazy<Module<$backend_ref>> = Lazy::new(|| Module::<$backend_ref>::new(PARAMS.size as u64));
-            static MODULE_TEST: Lazy<Module<$backend_test>> = Lazy::new(|| Module::<$backend_test>::new(PARAMS.size as u64));
+            static MODULE_TEST: Lazy<Module<$backend_test>> = Lazy::new(|| {
+                #[allow(unused_mut)]
+                let mut size = PARAMS.size;
+                $( size = $test_size; )?
+                Module::<$backend_test>::new(size as u64)
+            });
 
             $(
                 $(#[$attr])*

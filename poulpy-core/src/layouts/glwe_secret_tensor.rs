@@ -15,6 +15,7 @@ use poulpy_hal::{
     },
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     dist::Distribution,
@@ -244,8 +245,7 @@ where
             // `res.rank()` is the rank of the base secret the tensor is derived
             // from; its column count is `pairs(rank)`.
             assert_eq!(res.rank(), a.rank());
-            assert_eq!(res.n(), self.n() as u32);
-            assert_eq!(a.n(), self.n() as u32);
+            let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
             assert!(
                 scratch.available() >= self.glwe_secret_tensor_prepare_tmp_bytes(a.rank()),
                 "insufficient scratch for GLWE secret tensor preparation"
@@ -254,7 +254,7 @@ where
             let rank: usize = a.rank().into();
 
             let scratch = scratch.borrow();
-            let (mut a_prepared, _scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, rank.into());
+            let (mut a_prepared, _scratch_1) = scratch.take_glwe_secret_prepared_scratch(a.n(), rank.into());
             {
                 let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
                 for i in 0..rank {
@@ -265,16 +265,16 @@ where
 
             let base2k: usize = 17;
 
-            let mut a_dft = VecZnxDftOwned::<BE>::alloc(self.n(), rank, 1);
+            let mut a_dft = VecZnxDftOwned::<BE>::alloc(n, rank, 1);
             let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
             for i in 0..rank {
                 let mut a_dft_backend = a_dft.to_backend_mut();
                 self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
             }
 
-            let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
+            let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(n, 1, 1);
             let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
-            let mut a_ij_big_backend = self.vec_znx_big_alloc(self.n(), 1, 1);
+            let mut a_ij_big_backend = self.vec_znx_big_alloc(n, 1, 1);
             let mut norm_scratch = ScratchOwned {
                 data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
                 _phantom: std::marker::PhantomData,

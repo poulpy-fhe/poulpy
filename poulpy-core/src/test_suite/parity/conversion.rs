@@ -53,7 +53,7 @@ where
     for &rank in &shapes.ranks {
         for k in [b - 1, 2 * b, 2 * b + 1] {
             let g = GLWELayout {
-                n: Degree(r.n() as u32),
+                n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 k: TorusPrecision(k as u32),
                 rank: Rank(rank as u32),
@@ -62,11 +62,11 @@ where
             let mut a_t = t.glwe_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             let l = LWELayout {
-                n: Degree((r.n() * rank) as u32),
+                n: Degree((params.n * rank) as u32),
                 base2k: g.base2k,
                 k: g.k,
             };
-            for count in [1, r.n()] {
+            for count in [1, params.n] {
                 let mut out_r: Vec<_> = (0..count)
                     .map(|_| {
                         let mut v = r.lwe_alloc_from_infos(&l);
@@ -145,7 +145,7 @@ where
                 }
             }
             // Sample extraction permits a truncated mask and copies the first GLWE mask column.
-            for dimension in [1, r.n()] {
+            for dimension in [1, params.n] {
                 let l = LWELayout {
                     n: Degree(dimension as u32),
                     ..l
@@ -161,7 +161,7 @@ where
                 assert_eq!(out_r, have, "lwe_sample_extract rank={rank} k={k} n={dimension}");
             }
             let l = LWELayout {
-                n: Degree((r.n() / 2) as u32),
+                n: Degree((params.n / 2) as u32),
                 base2k: Base2K((b - 1) as u32),
                 k: g.k,
             };
@@ -188,7 +188,7 @@ where
                 &key_t,
                 &mut poisoned_scratch::<BT>(t.glwe_to_lwe_key_prepare_tmp_bytes(&kt)).borrow(),
             );
-            for index in [0, r.n() - 1] {
+            for index in [0, params.n - 1] {
                 let mut out_r = r.lwe_alloc_from_infos(&l);
                 r.fill_lwe_mask_from_source(b - 1, &mut out_r, &mut source);
                 let mut out_t = t.lwe_alloc_from_infos(&l);
@@ -279,7 +279,7 @@ where
                 &mut poisoned_scratch::<BT>(t.lwe_switching_key_prepare_tmp_bytes(&kt)).borrow(),
             );
             let res = LWELayout {
-                n: Degree((r.n() / 4) as u32),
+                n: Degree((params.n / 4) as u32),
                 base2k: Base2K((b - 2) as u32),
                 ..l
             };

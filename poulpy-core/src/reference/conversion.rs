@@ -15,6 +15,7 @@ use poulpy_hal::{
     },
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
@@ -37,7 +38,7 @@ where
     let a = a.to_backend_ref();
 
     assert!(res.n() <= a.n());
-    assert_eq!(a.n(), module.n() as u32);
+    operand_degree(module.n(), &[a.n()]);
     assert!(res.base2k() == a.base2k());
 
     let n: usize = res.n().into();
@@ -62,17 +63,13 @@ where
     R: LWEInfos,
     A: GLWEInfos,
 {
-    assert_eq!(
-        a_infos.n().as_usize(),
-        module.n(),
-        "glwe_expand_lwe_tmp_bytes: GLWE.n() != module.n()"
-    );
+    operand_degree(module.n(), &[a_infos.n()]);
     assert_glwe_expand_lwe_lwe_layout(lwe_infos, a_infos, "glwe_expand_lwe_tmp_bytes");
 
     if a_infos.rank().as_usize() == 1 {
         0
     } else {
-        BE::bytes_of_vec_znx(module.n(), 1, lwe_infos.size())
+        BE::bytes_of_vec_znx(a_infos.n().as_usize(), 1, lwe_infos.size())
     }
 }
 
@@ -107,11 +104,10 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let a = a.to_backend_ref();
-    let n = module.n();
+    let n = operand_degree(module.n(), &[a.n()]);
     let rank: usize = a.rank().into();
 
-    assert_eq!(usize::from(a.n()), n, "glwe_expand_lwe: GLWE.n() != module.n()");
-    assert!(res.len() <= n, "glwe_expand_lwe: res.len() > module.n()");
+    assert!(res.len() <= n, "glwe_expand_lwe: res.len() > GLWE.n()");
     for (idx, lwe) in res.iter().enumerate() {
         assert_glwe_expand_lwe_lwe_layout(lwe, &a, &format!("glwe_expand_lwe: res[{idx}]"));
     }
@@ -174,18 +170,17 @@ where
 {
     let a = a.to_backend_ref();
     let mut res = res.to_backend_mut();
-    let n = module.n();
+    let n = operand_degree(module.n(), &[a.n()]);
     let rank = a.rank().as_usize();
     let min_size = res.size().min(a.size());
     let rows = res.rows();
 
-    assert_eq!(a.n().as_usize(), n, "glwe_expand_lwe_matrix: GLWE.n() != module.n()");
     assert_eq!(
         res.n().as_usize(),
         rank * n,
         "glwe_expand_lwe_matrix: invalid result LWE dimension"
     );
-    assert!(rows <= n, "glwe_expand_lwe_matrix: rows > module.n()");
+    assert!(rows <= n, "glwe_expand_lwe_matrix: rows > GLWE.n()");
     assert_eq!(res.base2k(), a.base2k(), "glwe_expand_lwe_matrix: base2k mismatch");
     assert!(
         scratch.available() >= glwe_expand_lwe_matrix_tmp_bytes_reference::<BE, _, _, _>(module, &res, &a),
@@ -233,12 +228,11 @@ where
     A: LWEInfos,
     K: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, glwe_infos.n());
-    assert_eq!(module.n() as u32, key_infos.n());
+    operand_degree(module.n(), &[glwe_infos.n(), key_infos.n()]);
 
     // Match the actual rank-one, key-radix temporary passed to keyswitching.
     let lifted_infos = GLWELayout {
-        n: module.n().into(),
+        n: key_infos.n(),
         base2k: key_infos.base2k(),
         k: lwe_infos.k(),
         rank: Rank(1),
@@ -248,7 +242,7 @@ where
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
-        BE::bytes_of_vec_znx(module.n(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
+        BE::bytes_of_vec_znx(key_infos.n().as_usize(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
     };
 
     let lvl_1: usize = lvl_1_ks.max(lvl_1_a_conv);
@@ -283,9 +277,8 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     };
     let lwe = lwe.to_backend_ref();
 
-    assert_eq!(res_infos.n.as_u32(), module.n() as u32);
-    assert_eq!(ksk.n(), module.n() as u32);
-    assert!(lwe.n() <= module.n() as u32);
+    operand_degree(module.n(), &[res_infos.n, ksk.n()]);
+    assert!(lwe.n() <= ksk.n());
     assert!(
         scratch.available() >= module.glwe_from_lwe_tmp_bytes_reference(&res_infos, &lwe, ksk),
         "scratch.available(): {} < GLWEFromLWE::glwe_from_lwe_tmp_bytes: {}",
@@ -320,7 +313,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
             0,
         );
     } else {
-        let (mut a_conv, mut scratch_2) = scratch_1.borrow().take_vec_znx_scratch(module.n(), 1, lwe.size());
+        let (mut a_conv, mut scratch_2) = scratch_1.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, lwe.size());
         module.vec_znx_zero(&mut a_conv, 0);
         module.vec_znx_copy(&mut a_conv.to_backend_mut().window_coeffs(0, 1), 0, &lwe.body, 0);
 
@@ -376,8 +369,7 @@ where
     R: GGSWInfos,
     A: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, res_infos.n());
-    assert_eq!(module.n() as u32, tsk_infos.n());
+    let n: usize = operand_degree(module.n(), &[res_infos.n(), tsk_infos.n()]);
 
     let tsk_base2k: usize = tsk_infos.base2k().into();
 
@@ -387,10 +379,10 @@ where
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
 
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
-    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, cols - 1, a_size) + BE::bytes_of_vec_znx(n, 1, a_size);
+    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(n, cols, output_size);
     let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk_infos);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size)
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(n, cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
@@ -441,8 +433,11 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
     {
-        let (mut a_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols - 1, res_conv_size);
-        let (mut a_0, mut scratch_2) = scratch_1.take_vec_znx_scratch(module.n(), 1, res_conv_size);
+        let (mut a_dft, scratch_1) =
+            scratch
+                .borrow()
+                .take_vec_znx_dft_scratch(res_backend.n().as_usize(), cols - 1, res_conv_size);
+        let (mut a_0, mut scratch_2) = scratch_1.take_vec_znx_scratch(res_backend.n().as_usize(), 1, res_conv_size);
 
         for row in 0..res_backend.dnum().as_usize() {
             {
@@ -520,13 +515,13 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
-        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module.n(), cols, output_size);
+        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
             module.gglwe_product_dft_reference(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 
-        let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
+        let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(res.n().as_usize(), cols, res_dft.size());
         let res_dft_ref = res_dft.to_backend_ref();
         for j in 0..cols {
             scratch_2 = scratch_2.apply_mut(|scratch| module.vec_znx_idft_apply(&mut res_big, j, &res_dft_ref, j, scratch));

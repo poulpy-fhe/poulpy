@@ -1,5 +1,6 @@
 //! Core-derived arithmetic built from backend-selected core operations.
 
+use crate::layouts::operand_degree;
 use crate::layouts::{
     GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
 };
@@ -68,8 +69,7 @@ where
     {
         let res = res.to_backend_ref();
         let a = a.to_backend_ref();
-        assert_eq!(res.n(), module.n() as u32);
-        assert_eq!(a.n(), module.n() as u32);
+        operand_degree(module.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() == a.rank() || a.rank() == 0);
     }

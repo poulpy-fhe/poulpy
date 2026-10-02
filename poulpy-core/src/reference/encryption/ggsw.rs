@@ -5,6 +5,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
@@ -54,7 +55,7 @@ where
     where
         A: GGSWInfos,
     {
-        assert_eq!(self.n() as u32, infos.n());
+        operand_degree(self.n(), &[infos.n()]);
 
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         lvl_0 + self.glwe_encrypt_sk_tmp_bytes(infos).max(self.vec_znx_normalize_tmp_bytes())
@@ -77,9 +78,7 @@ where
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
         assert_eq!(res.rank(), sk.rank());
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(pt.n(), self.n());
-        assert_eq!(sk.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
         assert!(
             scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes: {}",

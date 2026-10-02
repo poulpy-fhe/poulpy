@@ -3,7 +3,7 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
     GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank, TorusPrecision,
 };
 
@@ -84,7 +84,7 @@ where
     where
         A: GGLWEInfos,
     {
-        self.alloc_tensor_key_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank_out())
+        GLWETensorKeyPrepared(self.gglwe_prepared_alloc_from_infos(&tensor_key_layout(infos)))
     }
 
     fn bytes_of_tensor_key_prepared(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
@@ -96,7 +96,7 @@ where
     where
         A: GGLWEInfos,
     {
-        self.bytes_of_tensor_key_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        self.gglwe_prepared_bytes_of_from_infos(&tensor_key_layout(infos))
     }
 
     fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -188,5 +188,20 @@ where
 {
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.0.to_backend_mut()
+    }
+}
+
+/// The GGLWE layout of a tensor key like `infos`: one row per pair of secret columns.
+fn tensor_key_layout<A: GGLWEInfos>(infos: &A) -> GGLWELayout {
+    let rank = infos.rank_out();
+    GGLWELayout {
+        n: infos.n(),
+        base2k: infos.base2k(),
+        dnum: infos.dnum(),
+        k_aux: infos.k_aux(),
+        rank_in: Rank((((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1)),
+        rank_out: rank,
+        dsize: infos.dsize(),
+        stride: 1,
     }
 }

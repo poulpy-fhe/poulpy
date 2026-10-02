@@ -52,9 +52,9 @@ fn seeds_snapshot(label: &'static str, seeds: &[[u8; 32]]) -> Snapshot {
         bytes: seeds.concat(),
     }
 }
-fn scalar<B: EncryptionParityBackend>(module: &Module<B>, cols: usize) -> ScalarZnx<B::OwnedBuf, i64> {
-    let mut value = module.scalar_znx_alloc(module.n(), cols);
-    let coefficients: Vec<i64> = (0..module.n() * cols).map(|i| (i % 3) as i64 - 1).collect();
+fn scalar<B: EncryptionParityBackend>(module: &Module<B>, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, i64> {
+    let mut value = module.scalar_znx_alloc(n, cols);
+    let coefficients: Vec<i64> = (0..n * cols).map(|i| (i % 3) as i64 - 1).collect();
     B::copy_from_host(value.data_mut(), bytemuck::cast_slice(&coefficients));
     value
 }
@@ -93,30 +93,30 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
     r: &Module<BR>,
     t: &Module<BT>,
 ) {
-    fn run<B: EncryptionParityBackend>(module: &Module<B>, b: usize, rank: usize, dsize: usize) -> Vec<Snapshot> {
+    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, b: usize, rank: usize, dsize: usize) -> Vec<Snapshot> {
         let key = GGLWELayout {
-            n: (module.n() as u32).into(),
+            n: (n as u32).into(),
             base2k: (b as u32).into(),
             dnum: Dnum(3),
             dsize: Dsize(dsize as u32),
-            k_aux: TorusPrecision((dsize * b + module.log_n() + 1) as u32),
+            k_aux: TorusPrecision((dsize * b + (n.ilog2() as usize) + 1) as u32),
             rank_in: Rank(rank as u32),
             rank_out: Rank(rank as u32),
             stride: 1,
         };
         let enc = EncryptionLayout::new_from_default_sigma(key).unwrap();
-        let sk = secret(module, rank);
+        let sk = secret(module, n, rank);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
-        let mut lwe = module.lwe_secret_alloc(Degree((module.n() / 2) as u32));
-        let coeffs: Vec<i64> = (0..module.n() / 2).map(|i| (i % 3) as i64 - 1).collect();
+        let mut lwe = module.lwe_secret_alloc(Degree((n / 2) as u32));
+        let coeffs: Vec<i64> = (0..n / 2).map(|i| (i % 3) as i64 - 1).collect();
         B::copy_from_host(lwe.data.data_mut(), bytemuck::cast_slice(&coeffs));
         lwe.dist = sk.dist;
         let mut e = Source::new([149; 32]);
         let mut a = Source::new([151; 32]);
         let seed = [157; 32];
         let mut result = Vec::new();
-        let pt = scalar(module, rank);
+        let pt = scalar(module, n, rank);
         let mut out = module.gglwe_alloc_from_infos(&key);
         poison_gglwe::<B, _>(&mut out);
         module.gglwe_encrypt_sk(
@@ -154,7 +154,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             rank: key.rank_out,
         };
         let genc = EncryptionLayout::new_from_default_sigma(g).unwrap();
-        let pt = scalar(module, 1);
+        let pt = scalar(module, n, 1);
         let mut out = module.ggsw_alloc_from_infos(&g);
         poison_ggsw::<B, _>(&mut out);
         module.ggsw_encrypt_sk(
@@ -440,8 +440,8 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
     for &rank in &shapes.ranks {
         for dsize in shapes.dsizes(2 * b, b) {
             assert_eq!(
-                run(r, b, rank, dsize),
-                run(t, b, rank, dsize),
+                run(r, params.n, b, rank, dsize),
+                run(t, params.n, b, rank, dsize),
                 "key encryption rank={rank} dsize={dsize}"
             );
         }
