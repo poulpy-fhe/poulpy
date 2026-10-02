@@ -164,9 +164,9 @@ The CPU implementation allocates scalar big integers and requires no arena
 scratch. Its rejection algorithm is variable time; distributional exactness
 assumes uniform private bits and does not assert timing independence.
 
-The delegate validates public parameter and layout bounds before deriving a
-private child seed. Backend implementations revalidate their input and only
-then mutate the destination. Same-backend seeds reproduce samples; different
+The delegate only derives a private child seed and dispatches. Backend
+implementations validate their input before drawing randomness or mutating
+the destination. Same-backend seeds reproduce samples; different
 backends may select different exact sampling algorithms. Tests for replacements
 must reconstruct complete integers, exercise widths beyond 128 bits, and check
 low bits and partial-limb padding. A variance or histogram check alone is not a
