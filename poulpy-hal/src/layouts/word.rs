@@ -40,9 +40,9 @@ pub trait ZnxWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq
 
     /// Builds a word from a signed integer, truncating to [`Self::BITS`].
     ///
-    /// This is what lets coefficient sampling (`FillUniform`, the ternary and
-    /// binary secret fills) be written once against any word instead of being
-    /// pinned to `i64`. Callers are responsible for supplying a value that
+    /// This is what lets coefficient sampling (the ternary and binary secret
+    /// fills) be written once against any word instead of being pinned to
+    /// `i64`. Callers are responsible for supplying a value that
     /// already fits the word; truncation is defined but not meaningful.
     fn from_i64(value: i64) -> Self;
 }

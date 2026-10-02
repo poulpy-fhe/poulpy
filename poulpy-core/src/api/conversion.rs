@@ -51,10 +51,14 @@ pub trait LWEFromGLWE<BE: Backend> {
 }
 
 pub trait GGSWFromGGLWE<BE: Backend> {
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    /// Scratch for copying the source body rows and expanding the remaining rows.
+    /// The source layout is required because the selected copy implementation may
+    /// need different scratch when the input and output precisions differ.
+    fn ggsw_from_gglwe_tmp_bytes<R, A, T>(&self, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
-        A: GGLWEInfos;
+        A: GGLWEInfos,
+        T: GGLWEInfos;
 
     fn ggsw_from_gglwe<R, A>(
         &self,

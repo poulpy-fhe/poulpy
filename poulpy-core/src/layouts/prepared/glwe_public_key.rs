@@ -1,34 +1,43 @@
 use poulpy_hal::{
-    api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module},
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
+    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{
-        Base2K, Degree, GLWEInfos, GLWEPrepared, GLWEPreparedBackendMut, GLWEPreparedBackendRef, GLWEPreparedFactory,
-        GLWEPreparedToBackendMut, GLWEPreparedToBackendRef, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision,
-    },
+    layouts::{Base2K, Degree, GLWEInfos, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
 };
 
-/// DFT-domain (prepared) variant of a GLWE public key.
-///
-/// Wraps a [`GLWEPrepared`] with distribution metadata for public-key
-/// encryption. Tied to a specific backend via `B: Backend`.
+/// DFT-domain (prepared) variant of a [`GLWEPublicKey`](crate::layouts::GLWEPublicKey):
+/// its `r` entries as one prepared matrix of one row, entry `l` at input
+/// column `l`, and the distribution public-key encryption draws its
+/// ephemerals from. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GLWEPrepared<D, B>,
+    pub(crate) data: VmpPMat<D, B::DftWord, B>,
+    pub(crate) base2k: Base2K,
+    pub(crate) k: TorusPrecision,
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataRef, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
+impl<D: Data, B: Backend> GLWEPublicKeyPrepared<D, B> {
+    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut VmpPMat<D, B::DftWord, B> {
+        &mut self.data
+    }
+}
+
+impl<D: Data, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
@@ -36,31 +45,31 @@ impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
     fn base2k(&self) -> Base2K {
-        self.key.base2k()
+        self.base2k
     }
 
     fn max_size(&self) -> usize {
-        self.key.max_size()
+        self.data.size()
     }
 
     fn n(&self) -> Degree {
-        self.key.n()
+        Degree(self.data.n() as u32)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.key.k()
+        self.k
     }
 }
 
 impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
     fn rank(&self) -> Rank {
-        self.key.rank()
+        Rank(self.data.cols_in() as u32)
     }
 }
 
 pub trait GLWEPublicKeyPreparedFactory<B: Backend>
 where
-    Self: GetDegree + GLWEPreparedFactory<B>,
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes,
 {
     fn glwe_public_key_prepared_alloc(
         &self,
@@ -68,8 +77,18 @@ where
         k: TorusPrecision,
         rank: Rank,
     ) -> GLWEPublicKeyPrepared<B::OwnedBuf, B> {
+        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         GLWEPublicKeyPrepared {
-            key: self.glwe_prepared_alloc(base2k, k, rank),
+            data: self.vmp_pmat_alloc(
+                self.ring_degree().into(),
+                1,
+                rank.into(),
+                (rank + 1).into(),
+                k.0.div_ceil(base2k.0) as usize,
+                PrepareHint::Reuse,
+            ),
+            base2k,
+            k,
             dist: Distribution::NONE,
         }
     }
@@ -82,7 +101,14 @@ where
     }
 
     fn glwe_public_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.glwe_prepared_bytes_of(base2k, k, rank)
+        self.bytes_of_vmp_pmat(
+            self.ring_degree().into(),
+            1,
+            rank.into(),
+            (rank + 1).into(),
+            k.0.div_ceil(base2k.0) as usize,
+            PrepareHint::Reuse,
+        )
     }
 
     fn glwe_public_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -92,18 +118,42 @@ where
         self.glwe_public_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
     }
 
-    fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        R: GLWEPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWEToBackendRef<B> + GetDistribution + GLWEInfos,
+        A: GLWEInfos,
     {
-        self.glwe_prepare(res, other);
+        let rank: usize = infos.rank().into();
+        self.vmp_prepare_tmp_bytes(1, rank, rank + 1, infos.size())
+    }
+
+    fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
+    where
+        R: GLWEPublicKeyPreparedToBackendMut<B> + GetDistributionMut,
+        O: GLWEPublicKeyToBackendRef<B> + GetDistribution,
+    {
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
+            assert!(
+                res.data.cols_in() == other.data.cols_in(),
+                "public key and prepared public key have different entry counts"
+            );
+            assert_eq!(res.n(), self.ring_degree());
+            assert_eq!(other.n(), self.ring_degree());
+            assert_eq!(res.base2k(), other.base2k());
+            assert_eq!(res.k(), other.k());
+            assert_eq!(res.size(), other.size());
+
+            self.vmp_prepare(&mut res.data, &other.data, scratch);
+        }
         *res.dist_mut() = *other.dist();
     }
 }
 
-impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where Self: VecZnxDftAlloc<B> + VecZnxDftBytesOf + VecZnxDftApply<B>
-{}
+impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes
+{
+}
 
 // module-only API: allocation, sizing, and preparation are provided by
 // `GLWEPublicKeyPreparedFactory` on `Module`.
@@ -117,11 +167,13 @@ pub trait GLWEPublicKeyPreparedToBackendRef<B: Backend> {
 
 impl<D: Data, B: Backend> GLWEPublicKeyPreparedToBackendRef<B> for GLWEPublicKeyPrepared<D, B>
 where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendRef<B>,
+    VmpPMat<D, B::DftWord, B>: VmpPMatToBackendRef<B>,
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyPreparedBackendRef<'_, B> {
         GLWEPublicKeyPrepared {
-            key: self.key.to_backend_ref(),
+            data: self.data.to_backend_ref(),
+            base2k: self.base2k,
+            k: self.k,
             dist: self.dist,
         }
     }
@@ -133,30 +185,47 @@ pub trait GLWEPublicKeyPreparedToBackendMut<B: Backend> {
 
 impl<D: Data, B: Backend> GLWEPublicKeyPreparedToBackendMut<B> for GLWEPublicKeyPrepared<D, B>
 where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendMut<B>,
+    VmpPMat<D, B::DftWord, B>: VmpPMatToBackendMut<B>,
 {
     fn to_backend_mut(&mut self) -> GLWEPublicKeyPreparedBackendMut<'_, B> {
         GLWEPublicKeyPrepared {
-            key: self.key.to_backend_mut(),
+            data: self.data.to_backend_mut(),
+            base2k: self.base2k,
+            k: self.k,
             dist: self.dist,
         }
     }
 }
 
-impl<D: Data, B: Backend> GLWEPreparedToBackendMut<B> for GLWEPublicKeyPrepared<D, B>
-where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendMut<B>,
-{
-    fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
-        self.key.to_backend_mut()
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layouts::prepared::GLWESecretTensorPrepared;
 
-impl<D: Data, B: Backend> GLWEPreparedToBackendRef<B> for GLWEPublicKeyPrepared<D, B>
-where
-    GLWEPrepared<D, B>: GLWEPreparedToBackendRef<B>,
-{
-    fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
-        self.key.to_backend_ref()
+    #[test]
+    fn distribution_metadata_accepts_opaque_storage() {
+        // `()` satisfies Data but exposes no host memory. The generic witness
+        // prevents metadata access from accidentally acquiring HostData bounds.
+        fn assert_metadata<T: GetDistribution + GetDistributionMut>() {}
+        fn assert_for_any_storage<D: Data, B: Backend>() {
+            assert_metadata::<GLWEPublicKeyPrepared<D, B>>();
+            assert_metadata::<GLWESecretTensorPrepared<D, B>>();
+        }
+        fn assert_compressed_metadata<D: Data>() {
+            use crate::layouts::*;
+            fn seed<T: GLWECompressedSeed + GLWECompressedSeedMut>() {}
+            fn gadget_seed<T: GGLWECompressedSeed + GGLWECompressedSeedMut>() {}
+            fn ggsw_seed<T: GGSWCompressedSeed + GGSWCompressedSeedMut>() {}
+            fn automorphism<T: GetGaloisElement + SetGaloisElement>() {}
+            fn degrees<T: GLWESwitchingKeyDegrees + GLWESwitchingKeyDegreesMut>() {}
+            seed::<GLWECompressed<D, i64>>();
+            gadget_seed::<GGLWECompressed<D, i64>>();
+            gadget_seed::<GLWEAutomorphismKeyCompressed<D, i64>>();
+            ggsw_seed::<GGSWCompressed<D, i64>>();
+            automorphism::<GLWEAutomorphismKeyCompressed<D, i64>>();
+            degrees::<GLWESwitchingKeyCompressed<D, i64>>();
+        }
+        assert_compressed_metadata::<()>();
+        assert_for_any_storage::<(), poulpy_hal::layouts::HostBytesBackend>();
     }
 }

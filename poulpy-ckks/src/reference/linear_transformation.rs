@@ -18,12 +18,12 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
+    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
+    api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalMeta},
     layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
     reference::mul::mul_pt_params_raw,
 };
@@ -37,9 +37,9 @@ use poulpy_core::GLWEBytesOf;
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the
 /// single `LinearTransformation<P>` container without overlapping impls.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
-    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -55,18 +55,30 @@ where
     }
 }
 
-/// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
-impl<D: Data, W: ZnxWord> LtDiagonalScale for CKKSPlaintext<D, W> {
+/// Streamed-diagonal metadata: a [`CKKSPlaintext`] carries its scale as `log_delta`.
+impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSPlaintext<D, W, R> {
     fn lt_log_scale(&self) -> usize {
         self.log_delta()
     }
+
+    fn lt_slots(&self) -> SlotsKind {
+        self.slots()
+    }
 }
 
-/// Resident-diagonal scale: a core [`PreparedDiagonal`] carries the (opaque to the
-/// core engine) scale the CKKS prepare step stashed on it via `set_log_scale`.
-impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
+/// Resident-diagonal metadata: a core [`PreparedDiagonal`] carries the (opaque to
+/// the core engine) scale and real-slot claim the CKKS prepare step stashed on it.
+impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
     fn lt_log_scale(&self) -> usize {
         self.log_scale()
+    }
+
+    fn lt_slots(&self) -> SlotsKind {
+        if self.real_slots() {
+            SlotsKind::Real
+        } else {
+            SlotsKind::Complex
+        }
     }
 }
 
@@ -126,14 +138,25 @@ where
     ) where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Stash the plaintext scale exponent while filling the diagonals so eval
-        // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
-        // must share one scale/width (the crate's compilers always produce
-        // uniform diagonals; the unprepared eval path rejects heterogeneous
-        // hand-built inputs via `ensure_uniform_diagonal_scale` — this
-        // infallible prepare stashes the first diagonal's scale for all).
+        // Stash the plaintext scale exponent and real-slot claim while filling the
+        // diagonals so eval no longer needs `lt` for `cnv_offset` math and the
+        // result's slot kind. Contract: the diagonals must share one scale, width
+        // and slot kind (the crate's compilers always produce uniform diagonals;
+        // the unprepared eval path rejects heterogeneous hand-built inputs via
+        // `ensure_uniform_diagonals`, so this infallible prepare stashes the first
+        // diagonal's for all; debug builds assert the contract).
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
+            debug_assert!(
+                lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).all(|diag| {
+                    let pt = &diag.plaintext;
+                    pt.log_delta() == first_pt.log_delta()
+                        && pt.encoded_k() == first_pt.encoded_k()
+                        && pt.slots() == first_pt.slots()
+                }),
+                "linear transformation diagonals must share one scale, width and slot kind"
+            );
             prepared.set_log_scale(first_pt.log_delta());
+            prepared.set_real_slots(first_pt.slots().is_real());
         }
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
     }
@@ -182,18 +205,18 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-        // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
-        // read off the first diagonal. The convolution offset must match the width
-        // the diagonal data was positioned at in `cnv_prepare_right` (its
-        // effective `k`), which can be below the rounded physical `max_k`.
-        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
-        ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
+        // The diagonal scale (`lt_log_scale`), its effective torus width `k` and the
+        // slot kind are read off the first diagonal. The convolution offset must
+        // match the width the diagonal data was positioned at in `cnv_prepare_right`
+        // (its effective `k`), which can be below the rounded physical `max_k`.
+        let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
+        ensure_uniform_diagonals(lt, pt_log_scale, pt_max_k, pt_slots)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
@@ -208,12 +231,12 @@ where
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         check_required_keys(lt, babies, keys, self.cyclotomic_order(), res_k)?;
+        // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do.
+        let slots = src.slots().join(pt_slots);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
-        // Diagonals are complex in general, so a transformed value leaves the
-        // reals unless the caller can prove otherwise.
-        dst.set_slots(SlotsKind::Complex);
+        dst.set_slots(slots);
         Ok(())
     }
 
@@ -227,7 +250,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
@@ -254,7 +277,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
         // Only the (small) input baby cache is materialized here; with a plaintext
@@ -273,7 +296,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
@@ -324,28 +347,30 @@ where
     Ok(())
 }
 
-/// Verifies every diagonal shares the first diagonal's scale and storage width.
+/// Verifies every diagonal shares the first diagonal's scale, storage width and slot kind.
 ///
 /// The evaluation derives one `cnv_offset` (and the result metadata) from the
 /// first diagonal alone; a hand-built transform with heterogeneous diagonal
-/// scales would silently mis-scale every other diagonal's contribution. The
-/// crate's own compilers (`ckks_encode_linear_transformation_from_diagonals`,
-/// the DFT/PaCo factor encoders) always produce uniform diagonals, so this
-/// only rejects malformed hand-assembled inputs.
-fn ensure_uniform_diagonal_scale<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize) -> Result<()>
+/// scales would silently mis-scale every other diagonal's contribution, and
+/// heterogeneous slot kinds would mislabel the result. The crate's own compilers
+/// (`ckks_encode_linear_transformation_from_diagonals`, the DFT/PaCo factor
+/// encoders) always produce uniform diagonals, so this only rejects malformed
+/// hand-assembled inputs.
+fn ensure_uniform_diagonals<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize, slots: SlotsKind) -> Result<()>
 where
-    P: LtDiagonalScale + IntPolyInfos + LWEInfos,
+    P: LtDiagonalMeta + IntPolyInfos + LWEInfos,
 {
     for gs in &lt.giant_steps {
         for diag in &gs.diagonals {
             let pt = &diag.plaintext;
             ckks_ensure!(
-                pt.lt_log_scale() == log_scale && pt.encoded_k().as_usize() == max_k,
-                "linear transformation diagonals are not scale-uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}) but the first diagonal — which cnv_offset and the result metadata are derived from — has ({log_scale}, {max_k})",
+                pt.lt_log_scale() == log_scale && pt.encoded_k().as_usize() == max_k && pt.lt_slots() == slots,
+                "linear transformation diagonals are not uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}, {:?}) but the first diagonal, which cnv_offset and the result metadata are derived from, has ({log_scale}, {max_k}, {slots:?})",
                 gs.rot,
                 diag.baby,
                 pt.lt_log_scale(),
                 pt.encoded_k().as_usize(),
+                pt.lt_slots(),
             );
         }
     }

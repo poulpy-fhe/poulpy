@@ -28,7 +28,7 @@ pub use crate::layouts::{
     LinearTransformationPlan, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
-// Reference implementations forwarded to from `crate::oep::LinearTransformationReference`.
+// Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.
 pub use eval::{
     glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_tmp_bytes_reference,
     glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference, glwe_prepare_linear_transformation_baby_steps_reference,

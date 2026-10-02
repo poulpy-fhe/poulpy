@@ -1,5 +1,7 @@
 use crate::{
-    layouts::{Backend, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{
+        Backend, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    },
     source::Source,
 };
 
@@ -521,7 +523,7 @@ pub trait VecZnxRshAssign<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col,j] = X^p * a[a_col,j] in R_N; the other columns of res are untouched
-/// domain     res, a: dense VecZnx of degree N; windows are rejected
+/// domain     standard ring; res, a: dense VecZnx of degree N; windows are rejected
 /// ensures    res[res_col] = X^p * a[a_col] in Z[X]/(X^N + 1), limb by limb, p taken modulo 2N; limbs of res past a.size() are zero
 /// test       test_vec_znx_rotate
 /// ```
@@ -559,7 +561,7 @@ pub trait VecZnxRotateAssignTmpBytes {
 /// class      variant
 /// mutation   in-place
 /// definition a[a_col,j] = X^p * old(a)[a_col,j] in R_N; the other columns of a are untouched
-/// domain     a: a dense VecZnx of degree N
+/// domain     standard ring; a: a dense VecZnx of degree N
 /// requires   scratch >= vec_znx_rotate_assign_tmp_bytes()
 /// ensures    each limb of a[a_col] is X^p times its pre-call value in R_N; the other columns are untouched
 /// fallback   none; required
@@ -577,7 +579,7 @@ pub trait VecZnxRotateAssign<B: Backend> {
 /// op         vec_znx_automorphism(k, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col,j] = sum_{0 <= i < a.n()} a[a_col,j,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col,j] = sigma_k(a[a_col,j]) in R_N; the other columns of res are untouched
 /// domain     res, a: dense VecZnx of degree N; k odd
 /// ensures    each limb of res[res_col] is the image of a[a_col] under X -> X^k; limbs of res past a.size() are zero
 /// test       test_vec_znx_automorphism
@@ -615,7 +617,7 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
 /// op         vec_znx_automorphism_assign(k, res, res_col, scratch)
 /// class      variant
 /// mutation   in-place
-/// definition res[res_col,j] = sum_{0 <= i < res.n()} old(res)[res_col,j,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col,j] = sigma_k(old(res)[res_col,j]) in R_N; the other columns of res are untouched
 /// domain     res: a dense VecZnx of degree N; k odd
 /// requires   scratch >= vec_znx_automorphism_assign_tmp_bytes()
 /// ensures    each limb of res[res_col] is the image of its pre-call value under X -> X^k; the other columns are untouched
@@ -640,7 +642,7 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
 /// op         scalar_znx_automorphism(k, res, res_col, a, a_col)
 /// class      variant
 /// mutation   out-of-place
-/// definition res[res_col] = sum_{0 <= i < a.n()} a[a_col,0,i] * X^(k * i) in R_N; the other columns of res are untouched
+/// definition res[res_col] = sigma_k(a[a_col,0]) in R_N; the other columns of res are untouched
 /// domain     res, a: ScalarZnx of degree N; k odd
 /// ensures    res[res_col] is the image of a[a_col] under X -> X^k; the other columns are untouched
 /// test       test_scalar_znx_automorphism
@@ -664,7 +666,7 @@ pub trait ScalarZnxAutomorphism<B: Backend> {
 /// class      derived
 /// mutation   out-of-place
 /// definition res[res_col,j] = (X^p - 1) * a[a_col,j] in R_N; the other columns of res are untouched
-/// domain     res, a: dense VecZnx of degree N
+/// domain     standard ring; res, a: dense VecZnx of degree N
 /// ensures    res[res_col] = (X^p - 1) * a[a_col] in Z[X]/(X^N + 1), limb by limb; the digits are not renormalized
 /// fallback   default body: rotate into res, then subtract the unrotated operand in place
 /// override   allowed, scratch-free
@@ -704,7 +706,7 @@ pub trait VecZnxMulXpMinusOneAssignTmpBytes {
 /// class      derived
 /// mutation   in-place
 /// definition res[res_col,j] = (X^p - 1) * old(res)[res_col,j] in R_N; the other columns of res are untouched
-/// domain     res: a dense VecZnx of degree N
+/// domain     standard ring; res: a dense VecZnx of degree N
 /// requires   scratch >= vec_znx_mul_xp_minus_one_assign_tmp_bytes(res.size())
 /// ensures    each limb of res[res_col] is (X^p - 1) times its pre-call value in R_N; the other columns are untouched; the digits are not renormalized
 /// fallback   default body: the product into a res.size()-limb temporary, then copy back
@@ -738,6 +740,60 @@ pub trait VecZnxSwitchRing<B: Backend> {
     fn vec_znx_switch_ring(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Embedding of a conjugate-invariant column into the standard ring of twice its degree.
+///
+/// ```text
+/// op         vec_znx_ci_embed(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col,j] = a[a_col,j,0] + sum_{0<i<N} a[a_col,j,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: dense VecZnx of degree 2N; a: dense VecZnx of degree N
+/// ensures    limbs from a.size() onward are zero; the digits are not renormalized
+/// test       test_vec_znx_ci_embed_trace
+/// ```
+pub trait VecZnxCIEmbed<B: Backend> {
+    /// Writes the embedded `a[a_col]` into `res[res_col]`.
+    fn vec_znx_ci_embed(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+/// Relative trace of a standard column onto the conjugate-invariant ring of half its degree.
+///
+/// ```text
+/// op         vec_znx_ci_trace(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col,j,0] = 2 a[a_col,j,0]; res[res_col,j,i] = a[a_col,j,i] - a[a_col,j,2N-i] for 0 < i < N; the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: dense VecZnx of degree N; a: dense VecZnx of degree 2N
+/// ensures    res[res_col] is the compressed a(X) + a(X^-1); limbs from a.size() onward are zero; the digits are not renormalized
+/// test       test_vec_znx_ci_embed_trace
+/// ```
+pub trait VecZnxCITrace<B: Backend> {
+    /// Writes the trace of `a[a_col]` into `res[res_col]`.
+    fn vec_znx_ci_trace(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+/// Embedding of a conjugate-invariant scalar column into the standard ring of twice its degree.
+///
+/// ```text
+/// op         scalar_znx_ci_embed(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col] = a[a_col,0] + sum_{0<i<N} a[a_col,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: ScalarZnx of degree 2N; a: ScalarZnx of degree N
+/// ensures    res[res_col] is the image of a[a_col] in the standard ring
+/// test       test_scalar_znx_ci_embed
+/// ```
+pub trait ScalarZnxCIEmbed<B: Backend> {
+    /// Writes the embedded `a[a_col]` into `res[res_col]`.
+    fn scalar_znx_ci_embed(
+        &self,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
 /// Copy of one column into another.
 ///
 /// ```text
@@ -761,7 +817,7 @@ pub trait VecZnxCopy<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition for 0 <= i < res.n(), res[res_col,j,i] = 0 if j >= live(k, base2k), 2^pad(k, base2k) * floor((draw(reseed(source), j * res.n() + i, base2k) - 2^(base2k - 1)) / 2^pad(k, base2k)) if j = live(k, base2k) - 1, and draw(reseed(source), j * res.n() + i, base2k) - 2^(base2k - 1) otherwise; the other columns of res are untouched
-/// domain     res: a dense VecZnx; base2k in 1..=62; 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
+/// domain     res: a dense VecZnx; base2k in 1..=62 (independent of Module::max_base2k, which selects scheme/product parameters for an explicit failure budget); 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
 /// ensures    res[res_col] is uniform over the torus at precision k and canonical at radix base2k; source advances by the 32 bytes of one seed, and reseed(source) by live(k, base2k) * res.n() draws in increasing limb order, then increasing coefficient order
 /// test       test_vec_znx_fill_uniform
 /// ```
@@ -775,4 +831,24 @@ pub trait VecZnxFillUniformSource<B: Backend> {
         res_col: usize,
         source: &mut Source,
     );
+}
+
+/// Filling of every column with independent uniform torus values drawn from a pseudorandom stream.
+///
+/// ```text
+/// op         vec_znx_fill_uniform_source_all(base2k, k, res, source)
+/// class      derived
+/// mutation   out-of-place
+/// definition vec_znx_fill_uniform_source(base2k, k, res, c, source) for c = 0, 1, ..., res.cols() - 1, in that order
+/// domain     res: a dense VecZnx; base2k in 1..=62; 0 < k <= res.size() * base2k; source: the caller's pseudorandom stream
+/// ensures    every column of res is uniform over the torus at precision k and canonical at radix base2k; source advances by the 32 bytes of res.cols() seeds, column 0 first
+/// fallback   default body: vec_znx_fill_uniform on each column in increasing order, each with the next seed of source
+/// override   allowed, drawing the same values
+/// test       test_vec_znx_fill_uniform_source_all_derived
+/// ```
+pub trait VecZnxFillUniformSourceAll<B: Backend> {
+    /// Writes an independent uniform torus value of precision `k`, canonical at radix `base2k`, into every column of `res`, drawing from `source`.
+    fn vec_znx_fill_uniform_source_all<R>(&self, base2k: usize, k: usize, res: &mut R, source: &mut Source)
+    where
+        R: VecZnxToBackendMut<B>;
 }

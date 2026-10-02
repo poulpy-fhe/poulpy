@@ -12,33 +12,9 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKe
 /// Backend-level factory for allocating and preparing
 /// [`BlindRotationKeyPrepared`] values.
 ///
-/// Implemented for `Module<BE>` when the backend supports the required
-/// DFT-domain preparation operations.  Callers should use the convenience
+/// Dispatched through [`crate::oep::BlindRotationKeyPreparedImpl`].  Callers should use the convenience
 /// methods on [`BlindRotationKeyPrepared`] rather than calling these directly.
-pub trait BlindRotationKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend> {
-    /// Allocates a zero-filled prepared key from a dimension descriptor.
-    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: BlindRotationKeyInfos;
-
-    /// Returns the minimum scratch-space size in bytes required by
-    /// [`prepare_blind_rotation_key`][Self::prepare_blind_rotation_key].
-    fn blind_rotation_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: BlindRotationKeyInfos;
-
-    /// Transforms the standard key `other` into the DFT-domain prepared form
-    /// `res`, ready for use in `BlindRotationExecute::blind_rotation_execute`.
-    ///
-    /// For the `BinaryBlock` distribution this also pre-computes the
-    /// `X^{a_i}` scalar polynomial products used in the batched CMux loop.
-    fn prepare_blind_rotation_key(
-        &self,
-        res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-}
+pub use crate::api::BlindRotationKeyPreparedFactory;
 
 impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc<A, M>(module: &M, infos: &A) -> Self
@@ -156,5 +132,46 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> BlindRotationKeyPrepared<D, BR
             Distribution::BinaryBlock(value) => value,
             _ => 1,
         }
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<D, BRA, BE> {
+    /// Constructs a prepared key from backend-owned prepared elements and monomials.
+    pub fn from_parts(
+        data: Vec<GGSWPrepared<D, BE>>,
+        distribution: Distribution,
+        monomials: Option<Vec<SvpPPolOwned<BE>>>,
+    ) -> Self {
+        assert!(!data.is_empty());
+        Self {
+            data,
+            dist: distribution,
+            x_pow_a: monomials,
+            _phantom: PhantomData,
+        }
+    }
+    /// Prepared key elements.
+    pub fn keys(&self) -> &[GGSWPrepared<D, BE>] {
+        &self.data
+    }
+    /// Mutable prepared key elements.
+    pub fn keys_mut(&mut self) -> &mut [GGSWPrepared<D, BE>] {
+        &mut self.data
+    }
+    /// Secret distribution carried by the prepared key.
+    pub fn distribution(&self) -> Distribution {
+        self.dist
+    }
+    /// Updates distribution metadata after preparation.
+    pub fn set_distribution(&mut self, distribution: Distribution) {
+        self.dist = distribution;
+    }
+    /// Prepared monomials used by block execution.
+    pub fn monomials(&self) -> Option<&[SvpPPolOwned<BE>]> {
+        self.x_pow_a.as_deref()
+    }
+    /// Replaces the prepared monomial table.
+    pub fn set_monomials(&mut self, monomials: Option<Vec<SvpPPolOwned<BE>>>) {
+        self.x_pow_a = monomials;
     }
 }

@@ -8,25 +8,20 @@
 
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{Base2K, GLWEPlaintext};
-use poulpy_hal::layouts::Backend;
+use poulpy_core::layouts::Base2K;
+use poulpy_hal::{
+    AlignedBuf, alloc_aligned,
+    layouts::{Backend, VecZnx},
+};
 
 use crate::SlotsKind;
-use crate::{
-    CKKSMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext},
-};
+use crate::{CKKSMeta, SetCKKSInfos, layouts::CKKSModuleAlloc};
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
 ///
-/// Deliberately heap-allocated (not scratch-carved): uploading host bytes
-/// requires an owned backend buffer (`copy_from_host_bytes` is defined on
-/// `Backend<OwnedBuf = D>` only — the HAL has no host-upload into a borrowed
-/// scratch view), and the value is a degree-1, single-limb monomial, so the
-/// per-call cost is one tiny allocation. Revisit if the HAL grows a
-/// view-targeted host upload.
+/// This currently allocates and uploads a degree-1, single-limb monomial on
+/// each call. The unit-operation scratch query covers the arithmetic workspace.
 pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
@@ -42,21 +37,26 @@ where
     let k_total: usize = meta.log_delta;
 
     // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
-    // coefficient `1 << log_delta`, so the limb bytes are built with the integer
-    // codec and uploaded as raw bytes — no float codec or backend transfer op.
-    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
-    let max_k = host_pt.encoded_k();
-    host_pt.encode_vec_i64(&[1i64 << meta.log_delta], max_k);
+    // coefficient `1 << log_delta`, so its limbs are built on the host with the
+    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
+    let size = k_total.div_ceil(base2k.as_usize());
+    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
+        1,
+        1,
+        size,
+    );
+    limbs.encode_vec_i64(base2k.as_usize(), 0, size * base2k.as_usize(), &[1i64 << meta.log_delta]);
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
     pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(host_pt.data().data().as_slice());
+    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
     Ok(pt)
 }
 
-/// Generates a `CKKS{Add,Sub}Default` trait: the full default-layer carry-verb
-/// family (ct–ct, ct–pt-vector, ct–pt-constant, normalized and unnormalized,
-/// plus the one-constant facades and the tmp-bytes accounting).
+/// Generates a `CKKS{Add,Sub}Reference` trait: the full reference-layer carry-verb
+/// family (ct–ct, ct–pt-vector, ct–pt-constant, plus the one-constant
+/// facades and the tmp-bytes accounting). None of them normalizes the result.
 ///
 /// Parameters:
 /// - `verb`: method-name stem (`add` / `sub`), also the error label.
@@ -68,7 +68,7 @@ where
 ///   a `<BE>` parameter), shared by the pt-vector and pt-constant variants.
 ///
 /// All type and trait names in the expansion resolve at the call site: the
-/// invoking module must import the shared bounds (`GLWEShift`, `GLWENormalize`,
+/// invoking module must import the shared bounds (`GLWECopy`, `GLWEShift`, `GLWENormalize`,
 /// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextReference`, `CKKSModuleAlloc`, the
 /// info traits) alongside its verb-specific ones.
 macro_rules! ckks_carry_verb_reference {
@@ -128,24 +128,6 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: $GLWEVerb<BE> + GLWEShift<BE> + GLWENormalize<BE>,
-                    Dst: GLWEToBackendMut<BE> + LWEInfos + SetCKKSInfos + CKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
-                    B: GLWEToBackendRef<BE> + CKKSInfos,
-                {
-                    self.[<ckks_ $verb _into_unnormalized_reference>](dst, a, b, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _into_unnormalized_reference>]<Dst, A, B>(
-                    &self,
-                    dst: &mut Dst,
-                    a: &A,
-                    b: &B,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
                     Self: $GLWEVerb<BE> + GLWEShift<BE>,
                     Dst: GLWEToBackendMut<BE> + LWEInfos + SetCKKSInfos + CKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
@@ -158,11 +140,12 @@ macro_rules! ckks_carry_verb_reference {
 
                     // Align both operands to the common torus level: operand `x` is
                     // shifted by `x.log_budget − min_budget + offset`. When both
-                    // shifts are zero the plain verb applies directly.
+                    // shifts are zero and `dst` holds both operands' limbs, the
+                    // plain verb applies directly.
                     let min_budget = a.log_budget().min(b.log_budget());
                     let shift_a = a.log_budget() - min_budget + offset;
                     let shift_b = b.log_budget() - min_budget + offset;
-                    if shift_a == 0 && shift_b == 0 {
+                    if shift_a == 0 && shift_b == 0 && $crate::ckks_holds_limbs(dst, a) && $crate::ckks_holds_limbs(dst, b) {
                         self.$glwe_into(dst, a, b);
                     } else {
                         self.glwe_lsh(dst, a, shift_a, scratch);
@@ -184,35 +167,21 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: $GLWEVerb<BE> + GLWEShift<BE> + GLWENormalize<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
-                {
-                    self.[<ckks_ $verb _assign_unnormalized_reference>](dst, a, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _assign_unnormalized_reference>]<Dst, A>(
-                    &self,
-                    dst: &mut Dst,
-                    a: &A,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
                     Self: $GLWEVerb<BE> + GLWEShift<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                 {
                     let dst_log_budget = dst.log_budget();
 
-                    if dst_log_budget < a.log_budget() {
-                        self.$glwe_lsh_verb(dst, a, a.log_budget() - dst_log_budget, scratch);
-                    } else if dst_log_budget > a.log_budget() {
+                    if dst_log_budget > a.log_budget() {
                         self.glwe_lsh_assign(dst, dst_log_budget - a.log_budget(), scratch);
+                    }
+                    let shift_a = a.log_budget().saturating_sub(dst_log_budget);
+                    // The shift-accumulate normalizes `a` over all its limbs.
+                    if shift_a == 0 && $crate::ckks_holds_limbs(dst, a) {
                         self.$glwe_assign(dst, a);
                     } else {
-                        self.$glwe_assign(dst, a);
+                        self.$glwe_lsh_verb(dst, a, shift_a, scratch);
                     }
 
                     dst.set_log_budget(dst_log_budget.min(a.log_budget()));
@@ -223,22 +192,6 @@ macro_rules! ckks_carry_verb_reference {
                     Ok(())
                 }
 
-                fn [<ckks_ $verb _one_assign_reference>]<Dst>(
-                    &self,
-                    dst: &mut Dst,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWENormalize<BE>
-                        $(+ $PtVecBound<BE>)+
-                        + CKKSPlaintextReference<BE>
-                        + CKKSModuleAlloc<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                {
-                    let one = $crate::reference::carry_verb::ckks_one_pt::<BE, Self>(self, dst.base2k())?;
-                    self.[<ckks_ $verb _pt_const_assign_reference>](dst, 0, &one, 0, scratch)
-                }
-
                 fn [<ckks_ $verb _pt_vec_into_reference>]<Dst, A, P>(
                     &self,
                     dst: &mut Dst,
@@ -247,51 +200,16 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    self.[<ckks_ $verb _pt_vec_into_unnormalized_reference>](dst, a, pt, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _pt_vec_into_unnormalized_reference>]<Dst, A, P>(
-                    &self,
-                    dst: &mut Dst,
-                    a: &A,
-                    pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
-                {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, 0, scratch)?;
-                    self.[<ckks_ $verb _pt_vec_assign_unnormalized_reference>](dst, pt, scratch)?;
-                    Ok(())
+                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, scratch)?;
+                    self.[<ckks_ $verb _pt_vec_assign_reference>](dst, pt, scratch)
                 }
 
                 fn [<ckks_ $verb _pt_vec_assign_reference>]<Dst, P>(
-                    &self,
-                    dst: &mut Dst,
-                    pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
-                {
-                    self.[<ckks_ $verb _pt_vec_assign_unnormalized_reference>](dst, pt, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _pt_vec_assign_unnormalized_reference>]<Dst, P>(
                     &self,
                     dst: &mut Dst,
                     pt: &P,
@@ -317,54 +235,16 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    self.[<ckks_ $verb _pt_const_into_unnormalized_reference>](dst, a, dst_coeff, cst, const_coeff, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _pt_const_into_unnormalized_reference>]<Dst, A, P>(
-                    &self,
-                    dst: &mut Dst,
-                    a: &A,
-                    dst_coeff: usize,
-                    cst: &P,
-                    const_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
-                {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, 0, scratch)?;
-                    self.[<ckks_ $verb _pt_const_assign_unnormalized_reference>](dst, dst_coeff, cst, const_coeff, scratch)
+                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, scratch)?;
+                    self.[<ckks_ $verb _pt_const_assign_reference>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 
                 fn [<ckks_ $verb _pt_const_assign_reference>]<Dst, P>(
-                    &self,
-                    dst: &mut Dst,
-                    dst_coeff: usize,
-                    cst: &P,
-                    const_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
-                ) -> Result<()>
-                where
-                    Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
-                {
-                    self.[<ckks_ $verb _pt_const_assign_unnormalized_reference>](dst, dst_coeff, cst, const_coeff, scratch)?;
-                    self.glwe_normalize_assign(dst, scratch);
-                    Ok(())
-                }
-
-                fn [<ckks_ $verb _pt_const_assign_unnormalized_reference>]<Dst, P>(
                     &self,
                     dst: &mut Dst,
                     dst_coeff: usize,

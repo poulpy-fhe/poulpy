@@ -1,18 +1,12 @@
 use crate::CKKSResult as Result;
-use poulpy_core::{
-    GLWENegate, GLWEShift,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
 
 use crate::api::CKKSNegOps;
 
-impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE>
-where
-    Module<BE>: GLWENegate<BE> + GLWEShift<BE>,
-{
+impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
     fn ckks_neg_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_neg_tmp_bytes_impl(self, res_size)
     }

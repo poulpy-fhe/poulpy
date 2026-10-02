@@ -1,39 +1,58 @@
 //! Rayon-scheduled wrapper for the NEON FFT64 backend.
 
-use poulpy_hal::layouts::{DataView, DataViewMut, Module, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef};
-use poulpy_hal::oep::HalVecZnxDftImpl;
+use poulpy_hal::layouts::Ring;
 
 use super::FFT64NeonRayon;
-use crate::FFT64Neon;
 
-fn dft_automorphism(
-    module: &Module<FFT64NeonRayon>,
-    plan: &<FFT64Neon as HalVecZnxDftImpl>::AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, FFT64NeonRayon>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, FFT64NeonRayon>,
-    a_col: usize,
-) {
-    let res_shape = res.shape();
-    FFT64Neon::vec_znx_dft_automorphism_with_plan(
-        module.reinterpret(),
-        plan,
-        &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
-        res_col,
-        &VecZnxDft::from_shape(&**a.data(), a.shape()),
-        a_col,
-    );
+mod standard {
+    use poulpy_cpu_ref::reference::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+
+    use super::FFT64NeonRayon;
+    use crate::FFT64Neon;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon, FFT64Neon);
+
+    unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64NeonRayon {
+        poulpy_cpu_ref::hal_impl_vec_znx_monomial!();
+    }
+
+    unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64NeonRayon {
+        poulpy_cpu_ref::hal_impl_vec_znx_ci!();
+    }
+
+    impl ZnxAutomorphismRotate for FFT64NeonRayon {
+        #[inline(always)]
+        fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+            <FFT64Neon as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+        }
+    }
+
+    impl Fft64RingArith for FFT64NeonRayon {
+        poulpy_cpu_ref::fft64_ring_arith_standard!();
+    }
 }
 
-poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon, FFT64Neon, dft_automorphism);
+mod conjugate_invariant {
+    use poulpy_cpu_ref::reference::fft64::ring_arith::Fft64RingArith;
+    use poulpy_hal::layouts::ConjugateInvariant;
 
-impl poulpy_cpu_rayon::RayonTuning for FFT64NeonRayon {
+    use super::FFT64NeonRayon;
+    use crate::FFT64Neon;
+
+    poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon<ConjugateInvariant>, FFT64Neon<ConjugateInvariant>);
+
+    impl Fft64RingArith for FFT64NeonRayon<ConjugateInvariant> {
+        poulpy_cpu_ref::fft64_ring_arith_ci!();
+    }
+}
+
+impl<R: Ring> poulpy_cpu_rayon::RayonTuning for FFT64NeonRayon<R> {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64NeonRayon {
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64NeonRayon<R> {
     const PREPARE: usize = 8;
     const APPLY: usize = 8;
     const VMP: usize = 8;

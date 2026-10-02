@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
@@ -26,13 +23,19 @@ pub struct GLWESwitchingKeyCompressed<D: Data, W: ZnxWord> {
     pub(crate) output_degree: Degree, // Degree of sk_out
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWESwitchingKeyCompressed<D, W> {
+    fn seed(&self) -> &Vec<[u8; 32]> {
+        &self.key.seed
+    }
+}
+
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.key.seed
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyCompressed<D, W> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -42,7 +45,7 @@ impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyCom
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCompressed<D, W> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -99,12 +102,6 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWESwitchingKeyCompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.key.fill_uniform(log_bound, source);
     }
 }
 

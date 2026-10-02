@@ -21,17 +21,17 @@ use std::mem::size_of;
 use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
     execution::SendPtr,
-    kernels::ntt_avx512,
     module::handle,
     primes::Primes42,
-    traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
+    tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
+    traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
-        DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+        DataView, DataViewMut, MatZnxBackendRef, Module, Ring, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
         VmpPMatBackendRef, ZnxInfos, check_degree,
     },
 };
@@ -160,14 +160,17 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
 ///
 /// Element `(blk_quad, col, row)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 16`.
-pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
-    module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_prepare_ifma<R: Ring, E: TaskExecutor>(
+    module: &Module<crate::NTT3x42Ifma<R>>,
+    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma<R>>,
     tmp: &mut [u64],
-) {
+) where
+    crate::NTT3x42Ifma<R>:
+        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+{
     let n = res.n();
-    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
+    check_degree::<crate::NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let nrows = a.cols_in() * a.rows();
@@ -187,11 +190,13 @@ pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
         let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
-            crate::NTT3x42Ifma::ntt3x42_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
+            crate::NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
             // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
-            unsafe { ntt_avx512::<Primes42>(table, tmp_b, true) };
+            <crate::NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+                table, tmp_b,
+            );
             let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
-            crate::NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, tmp_c, tmp_b);
+            crate::NTT3x42Ifma::<R>::ntt3x42_ifma_c_from_b(n, tmp_c, tmp_b);
 
             for bq in 0..n_blk_quads {
                 let coeff_base = 8 * bq;
@@ -709,11 +714,11 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool, E: TaskExecutor>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
-    module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_apply_dft_to_dft_ifma<R: Ring, E: TaskExecutor>(
+    module: &Module<crate::NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -722,7 +727,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
     assert_eq!(res.cols(), pmat.cols_out());
     assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
-    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
+    check_degree::<crate::NTT3x42Ifma<R>>(module.n(), n);
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();
     let ncols = pmat.cols_out() * pmat.size();
@@ -751,11 +756,11 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
-    module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_apply_dft_to_dft_add_ifma<R: Ring, E: TaskExecutor>(
+    module: &Module<crate::NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -764,7 +769,7 @@ pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
     assert_eq!(res.cols(), pmat.cols_out());
     assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
-    check_degree::<crate::NTT3x42Ifma>(module.n(), n);
+    check_degree::<crate::NTT3x42Ifma<R>>(module.n(), n);
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();
     let ncols = pmat.cols_out() * pmat.size();
@@ -793,11 +798,11 @@ pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
 }
 
 /// Fused multi-digit VMP over materialized digit slices.
-pub(crate) fn vmp_apply_dft_to_dft_digits_ifma<E: TaskExecutor>(
-    _module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    digits: &[VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>],
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_apply_dft_to_dft_digits_ifma<R: Ring, E: TaskExecutor>(
+    _module: &Module<crate::NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    digits: &[VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>],
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     tmp: &mut [u64],
 ) {
     let n = res.n();
@@ -902,39 +907,40 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
 }
 
 /// Fused multi-digit VMP over strided digit rows.
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
-    _module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<R: Ring, E: TaskExecutor>(
+    _module: &Module<crate::NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     tmp: &mut [u64],
 ) {
-    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, None, tmp)
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<_, E>(res, a, dsize, product_limbs, pmat, None, tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix<E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     zero_prefix: usize,
     tmp: &mut [u64],
 ) {
     assert!(zero_prefix <= a.size());
-    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<_, E>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+#[inline(never)]
+fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
@@ -950,30 +956,30 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
         && a.size() >= 16
         && res.size() <= 64
     {
-        return digits4::apply::<E>(res, a, pmat, zero_prefix, tmp);
+        return digits4::apply::<R, E>(res, a, pmat, zero_prefix, tmp);
     }
     if E::is_parallel() && res.n() >= 65536 && dsize > 1 && a.size() >= 24 && (32..=128).contains(&(res.cols() * res.size())) {
-        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, true>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
+        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<R, E, true>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
     } else {
-        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
+        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<R, E, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
     }
 }
 
-pub(crate) struct RotatedOutput<'a> {
+pub(crate) struct RotatedOutput<'a, R: Ring> {
     pub(crate) plan: &'a poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
-    pub(crate) body: VecZnxDftBackendRef<'a, crate::NTT3x42Ifma>,
+    pub(crate) body: VecZnxDftBackendRef<'a, crate::NTT3x42Ifma<R>>,
     pub(crate) output_size: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_rotate_add<E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_rotate_add<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     tmp: &mut [u64],
-    rotated: &RotatedOutput<'_>,
+    rotated: &RotatedOutput<'_, R>,
 ) {
     assert_eq!(res.n(), a.n());
     assert_eq!(res.n(), pmat.n());
@@ -982,19 +988,19 @@ pub(crate) fn vmp_rotate_add<E: TaskExecutor>(
     assert_eq!(res.cols(), pmat.cols_out());
     assert!(rotated.output_size * res.cols() <= 128);
     assert!(res.size() >= rotated.output_size);
-    vmp_digits_loop::<E, true, true>(res, a, dsize, product_limbs, pmat, None, tmp, Some(rotated));
+    vmp_digits_loop::<R, E, true, true>(res, a, dsize, product_limbs, pmat, None, tmp, Some(rotated));
 }
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn emit_rotated(
+unsafe fn emit_rotated<R: Ring>(
     dst: *mut u64,
     n: usize,
     cols: usize,
     output_size: usize,
     dest_bq: usize,
     tile: &[u64],
-    rotated: &RotatedOutput<'_>,
+    rotated: &RotatedOutput<'_, R>,
     pc: &[PrimeConsts512; 3],
 ) {
     unsafe {
@@ -1035,28 +1041,28 @@ unsafe fn emit_rotated(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<E: TaskExecutor, const TILED: bool>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<R: Ring, E: TaskExecutor, const TILED: bool>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
-    vmp_digits_loop::<E, TILED, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp, None);
+    vmp_digits_loop::<R, E, TILED, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp, None);
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_digits_loop<E: TaskExecutor, const TILED: bool, const ROTATE: bool>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+fn vmp_digits_loop<R: Ring, E: TaskExecutor, const TILED: bool, const ROTATE: bool>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
-    rotated: Option<&RotatedOutput<'_>>,
+    rotated: Option<&RotatedOutput<'_, R>>,
 ) {
     let n = res.n();
     let output_size = if ROTATE { rotated.unwrap().output_size } else { res.size() };
@@ -1278,15 +1284,15 @@ fn vmp_digits_loop<E: TaskExecutor, const TILED: bool, const ROTATE: bool>(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Zero a `VmpPMat<NTT3x42Ifma>`.
-pub(crate) fn vmp_zero(res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>) {
+pub(crate) fn vmp_zero<R: Ring>(res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma<R>>) {
     res.data_mut().as_mut().fill(0);
 }
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`, in the packed block-quad prepared layout.
-pub(crate) fn vmp_extract_selected_rows_ifma(
-    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+pub(crate) fn vmp_extract_selected_rows_ifma<R: Ring>(
+    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     first_row: usize,
     row_step: usize,
 ) {
@@ -1394,7 +1400,7 @@ mod tests {
                         let mut scratch = vec![0; bytes / size_of::<u64>()];
                         expected.data.fill(0xa5);
                         actual.data.fill(0xa5);
-                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<SerialTaskExecutor, false>(
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<_, SerialTaskExecutor, false>(
                             &mut expected.to_backend_mut(),
                             &input.to_backend_ref(),
                             dsize,
@@ -1403,7 +1409,7 @@ mod tests {
                             None,
                             &mut scratch,
                         );
-                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<RayonTaskExecutor, true>(
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<_, RayonTaskExecutor, true>(
                             &mut actual.to_backend_mut(),
                             &input.to_backend_ref(),
                             dsize,
@@ -1467,7 +1473,7 @@ mod rotated_tests {
                         a.data.as_mut_slice()[..2 * n * size_of::<u64>()].fill(0);
                         let mut product = module.vec_znx_dft_alloc(n, 2, output_size);
                         let mut tmp = vec![0u64; 16 * 1024];
-                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<SerialTaskExecutor, false>(
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<_, SerialTaskExecutor, false>(
                             &mut product.to_backend_mut(),
                             &a.to_backend_ref(),
                             dsize,
@@ -1484,7 +1490,7 @@ mod rotated_tests {
                             reference.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
                             fused.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
                             for col in 0..2 {
-                                crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(
+                                crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_automorphism_add::<_, SerialTaskExecutor>(
                                     &plan,
                                     &mut reference.to_backend_mut(),
                                     col,
@@ -1497,7 +1503,7 @@ mod rotated_tests {
                                 body: body.to_backend_ref(),
                                 output_size,
                             };
-                            vmp_rotate_add::<SerialTaskExecutor>(
+                            vmp_rotate_add::<_, SerialTaskExecutor>(
                                 &mut fused.to_backend_mut(),
                                 &a.to_backend_ref(),
                                 dsize,
@@ -1514,7 +1520,7 @@ mod rotated_tests {
                             {
                                 fused.data.as_mut_slice().copy_from_slice(initial.data.as_slice());
                                 pool.install(|| {
-                                    vmp_rotate_add::<poulpy_cpu_rayon::RayonTaskExecutor>(
+                                    vmp_rotate_add::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
                                         &mut fused.to_backend_mut(),
                                         &a.to_backend_ref(),
                                         dsize,

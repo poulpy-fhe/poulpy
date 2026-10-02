@@ -30,6 +30,8 @@ use core::arch::x86_64::{
     _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 
+use poulpy_hal::layouts::Ring;
+
 use crate::ntt3x42_ifma::{
     primes::PrimeSetNtt3x42Ifma,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul},
@@ -536,7 +538,11 @@ unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, precon: &[u64], q_v: __m512i, 
 /// `[0, 4q)` instead of `[0, q)`, skipping the final reduction; use it for
 /// consumers that re-reduce (`c_from_b`, the BBC product, whose bound is `2^44 > 4q`).
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, data: &mut [u64], lazy_output: bool) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
+    table: &Ntt3x42IfmaTable<P, impl Ring>,
+    data: &mut [u64],
+    lazy_output: bool,
+) {
     let n = table.n;
     assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
@@ -936,7 +942,7 @@ unsafe fn inv_plane(ptr: *mut u64, n_sub: usize, depth: u32, half: usize, ip: &[
 /// For `n >= 32`, the last two stages share a pass with the `1/n` scale:
 /// the diff lanes use `W' = (W·n_inv) mod q`, and the sum lanes use `n_inv`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
     assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {

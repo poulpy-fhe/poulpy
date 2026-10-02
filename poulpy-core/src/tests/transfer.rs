@@ -21,9 +21,8 @@ fn host_alloc(len: usize) -> Vec<u8> {
 }
 
 impl Backend for SrcBackend {
-    const MAX_BASE2K: usize = 62;
-
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
@@ -39,10 +38,6 @@ impl Backend for SrcBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         bytes.to_vec()
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
@@ -151,9 +146,8 @@ unsafe impl HalModuleImpl for SrcBackend {
 }
 
 impl Backend for DstBackend {
-    const MAX_BASE2K: usize = 62;
-
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
@@ -169,10 +163,6 @@ impl Backend for DstBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         bytes.to_vec()
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {

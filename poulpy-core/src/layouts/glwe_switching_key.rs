@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
@@ -201,12 +198,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKey<D, W> {
             self.output_degree,
             self.key.data()
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWESwitchingKey<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.key.fill_uniform(log_bound, source);
     }
 }
 

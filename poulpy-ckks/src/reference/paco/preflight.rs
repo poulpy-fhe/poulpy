@@ -204,7 +204,7 @@ where
         .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, &relinearization))
         .max(module.ckks_add_tmp_bytes(branch_layout.size()))
         .max(module.ckks_sub_tmp_bytes(branch_layout.size()))
-        .max(module.ckks_copy_tmp_bytes(branch_layout.size()))
+        .max(module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout))
         .max(module.glwe_rotate_tmp_bytes());
 
     // The assign path evaluates into a branch-shaped scratch copy and stamps

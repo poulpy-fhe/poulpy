@@ -7,7 +7,7 @@
 //! [`LinearTransformation::alloc_prepared`] from a [`LinearTransformationLayout`]
 //! and a plaintext-shape proxy; this module's `_into` function only fills the
 //! pre-allocated `CnvPVecR` slots, performing zero `CnvPVecR` allocations.
-//! Backends forward to them from their [`crate::oep::LinearTransformationReference`]
+//! Backends forward to them from their [`crate::oep::LinearTransformationImpl`]
 //! impl.
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
@@ -40,7 +40,8 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     /// Each slot takes the plaintext's degree, `base2k` and `k`, so a compact
     /// (degree-`n`) diagonal gets a degree-`n` slot; the convolution buffers are
     /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
-    /// per-diagonal `log_scale` is left at `0` for the scheme layer to set.
+    /// per-diagonal `log_scale` and real-slot claim are left at `0` and `false`
+    /// for the scheme layer to set.
     pub fn alloc_prepared_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
     where
         M: CnvPVecAlloc<BE>,
@@ -63,6 +64,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                         base2k,
                         k,
                         log_scale: 0,
+                        real_slots: false,
                     },
                 });
             }
@@ -82,6 +84,16 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
         for gs in &mut self.giant_steps {
             for d in &mut gs.diagonals {
                 d.plaintext.set_log_scale(log_scale);
+            }
+        }
+    }
+
+    /// Sets the real-slot claim of every diagonal; called by the scheme layer
+    /// during the populate step.
+    pub fn set_real_slots(&mut self, real_slots: bool) {
+        for gs in &mut self.giant_steps {
+            for d in &mut gs.diagonals {
+                d.plaintext.set_real_slots(real_slots);
             }
         }
     }

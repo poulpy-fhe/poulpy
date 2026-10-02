@@ -17,7 +17,7 @@ use poulpy_hal::{
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes,
     },
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -73,7 +73,7 @@ fn gen_sk_with_host<BE>(
     GLWESecretPrepared<BE::OwnedBuf, BE>,
 )
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
@@ -103,7 +103,7 @@ fn cmul((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
 /// recombination conventions before any homomorphic code runs.
 pub fn test_ship_host_replica<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
 {
@@ -261,7 +261,7 @@ where
 /// all-zero group yields (an encryption of) zero.
 pub fn test_ship_mux_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
         + GGLWEProductReference<BE>
         + VecZnxDftApply<BE>
@@ -413,7 +413,7 @@ fn ship_bootstrap_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     complex: bool,
 ) where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -525,9 +525,9 @@ fn ship_bootstrap_case<BE, F, E>(
     }
     let measured_bits = -max_err.log2();
     // Gap model: error ~ (2*pi)^2 * mu^3 / (6 * gamma^2), 12.74 bits for
-    // gamma = 2^6 and |mu| <= 0.45; exact backends measure exactly that.
-    // FFT64 (f64 arithmetic) loses ~3 bits over the deep keyswitch chain and
-    // ~2 more to the encapsulation switch at its toy base2k bottom modulus.
+    // gamma = 2^6 and |mu| <= 0.45. The low-precision configuration allows
+    // additional error from the deep keyswitch chain and encapsulation switch
+    // at its smaller bottom modulus.
     let required_bits = if plan.log_delta_work() < 40 { 7.0 } else { 12.0 };
     assert!(
         measured_bits >= required_bits,
@@ -538,7 +538,7 @@ fn ship_bootstrap_case<BE, F, E>(
 /// End-to-end SHIP half bootstrap over real cleartexts.
 pub fn test_ship_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -557,7 +557,7 @@ where
 /// into complex slots through the shared mux keys and the `omega_2` masks.
 pub fn test_ship_bootstrap_complex<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>

@@ -11,6 +11,7 @@ use crate::blind_rotation::{
 };
 
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
+use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     EncryptionLayout, GLWEDecrypt, LWEEncryptSk,
     layouts::{
@@ -157,7 +158,7 @@ where
 
     let mut pt_have: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
-    module.glwe_decrypt(&res, &mut pt_have, &sk_glwe_dft, &mut scratch.borrow());
+    glwe_decrypt_checked(module, &res, &mut pt_have, &sk_glwe_dft, &mut scratch.borrow());
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
 

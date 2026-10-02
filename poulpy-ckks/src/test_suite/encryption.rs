@@ -5,11 +5,20 @@ use super::helpers::{
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
     gen_sk, quantized_slots, test_vector_1,
 };
-use crate::{CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, api::CKKSDecryptOps, layouts::CKKSModuleAlloc};
-use poulpy_core::layouts::LWEInfos;
+use super::parity::helpers::snapshot;
+use crate::{
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    api::{CKKSDecryptOps, CKKSEncryptOps},
+    layouts::CKKSModuleAlloc,
+};
+use poulpy_core::{
+    EncryptionLayout,
+    layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos},
+};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module},
+    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
+    source::Source,
 };
 
 use crate::SlotsKind;
@@ -31,7 +40,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     encoder: &ReferenceEncoder<E>,
     dst_prec: CKKSLayout,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -79,7 +88,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
 /// Verifies that encrypt → decrypt → decode recovers the original message.
 pub fn test_encrypt_decrypt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -114,12 +123,58 @@ where
     assert_precision_for_log_delta("encrypt_decrypt im", &im_out, &im1, ct.log_delta(), params.n);
 }
 
+/// CKKS returns a degree error without changing outputs or consuming randomness.
+pub fn test_encryption_degree_mismatch_error<BE>()
+where
+    BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl,
+    Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE>,
+{
+    let n = BE::MIN_DEGREE.max(16);
+    let module = Module::<BE>::new(n as u64);
+    let other = Module::<BE>::new((2 * n) as u64);
+    let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: 8usize.into(),
+        k: 8usize.into(),
+        rank: 1usize.into(),
+    })
+    .unwrap();
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
+    let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
+    let sk = other.glwe_secret_prepared_alloc(1usize.into());
+    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let ct_before = snapshot::<BE, _>(&ct);
+    let pt_before = snapshot::<BE, _>(&pt);
+    let mut xe = Source::new([1; 32]);
+    let mut xa = Source::new([2; 32]);
+
+    for call_module in [&module, &other] {
+        let expected = |op| CKKSCompositionError::EncryptionDegreeMismatch {
+            op,
+            module_n: call_module.n(),
+            ct_n: n,
+            sk_n: 2 * n,
+        };
+        let err = call_module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.arena()).unwrap_err();
+        assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
+        assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+
+        let err = call_module
+            .ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena())
+            .unwrap_err();
+        assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
+        assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+    }
+    assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
+    assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
+}
+
 pub fn test_decrypt_extract_same_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -144,7 +199,7 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -170,7 +225,7 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -196,7 +251,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -222,7 +277,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -277,7 +332,7 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -314,6 +369,53 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
             op: "ckks_extract_pt",
             ct_base2k: params.base2k,
             pt_base2k: mismatched_base2k.as_usize(),
+        },
+    );
+}
+
+/// Extracting into a plaintext of another degree is a `PlaintextDegreeMismatch`.
+pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let src_prec = extract_src_prec(&params);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let (re1, im1) = test_vector_1::<F>(m);
+    let ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        src_prec.k().as_usize(),
+        &re1,
+        &im1,
+        src_prec,
+        &mut scratch.borrow(),
+    );
+    // A plaintext at half the ciphertext degree: the extraction cannot embed it.
+    let mut pt = host_module.ckks_pt_vec_alloc_compact(m / 2, params.base2k.into(), src_prec.k());
+    pt.set_meta(src_prec.meta());
+    let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
+    assert_ckks_error(
+        "decrypt_extract_degree_mismatch",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_extract_pt",
+            ct_n: params.n,
+            pt_n: params.n / 2,
         },
     );
 }

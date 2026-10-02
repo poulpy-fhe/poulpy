@@ -6,6 +6,35 @@ use crate::{
     api::{ModuleLogN, ModuleN},
 };
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Sealed compile-time ring of a backend.
+pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
+    /// Ambient cyclotomic order divided by the coefficient dimension.
+    const CYCLOTOMIC_ORDER_FACTOR: i64;
+}
+
+/// The standard negacyclic ring `Z[X]/(X^N + 1)`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Standard;
+
+/// The conjugate-invariant subring of a degree-doubled negacyclic ring.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConjugateInvariant;
+
+impl sealed::Sealed for Standard {}
+impl sealed::Sealed for ConjugateInvariant {}
+
+impl Ring for Standard {
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
+}
+
+impl Ring for ConjugateInvariant {
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = 4;
+}
+
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
 ///
 /// Defines the word types used for the coefficient domain (`ZnxWord`),
@@ -26,9 +55,24 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
-    /// Maximum supported limb radix for FHE parameter selection.
-    /// Operation-specific input and accumulation bounds still apply.
-    const MAX_BASE2K: usize;
+    /// Whether a DFT vector stores each limb as one contiguous block containing
+    /// every column, and a range of those blocks is itself a valid DFT vector.
+    /// Within a limb, columns are contiguous blocks in column order, each of
+    /// size `bytes_of_vec_znx_dft(n, 1, 1)`. This also permits indexed host
+    /// zeroing through `VecZnxDft::zero_at`.
+    ///
+    /// Opting in requires `bytes_of_vec_znx_dft(n, cols, size)` to equal
+    /// `size * bytes_of_vec_znx_dft(n, cols, 1)`, including zero at `size == 0`.
+    /// Blocks have no size-dependent headers, strides or padding between them.
+    /// This permits [`VecZnxDftBackendMut::with_limb_range_mut`](crate::layouts::VecZnxDftBackendMut::with_limb_range_mut)
+    /// to reborrow a partial range without copying or changing its representation.
+    ///
+    /// The default makes no such promise. Other layouts support whole-buffer
+    /// views and backend-defined operations, but cannot use partial-range views
+    /// or generic indexed zeroing. Reference compositions that require partial
+    /// views must opt into this capability explicitly; such backends must supply
+    /// their own overrides instead of opting into those reference bodies.
+    const DFT_LIMBS_CONTIGUOUS: bool = false;
 
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;
@@ -57,6 +101,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Residency of this backend's buffers — [`Host`](crate::layouts::Host)
     /// or [`Device`](crate::layouts::Device).
     type Location: Location;
+
+    /// Ring served by this backend.
+    type Ring: Ring;
+
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;
     /// Allocates a zero-initialized backend-owned byte buffer of `len` bytes.
@@ -77,8 +125,11 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
     /// Copies a host-owned byte buffer into backend-owned storage.
     ///
-    /// The buffer may be longer than `bytes`; the extra bytes are zero.
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf;
+    /// The buffer may be longer than `bytes`; the extra bytes are zero. The
+    /// default body copies through [`Self::from_host_bytes`].
+    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
+        Self::from_host_bytes(&bytes)
+    }
     /// Copies the contents of a backend-owned buffer into a fresh host `Vec<u8>`.
     ///
     /// For host backends this is typically a simple clone of the underlying
@@ -244,7 +295,7 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     unsafe fn destroy(handle: NonNull<Self::Handle>);
 }
 
-/// Primary entry point for all polynomial operations over `Z[X]/(X^N + 1)`.
+/// Primary entry point for polynomial operations in the backend-selected ring.
 ///
 /// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
@@ -267,8 +318,37 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
-    /// The backend's supported FHE limb radix; see [`Backend::MAX_BASE2K`].
-    pub const MAX_BASE2K: usize = B::MAX_BASE2K;
+    /// Selects a radix through [`MaxBase2k`](super::MaxBase2k),
+    /// without constructing a module. `products` counts accumulated polynomial
+    /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
+    /// Set `squaring` if any term is a square; `products` still counts actual
+    /// terms (one for a single square). Otherwise all operands are independent.
+    ///
+    /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
+    /// The cap is the coefficient word width minus two bits. Reserve
+    /// coefficient-domain addition headroom separately. For `m` outputs, add
+    /// `ceil(log2(m))` to the target to allocate a total failure budget.
+    ///
+    /// Current NTT and FFT64 models assume independent centered uniform
+    /// coefficients within each input and independent inputs across terms.
+    /// `squaring` allows equal operands within a term.
+    /// Their Gaussian failure estimates are not guarantees; other correlations,
+    /// including operand reuse across terms, require a separate model.
+    ///
+    /// # Panics
+    /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
+    /// and `products` and `failure_bits` are positive.
+    #[inline]
+    pub fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize>
+    where
+        B: super::MaxBase2k,
+    {
+        assert!(n.is_power_of_two(), "n must be a power of two");
+        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
+        assert!(products > 0, "products must be positive");
+        assert!(failure_bits > 0, "failure_bits must be positive");
+        B::max_base2k(n, products, failure_bits, squaring)
+    }
 
     /// Creates a backend module for ring degree `N`.
     #[inline]
@@ -401,12 +481,12 @@ impl<B: Backend> Module<B> {
     }
 }
 
-/// Returns the cyclotomic order `2N` for the ring `Z[X]/(X^N + 1)`.
+/// Returns the ambient cyclotomic order for the module's maximum degree `N`.
 pub trait CyclotomicOrder
 where
     Self: ModuleN,
 {
-    /// Returns `2N`, the order of the cyclotomic polynomial `X^N + 1`.
+    /// Defaults to `2N` for `Z[X]/(X^N + 1)`; a backend may select another ambient ring.
     fn cyclotomic_order(&self) -> i64 {
         (self.n() << 1) as _
     }
@@ -414,7 +494,11 @@ where
 
 impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
-impl<BE: Backend> CyclotomicOrder for Module<BE> where Self: ModuleN {}
+impl<BE: Backend> CyclotomicOrder for Module<BE> {
+    fn cyclotomic_order(&self) -> i64 {
+        <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
+    }
+}
 
 /// Asserts that a module of degree `module_n` serves operands of degree `n`.
 ///
@@ -469,21 +553,21 @@ pub fn galois_elements_from_rotations(rotations: impl IntoIterator<Item = i64>, 
     gal_els
 }
 
-/// Galois group operations on the cyclotomic ring `Z[X]/(X^N + 1)`.
+/// Galois group operations using the module's ambient cyclotomic order.
 ///
-/// The Galois group `(Z/2NZ)*` acts on polynomials via the automorphisms
+/// The ambient Galois group acts on polynomials via the automorphisms
 /// `X -> X^k` for odd `k`. This trait provides methods to compute
 /// Galois elements and their inverses from a signed generator exponent.
 pub trait GaloisElement
 where
     Self: CyclotomicOrder,
 {
-    /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod 2N`.
+    /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
     fn galois_element(&self, generator: i64) -> i64 {
         galois_element(generator, self.cyclotomic_order())
     }
 
-    /// Returns the inverse of `gal_el` in the Galois group `(Z/2NZ)*`.
+    /// Returns the inverse of `gal_el` modulo the ambient cyclotomic order.
     ///
     /// # Panics
     ///

@@ -35,6 +35,9 @@ Higher-level backend wiring is feature-gated:
 - `enable-core` wires the reference backends into the `poulpy-core` reference implementations.
 - `enable-ckks` wires the reference backends into the `poulpy-ckks` reference implementations and
   also enables core support.
+- `enable-test-suite` ships the portable comparison adapters other backend crates run their core
+  parity suites against. Those adapters answer from a controlled-sampling scope and panic outside
+  one, so enable this from `[dev-dependencies]` only, never in a shipping build.
 
 Useful test commands:
 
@@ -111,11 +114,27 @@ The same pattern applies to NTT4x30 backends (`NTT4x30Ref` / `NTT4x30Avx`).
 To implement your own backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
-2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+2. Implement each required HAL OEP method and inherit or override its derived defaults.
+   Backends using the FFT64 defaults implement `Fft64RingArith` for their ring
+   (`fft64_ring_arith_standard!` or `fft64_ring_arith_ci!`); NTT4x30 backends
+   implement `NttDFTExecute` for their ring's tables.
+3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `reference` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+CPU backends share their common registrations through `impl_cpu_core_defaults!`
+and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
+transforms, and encapsulated ModUp remain explicit backend choices, as do the
+standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
+rotate, `mul_xp_minus_one`, GLWE trace) and the standard-only CKKS families
+(conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP
+coefficient encodings), which only standard-ring backends register. Backends that
+override other families can register the individual operation macros.
+
+Use either a family macro or a handwritten implementation of the same core
+`*Impl` trait. Reference helpers remain callable for methods you forward, while
+derived defaults reuse selected backend operations. Validate the resulting
+backend with the shared conformance tests; the [core backend guide](../poulpy-core/docs/core-contracts.md)
+describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:
 
@@ -123,8 +142,48 @@ Your backend will automatically integrate with the backend-generic layers:
 * `poulpy-core`
 * `poulpy-ckks`
 
-No modifications to those crates are necessary — the HAL provides the extension points. Only the operations that need a faster implementation require explicit overrides; everything else is inherited from the `reference` layer for free.
+No modifications to those crates are necessary — the HAL provides the extension points. Only the operations that need a faster implementation require explicit overrides, and each override is validated by the parity test against an attested backend (attestation is transitive back to `reference`: the portable backend runs it directly, and your backend may test against the portable backend or against any backend already attested), correct only when that test passes; everything else runs the `reference` layer, which is the implementation.
 
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Conjugate invariant rings
+
+`Module::<FFT64CIRef>::new(n)` and `Module::<NTT4x30CIRef>::new(n)` select
+an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
+The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
+cyclotomic order is `4n`. They alias `FFT64Ref<ConjugateInvariant>` and
+`NTT4x30Ref<ConjugateInvariant>`; the ring parameter defaults to the standard ring.
+The accelerated CPU and Rayon backends take the same parameter, with CI aliases
+such as `FFT64CIAvx512`, `NTT4x30CIAvx` and `NTT3x42CIIfmaRayon`.
+NTT modules support invariant degrees up to `2^17` with the current prime sets.
+
+The ring is selected by the backend type. Standard plans leave the CI tables empty,
+and CI plans own their required tables directly. Ring-specific transforms,
+slot products and automorphisms have one implementation per ring
+(`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`), whose reference bodies live in the
+`standard` and `conjugate_invariant` submodules of `reference::{fft64, ntt4x30, znx}`
+under the same names. The two rings have distinct
+module handles and prepared-data types; layout compatibility only connects
+implementations of the same ring.
+
+Transforms, polynomial products, and automorphisms use this basis. Sparse
+operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
+not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
+packing, or LWE conversion; the GLWE trace uses standard-ring Galois elements and
+is not implemented either, and `max_base2k` has no CI model.
+Standard modules embed CI operands of degree `n` into the standard ring of degree
+`2n` and map them back by the relative trace (`vec_znx_ci_embed`, `vec_znx_ci_trace`); CKKS combines
+these with key switching.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+
+```sh
+cargo test -p poulpy-cpu-ref --features enable-bin-fhe bin_fhe_parity
+```

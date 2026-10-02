@@ -16,16 +16,25 @@ mod delegating_backend;
 mod derived_scratch;
 
 #[test]
-fn bootstrapping_presets_respect_max_base2k() {
-    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_for_backend};
+fn conjugate_invariant_max_base2k_has_no_model() {
+    assert_eq!(Module::<crate::FFT64CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<crate::NTT4x30CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 13, 1, 128, true), Some(55));
+}
+
+#[test]
+fn bootstrapping_presets_keep_fixture_radices() {
+    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
     use poulpy_core::layouts::LWEInfos;
 
-    assert_eq!(Module::<FFT64Ref>::MAX_BASE2K, 19);
-    assert_eq!(Module::<NTT4x30Ref>::MAX_BASE2K, 52);
     for preset in all().unwrap() {
-        let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
-        let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();
-        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+        let fft = preset_with_max_base2k(&preset, 19).unwrap();
+        let ntt = preset_with_max_base2k(&preset, 52).unwrap();
+        let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+        assert_eq!(
+            (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
+            (19, fft_dsize, 1)
+        );
         assert_eq!(
             (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
             (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
@@ -157,6 +166,16 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
+    mod vec_znx_ci,
+    backend_ref =  crate::FFT64Ref,
+    backend_test = crate::NTT4x30Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
+        test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
+    }
+}
+cross_backend_test_suite! {
     mod svp,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT4x30Ref,
@@ -256,6 +275,7 @@ backend_test_suite! {
         test_vec_znx_rsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_assign_derived,
         test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
         test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
+        test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
         test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
         test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
@@ -289,6 +309,7 @@ backend_test_suite! {
         test_vec_znx_rsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_assign_derived,
         test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
         test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
+        test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
         test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
         test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
@@ -399,14 +420,15 @@ poulpy_core::core_backend_test_suite!(
 
 #[test]
 fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
-    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes};
-    use poulpy_hal::layouts::{FillUniform, HostBytesBackend, ScratchOwned, VecZnx};
+    use poulpy_hal::api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceAll, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes,
+    };
+    use poulpy_hal::layouts::ScratchOwned;
     use poulpy_hal::source::Source;
-    use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+    use poulpy_hal::test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 
     let n = 8usize;
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(n as u64);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
     let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(4));
     let base2k = 52usize;
     let mut source = Source::new([3u8; 32]);
@@ -417,10 +439,9 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             if k / base2k + 1 > size {
                 continue;
             }
-            let mut a: VecZnx<AlignedBuf, i64> = module_host.vec_znx_alloc(module_host.n(), 1, size);
-            a.fill_uniform(base2k, &mut source);
-            let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(module_host.n(), 1, size));
+            let mut a_be = module.vec_znx_alloc(n, 1, size);
+            module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
+            let mut want_be = module.vec_znx_alloc(n, 1, size);
             module.vec_znx_rsh(
                 base2k,
                 k,
@@ -430,7 +451,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 0,
                 &mut scratch.borrow(),
             );
-            let mut got_be = upload_vec_znx::<NTT4x30Ref>(&a);
+            let mut got_be = a_be.clone();
             module.vec_znx_rsh_assign(
                 base2k,
                 k,
@@ -460,7 +481,43 @@ fn assert_f64_word_containers_are_eq() {
 }
 
 #[cfg(feature = "enable-core")]
+#[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
+
+#[test]
+fn test_hal_serialization_fft64_ref() {
+    poulpy_hal::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(1024));
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_glwe_public_key_rank1_golden() {
+    use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
+    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
+    const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
+    const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
+    assert_eq!(
+        (
+            glwe_public_key_rank1_digests(&Module::<FFT64Ref>::new(256), 17),
+            glwe_public_key_rank1_digests(&Module::<NTT4x30Ref>::new(256), 52),
+        ),
+        (FFT64, NTT4X30)
+    );
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_core_serialization_fft64_ref() {
+    poulpy_core::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(64));
+}
+
+#[cfg(feature = "enable-bin-fhe")]
+#[test]
+fn test_blind_rotation_key_serialization_fft64_ref() {
+    poulpy_bin_fhe::blind_rotation::test_suite::serialization::test_blind_rotation_key_serialization(&Module::<FFT64Ref>::new(
+        256,
+    ));
+}
 
 #[cfg(feature = "enable-core")]
 #[test]
@@ -491,6 +548,20 @@ poulpy_core::core_parity_test_suite! {
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
@@ -507,19 +578,21 @@ where
     Module<BE>: poulpy_hal::api::VecZnxBigAlloc<BE>
         + poulpy_hal::api::VecZnxBigFromSmall<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxFillUniformSourceAll<BE>
+        + poulpy_hal::api::VecZnxAddAssign<BE>
+        + poulpy_hal::api::VecZnxSubNegateAssign<BE>,
     poulpy_hal::layouts::ScratchOwned<BE>: poulpy_hal::api::ScratchOwnedAlloc<BE>,
 {
     use poulpy_hal::{
-        api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
-        layouts::{
-            FillUniform, HostBytesBackend, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-            VecZnxToBackendMut, VecZnxToBackendRef, ZnxView,
+        api::{
+            ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+            VecZnxBigNormalizeTmpBytes, VecZnxFillUniformSourceAll, VecZnxSubNegateAssign,
         },
+        layouts::{ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView},
         source::Source,
-        test_suite::upload_vec_znx,
+        test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
     };
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut source = Source::new([2u8; 32]);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
     for a_base2k in 1..=51usize {
@@ -527,16 +600,20 @@ where
             for offset in [-(a_base2k as i64), -3, -1, 0, 1, 3, a_base2k as i64] {
                 for a_size in 1..=3usize {
                     for res_size in 1..=3usize {
-                        let mut a = module_host.vec_znx_alloc(module_host.n(), 1, a_size);
-                        a.fill_uniform(63, &mut source);
-                        let uploaded = upload_vec_znx::<BE>(&a);
-                        let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
-                        module.vec_znx_big_from_small(
-                            &mut big.to_backend_mut(),
+                        // 2x - y (x at radix 62, y at radix 1) is uniform on [-2^62, 2^62), the radix-63 digits the fill cannot draw.
+                        let mut a = module.vec_znx_alloc(module.n(), 1, a_size);
+                        let mut x = module.vec_znx_alloc(module.n(), 1, a_size);
+                        module.vec_znx_fill_uniform_source_all(1, a_size, &mut a, &mut source);
+                        module.vec_znx_fill_uniform_source_all(62, a_size * 62, &mut x, &mut source);
+                        module.vec_znx_sub_negate_assign(
+                            &mut vec_znx_backend_mut::<BE>(&mut a),
                             0,
-                            &<VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(&uploaded),
+                            &vec_znx_backend_ref::<BE>(&x),
                             0,
                         );
+                        module.vec_znx_add_assign(&mut vec_znx_backend_mut::<BE>(&mut a), 0, &vec_znx_backend_ref::<BE>(&x), 0);
+                        let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
+                        module.vec_znx_big_from_small(&mut big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a), 0);
                         let mut res = module.vec_znx_alloc(module.n(), 1, res_size);
                         module.vec_znx_big_normalize(
                             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res),
@@ -1325,6 +1402,157 @@ mod canonical_precision_tests {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_fft64ref,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Ref
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ntt4x30ref,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::NTT4x30Ref
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_ntt4x30,
+    backend_ref = crate::FFT64Ref,
+    backend_test = crate::NTT4x30Ref,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}
+
+#[cfg(feature = "enable-ckks")]
+mod ckks_overrides;
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_overrides;
+
+// A lazy op into a compact destination must not drop the carries a
+// non-canonical source holds past its `k`.
+#[cfg(feature = "enable-ckks")]
+mod ckks_noncanonical_compact_dst {
+    use crate::FFT64Ref;
+    use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
+    use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
+    use poulpy_ckks::{CKKSMeta, SetCKKSInfos};
+    use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
+    use poulpy_core::{GLWECopy, GLWENormalize};
+    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
+    use poulpy_hal::layouts::{Module, ScratchOwned, ZnxView, ZnxViewMut};
+
+    fn ct(module: &Module<FFT64Ref>, k: u32) -> CKKSCiphertextOwned<FFT64Ref> {
+        let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+            n: 64u32.into(),
+            base2k: 16u32.into(),
+            k: k.into(),
+            rank: 1u32.into(),
+        });
+        ct.set_meta(CKKSMeta {
+            log_delta: 16,
+            ..Default::default()
+        });
+        ct
+    }
+
+    #[test]
+    fn lazy_ops_keep_carries_past_k() {
+        let module = Module::<FFT64Ref>::new(64);
+        let mut scratch = ScratchOwned::<FFT64Ref>::alloc(1 << 20);
+        // k = 32 over 4 limbs: 3 units of limb 1 parked in limb 2.
+        let mut src = ct(&module, 64);
+        src.set_log_budget(16);
+        src.data_mut().at_mut(1, 2)[0] = 3 << 16;
+        GLWEToBackendMut::<FFT64Ref>::set_canonical(&mut src, false);
+
+        let limbs = |dst: &mut CKKSCiphertextOwned<FFT64Ref>, scratch: &mut ScratchOwned<FFT64Ref>| {
+            module.glwe_normalize_assign(dst, &mut scratch.borrow());
+            [dst.data().at(1, 1)[0], dst.data().at(1, 1)[32]]
+        };
+        type Op = fn(
+            &Module<FFT64Ref>,
+            &mut CKKSCiphertextOwned<FFT64Ref>,
+            &CKKSCiphertextOwned<FFT64Ref>,
+            &mut ScratchOwned<FFT64Ref>,
+        );
+        let ops: [(&str, Op, [i64; 2]); 10] = [
+            ("glwe_copy", |m, d, s, sc| m.glwe_copy(d, s, &mut sc.borrow()), [3, 0]),
+            (
+                "add_into",
+                |m, d, s, sc| m.ckks_add_into(d, s, &ct(m, 32), &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_into",
+                |m, d, s, sc| m.ckks_sub_into(d, &ct(m, 32), s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
+            (
+                "add_assign",
+                |m, d, s, sc| m.ckks_add_assign(d, s, &mut sc.borrow()).unwrap(),
+                [3, 0],
+            ),
+            (
+                "sub_assign",
+                |m, d, s, sc| m.ckks_sub_assign(d, s, &mut sc.borrow()).unwrap(),
+                [-3, 0],
+            ),
+            ("copy", |m, d, s, sc| m.ckks_copy(d, s, &mut sc.borrow()).unwrap(), [3, 0]),
+            (
+                "double",
+                |m, d, s, sc| m.ckks_double_into(d, s, &mut sc.borrow()).unwrap(),
+                [6, 0],
+            ),
+            ("neg", |m, d, s, sc| m.ckks_neg_into(d, s, &mut sc.borrow()).unwrap(), [-3, 0]),
+            (
+                "mul_i",
+                |m, d, s, sc| m.ckks_mul_i_into(d, s, &mut sc.borrow()).unwrap(),
+                [0, 3],
+            ),
+            (
+                "div_i",
+                |m, d, s, sc| m.ckks_div_i_into(d, s, &mut sc.borrow()).unwrap(),
+                [0, -3],
+            ),
+        ];
+        for (name, op, want) in ops {
+            let mut dst = ct(&module, 32);
+            op(&module, &mut dst, &src, &mut scratch);
+            assert_eq!(limbs(&mut dst, &mut scratch), want, "{name}");
         }
     }
 }

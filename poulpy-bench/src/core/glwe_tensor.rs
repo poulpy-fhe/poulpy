@@ -1,14 +1,13 @@
-use poulpy_core::api::TransferInto;
-use poulpy_hal::layouts::CopyFromHost;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    GLWETensoring,
+    GLWEMaskFill, GLWETensoring,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEAtBackendMut, GLWELayout, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
+        ModuleCoreAlloc, Rank, TorusPrecision,
     },
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -16,7 +15,6 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::core::fill::{host_glwe, host_glwe_tensor, host_glwe_tensor_key, staging};
 use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 fn glwe_layout(cp: &CoreParams) -> GLWELayout {
@@ -42,17 +40,15 @@ fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
 
 /// Relinearization (the keyswitch phase of `ckks_mul`).
 ///
-/// Operands are uniform noise filled through the backend; see [`crate::core::fill`].
-pub fn runner_glwe_tensor_relinearize<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
+/// Operands are uniform noise filled through the backend.
+pub fn runner_glwe_tensor_relinearize<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
     Module<BE>: ModuleNew<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
+        + GLWEMaskFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
 {
     let glwe_infos = glwe_layout(cp);
     let tsk_infos = tensor_key_layout(cp);
@@ -62,11 +58,10 @@ pub fn runner_glwe_tensor_relinearize<BE: Backend<ZnxWord = i64, OwnedBuf: CopyF
 
     let mut res = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    let host = staging(cp.n as usize);
-    host_glwe_tensor(&host, &glwe_infos, &mut source).transfer_into(&mut tensor);
+    module.fill_glwe_from_source(&mut tensor, &mut source);
 
     let mut tsk_coeffs: GLWETensorKey<BE::OwnedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
-    host_glwe_tensor_key(&host, &tsk_infos, &mut source).transfer_into(&mut tsk_coeffs);
+    fill_by_digit(&module, &mut tsk_coeffs, 1, &mut source);
 
     let mut tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
     let mut scratch = ScratchOwned::<BE>::alloc(
@@ -82,11 +77,9 @@ pub fn runner_glwe_tensor_relinearize<BE: Backend<ZnxWord = i64, OwnedBuf: CopyF
     });
 }
 
-pub fn runner_glwe_tensor_apply<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+pub fn runner_glwe_tensor_apply<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos = glwe_layout(cp);
@@ -96,9 +89,8 @@ pub fn runner_glwe_tensor_apply<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHos
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut b = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    let host = staging(cp.n as usize);
-    host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut a);
-    host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut b);
+    module.fill_glwe_from_source(&mut a, &mut source);
+    module.fill_glwe_from_source(&mut b, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     bencher.iter(|| {
@@ -107,11 +99,9 @@ pub fn runner_glwe_tensor_apply<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHos
     });
 }
 
-pub fn runner_glwe_tensor_square_apply<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+pub fn runner_glwe_tensor_square_apply<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos = glwe_layout(cp);
@@ -120,8 +110,7 @@ pub fn runner_glwe_tensor_square_apply<BE: Backend<ZnxWord = i64, OwnedBuf: Copy
 
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    let host = staging(cp.n as usize);
-    host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut a);
+    module.fill_glwe_from_source(&mut a, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_square_apply_tmp_bytes(&tensor, &a));
 
     bencher.iter(|| {

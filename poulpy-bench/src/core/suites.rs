@@ -1,15 +1,16 @@
 use poulpy_core::{
-    GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
-    GLWEKeyswitch, GLWEMulPlain, GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensoring,
+    GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk,
+    GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWEPublicKeyGenerate, GLWESub,
+    GLWESwitchingKeyEncryptSk, GLWETensoring,
     layouts::{
-        GGLWEAtBackendMut, GGSW, GGSWAtBackendMut, GGSWPreparedFactory, GLWEAutomorphismKey, GLWEAutomorphismKeyPreparedFactory,
-        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKey,
-        GLWETensorKeyPreparedFactory, ModuleCoreAlloc, prepared::GGLWEPreparedFactory,
+        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
+        prepared::GGLWEPreparedFactory,
     },
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CopyFromHost, HostDataMut, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
 };
 
 use std::marker::PhantomData;
@@ -20,7 +21,7 @@ use crate::{
     BenchOp, bench_ops, bin_fhe_n,
     core::{
         automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations,
-        params::{CoreParams, default_bench_params_core},
+        params::{CoreParams, default_bench_params_core, default_bench_params_encrypt_pk},
     },
 };
 
@@ -33,8 +34,7 @@ use crate::{
 
 // ── encryption ───────────────────────────────────────────────────────────────
 
-pub fn encryption_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 3]
+pub fn encryption_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 3]
 where
     Module<BE>: ModuleNew<BE>
         + GLWEEncryptSk<BE>
@@ -64,10 +64,30 @@ where
     ]
 }
 
+/// Public-key encryption under a prepared key, swept by [`default_bench_params_encrypt_pk`].
+pub fn bench_glwe_encrypt_pk<BE>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptPk<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let ops = [BenchOp {
+        layer: "core",
+        name: "glwe_encrypt_pk",
+        runner: encryption::runner_glwe_encrypt_pk::<BE, WallTime>,
+    }];
+    bench_ops(PhantomData::<BE>, &ops, default_bench_params_encrypt_pk(), c);
+}
+
 // ── decryption ───────────────────────────────────────────────────────────────
 
-pub fn decryption_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 1]
+pub fn decryption_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
 where
     Module<BE>: ModuleNew<BE>
         + GLWEDecrypt<BE>
@@ -88,15 +108,14 @@ where
 
 // ── automorphism ─────────────────────────────────────────────────────────────
 
-pub fn automorphism_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 1]
+pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
 {
     [BenchOp {
         layer: "core",
@@ -107,15 +126,14 @@ where
 
 // ── external_product ─────────────────────────────────────────────────────────
 
-pub fn external_product_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 2]
+pub fn external_product_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 2]
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
 {
     [
         BenchOp {
@@ -133,16 +151,14 @@ where
 
 // ── keyswitch ────────────────────────────────────────────────────────────────
 
-pub fn keyswitch_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 1]
+pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
 where
-    Module<BE>:
-        ModuleNew<BE> + GLWEKeyswitch<BE> + GGLWEPreparedFactory<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
+        + GLWEKeyswitch<BE>
+        + GGLWEPreparedFactory<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
 {
     [BenchOp {
         layer: "core",
@@ -153,15 +169,14 @@ where
 
 // ── glwe_tensor ──────────────────────────────────────────────────────────────
 
-pub fn glwe_tensor_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 3]
+pub fn glwe_tensor_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 3]
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
 {
     [
         BenchOp {
@@ -184,10 +199,10 @@ where
 
 // ── operations ───────────────────────────────────────────────────────────────
 
-pub fn operations_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 8]
+pub fn operations_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 8]
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEAdd<BE>
         + GLWESub<BE>
         + GLWENormalize<BE>
@@ -245,10 +260,10 @@ where
 /// backend that implements the full `poulpy-core` surface; a backend
 /// supporting only part of it should instead compose the `*_ops` tables it
 /// needs directly.
-pub fn all_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> Vec<BenchOp<M, CoreParams>>
+pub fn all_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -273,11 +288,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     let mut ops: Vec<BenchOp<M, CoreParams>> = Vec::new();
@@ -295,10 +306,10 @@ where
 
 /// A small, representative cross-section of core ops for library-wide
 /// regression tracking.
-pub fn standard_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> Vec<BenchOp<M, CoreParams>>
+pub fn standard_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -315,10 +326,6 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
@@ -364,8 +371,9 @@ where
 /// CKKS/NTT-role sweep. `where` clause matches [`all_ops`]'s own.
 pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -390,11 +398,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_core(), c);
@@ -408,8 +412,9 @@ where
 /// grid.
 pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
+        + GLWEMaskFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -434,11 +439,7 @@ where
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-    GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-    GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     bench_ops(
@@ -456,22 +457,22 @@ pub mod standard {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::{Backend, CopyFromHost, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
+    use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
 
     use super::{
-        GGLWEAtBackendMut, GGLWEPreparedFactory, GGSW, GGSWAtBackendMut, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism,
-        GLWEAutomorphismKey, GLWEAutomorphismKeyEncryptSk, GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk,
-        GLWEExternalProduct, GLWEKeyswitch, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk,
-        GLWESwitchingKeyPreparedFactory, GLWETensorKey, ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow,
-        standard_ops,
+        GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
+        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_standard_n};
 
     /// Core ops swept at the sizes matching CKKS (`log_n` 13/14/15).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+        BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
+            + GLWEMaskFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -488,10 +489,6 @@ pub mod standard {
             + GGLWEPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-        MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-        GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-        GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-        GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
         for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
         for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     {
@@ -507,8 +504,9 @@ pub mod standard {
     /// params use.
     pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+        BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
+            + GLWEMaskFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -525,10 +523,6 @@ pub mod standard {
             + GGLWEPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-        MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-        GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-        GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-        GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
         for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
         for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     {
@@ -547,22 +541,22 @@ pub mod light {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::{Backend, CopyFromHost, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
+    use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
 
     use super::{
-        GGLWEAtBackendMut, GGLWEPreparedFactory, GGSW, GGSWAtBackendMut, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism,
-        GLWEAutomorphismKey, GLWEAutomorphismKeyEncryptSk, GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk,
-        GLWEExternalProduct, GLWEKeyswitch, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk,
-        GLWESwitchingKeyPreparedFactory, GLWETensorKey, ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow,
-        standard_ops,
+        GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
+        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_light_n};
 
     /// Core ops swept at the single size matching CKKS (`log_n` = 14).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+        BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
+            + GLWEMaskFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -579,10 +573,6 @@ pub mod light {
             + GGLWEPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-        MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-        GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-        GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-        GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
         for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
         for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     {
@@ -598,8 +588,9 @@ pub mod light {
     /// params use.
     pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
+        BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
+            + GLWEMaskFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -616,10 +607,6 @@ pub mod light {
             + GGLWEPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-        MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
-        GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
-        GLWEAutomorphismKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
-        GLWETensorKey<BE::OwnedBuf, i64>: GGLWEAtBackendMut<BE>,
         for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
         for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     {

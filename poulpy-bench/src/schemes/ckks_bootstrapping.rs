@@ -1,11 +1,13 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
 //! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! at a radix supported by the backend. Criterion's name filter selects a preset by its name. The setup, the
-//! bootstrap call, and the precision measurement are the shared
+//! at an explicitly chosen fixture radix. Criterion's name filter selects a
+//! preset by its name. The setup, bootstrap call, and precision measurement use
+//! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks.
 
+use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
@@ -14,7 +16,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{TestContextBackend, TestContextHostModule, TestContextModule},
-        presets::{BootstrappingPresetRun, preset_for_backend},
+        presets::{BootstrappingPresetRun, preset_with_max_base2k},
     },
 };
 use poulpy_core::layouts::{
@@ -22,12 +24,12 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::ScratchOwnedAlloc,
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
 fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -52,7 +54,7 @@ where
         precision = Some(run.precision());
     });
     if let Some((re, im)) = precision {
-        let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+        let backend = backend_name::<BE>();
         println!(
             "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
             re.avg_log2_prec,
@@ -73,9 +75,13 @@ where
     }
 }
 
-pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
+/// Exercises every preset at the caller's fixture radix limit.
+///
+/// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
+/// guarantee. The registered FFT and NTT fixtures use 19 and 52 respectively.
+pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -85,11 +91,11 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let backend = backend_name::<BE>();
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
         runner_ckks_bootstrapping::<BE>(&mut group, preset);
     }
     group.finish();

@@ -10,8 +10,6 @@
 //! in-place (`res = op(res, a)`) variants. In-place variants may require
 //! a scratch buffer.
 
-mod ggsw;
 mod glwe;
 
-pub use ggsw::*;
 pub use glwe::*;

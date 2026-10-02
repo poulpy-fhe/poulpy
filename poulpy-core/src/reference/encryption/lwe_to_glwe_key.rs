@@ -16,7 +16,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEToGLWESwitchingKeyEncryptSkReference<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -85,40 +87,44 @@ where
             scratch.available(),
             self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res)
         );
-
-        let scratch = scratch.borrow();
-        let (mut sk_lwe_as_glwe_src, scratch_1) = scratch.take_glwe_secret_scratch(self.n().into(), Rank(1));
-        let (mut sk_lwe_as_glwe, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), Rank(1));
-
-        sk_lwe_as_glwe_src.dist = sk_lwe.dist;
-        sk_lwe_as_glwe.dist = sk_lwe.dist;
+        let tmp_bytes: usize = self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res);
         {
-            let mut sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe_src.data_mut());
-            let sk_lwe_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe.data());
-            self.vec_znx_zero(&mut sk_lwe_as_glwe_src_backend, 0);
-            self.vec_znx_copy(
-                &mut vec_znx_backend_mut_from_mut::<BE>(&mut sk_lwe_as_glwe_src_backend).window_coeffs(0, sk_lwe.n().into()),
-                0,
-                &sk_lwe_backend,
-                0,
+            let scratch = scratch.borrow();
+            let (mut sk_lwe_as_glwe_src, scratch_1) = scratch.take_glwe_secret_scratch(self.n().into(), Rank(1));
+            let (mut sk_lwe_as_glwe, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), Rank(1));
+
+            sk_lwe_as_glwe_src.dist = sk_lwe.dist;
+            sk_lwe_as_glwe.dist = sk_lwe.dist;
+            {
+                let mut sk_lwe_as_glwe_src_backend =
+                    scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe_src.data_mut());
+                let sk_lwe_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe.data());
+                self.vec_znx_zero(&mut sk_lwe_as_glwe_src_backend, 0);
+                self.vec_znx_copy(
+                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut sk_lwe_as_glwe_src_backend).window_coeffs(0, sk_lwe.n().into()),
+                    0,
+                    &sk_lwe_backend,
+                    0,
+                );
+            }
+            {
+                let sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_lwe_as_glwe_src.data());
+                let mut sk_lwe_as_glwe_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe.data_mut());
+                self.vec_znx_automorphism(-1, &mut sk_lwe_as_glwe_backend, 0, &sk_lwe_as_glwe_src_backend, 0);
+            }
+
+            let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
+            let sk_lwe_as_glwe_data = sk_lwe_as_glwe.data_mut();
+            self.gglwe_encrypt_sk(
+                res,
+                &sk_lwe_as_glwe_data,
+                sk_glwe,
+                enc_infos,
+                source_xe,
+                source_xa,
+                &mut enc_scratch,
             );
         }
-        {
-            let sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_lwe_as_glwe_src.data());
-            let mut sk_lwe_as_glwe_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe.data_mut());
-            self.vec_znx_automorphism(-1, &mut sk_lwe_as_glwe_backend, 0, &sk_lwe_as_glwe_src_backend, 0);
-        }
-
-        let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
-        let sk_lwe_as_glwe_data = sk_lwe_as_glwe.data_mut();
-        self.gglwe_encrypt_sk(
-            res,
-            &sk_lwe_as_glwe_data,
-            sk_glwe,
-            enc_infos,
-            source_xe,
-            source_xa,
-            &mut enc_scratch,
-        );
+        scratch.wipe(tmp_bytes);
     }
 }

@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, LWEInfos,
@@ -112,7 +109,7 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyCompressedBackendMut<'a, BE> 
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGLWEToGGSWKeyCompressedBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -170,14 +167,6 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEToGGSWKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWEToGGSWKeyCompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.keys
-            .iter_mut()
-            .for_each(|key: &mut GGLWECompressed<D, W>| key.fill_uniform(log_bound, source))
     }
 }
 
@@ -254,7 +243,7 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
     pub fn at_mut(&mut self, i: usize) -> &mut GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
@@ -262,7 +251,7 @@ impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
     pub fn at(&self, i: usize) -> &GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
@@ -296,7 +285,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEToGGSWKeyCompressed<D, W> {
     }
 }
 
-/// Trait for decompressing a [`GGLWEToGGSWKeyCompressed`] into a standard [`GGLWEToGGSWKey`].
+/// Trait for decompressing a [`GGLWEToGGSWKeyCompressed`] into a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
 pub trait GGLWEToGGSWKeyDecompress
 where
     Self: GGLWEDecompress,
@@ -328,6 +317,8 @@ where
         }
     }
 }
+
+impl<B: Backend> GGLWEToGGSWKeyDecompress for poulpy_hal::layouts::Module<B> where Self: GGLWEDecompress {}
 
 // module-only API: decompression is provided by `GGLWEToGGSWKeyDecompress` on `Module`.
 

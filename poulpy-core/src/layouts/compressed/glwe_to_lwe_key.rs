@@ -2,10 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
@@ -22,6 +19,17 @@ use crate::layouts::{
 /// GLWE ciphertexts to LWE ciphertexts via key-switching.
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWEToLWESwitchingKeyCompressed<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKeyCompressed<D, W>);
+
+// The wrapper carries the same degree metadata as its switching-key storage.
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWEToLWESwitchingKeyCompressed<D, W> {
+    fn input_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::input_degree(&self.0)
+    }
+
+    fn output_degree(&self) -> &Degree {
+        GLWESwitchingKeyDegrees::output_degree(&self.0)
+    }
+}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEToLWESwitchingKeyCompressed<D, W> {
     fn base2k(&self) -> Base2K {
@@ -70,12 +78,6 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWESwitchingKeyCompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEToLWESwitchingKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEToLWESwitchingKeyCompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.0.fill_uniform(log_bound, source);
     }
 }
 

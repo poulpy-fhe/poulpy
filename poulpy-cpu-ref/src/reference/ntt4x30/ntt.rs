@@ -19,7 +19,7 @@
 //!
 //! This module is a direct Rust port of:
 //! - `q120_ntt.c` (precomputation: [`NttTable`], [`NttTableInv`])
-//! - `q120_ntt_avx2.c` (algorithm, re-expressed in scalar Rust: [`ntt_ref`], [`intt_ref`])
+//! - `q120_ntt_avx2.c` (algorithm, re-expressed in scalar Rust: [`ntt_ref`](super::standard::ntt_ref), [`intt_ref`](super::standard::intt_ref))
 //!
 //! # Data layout
 //!
@@ -46,10 +46,11 @@
 //! The reference implementation is intended as a correctness oracle.
 //! For performance, the AVX2 backend in `poulpy-cpu-avx` will implement
 //! the same algorithm using SIMD intrinsics that match the spqlios source.
+use poulpy_hal::layouts::{Ring, Standard};
 
 use std::marker::PhantomData;
 
-use crate::reference::ntt4x30::primes::PrimeSetCrt4;
+use crate::reference::ntt4x30::{conjugate_invariant::BasisChange, primes::PrimeSetCrt4};
 use poulpy_hal::{AlignedVec, alloc_aligned};
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -96,8 +97,8 @@ pub struct NttReducMeta {
 /// Precomputed twiddle-factor table for the forward Q120 NTT.
 ///
 /// Construct with [`NttTable::new`].
-pub struct NttTable<P: PrimeSetCrt4> {
-    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
+pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
+    /// NTT size (a power of two at most [`max_ntt_degree`]).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -113,14 +114,16 @@ pub struct NttTable<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    _phantom: PhantomData<P>,
+    /// Conjugate-invariant basis change per prime, empty on the standard ring.
+    pub(super) basis: [BasisChange; 4],
+    _phantom: PhantomData<(P, R)>,
 }
 
 /// Precomputed twiddle-factor table for the inverse Q120 NTT.
 ///
 /// Construct with [`NttTableInv::new`].
-pub struct NttTableInv<P: PrimeSetCrt4> {
-    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
+pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
+    /// NTT size (a power of two at most [`max_ntt_degree`]).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -132,7 +135,9 @@ pub struct NttTableInv<P: PrimeSetCrt4> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    _phantom: PhantomData<P>,
+    /// Conjugate-invariant basis change per prime, empty on the standard ring.
+    pub(super) basis: [BasisChange; 4],
+    _phantom: PhantomData<(P, R)>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -215,15 +220,15 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
     (t1 << 32) | t
 }
 
-impl<P: PrimeSetCrt4> NttTable<P> {
+impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
     /// Builds the forward NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
-    pub fn new(n: usize) -> Self {
+    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
+    pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
-            "NTT size must be a power of two ≤ 2^{}, got {n}",
-            P::MAX_LOG_N
+            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            "NTT size must be a power of two ≤ {}, got {n}",
+            max_ntt_degree::<P, R>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -247,6 +252,7 @@ impl<P: PrimeSetCrt4> NttTable<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                basis,
                 _phantom: PhantomData,
             };
         }
@@ -353,20 +359,21 @@ impl<P: PrimeSetCrt4> NttTable<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            basis,
             _phantom: PhantomData,
         }
     }
 }
 
-impl<P: PrimeSetCrt4> NttTableInv<P> {
+impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
-    pub fn new(n: usize) -> Self {
+    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
+    pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
-            "iNTT size must be a power of two ≤ 2^{}, got {n}",
-            P::MAX_LOG_N
+            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            "iNTT size must be a power of two ≤ {}, got {n}",
+            max_ntt_degree::<P, R>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -389,6 +396,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
+                basis,
                 _phantom: PhantomData,
             };
         }
@@ -505,9 +513,16 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
+            basis,
             _phantom: PhantomData,
         }
     }
+}
+
+/// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set:
+/// `2^MAX_LOG_N` on the standard ring, half that on the conjugate-invariant ring.
+pub fn max_ntt_degree<P: PrimeSetCrt4, R: Ring>() -> usize {
+    (2usize << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR as usize
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -547,7 +562,8 @@ pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
 // Forward NTT
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Forward Q120 NTT on a polynomial of `n` coefficients (reference implementation).
+/// Forward Q120 NTT on a polynomial of `n` coefficients, shared by the
+/// [`standard`](super::standard::ntt_ref) and [`conjugate_invariant`](super::conjugate_invariant::ntt_ref) NTTs.
 ///
 /// `data` must be a flat `u64` slice of length `4 * n` in q120b layout.
 /// After the call, each group of 4 consecutive u64 values holds the NTT
@@ -555,7 +571,7 @@ pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
 ///
 /// # Panics
 /// Panics if `data.len() < 4 * table.n`.
-pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub(super) fn ntt_core<P: PrimeSetCrt4>(table: &NttTable<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -605,16 +621,17 @@ pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 // Inverse NTT
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Inverse Q120 NTT on a polynomial of `n` coefficients (reference implementation).
+/// Inverse Q120 NTT on a polynomial of `n` coefficients, shared by the
+/// [`standard`](super::standard::intt_ref) and [`conjugate_invariant`](super::conjugate_invariant::intt_ref) NTTs.
 ///
 /// `data` must be a flat `u64` slice of length `4 * n` in q120b layout
-/// (the output of [`ntt_ref`]).  After the call, each group of 4 u64
+/// (the output of [`ntt_core`]).  After the call, each group of 4 u64
 /// values holds the recovered coefficient (in q120b), scaled by 1 (the
 /// `n^{-1}` factor is baked into the last-pass twiddle table).
 ///
 /// # Panics
 /// Panics if `data.len() < 4 * table.n`.
-pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(super) fn intt_core<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -835,6 +852,7 @@ mod tests {
     use crate::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
         primes::{PrimeSet, Primes30},
+        standard::{intt_ref, ntt_ref},
     };
 
     /// Verify that NTT followed by iNTT is the identity on a polynomial
@@ -949,6 +967,7 @@ mod tests {
             const Q: [u32; 4] = Primes30::Q;
             const OMEGA: [u32; 4] = [1_016_586_755, 452_565_796, 616_497_877, 411_779_064];
             const LOG_Q: u64 = 30;
+            const LOG_Q_PRODUCT: f64 = Primes30::LOG_Q_PRODUCT;
         }
 
         impl PrimeSetCrt4 for Roots17 {

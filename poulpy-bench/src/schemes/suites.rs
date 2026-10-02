@@ -10,7 +10,7 @@ use poulpy_ckks::api::{
     CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
-    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
         GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWETensorKeyPreparedFactory, LWESecretSampling,
@@ -271,6 +271,8 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
+        + GLWEMaskFill<BE>
+        + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -387,6 +389,8 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
+        + GLWEMaskFill<BE>
+        + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>
         + GLWEExternalProduct<BE>
@@ -452,6 +456,8 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
+        + GLWEMaskFill<BE>
+        + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>
         + GLWEExternalProduct<BE>

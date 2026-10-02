@@ -13,14 +13,15 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
+use crate::api::CKKSModuleInfos;
 use crate::{
-    CoeffsMeta,
+    CKKSInfos, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
 fn validate_compile_inputs<F>(
-    module_n: usize,
+    full_slots: usize,
     base2k: Base2K,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
@@ -39,7 +40,6 @@ fn validate_compile_inputs<F>(
         !diagonals.indexes().is_empty(),
         "linear transformation must contain at least one diagonal"
     );
-    let full_slots = module_n / 2;
     ensure!(
         slots <= full_slots && full_slots.is_multiple_of(slots),
         "linear-transformation slot count {slots} must divide the ring's {full_slots} CKKS slots",
@@ -99,7 +99,7 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    validate_compile_inputs(module.n(), base2k, diagonals, strategy)?;
+    validate_compile_inputs(module.ckks_max_slots(), base2k, diagonals, strategy)?;
 
     encode_linear_transformation_from_diagonals(module, base2k, coeffs_meta, diagonals, strategy, transpose, scratch)
 }
@@ -132,6 +132,11 @@ where
     } else {
         diagonals
     };
+    let complex = cd.im.indexes().iter().any(|&index| {
+        cd.im
+            .get(index)
+            .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
+    });
     let encoded = cd.build_transform(strategy, |pre_re, pre_im| -> Result<_> {
         // The diagonal carries `pre_re.len()` slots: stored compactly, at the
         // degree that holds them, and read by every consumer through the ring
@@ -141,6 +146,11 @@ where
         module
             .ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch)
             .context("cannot encode a linear-transformation diagonal")?;
+        // Real slots after encoding complex diagonals mean the imaginary parts were dropped.
+        ensure!(
+            !complex || !pt.slots().is_real(),
+            "complex linear-transformation diagonals cannot be encoded into real slots"
+        );
         Ok(pt)
     });
 

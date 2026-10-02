@@ -1,17 +1,25 @@
-//! Backend override seams: one `unsafe trait CKKS*Impl` per op family.
+//! Backend contracts selected by the public CKKS API through delegates.
 //!
-//! Each OEP trait is keyed on the backend type and is the contract a backend implements (or inherits) to power the corresponding [`api`](crate::api) trait through the delegates layer.
-//! The layering is `api::CKKS*Ops` → delegates on `Module<BE>` → `oep::CKKS*Impl` (this module, bound-free) ← `reference::CKKS*Default` (the reference implementation, carrying per-method bounds).
+//! A backend explicitly implements each `*Impl` family. The
+//! `impl_ckks_*_reference!` macros wire lower-layer algorithms from
+//! [`crate::reference`]; a custom implementation can call those algorithms for
+//! unchanged methods and replace other methods independently.
 //!
-//! # Wiring patterns
+//! Simple compositions of CKKS operations are crate-private derived defaults
+//! on these contracts. They call the selected constituent operations, so their
+//! overrides and scratch queries remain effective. Complete bootstrap, affine,
+//! dot-product, and linear-transformation pipelines are API-only compositions.
 //!
-//! Most families follow the **opt-in marker** pattern: the family's blanket `unsafe impl<BE> CKKS*Impl for BE` is gated on `Module<BE>: CKKS*Reference<BE>`, and a backend opts in with the family's one-line `impl_ckks_*_reference!` macro (or bypasses the reference chain entirely by implementing the OEP trait natively).
-//! Three kinds of family are deliberate exceptions:
+//! Scalar encoding and matrix-generation contracts preserve backend-resident
+//! interfaces. Reference implementations carry their own lower-layer or host
+//! staging requirements; these are not prerequisites for a custom override.
 //!
-//! - **Unconditional blankets** — [`CKKSEvalModImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.
-//! - **Scalar-generic encoding seams** — [`CKKSEncodingImpl<F>`], [`DFTMatrixImpl<F>`], and [`CKKSPaCoCoeffEncodingImpl`]: parameterized by the encoding scalar and tied to the backend's FFT/codec plumbing, they are wired by backend-crate-side macros (e.g. `impl_ckks_encoding_*!` in the CPU backends) rather than by crate-side default markers, keeping host/FFT bounds out of this crate's API per the no-host-bounds rule.
-//! - **Narrow protocol seam** — [`CKKSEncapsulatedModUpImpl`] lets backends optimize bootstrapping's dense-to-sparse → ModUp → sparse-to-dense stage.
-//! - **No-OEP families** — the remaining composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
+//! An override must reproduce the reference circuit and pass parity against a
+//! caller-selected comparison backend. Validation across backends is transitive.
+//!
+//! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
+//! EvalMod, encapsulated ModUp and the PaCo/SHIP coefficient encodings exist
+//! only on the standard ring: conjugate-invariant backends do not implement them.
 
 mod add;
 mod bootstrapping;
@@ -19,6 +27,7 @@ mod carry_verb;
 mod ckks_impl;
 mod conjugate;
 mod copy;
+pub(crate) mod derived;
 mod dft;
 mod encoding;
 mod encryption;
@@ -36,17 +45,19 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference;
-pub use bootstrapping::{CKKSEncapsulatedModUpImpl, impl_ckks_encapsulated_mod_up_reference};
+pub use bootstrapping::{
+    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, impl_ckks_bootstrapping_reference, impl_ckks_encapsulated_mod_up_reference,
+};
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_reference;
 pub use copy::CKKSCopyImpl;
 pub use copy::impl_ckks_copy_reference;
-pub use dft::{DFTImpl, DFTMatrixImpl, DFTMatrixReference, DFTReference, impl_ckks_dft_reference};
+pub use dft::{DFTImpl, DFTMatrixImpl, impl_ckks_dft_reference};
 pub use encoding::CKKSEncodingImpl;
 pub use encryption::CKKSEncryptionImpl;
 pub use encryption::impl_ckks_encryption_reference;
-pub use eval_mod::CKKSEvalModImpl;
+pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_reference};
 pub use imag::CKKSImagImpl;
 pub use imag::impl_ckks_imag_reference;
 pub use mul::CKKSMulImpl;
@@ -56,7 +67,10 @@ pub use neg::impl_ckks_neg_reference;
 pub use paco::CKKSPaCoCoeffEncodingImpl;
 pub use plaintext::CKKSPlaintextZnxImpl;
 pub use plaintext::impl_ckks_plaintext_reference;
-pub use polynomial_evaluation::CKKSPolynomialEvaluationImpl;
+pub use polynomial_evaluation::{
+    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_reference,
+    impl_ckks_polynomial_evaluation_reference,
+};
 pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_reference;
 pub use rotate::CKKSRotateImpl;

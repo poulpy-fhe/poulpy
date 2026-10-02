@@ -1549,7 +1549,7 @@ pub fn ntt4x30_vec_znx_big_normalize_sub_assign<R, A, BE>(
 /// Limbs of `res` beyond `a.size()` are zeroed.
 pub fn ntt4x30_vec_znx_big_automorphism<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::reference::znx::ZnxAutomorphism,
     R: VecZnxBigToBackendMut<BE>,
     A: VecZnxBigToBackendRef<BE>,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -1560,24 +1560,9 @@ where
     poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism");
     poulpy_hal::layouts::assert_dense(&a, "ntt4x30_vec_znx_big_automorphism");
 
-    let n = res.n();
     let size = res.size().min(a.size());
-    let mask = 2 * n - 1;
-    let p_2n = (p & mask as i64) as usize;
-
     for limb in 0..size {
-        let rj = res.at_mut(res_col, limb);
-        let aj = a.at(a_col, limb);
-        rj[0] = aj[0];
-        let mut k: usize = 0;
-        for &ai in &aj[1..] {
-            k = (k + p_2n) & mask;
-            if k < n {
-                rj[k] = ai;
-            } else {
-                rj[k - n] = ai.wrapping_neg();
-            }
-        }
+        BE::znx_automorphism_i128(p, res.at_mut(res_col, limb), a.at(a_col, limb));
     }
 
     for limb in size..res.size() {
@@ -1591,30 +1576,17 @@ where
 /// elements (i.e., `n` `i128` values).
 pub fn ntt4x30_vec_znx_big_automorphism_assign<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i128])
 where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::reference::znx::ZnxAutomorphism,
     R: VecZnxBigToBackendMut<BE>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
     poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism_assign");
     let n = res.n();
-    let size = res.size();
-    let mask = 2 * n - 1;
-    let p_2n = (p & mask as i64) as usize;
-
-    for limb in 0..size {
+    for limb in 0..res.size() {
         let rj = res.at_mut(res_col, limb);
         tmp[..n].copy_from_slice(rj);
-        rj[0] = tmp[0];
-        let mut k: usize = 0;
-        for &ti in &tmp[1..n] {
-            k = (k + p_2n) & mask;
-            if k < n {
-                rj[k] = ti;
-            } else {
-                rj[k - n] = ti.wrapping_neg();
-            }
-        }
+        BE::znx_automorphism_i128(p, rj, &tmp[..n]);
     }
 }
 

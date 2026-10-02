@@ -198,7 +198,7 @@ impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'b>, B::DftWord, B> {
+impl<B: Backend> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'_>, B::DftWord, B> {
     fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
         SvpPPol {
             data: B::view_ref(&self.data),
@@ -213,7 +213,7 @@ pub trait SvpPPolReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> SvpPPolReborrowBackendRef<B> for SvpPPol<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> SvpPPolReborrowBackendRef<B> for SvpPPol<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
         svp_ppol_backend_ref_from_mut::<B>(self)
     }
@@ -234,7 +234,7 @@ impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'_>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),
@@ -249,7 +249,7 @@ pub trait SvpPPolReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'b>, B::DftWord, B> {
+impl<B: Backend> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'_>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),

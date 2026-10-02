@@ -27,7 +27,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAutomorphism, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWENormalize, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
         GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
@@ -90,7 +90,8 @@ where
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + GLWENormalize<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -109,7 +110,8 @@ where
     let hoisted = hoisted_a_dft + scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker;
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
-    hoisted.max(fallback).max(prepare)
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos))
+        + hoisted.max(fallback).max(prepare).max(module.glwe_normalize_tmp_bytes())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -194,10 +196,19 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
+        + GLWENormalize<BE>
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(a);
+    let a_ref = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    let (a, scratch) = (&&a_ref, &mut scratch);
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     // Baby rotations rotate the source, so their keys are the ones the source's
@@ -229,7 +240,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     if use_hoisted {
         let scratch = scratch.borrow();
         let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module.n(), cols - 1, a_size);
-        let a_ref = a.to_backend_ref();
         for col_i in 0..cols - 1 {
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, &a_ref.data, col_i + 1);
         }
@@ -282,7 +292,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
-                let a_ref = a.to_backend_ref();
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, scratch);
             } else {
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);

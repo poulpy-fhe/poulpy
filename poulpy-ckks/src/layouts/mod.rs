@@ -140,10 +140,7 @@ pub use bootstrapping::{
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
-pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
-    Unnormalized, UnnormalizedCKKSCiphertext,
-};
+pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,
@@ -155,7 +152,7 @@ pub use encoding_buffer::{
 };
 pub(crate) use encoding_buffer::{
     copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
-    copy_reim_host_into_encoding_buffer,
+    copy_reim_host_into_encoding_buffer, slot_coeff_count,
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
 pub use functional_bootstrapping::EncodedLut;
@@ -179,3 +176,5 @@ pub trait CKKSScalar: Float + FromPrimitive + ToPrimitive + Debug {}
 impl<T> CKKSScalar for T where T: Float + FromPrimitive + ToPrimitive + Debug {}
 
 pub use plaintext::CKKSPlaintextVecHostCodec;
+
+pub use poulpy_core::{LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared};

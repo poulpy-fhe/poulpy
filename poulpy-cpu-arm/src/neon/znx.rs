@@ -8,7 +8,7 @@ use core::arch::aarch64::{
 };
 
 use poulpy_cpu_ref::reference::znx::{
-    znx_add_assign_ref, znx_add_ref, znx_automorphism_ref, znx_automorphism_rotate_ref, znx_copy_ref,
+    standard::znx_automorphism_ref, znx_add_assign_ref, znx_add_ref, znx_automorphism_rotate_ref, znx_copy_ref,
     znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref,
     znx_negate_ref, znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
 };

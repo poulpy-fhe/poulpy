@@ -42,6 +42,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         match shift {
@@ -71,6 +72,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
@@ -103,6 +105,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
@@ -127,6 +130,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
+        ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
         match shift {
@@ -165,6 +169,14 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Self: VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;
+        if dst.n() != src.n() {
+            return Err(crate::CKKSCompositionError::PlaintextDegreeMismatch {
+                op: "ckks_extract_pt",
+                ct_n: src.n().as_usize(),
+                pt_n: dst.n().as_usize(),
+            }
+            .into());
+        }
         // The source budget is derived from the decrypted plaintext's torus width
         // `k` (which spans the source ciphertext) and the source scale `log_delta`.
         let src_log_budget = src.k().as_usize().saturating_sub(src_meta.log_delta);
@@ -212,3 +224,5 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSPlaintextReference<BE> for poulpy_hal::layouts::Module<BE> {}

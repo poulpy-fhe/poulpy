@@ -12,9 +12,10 @@ pub trait CKKSRotateReference<BE: Backend> {
     where
         C: GLWEInfos,
         K: GGLWEInfos,
-        Self: GLWEAutomorphism<BE>,
+        Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
     {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
+            .max(self.glwe_shift_tmp_bytes(ct_infos.max_size()))
     }
 
     fn ckks_rotate_into_reference<Dst, Src>(
@@ -66,3 +67,5 @@ pub trait CKKSRotateReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSRotateReference<BE> for poulpy_hal::layouts::Module<BE> {}

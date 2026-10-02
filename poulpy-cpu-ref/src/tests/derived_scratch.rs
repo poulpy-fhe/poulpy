@@ -48,7 +48,7 @@ where
 /// The VMP composites.
 fn run_vmp<BE>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl,
+    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl + poulpy_hal::oep::HalVecZnxImpl,
 {
     test_vmp_apply_dft_derived(&PARAMS, module);
     test_vmp_apply_dft_to_dft_add_derived(&PARAMS, module);

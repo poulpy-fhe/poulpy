@@ -1,7 +1,9 @@
 use poulpy_hal::AlignedBuf;
 use std::fmt;
 
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
+use poulpy_hal::layouts::{
+    Backend, Data, HostBytesBackend, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+};
 
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
@@ -106,7 +108,7 @@ impl<W: ZnxWord> LWEPlaintext<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
@@ -148,7 +150,7 @@ impl<BE: Backend> LWEPlaintextToBackendRef<BE> for LWEPlaintext<BE::OwnedBuf, BE
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE> {
         LWEPlaintext {
             data: VecZnx::from_shape(BE::view_ref(self.data.data()), self.data.shape()),
@@ -158,7 +160,7 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::Bu
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &mut LWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEPlaintextToBackendRef<BE> for &mut LWEPlaintext<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE> {
         LWEPlaintext {
             data: VecZnx::from_shape(BE::view_ref_mut(self.data.data()), self.data.shape()),
@@ -182,7 +184,7 @@ impl<BE: Backend> LWEPlaintextToBackendMut<BE> for LWEPlaintext<BE::OwnedBuf, BE
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEPlaintextToBackendMut<BE> for &mut LWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEPlaintextToBackendMut<BE> for &mut LWEPlaintext<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWEPlaintextBackendMut<'_, BE> {
         LWEPlaintext {
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),

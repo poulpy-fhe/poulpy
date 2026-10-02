@@ -25,12 +25,8 @@
 //! — so its `ct×ct` chain keeps more precision. The recovered average precision
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
-//!
-//! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --release --features enable-avx,enable-ckks ntt4x30_f64::bootstrapping -- --nocapture
-//! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
 
 use crate::api::CKKSEncodingOps;
-use crate::ckks_set_log_delta_normalized;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 use poulpy_hal::AlignedBuf;
@@ -42,7 +38,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, ZnxView},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
 
@@ -97,7 +93,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -491,7 +487,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     assert_eq!(log_budget_check, k_boot - plan.consumed_bits() - ct_out.log_delta());
     assert_eq!(ct_out.log_budget(), log_budget_check);
 
-    ckks_set_log_delta_normalized(&module, &mut ct_out, log_delta, &mut scratch.borrow());
+    ct_out.set_log_delta(log_delta);
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
@@ -537,7 +533,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -859,7 +855,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         .unwrap();
     println!("[evalround] slots_to_coeffs: {:?}", now.elapsed());
 
-    ckks_set_log_delta_normalized(&module, &mut ct_out, log_delta, &mut scratch.borrow());
+    ct_out.set_log_delta(log_delta);
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
@@ -889,7 +885,7 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
@@ -933,7 +929,7 @@ fn run_s2c_first_case<BE, F, E>(
     guard_bits: usize,
 ) -> (f64, f64)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

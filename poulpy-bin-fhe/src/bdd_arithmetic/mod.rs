@@ -53,13 +53,13 @@
 //! No heap allocation occurs on the hot path; callers must size the arena using
 //! the corresponding `*_tmp_bytes` query method.
 mod bdd_1w_to_1w;
-mod bdd_2w_to_1w;
+pub(crate) mod bdd_2w_to_1w;
 mod blind_retrieval;
 mod blind_rotation;
 mod blind_selection;
 mod ciphertexts;
 mod circuits;
-mod eval;
+pub(crate) mod eval;
 mod key;
 
 pub use bdd_1w_to_1w::*;
@@ -81,7 +81,7 @@ pub mod test_suite;
 /// Implemented for `u8`, `u16`, `u32`, `u64`, and `u128`.  The associated
 /// constants encode the bit width and derived log values used to compute the
 /// interleaved coefficient layout inside a packed GLWE polynomial.
-pub trait UnsignedInteger: Copy + Sync + Send + 'static {
+pub trait UnsignedInteger: Copy + Sync + Send {
     /// Total number of bits in this integer type.
     const BITS: u32;
     /// `ceil(log2(BITS))`.

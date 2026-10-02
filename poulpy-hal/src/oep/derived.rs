@@ -38,10 +38,11 @@ use crate::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
         ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl},
+    source::Source,
 };
 
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
@@ -380,7 +381,7 @@ pub fn vec_znx_mul_xp_minus_one_derived<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     BE::vec_znx_rotate(module, p, res, res_col, a, a_col);
     BE::vec_znx_sub_assign(module, res, res_col, a, a_col);
@@ -391,7 +392,7 @@ pub fn vec_znx_mul_xp_minus_one_derived<BE>(
 #[doc(hidden)]
 pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived<BE>(module: &Module<BE>, size: usize) -> usize
 where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     BE::bytes_of_vec_znx(module.n(), 1, size)
 }
@@ -409,12 +410,32 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
     res_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     let size: usize = ZnxInfos::size(res);
     let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
     vec_znx_mul_xp_minus_one_derived::<BE>(module, p, &mut tmp, 0, &vec_znx_backend_ref_from_mut::<BE>(res), res_col);
     BE::vec_znx_copy(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Every column of `res`, in increasing order, filled by `vec_znx_fill_uniform`
+/// with the next seed of `source`: the draws of the per-column api op, column
+/// by column.
+#[doc(hidden)]
+pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
+    module: &Module<BE>,
+    base2k: usize,
+    k: usize,
+    res: &mut R,
+    source: &mut Source,
+) where
+    BE: HalVecZnxImpl,
+    R: VecZnxToBackendMut<BE>,
+{
+    let mut res = res.to_backend_mut();
+    for col in 0..res.cols() {
+        BE::vec_znx_fill_uniform(module, base2k, k, &mut res, col, source.new_seed());
+    }
 }
 
 /// `res[res_col][res_limb] += a[a_col]`: an `add_assign` on the one-limb
@@ -732,15 +753,15 @@ where
 /// bound, and the remaining terms fold in with `cnv_apply_dft_add`. An empty
 /// `terms` slice zeroes the destination column.
 #[doc(hidden)]
-pub fn cnv_apply_dft_sum_derived<'a, BE>(
+pub fn cnv_apply_dft_sum_derived<BE>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'a, BE>],
+    terms: &[CnvDftAccTerm<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl + 'a,
+    BE: HalConvolutionImpl,
 {
     if terms.is_empty() {
         BE::vec_znx_dft_zero(module, res, res_col);

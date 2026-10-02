@@ -2,8 +2,9 @@
 //!
 //! All test functions are generic over `BE: super::helpers::TestContextBackend` and take
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
-//! The backend-specific test harnesses (in downstream crates such as `poulpy-cpu-ref`)
-//! instantiate and invoke these functions via the [`ckks_backend_test_suite!`] macro.
+//! Downstream backend crates instantiate these independent mathematical tests
+//! through [`ckks_backend_test_suite!`]. The [`parity`] suite compares a
+//! caller-selected pair through production operation dispatch.
 
 use poulpy_core::{
     EncryptionLayout,
@@ -35,7 +36,7 @@ pub struct CKKSTestParams {
 
 impl CKKSTestParams {
     /// Derives the full plaintext [`CKKSLayout`] from `prec_meta`/`prec_log_budget`,
-    /// reusing the param set's `n`/`base2k` (rank-1). This is the single source of
+    /// reusing the param set's `n`, `base2k`, and `rank`. This is the single source of
     /// truth for the test plaintext precision; storing it would duplicate `n`,
     /// `base2k`, and the `log_delta + log_budget` sum.
     pub fn prec(&self) -> CKKSLayout {
@@ -102,7 +103,7 @@ impl CKKSTestParams {
         .unwrap()
     }
 
-    /// Layout of a rank-1 GLWE key-switching key whose input ciphertext has
+    /// Layout of a GLWE key-switching key at the selected rank whose input ciphertext has
     /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
     /// `sparseToDense` keys, sized at the input level and at `k_boot`).
     pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
@@ -120,8 +121,8 @@ impl CKKSTestParams {
     }
 }
 
-/// NTT4x30 parameter set.
-pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+/// Radix-52 parameter set.
+pub const BASE52_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 40,
@@ -136,8 +137,8 @@ pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     rank: 1,
 };
 
-/// FFT64 parameter set.
-pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+/// Radix-19 parameter set.
+pub const BASE19_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 19,
     k: 8 * 19,
@@ -152,8 +153,8 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     rank: 1,
 };
 
-/// NTT4x30 parameter set.
-pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
+/// Radix-52 parameter set.
+pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 80,
@@ -175,11 +176,11 @@ pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
 /// construction), so higher-rank coverage uses this subset instead.
-/// [`NTT4X30_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
+/// [`BASE52_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
 /// subset ([`ckks_backend_rank2_test_suite!`](crate::ckks_backend_rank2_test_suite)).
-pub const NTT4X30_PARAMS_F64_RANK2: CKKSTestParams = CKKSTestParams {
+pub const BASE52_PARAMS_F64_RANK2: CKKSTestParams = CKKSTestParams {
     rank: 2,
-    ..NTT4X30_PARAMS_F64
+    ..BASE52_PARAMS_F64
 };
 
 #[macro_export]
@@ -207,7 +208,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -218,7 +218,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path, $arg:expr) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
                     }
@@ -229,7 +228,6 @@ macro_rules! ckks_backend_rank2_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() -> Result<()> {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
                     }
@@ -314,7 +312,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -325,7 +322,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path, $arg:expr) => {
                     #[test]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
                     }
@@ -337,7 +333,6 @@ macro_rules! ckks_backend_test_suite {
                     #[test]
                     #[ignore = "large parameters; run explicitly with --ignored --release"]
                     fn $name() {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
@@ -348,7 +343,6 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() -> Result<()> {
-                        #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
                     }
@@ -387,6 +381,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 decrypt_extract_base2k_mismatch_error,
                 $crate::test_suite::encryption::test_decrypt_extract_base2k_mismatch_error
+            );
+            run_test!(
+                decrypt_extract_degree_mismatch_error,
+                $crate::test_suite::encryption::test_decrypt_extract_degree_mismatch_error
             );
             run_test!(
                 add_pt_vec_alignment_error,
@@ -458,22 +456,6 @@ macro_rules! ckks_backend_test_suite {
                 add_pt_vec_base2k_mismatch_error,
                 $crate::test_suite::add::test_add_pt_vec_base2k_mismatch_error
             );
-            run_test!(
-                add_ct_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_ct_aligned_unsafe
-            );
-            run_test!(
-                add_ct_assign_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_ct_assign_aligned_unsafe
-            );
-            run_test!(
-                add_pt_vec_into_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_pt_vec_into_aligned_unsafe
-            );
-            run_test!(
-                add_const_into_aligned_unsafe,
-                $crate::test_suite::add_unsafe::test_add_const_into_aligned_unsafe
-            );
             run_test!(sub_ct_aligned, $crate::test_suite::sub::test_sub_ct_aligned);
             run_test!(sub_ct_delta_a_lt_b, $crate::test_suite::sub::test_sub_ct_delta_a_lt_b);
             run_test!(sub_ct_delta_a_gt_b, $crate::test_suite::sub::test_sub_ct_delta_a_gt_b);
@@ -517,22 +499,6 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
             run_test!(
-                sub_ct_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_ct_aligned_unsafe
-            );
-            run_test!(
-                sub_ct_assign_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_ct_assign_aligned_unsafe
-            );
-            run_test!(
-                sub_pt_vec_into_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_pt_vec_into_unsafe
-            );
-            run_test!(
-                sub_pt_const_into_aligned_unsafe,
-                $crate::test_suite::sub_unsafe::test_sub_pt_const_into_aligned_unsafe
-            );
-            run_test!(
                 dot_product_overflow_guard,
                 $crate::test_suite::errors::test_dot_product_overflow_guard
             );
@@ -552,6 +518,11 @@ macro_rules! ckks_backend_test_suite {
                 rotate_aligned,
                 $crate::test_suite::rotate::test_rotate_aligned,
                 $rotations
+            );
+            run_test_with_arg!(
+                rotate_negative,
+                $crate::test_suite::rotate::test_rotate_aligned,
+                &[-1, -7]
             );
             run_test_with_arg!(
                 rotate_smaller_output,
@@ -1002,7 +973,6 @@ pub use crate::ckks_backend_test_suite;
 
 pub mod add;
 pub mod add_many;
-pub mod add_unsafe;
 pub mod affine;
 pub mod bootstrapping;
 pub mod compact;
@@ -1039,4 +1009,7 @@ pub mod rotate;
 pub mod ship;
 pub mod slots_kind;
 pub mod sub;
-pub mod sub_unsafe;
+
+pub mod conjugate_invariant;
+/// Paired OEP conformance with caller-selected comparison backends.
+pub mod parity;

@@ -13,6 +13,7 @@ documentation = "https://docs.rs/poulpy-cpu-avx512"
 doctest = false
 
 [features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-ref/enable-bin-fhe"]
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
@@ -21,6 +22,7 @@ enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 enable-rayon = ["enable-avx512f", "dep:rayon", "dep:poulpy-cpu-rayon", "dep:libc"]
 
 [dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-hal = {workspace = true}
@@ -39,8 +41,8 @@ rayon = {workspace = true, optional = true}
 libc = {version = "0.2", optional = true}
 
 [dev-dependencies]
-# The core parity suites compare against the reference backend's impls.
-poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
+# Serial core parity suites select portable comparison backends.
+poulpy-cpu-ref = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}
@@ -54,19 +56,24 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bench]]
 name = "full"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "light"
 harness = false
-required-features = ["enable-avx512f", "enable-ckks"]
+required-features = ["enable-avx512f", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "normalize"
+harness = false
+required-features = ["enable-avx512f"]
+
+[[bench]]
+name = "encrypt_pk"
 harness = false
 required-features = ["enable-avx512f"]

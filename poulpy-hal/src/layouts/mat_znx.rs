@@ -1,10 +1,9 @@
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom,
-        ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom, ToOwnedDeep, VecZnx,
+        WriterTo, ZnxInfos, ZnxWord, ZnxZero,
     },
-    source::Source,
 };
 use std::{
     fmt,
@@ -13,7 +12,6 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::Rng;
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -236,7 +234,7 @@ impl<W: ZnxWord> MatZnx<AlignedBuf, W> {
 
     pub fn from_bytes(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == Self::bytes_of(n, rows, cols_in, cols_out, size));
+        assert!(data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, rows, cols_in, cols_out, size)));
         Self {
             data,
             shape: MatZnxShape::new(n, rows, cols_in, cols_out, size),
@@ -418,27 +416,6 @@ pub fn mat_znx_at_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     VecZnx::from_data(B::region_mut_ref(&mut mat.data, start, end - start), n, cols_out, size)
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for MatZnx<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
-        assert!(
-            log_bound <= W::BITS,
-            "log_bound {log_bound} exceeds the {}-bit coefficient word",
-            W::BITS
-        );
-        if log_bound == W::BITS {
-            source.fill_bytes(self.data.as_mut());
-            return;
-        }
-        let mask: u64 = (1u64 << log_bound) - 1;
-        let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
-            let r = source.next_u64() & mask;
-            *x = W::from_i64(((r << shift) as i64) >> shift);
-        }
-    }
-}
-
 /// Owned `MatZnx` backed by an `AlignedBuf`.
 pub type MatZnxOwned<W> = MatZnx<AlignedBuf, W>;
 /// Mutably borrowed `MatZnx`.
@@ -465,13 +442,13 @@ impl<B: Backend> MatZnxToBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendRef<B> for &MatZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendRef<B> for &MatZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
         mat_znx_backend_ref_from_ref::<B>(self)
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendRef<B> for &mut MatZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendRef<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
         mat_znx_backend_ref_from_mut::<B>(self)
     }
@@ -512,7 +489,7 @@ impl<B: Backend> MatZnxToBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> MatZnxToBackendMut<B> for &mut MatZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> MatZnxToBackendMut<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B> {
         mat_znx_backend_mut_from_mut::<B>(self)
     }

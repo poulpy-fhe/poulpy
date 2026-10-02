@@ -1,12 +1,8 @@
 use crate::CKKSResult as Result;
-use crate::reference::plaintext::CKKSPlaintextReference;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::{
-    api::{VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshTmpBytes},
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos};
 
@@ -29,33 +25,31 @@ pub unsafe trait CKKSPlaintextZnxImpl: Backend {
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSPlaintextZnxImpl for BE
-where
-    BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: CKKSPlaintextReference<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
-{
-    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_extract_pt_tmp_bytes_reference(res_size)
-    }
-
-    fn ckks_extract_pt_impl<Dst, Src>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-    {
-        module.ckks_extract_pt_reference(dst, src, scratch)
-    }
-}
-
+/// Implements this contract with the callable reference algorithms.
 #[macro_export]
 macro_rules! impl_ckks_plaintext_reference {
     ($be:ty) => {
-        impl $crate::reference::plaintext::CKKSPlaintextReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        unsafe impl $crate::oep::CKKSPlaintextZnxImpl for $be {
+            fn ckks_extract_pt_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_tmp_bytes_reference(module, res_size)
+            }
+
+            fn ckks_extract_pt_impl<Dst, Src>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                src: &Src,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + $crate::CKKSInfos
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSInfos,
+            {
+                $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_reference(module, dst, src, scratch)
+            }
+        }
     };
 }
 pub use crate::impl_ckks_plaintext_reference;

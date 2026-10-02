@@ -65,6 +65,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             GLWEViewMut::from_inner(GLWE {
                 k: infos.k(),
                 base2k: infos.base2k(),
+                canonical: false,
                 data: data.into_inner(),
             }),
             scratch,

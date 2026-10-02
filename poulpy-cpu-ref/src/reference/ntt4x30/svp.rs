@@ -21,6 +21,7 @@
 //! their arithmetic interpretation.  Use [`bytemuck::cast_slice`] /
 //! [`bytemuck::cast_slice_mut`] to obtain the appropriate `&[u32]` or
 //! `&[u64]` view.
+use poulpy_hal::layouts::Module;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
@@ -50,13 +51,17 @@ use crate::{
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
 pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    Module<BE>: NttModuleHandle,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttFromZnx64
+        + NttCFromB,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -90,7 +95,7 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
 /// `b`: input [`VecZnxDft`] in q120b format.
 /// `res`: output [`VecZnxDft`] in q120b format.
 pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,
@@ -98,6 +103,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
     b: &VecZnxDftBackendRef<'b, BE>,
     b_col: usize,
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
     BE::BufMut<'r>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
@@ -146,12 +152,13 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
 /// Processes each q120b coefficient by copying it (since [`Q120bScalar`] is
 /// `Copy`) before overwriting to avoid aliasing conflicts.
 pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
-    module: &impl NttModuleHandle,
+    module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
 ) where
+    Module<BE>: NttModuleHandle,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,

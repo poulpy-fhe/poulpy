@@ -5,7 +5,7 @@
 /// `(i*p + k) mod 2n`, negated when it wraps past `n`. `p` must be odd
 /// (invertible mod `2n`), in which case the map writes every output position
 /// exactly once (no pre-zeroing of `res` required), exactly like
-/// [`znx_automorphism_ref`](super::znx_automorphism_ref).
+/// [`znx_automorphism_ref`](super::standard::znx_automorphism_ref).
 pub fn znx_automorphism_rotate_ref(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
     {
         assert_eq!(res.len(), a.len());
@@ -36,7 +36,7 @@ pub fn znx_automorphism_rotate_ref(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reference::znx::{ZnxRef, automorphism::znx_automorphism_ref, znx_rotate};
+    use crate::reference::znx::{ZnxRef, standard::znx_automorphism_ref, znx_rotate};
 
     /// The fused kernel must equal an automorphism by `p` followed by a rotation
     /// by `k` (two separate passes).

@@ -8,6 +8,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     types::Q120bScalar,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
+use poulpy_hal::layouts::{Ring, Standard};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{Backend, Host},
@@ -20,34 +21,32 @@ use super::NTT4x30Neon;
 /// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` and
 /// `q120b × q120b` products.
 #[repr(C)]
-pub struct NTT4x30NeonHandle {
-    ring_plans: NttPlanSet<Primes30>,
+pub struct NTT4x30NeonHandle<R: Ring = Standard> {
+    ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for NTT4x30Neon {}
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Neon<R> {}
 
-impl Backend for NTT4x30Neon {
-    const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
+impl<R: Ring> Backend for NTT4x30Neon<R> {
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = R;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30NeonHandle;
+    type Handle = NTT4x30NeonHandle<R>;
     type Location = Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
         AlignedBuf::from(bytes)
     }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
@@ -142,7 +141,11 @@ impl Backend for NTT4x30Neon {
 /// # Safety
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
-unsafe impl NttHandleFactory for NTT4x30NeonHandle {
+unsafe impl<R: Ring> NttHandleFactory for NTT4x30NeonHandle<R>
+where
+    poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+{
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30NeonHandle {
             table_cache: Default::default(),
@@ -155,8 +158,9 @@ unsafe impl NttHandleFactory for NTT4x30NeonHandle {
 
 /// # Safety
 /// The returned references are valid for the lifetime of `&self`.
-unsafe impl NttHandleProvider for NTT4x30NeonHandle {
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+unsafe impl<R: Ring> NttHandleProvider for NTT4x30NeonHandle<R> {
+    type Ring = R;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
         self.ring_plans.for_ring(n)
     }
 
@@ -169,7 +173,7 @@ unsafe impl NttHandleProvider for NTT4x30NeonHandle {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle {
+unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle<R> {
     fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
         &self.table_cache
     }

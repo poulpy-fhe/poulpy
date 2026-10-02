@@ -72,10 +72,13 @@ bound and the encoding itself; the `CKKSPaCoOps` methods
 dispatch to it. The trait imposes no FFT engine, encoder, or host codec: a
 backend with a native encoder may implement the whole step as one fused
 kernel from the ciphertext residues. The complete scheme definition of the
-step is exported as `poulpy_ckks::encoding::paco_coeff_encodings_host`, and a
-CPU backend with host-accessible buffers adopts it wholesale with
-`poulpy-cpu-ref`'s `impl_ckks_paco_coeff_encoding!` macro, which routes the
-staged host routine through the backend's own CKKS encoding implementation.
+step is exported as
+`poulpy_ckks::reference::encoding::paco_coeff_encodings_host` (also available
+through `poulpy_ckks::encoding`). This explicit host reference composes the
+backend's selected CKKS encoding operations; its host-access bounds do not
+constrain a resident OEP override. Slot permutation and quantization are defined
+in `poulpy_ckks::reference::encoding`, while the backend owns staging, transform
+plans, and caches.
 The rest of PaCo composes existing CKKS multiplication, automorphism,
 trace/fold, linear-transformation, allocation, transfer, and metadata APIs.
 
@@ -264,8 +267,12 @@ direct and encapsulated bootstrap, ordered parallel recombination, and output
 scale/budget/sparsity. Its independent cleartext oracle and intermediate gates
 live in `poulpy_ckks::test_suite`, not in the production operation surface.
 
-Run the reference backend gates with:
+The paired coefficient-encoding suite runs both slot-order conventions through
+the production OEP on caller-selected backends. It compares decoded canonical
+coefficients and exact metadata, uses each implementation's own guarded scratch
+budget, and checks rejected shapes and input preservation. Independent pipeline
+oracles remain part of the conformance suite.
 
-```bash
-cargo test -p poulpy-cpu-ref --features enable-ckks paco
-```
+See [Implementing CKKS operations](../poulpy-ckks/docs/ckks-contracts.md) for the
+replacement contract and the [repository README](../README.md) for concrete
+test commands and execution coverage.

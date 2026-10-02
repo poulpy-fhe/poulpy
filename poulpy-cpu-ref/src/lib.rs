@@ -10,6 +10,9 @@
 //! Both are canonical reference implementations: portable across all CPU architectures,
 //! prioritising correctness and debuggability over throughput.
 //!
+//! Both are generic over the ring, standard by default: [`FFT64CIRef`] and [`NTT4x30CIRef`]
+//! are their conjugate invariant instantiations.
+//!
 //! # Features
 //!
 //! The crate implements the [`poulpy_hal`] extension points unconditionally. The
@@ -28,6 +31,8 @@
 //! Compiles and runs on any target supported by the Rust standard library.
 //! No platform-specific intrinsics or assembly are used.
 
+mod backend_defaults;
+
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_encoding;
 #[cfg(feature = "enable-ckks")]
@@ -42,6 +47,8 @@ pub mod core_impl;
 pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
+#[cfg(feature = "enable-mhe")]
+mod mhe_impl;
 pub mod ntt4x30;
 mod sampling;
 mod scalar_znx_fill;
@@ -72,3 +79,96 @@ pub use scalar_znx_fill::ScalarZnxFill;
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
+
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(ci_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+
+#[cfg(test)]
+crate::conjugate_invariant_test_suite!(ci_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(ci_core_fft64ref, crate::FFT64CIRef, crate::FFT64Ref);
+
+#[cfg(all(test, feature = "enable-core"))]
+crate::conjugate_invariant_core_test_suite!(ci_core_ntt4x30ref, crate::NTT4x30CIRef, crate::NTT4x30Ref);
+
+#[cfg(all(test, feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64ref,
+    crate::FFT64CIRef,
+    crate::FFT64Ref,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30ref,
+    crate::NTT4x30CIRef,
+    crate::NTT4x30Ref,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+#[cfg(feature = "enable-ckks")]
+mod ckks_comparison;
+
+/// [`FFT64Ref`] over the conjugate invariant ring.
+#[cfg_attr(
+    feature = "enable-core",
+    doc = r"
+The Galois trace is standard-only:
+```
+use poulpy_core::GLWETrace;
+use poulpy_cpu_ref::FFT64Ref;
+use poulpy_hal::layouts::Module;
+fn trace<M: GLWETrace<FFT64Ref>>(_: &M) {}
+fn check(module: &Module<FFT64Ref>) { trace(module); }
+```
+```compile_fail
+use poulpy_core::GLWETrace;
+use poulpy_cpu_ref::FFT64CIRef;
+use poulpy_hal::layouts::Module;
+fn trace<M: GLWETrace<FFT64CIRef>>(_: &M) {}
+fn check(module: &Module<FFT64CIRef>) { trace(module); }
+```
+So are the embedding and trace between the two rings:
+```
+use poulpy_core::{GLWECITrace, GLWECIEmbed};
+use poulpy_cpu_ref::FFT64Ref;
+use poulpy_hal::layouts::Module;
+fn maps<M: GLWECIEmbed<FFT64Ref> + GLWECITrace<FFT64Ref>>(_: &M) {}
+fn check(module: &Module<FFT64Ref>) { maps(module); }
+```
+```compile_fail
+use poulpy_core::GLWECIEmbed;
+use poulpy_cpu_ref::FFT64CIRef;
+use poulpy_hal::layouts::Module;
+fn embed<M: GLWECIEmbed<FFT64CIRef>>(_: &M) {}
+fn check(module: &Module<FFT64CIRef>) { embed(module); }
+```"
+)]
+pub type FFT64CIRef = FFT64Ref<poulpy_hal::layouts::ConjugateInvariant>;
+
+/// [`NTT4x30Ref`] over the conjugate invariant ring.
+#[cfg_attr(
+    feature = "enable-core",
+    doc = r"
+Prepared keys retain their backend type:
+```
+use poulpy_cpu_ref::NTT4x30CIRef;
+use poulpy_core::layouts::{GetTensorKey, GLWETensorKeyPrepared};
+use poulpy_hal::AlignedBuf;
+fn accepts_ci(_: &impl GetTensorKey<NTT4x30CIRef>) {}
+fn prepared(key: &GLWETensorKeyPrepared<AlignedBuf, NTT4x30CIRef>) { accepts_ci(key); }
+```
+```compile_fail
+use poulpy_cpu_ref::{NTT4x30CIRef, NTT4x30Ref};
+use poulpy_core::layouts::{GetTensorKey, GLWETensorKeyPrepared};
+use poulpy_hal::AlignedBuf;
+fn accepts_ci(_: &impl GetTensorKey<NTT4x30CIRef>) {}
+fn prepared(key: &GLWETensorKeyPrepared<AlignedBuf, NTT4x30Ref>) { accepts_ci(key); }
+```"
+)]
+pub type NTT4x30CIRef = NTT4x30Ref<poulpy_hal::layouts::ConjugateInvariant>;
+
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_impl;

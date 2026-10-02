@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::ScratchArenaTakeCore;
 use crate::api::GLWEBytesOf;
-use crate::noise::glwe::glwe_noise_backend_inner;
+use crate::noise::glwe::{glwe_noise_backend_inner, glwe_noise_body_tmp_bytes};
 use crate::{
     GLWENormalize,
     api::{GGLWENoise, GLWENoise},
@@ -65,7 +65,7 @@ where
         A: GGLWEInfos,
     {
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
-        let lvl_1: usize = self.glwe_noise_tmp_bytes(infos);
+        let lvl_1: usize = glwe_noise_body_tmp_bytes(self, infos);
 
         lvl_0 + lvl_1
     }

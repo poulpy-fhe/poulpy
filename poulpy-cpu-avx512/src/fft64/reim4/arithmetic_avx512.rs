@@ -1084,12 +1084,44 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     }
 }
 
+/// Real-slot reim4 convolution coefficient `k`: lane-wise `dst = sum_j a[k - j] * b[j]`.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F.
+#[target_feature(enable = "avx512f")]
+#[inline]
+pub(crate) unsafe fn reim4_real_convolution_1coeff_avx512(
+    k: usize,
+    dst: &mut [f64; 8],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+) {
+    use core::arch::x86_64::{_mm512_add_pd, _mm512_loadu_pd, _mm512_mul_pd, _mm512_setzero_pd, _mm512_storeu_pd};
+    assert!(a_size <= a.len() / 8 && b_size <= b.len() / 8);
+    if a_size == 0 || b_size == 0 || k >= a_size + b_size - 1 {
+        dst.fill(0.0);
+        return;
+    }
+    unsafe {
+        let mut acc = _mm512_setzero_pd();
+        for j in k.saturating_sub(a_size - 1)..(k + 1).min(b_size) {
+            let av = _mm512_loadu_pd(a.as_ptr().add(8 * (k - j)));
+            let bv = _mm512_loadu_pd(b.as_ptr().add(8 * j));
+            acc = _mm512_add_pd(acc, _mm512_mul_pd(av, bv));
+        }
+        _mm512_storeu_pd(dst.as_mut_ptr(), acc);
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
+
     use poulpy_cpu_ref::reference::fft64::reim4::{
         reim4_convolution_1coeff_ref, reim4_convolution_2coeffs_ref, reim4_extract_1blk_from_reim_contiguous_ref,
         reim4_save_1blk_to_reim_contiguous_ref, reim4_vec_mat1col_product_ref, reim4_vec_mat2cols_product_ref,

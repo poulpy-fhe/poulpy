@@ -133,10 +133,14 @@ pub struct BenchOp<M: Measurement, P> {
     pub runner: fn(&mut Bencher<'_, M>, &P),
 }
 
-/// The short name Criterion group labels use for a backend marker type
-/// (e.g. `poulpy_cpu_ref::ntt4x30::NTT4x30Ref` -> `"NTT4x30Ref"`).
-fn backend_name<BE: ?Sized>() -> &'static str {
-    std::any::type_name::<BE>().rsplit("::").next().unwrap()
+/// The short name Criterion group labels use for a backend marker type: paths stripped,
+/// default ring elided (`NTT4x30Ref<Standard>` -> `"NTT4x30Ref"`, `FFT64Ref<ConjugateInvariant>` kept).
+fn backend_name<BE: ?Sized>() -> String {
+    let name: String = std::any::type_name::<BE>()
+        .split_inclusive(['<', ',', '>'])
+        .map(|s| s.rsplit("::").next().unwrap())
+        .collect();
+    name.replace("<Standard>", "")
 }
 
 /// Runs one criterion group per op in `ops`, each expanded over every entry

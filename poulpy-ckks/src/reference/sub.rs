@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWENormalize, GLWEShift, GLWESub,
+    GLWECopy, GLWENormalize, GLWEShift, GLWESub,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -10,7 +10,6 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary,
-    layouts::CKKSModuleAlloc,
     reference::{CKKSPlaintextReference, carry_verb::ckks_carry_verb_reference},
 };
 
@@ -24,3 +23,5 @@ ckks_carry_verb_reference! {
     glwe_lsh_verb: glwe_lsh_sub,
     pt_vec_bounds: [VecZnxLshSub, VecZnxRshSub],
 }
+
+impl<BE: Backend> CKKSSubReference<BE> for poulpy_hal::layouts::Module<BE> {}

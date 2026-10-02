@@ -871,7 +871,7 @@ where
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::reference::znx::ZnxAutomorphism,
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
@@ -892,7 +892,7 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::reference::znx::ZnxAutomorphism,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<Self>,
     {

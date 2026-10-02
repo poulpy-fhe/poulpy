@@ -7,14 +7,12 @@ use std::{
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostBytesBackend, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
         ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
-    source::Source,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::Rng;
 
 /// Geometry of a vector-shaped container plus an optional window onto it.
 ///
@@ -260,10 +258,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     {
         crate::layouts::assert_dense(self, "VecZnx::to_host_owned");
         let shape = self.shape();
-        VecZnx::from_shape(
-            crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
-            shape,
-        )
+        VecZnx::from_shape(<HostBytesBackend>::from_bytes(BE::to_host_bytes(&self.data)), shape)
     }
 
     /// Formats this backend-owned vector through the existing host [`fmt::Display`] implementation.
@@ -400,19 +395,19 @@ impl<W: ZnxWord> VecZnx<AlignedBuf, W> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `bytes_of(n, cols, size)`; a `Vec<u8>`
-    /// argument is first copied into storage padded to a 64-byte multiple, so its padded
-    /// length is what is compared.
+    /// Panics if the buffer length is not `bytes_of(n, cols, size)` rounded up to the
+    /// allocation padding ([`padded_bytes`](crate::layouts::padded_bytes)); a `Vec<u8>`
+    /// argument is first copied into padded storage.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
         assert!(
-            data.len() == Self::bytes_of(n, cols, size),
-            "from_bytes: data.len()={} != bytes_of({}, {}, {})={}",
+            data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, cols, size)),
+            "from_bytes: data.len()={} != padded bytes_of({}, {}, {})={}",
             data.len(),
             n,
             cols,
             size,
-            Self::bytes_of(n, cols, size)
+            crate::layouts::padded_bytes(Self::bytes_of(n, cols, size))
         );
         Self {
             data,
@@ -497,28 +492,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        crate::layouts::assert_dense(self, "VecZnx::fill_uniform");
-        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
-        assert!(
-            log_bound <= W::BITS,
-            "log_bound {log_bound} exceeds the {}-bit coefficient word",
-            W::BITS
-        );
-        if log_bound == W::BITS {
-            source.fill_bytes(self.data.as_mut());
-            return;
-        }
-        let mask: u64 = (1u64 << log_bound) - 1;
-        let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
-            let r = source.next_u64() & mask;
-            *x = W::from_i64(((r << shift) as i64) >> shift);
-        }
-    }
-}
-
 /// Owned `VecZnx` backed by an `AlignedBuf`.
 pub type VecZnxOwned<W> = VecZnx<AlignedBuf, W>;
 /// Mutably borrowed `VecZnx`.
@@ -598,7 +571,7 @@ impl<B: Backend> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
         vec_znx_backend_ref_from_ref::<B>(self)
     }
@@ -649,7 +622,7 @@ pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn reborrow_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
         vec_znx_backend_ref_from_mut::<B>(self)
     }
@@ -670,7 +643,7 @@ impl<B: Backend> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
         vec_znx_backend_mut_from_mut::<B>(self)
     }
@@ -719,7 +692,7 @@ pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<'b, B: Backend + 'b> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'_>, B::ZnxWord> {
     fn reborrow_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
         vec_znx_backend_mut_from_mut::<B>(self)
     }

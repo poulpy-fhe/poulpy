@@ -24,8 +24,8 @@ use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos,
 /// Sizing is keyed on the storage *domain*, never on the coefficient word: one
 /// word maps to several layouts (`DftWord` covers `VecZnxDft`, `SvpPPol`,
 /// `VmpPMat` and both `CnvPVec` forms), and several domains may share one word
-/// (FFT64Ref declares `ZnxWord == BigWord == i64`). The DFT-domain counterpart
-/// of this trait is
+/// (a backend may use `i64` for both `ZnxWord` and `BigWord`). The DFT-domain
+/// counterpart of this trait is
 /// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::layouts::GLWEPreparedFactory::glwe_prepared_bytes_of).
 pub trait GLWEBytesOf<BE: Backend> {
     /// Byte size of a [`GLWE`](crate::layouts::GLWE) over this backend.

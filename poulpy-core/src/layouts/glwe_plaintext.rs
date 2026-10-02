@@ -2,10 +2,9 @@ use poulpy_hal::AlignedBuf;
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
-    VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+    Backend, Data, HostBytesBackend, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
+    VecZnxToBackendRef, ZnxWord,
 };
-use poulpy_hal::source::Source;
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
@@ -194,12 +193,6 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEPlaintext<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
-    }
-}
-
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPlaintext<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GLWEPlaintext: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
@@ -223,7 +216,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = infos.size();
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -237,7 +230,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -249,20 +242,6 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
 }
 
 impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
-    pub fn alloc_with_meta(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        GLWEPlaintext {
-            data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
-                n.into(),
-                1,
-                size,
-            ),
-            base2k,
-            k,
-        }
-    }
-
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -286,6 +265,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -299,9 +279,12 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_mut(),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 /// Reborrows a mutable-view-backed plaintext as a shared backend view.
@@ -314,6 +297,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendRef<BE>>::reborrow_backend_ref(&self.data),
         }
     }
@@ -329,6 +313,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
     }
@@ -344,6 +329,8 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMu
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
 impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {

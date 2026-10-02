@@ -8,7 +8,7 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use crate::{CKKSResult as Result, ckks_ensure, ckks_set_log_delta_normalized};
+use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
@@ -22,7 +22,10 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
+    api::{
+        CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
+        CKKSSubOps, PolynomialInputTransform,
+    },
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
@@ -53,6 +56,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
     ) -> Result<()>
     where
         Self: CKKSPolynomialEvaluationOps<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
@@ -70,6 +74,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
 impl<BE: Backend> CKKSEvalModOpsReference<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -125,6 +130,7 @@ fn eval_mod<R, C, P, F, BE, H>(
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -196,8 +202,11 @@ where
 
             if let Some(consts) = params.range_extension_consts.as_ref() {
                 for i in 0..params.plan.f_mod_log_interval_reduction {
-                    module.ckks_square_assign(res, tsk, scratch)?;
-                    module.ckks_mul_pow2_assign(res, 1, scratch)?;
+                    scratch.scope(|scratch_local| -> Result<()> {
+                        let (mut squared, mut nested) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
+                        module.ckks_square_into(&mut squared, &*res, tsk, &mut nested)?;
+                        module.ckks_double_into(res, &squared, &mut nested)
+                    })?;
                     module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
                 }
             }
@@ -240,11 +249,9 @@ where
     // `s_in` here undoes exactly that, so the scale round-trip is budget-neutral
     // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
     // accounts for in full. When the plan scale is the wider one the relabel
-    // lowers `k` by `s_eval - s_in`, and the bits below the new `k` still hold
-    // the low end of the result; the helper rounds them away so `res` is
-    // canonical at the `k` it reports.
+    // lowers `k` by `s_eval - s_in`, which clears the canonical flag.
     if s_eval != s_in {
-        ckks_set_log_delta_normalized(module, res, s_in, scratch);
+        res.set_log_delta(s_in);
     }
 
     Ok(())
@@ -270,3 +277,5 @@ where
     input.set_meta(meta);
     input
 }
+
+pub use super::eval_mod_scratch::ckks_eval_mod_tmp_bytes_reference;

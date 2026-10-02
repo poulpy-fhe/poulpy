@@ -19,8 +19,9 @@ use crate::vec_znx_big_avx512::{
 };
 use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
+use poulpy_hal::layouts::Ring;
 
-impl I128BigOps for NTT3x42Ifma {
+impl<R: Ring> I128BigOps for NTT3x42Ifma<R> {
     #[inline(always)]
     fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
         unsafe { vi128_hadamard_i64_avx512(res.len(), res, a, b) }
@@ -89,14 +90,14 @@ impl I128BigOps for NTT3x42Ifma {
     }
 }
 
-impl BigWordHadamardProduct for NTT3x42Ifma {
+impl<R: Ring> BigWordHadamardProduct for NTT3x42Ifma<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 
-impl I128NormalizeOps for NTT3x42Ifma {
+impl<R: Ring> I128NormalizeOps for NTT3x42Ifma<R> {
     #[inline(always)]
     fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
         assert!(a.len() >= carry.len());
@@ -238,8 +239,8 @@ mod tests {
                         let mut expected_carry = carry.clone();
                         let mut res = vec![0; n];
                         let mut expected = res.clone();
-                        NTT3x42Ifma::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
-                        poulpy_cpu_ref::NTT4x30Ref::nfc_middle_step(base2k, lsh, &mut expected, &a, &mut expected_carry);
+                        <NTT3x42Ifma>::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
+                        <poulpy_cpu_ref::NTT4x30Ref>::nfc_middle_step(base2k, lsh, &mut expected, &a, &mut expected_carry);
                         assert_eq!(res, expected, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
                         assert_eq!(carry, expected_carry, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
                     }

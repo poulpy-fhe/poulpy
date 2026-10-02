@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::VmpPrepare,
-    layouts::{Backend, Data, HostDataMut, Module, ScratchArena},
+    layouts::{Backend, Data, Module, ScratchArena},
 };
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
@@ -9,7 +9,7 @@ use crate::layouts::{
     LWEInfos, Rank, TorusPrecision,
 };
 
-/// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`].
+/// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
 ///
 /// Stores a collection of [`GGLWEPrepared`] matrices (one per rank element)
 /// with polynomials in the frequency domain of the backend's DFT/NTT transform,
@@ -108,7 +108,7 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    /// Transforms a standard [`GGLWEToGGSWKey`] into the DFT domain, writing into `res`.
+    /// Transforms a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey) into the DFT domain, writing into `res`.
     ///
     /// Iterates over each key element and prepares it individually.
     fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
@@ -201,7 +201,7 @@ where
 // module-only API: allocation, sizing, and preparation are provided by
 // `GGLWEToGGSWKeyPreparedFactory` on `Module`.
 
-impl<D: HostDataMut, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
     /// Returns a mutable reference to the `i`-th prepared GGLWE key element.
     ///
     /// The `i`-th element corresponds to `GGLWEPrepared_s([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])`.

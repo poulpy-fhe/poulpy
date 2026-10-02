@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -36,14 +36,22 @@ use crate::{
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
 pub const PRECISION_LOG_BUDGET: usize = 8;
 
-/// Keeps the nominal preset when its radix fits the backend, otherwise uses
-/// the FFT digit shape (7 high-modulus limbs, 1 dense-to-sparse limb) at the
-/// backend's radix limit. Re-derivation validates the key modulus bounds.
-pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
-    if preset.base2k() <= BE::MAX_BASE2K {
+/// Caps the nominal preset at the caller's explicit test or benchmark radix.
+///
+/// This fixture choice carries no failure-probability guarantee. A smaller
+/// radix uses up to 7 high-modulus limbs, reduced to fit the modulus bounds,
+/// and 1 dense-to-sparse limb; the circuit and bit widths stay unchanged.
+pub fn preset_with_max_base2k(preset: &BootstrappingPreset, fixture_base2k: usize) -> anyhow::Result<BootstrappingPreset> {
+    if preset.base2k() <= fixture_base2k {
         Ok(preset.clone())
     } else {
-        preset.with_base2k(BE::MAX_BASE2K)?.with_dsizes(7, 1)
+        let preset = preset.with_base2k(fixture_base2k)?;
+        for dsize in (2..=7).rev() {
+            if let Ok(adapted) = preset.with_dsizes(dsize, 1) {
+                return Ok(adapted);
+            }
+        }
+        preset.with_dsizes(1, 1)
     }
 }
 
@@ -63,7 +71,7 @@ pub struct BootstrappingPresetRun<BE: Backend> {
 
 impl<BE> BootstrappingPresetRun<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -168,7 +176,7 @@ where
         assert_eq!(run.output.log_delta(), run.input.log_delta());
         assert_eq!(
             run.output.k().as_usize() - run.input.k().as_usize(),
-            16 * run.input.log_delta()
+            run.preset.output_k() - run.preset.input_k()
         );
         run
     }
@@ -228,12 +236,13 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises.
 ///
-/// Every backend runs the preset at a supported radix with `f64` DFT matrices
-/// and must reach the advertised precision. Full logN16 bootstraps are slow,
-/// so backends register this as an ignored test.
-pub fn bootstrapping_presets_meet_precision<BE>()
+/// The caller supplies the fixture radix limit; this precision check does
+/// not establish a failure-probability bound. Every backend uses `f64` DFT
+/// matrices and must reach the advertised precision. Full-size bootstraps are
+/// slow, so backends register this as an ignored test.
+pub fn bootstrapping_presets_meet_precision<BE>(fixture_base2k: usize)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     Module<HostBytesBackend>: TestContextHostModule,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -245,7 +254,7 @@ where
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     for preset in all().unwrap() {
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup(preset);
         let (re, im) = run.precision();
         let preset = run.preset();

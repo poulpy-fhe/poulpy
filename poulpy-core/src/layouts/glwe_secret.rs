@@ -1,13 +1,13 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use poulpy_hal::{
-    api::{ScalarZnxAutomorphism, VecZnxCopy, VecZnxZero},
+    api::{ScalarZnxAutomorphism, ScalarZnxCIEmbed, VecZnxCopy, VecZnxZero},
     layouts::{
         Backend, Data, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut,
         scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_ref,
     },
-    oep::HalVecZnxImpl,
+    oep::{HalVecZnxCIImpl, HalVecZnxImpl},
     source::Source,
 };
 
@@ -141,7 +141,7 @@ impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecret {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
+                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
                 n.into(),
                 rank.into(),
             ),
@@ -185,7 +185,7 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
 /// Secret-key sampling.
 ///
 /// Each distribution is drawn in place by the backend, one seed per column,
-/// through [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution).
+/// through [`crate::ScalarZnxFillDistribution`].
 /// A fixed `source` therefore gives a per-backend secret, not a cross-backend one.
 ///
 /// Each entry point fills every one of the secret's `rank` polynomials and
@@ -425,6 +425,41 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl> SecretConversion<B> for Module<B
                     j,
                 );
                 written += take;
+            }
+        }
+        res
+    }
+}
+
+pub trait GLWESecretCIEmbed<B: Backend> {
+    /// Embeds a conjugate-invariant secret of degree `N` into the standard secret
+    /// of degree `2N` under which embedded ciphertexts decrypt; the module degree
+    /// is at least `2N`.
+    ///
+    /// The result is tagged [`Distribution::ENCAPSULATED`]: its coefficients
+    /// mirror the source, so it only backs the ring-switching keys.
+    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<B>;
+}
+
+impl<B: Backend<ZnxWord = i64> + HalVecZnxCIImpl> GLWESecretCIEmbed<B> for Module<B> {
+    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<B>,
+    {
+        let src = src.to_backend_ref();
+        let n = 2 * src.n().as_usize();
+        assert!(n <= self.n(), "the embedded secret degree exceeds the module degree");
+        let mut res = self.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+            n: n.into(),
+            rank: src.rank(),
+        });
+        res.dist = Distribution::ENCAPSULATED("conjugate-invariant");
+        {
+            let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            for j in 0..src.rank().as_usize() {
+                self.scalar_znx_ci_embed(res_ref.data_mut(), j, src.data(), j);
             }
         }
         res

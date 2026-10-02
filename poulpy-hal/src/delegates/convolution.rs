@@ -131,16 +131,14 @@ impl_convolution_delegate!(
     fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_apply_dft_sum_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
-    fn cnv_apply_dft_sum<'a>(
+    fn cnv_apply_dft_sum(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'a, BE>],
+        terms: &[CnvDftAccTerm<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        BE: 'a,
-    {
+    ) {
         BE::cnv_apply_dft_sum(self, cnv_offset, res, res_col, terms, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {

@@ -2,7 +2,7 @@ use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, SvpPPol, ZnxInfos},
+    layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
 };
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     layouts::{Base2K, Degree, GLWEInfos, GLWESecretPreparedFactory, GLWESecretTensorToBackendRef, GetDegree, LWEInfos, Rank},
 };
 
-/// DFT-domain (prepared) variant of [`GLWESecretTensor`].
+/// DFT-domain (prepared) variant of [`GLWESecretTensor`](crate::layouts::GLWESecretTensor).
 ///
 /// Stores the GLWE secret tensor with polynomials in the frequency domain
 /// for fast tensor operations. Tied to a specific backend via `B: Backend`.
@@ -21,13 +21,13 @@ pub struct GLWESecretTensorPrepared<D: Data, B: Backend> {
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataRef, BE: Backend> GetDistribution for GLWESecretTensorPrepared<D, BE> {
+impl<D: Data, BE: Backend> GetDistribution for GLWESecretTensorPrepared<D, BE> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWESecretTensorPrepared<D, BE> {
+impl<D: Data, BE: Backend> GetDistributionMut for GLWESecretTensorPrepared<D, BE> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }

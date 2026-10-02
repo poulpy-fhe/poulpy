@@ -9,7 +9,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSCtBounds, SetCKKSInfos};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 
 /// Secret-key encryption of a CKKS plaintext.
 ///
@@ -32,6 +32,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
 /// (i.e., the encryption key does not provide enough headroom for the
 /// requested plaintext precision).
+/// Returns `EncryptionDegreeMismatch` if the ciphertext or prepared secret
+/// key degree differs from the module degree, before changing the ciphertext
+/// or consuming randomness.
 pub trait CKKSEncryptOps<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
@@ -84,10 +87,15 @@ pub trait CKKSEncryptOps<BE: Backend> {
 /// precision `pt.log_delta + pt.log_budget` exceeds what the ciphertext can
 /// supply (`ct.log_budget + pt.log_delta`), and with
 /// `PlaintextBase2KMismatch` on differing `base2k`.
+/// Returns `EncryptionDegreeMismatch` if the ciphertext or prepared secret
+/// key degree differs from the module degree, before changing the plaintext.
 pub trait CKKSDecryptOps<BE: Backend> {
-    fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
+    /// Scratch for the actual destination allocation and input ciphertext.
+    /// The destination may retain more allocated limbs than its effective precision.
+    fn ckks_decrypt_tmp_bytes<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
-        A: CKKSCtBounds;
+        Pt: CKKSInfos,
+        Ct: CKKSCtBounds;
 
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where

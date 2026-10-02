@@ -3,20 +3,24 @@ use super::{
     upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
 };
 
+use rand_core::Rng;
+
 use crate::{
     api::{
-        ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
-        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh,
-        VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
-        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
+        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
+        VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
-    layouts::{DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{
+        DigestU64, HostBytesBackend, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScratchOwned, VecZnx, ZnxView, ZnxViewMut,
+    },
     source::Source,
 };
 
-fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
+pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
     let half = 1i64 << (base2k - 1);
     for col in 0..a.cols() {
@@ -58,7 +62,7 @@ pub(super) fn cross_normalization_cases(a_size: usize, res_size: usize) -> Vec<(
 
 pub fn test_vec_znx_zero_matches_wrapper<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     _module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -71,9 +75,9 @@ pub fn test_vec_znx_zero_matches_wrapper<BR: crate::test_suite::TestBackend, BT:
 
     for size in [1, 2, 3, 4] {
         for col_i in 0..cols {
-            let mut expected = module_host.vec_znx_alloc(params.n, cols, size);
-            expected.fill_uniform(base2k, &mut source);
-            let mut backend = upload_vec_znx::<BT>(&expected);
+            let mut backend = module_test.vec_znx_alloc(params.n, cols, size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut backend, &mut source);
+            let mut expected = download_vec_znx::<BT>(&backend);
 
             for limb in 0..size {
                 expected.at_mut(col_i, limb).fill(0);
@@ -127,19 +131,27 @@ pub fn test_vec_znx_add_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut b = module_host.scalar_znx_alloc(params.n, cols);
-    b.fill_uniform(base2k, &mut source);
+    let mut b_ref = module_ref.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut b_ref),
+            col,
+            &mut source,
+        );
+    }
+    let b = download_scalar_znx::<BR>(&b_ref);
     let b_digest: u64 = b.digest_u64();
-    let b_ref = upload_scalar_znx::<BR>(&b);
     let b_test = upload_scalar_znx::<BT>(&b);
 
     for res_size in [1usize, 2, 3, 4] {
-        let mut rest_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+        let mut rest_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut rest_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-        rest_ref.fill_uniform(base2k, &mut source);
+        let rest_ref = download_vec_znx::<BR>(&rest_ref_backend);
         res_test.raw_mut().copy_from_slice(rest_ref.raw());
-        let mut rest_ref_backend = upload_vec_znx::<BR>(&rest_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         for i in 0..cols {
@@ -183,26 +195,26 @@ pub fn test_vec_znx_add_matches_reference<BR: crate::test_suite::TestBackend, BT
     let mut source: Source = Source::new([13u8; 32]);
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
-            b.fill_uniform(base2k, &mut source);
+            let mut b_ref = module_ref.vec_znx_alloc(params.n, cols, b_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_ref, &mut source);
+            let b = download_vec_znx::<BR>(&b_ref);
             let b_digest: u64 = b.digest_u64();
-            let b_ref = upload_vec_znx::<BR>(&b);
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut wrapper = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut wrapper_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
                 let mut backend = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-                wrapper.fill_uniform(base2k, &mut source);
+                let wrapper = download_vec_znx::<BR>(&wrapper_backend);
                 backend.data_mut().copy_from_slice(wrapper.data());
-                let mut wrapper_backend = upload_vec_znx::<BR>(&wrapper);
                 let mut backend_owned = upload_vec_znx::<BT>(&backend);
 
                 for col_i in 0..cols {
@@ -251,19 +263,19 @@ pub fn test_vec_znx_add_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -304,18 +316,18 @@ pub fn test_vec_znx_add_assign_matches_wrapper<BR: crate::test_suite::TestBacken
     let mut source: Source = Source::new([14u8; 32]);
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_backend = module_test.vec_znx_alloc(params.n, cols, a_size);
+        module_test.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
+        let a = download_vec_znx::<BT>(&a_backend);
         let a_digest: u64 = a.digest_u64();
-        let a_backend = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut wrapper = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut wrapper_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
             let mut backend = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            wrapper.fill_uniform(base2k, &mut source);
+            let wrapper = download_vec_znx::<BT>(&wrapper_backend);
             backend.data_mut().copy_from_slice(wrapper.data());
-            let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
             for col_i in 0..cols {
@@ -358,10 +370,10 @@ pub fn test_vec_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -446,13 +458,12 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_automorphism_assign_tmp_bytes());
 
     for size in [1, 2, 3, 4] {
-        let mut res_ref = module_host.vec_znx_alloc(params.n, cols, size);
+        let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, size);
 
-        // Fill a with random i64
-        res_ref.fill_uniform(base2k, &mut source);
+        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         res_test.raw_mut().copy_from_slice(res_ref.raw());
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         let p: i64 = -7;
@@ -505,7 +516,7 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
 
 pub fn test_vec_znx_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -519,21 +530,19 @@ pub fn test_vec_znx_copy<BR: crate::test_suite::TestBackend, BT: crate::test_sui
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_0 = module_host.vec_znx_alloc(params.n, cols, res_size);
-            let mut res_1 = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_0_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_0_backend, &mut source);
+            let mut res_1_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_1_backend, &mut source);
 
             // Set d to garbage
-            res_0.fill_uniform(base2k, &mut source);
-            res_1.fill_uniform(base2k, &mut source);
-            let mut res_0_backend = upload_vec_znx::<BR>(&res_0);
-            let mut res_1_backend = upload_vec_znx::<BT>(&res_1);
 
             // Reference
             for i in 0..cols {
@@ -573,16 +582,15 @@ pub fn test_vec_znx_copy_matches_wrapper<BR: crate::test_suite::TestBackend, BT:
     let mut source: Source = Source::new([3u8; 32]);
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let a_backend = upload_vec_znx::<BT>(&a);
+        let mut a_backend = module_test.vec_znx_alloc(params.n, cols, a_size);
+        module_test.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1, 2, 3, 4] {
-            let mut wrapper = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut wrapper_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
             let mut backend = module_host.vec_znx_alloc(params.n, cols, res_size);
-            wrapper.fill_uniform(base2k, &mut source);
+            let wrapper = download_vec_znx::<BT>(&wrapper_backend);
             backend.data_mut().copy_from_slice(wrapper.data());
-            let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
             module_test.vec_znx_copy(
@@ -608,7 +616,7 @@ pub fn test_vec_znx_copy_matches_wrapper<BR: crate::test_suite::TestBackend, BT:
 
 pub fn test_scalar_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -621,18 +629,40 @@ pub fn test_scalar_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crat
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut a = module_host.scalar_znx_alloc(params.n, cols);
-    a.fill_uniform(base2k, &mut source);
+    let mut a_ref = module_ref.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut a_ref),
+            col,
+            &mut source,
+        );
+    }
+    let a = download_scalar_znx::<BR>(&a_ref);
     let a_digest: u64 = a.digest_u64();
-    let a_ref = upload_scalar_znx::<BR>(&a);
     let a_test = upload_scalar_znx::<BT>(&a);
 
-    let mut res_ref = module_host.scalar_znx_alloc(params.n, cols);
-    let mut res_test = module_host.scalar_znx_alloc(params.n, cols);
-    res_ref.fill_uniform(base2k, &mut source);
-    res_test.fill_uniform(base2k, &mut source);
-    let mut res_ref_backend = upload_scalar_znx::<BR>(&res_ref);
-    let mut res_test_backend = upload_scalar_znx::<BT>(&res_test);
+    let mut res_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
+    let mut res_test_backend = module_test.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut res_ref_backend),
+            col,
+            &mut source,
+        );
+    }
+    for col in 0..cols {
+        module_test.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BT>::as_vec_znx_backend_mut(&mut res_test_backend),
+            col,
+            &mut source,
+        );
+    }
 
     for p in [-5, 5] {
         for i in 0..cols {
@@ -676,11 +706,11 @@ pub fn test_vec_znx_mul_xp_minus_one<BR: crate::test_suite::TestBackend, BT: cra
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
 
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -765,13 +795,12 @@ pub fn test_vec_znx_mul_xp_minus_one_assign<BR: crate::test_suite::TestBackend, 
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_mul_xp_minus_one_assign_tmp_bytes(4));
 
     for size in [1, 2, 3, 4] {
-        let mut res_ref = module_host.vec_znx_alloc(params.n, cols, size);
+        let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, size);
 
-        // Fill a with random i64
-        res_ref.fill_uniform(base2k, &mut source);
+        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         res_test.raw_mut().copy_from_slice(res_ref.raw());
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         let p: i64 = -7;
@@ -836,19 +865,19 @@ pub fn test_vec_znx_negate<BR: crate::test_suite::TestBackend, BT: crate::test_s
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -891,16 +920,15 @@ pub fn test_vec_znx_negate_matches_wrapper<BR: crate::test_suite::TestBackend, B
     let mut source: Source = Source::new([6u8; 32]);
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let a_backend = upload_vec_znx::<BT>(&a);
+        let mut a_backend = module_test.vec_znx_alloc(params.n, cols, a_size);
+        module_test.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1, 2, 3, 4] {
-            let mut wrapper = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut wrapper_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
             let mut backend = module_host.vec_znx_alloc(params.n, cols, res_size);
-            wrapper.fill_uniform(base2k, &mut source);
+            let wrapper = download_vec_znx::<BT>(&wrapper_backend);
             backend.data_mut().copy_from_slice(wrapper.data());
-            let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
             module_test.vec_znx_negate(
@@ -940,12 +968,12 @@ pub fn test_vec_znx_negate_assign<BR: crate::test_suite::TestBackend, BT: crate:
     let cols: usize = 2;
 
     for res_size in [1, 2, 3, 4] {
-        let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+        let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-        res_ref.fill_uniform(base2k, &mut source);
+        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         res_test.raw_mut().copy_from_slice(res_ref.raw());
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         for i in 0..cols {
@@ -975,11 +1003,11 @@ pub fn test_vec_znx_negate_assign_matches_wrapper<BR: crate::test_suite::TestBac
 
     for res_size in [1, 2, 3, 4] {
         for col_i in 0..cols {
-            let mut wrapper = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut wrapper_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+            module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
             let mut backend = module_host.vec_znx_alloc(params.n, cols, res_size);
-            wrapper.fill_uniform(base2k, &mut source);
+            let wrapper = download_vec_znx::<BT>(&wrapper_backend);
             backend.data_mut().copy_from_slice(wrapper.data());
-            let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
             module_test.vec_znx_negate_assign(&mut vec_znx_backend_mut::<BT>(&mut wrapper_backend), col_i);
@@ -995,7 +1023,7 @@ pub fn test_vec_znx_negate_assign_matches_wrapper<BR: crate::test_suite::TestBac
 
 pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1014,22 +1042,19 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
-            let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
-
             for res_offset in -(base2k as i64)..=(base2k as i64) {
                 // Set d to garbage
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Reference
                 for i in 0..cols {
@@ -1067,8 +1092,10 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
             let same_base = (base2k, base2k, res_size.saturating_sub(1).max(1) * base2k - 1, 0);
             for (a_base, res_base, res_k, offset) in std::iter::once(same_base).chain(cross_normalization_cases(a_size, res_size))
             {
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
                 for i in 0..cols {
                     module_ref.vec_znx_normalize(
                         &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
@@ -1127,12 +1154,12 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
 
     for res_size in [1usize, 2, 3, 4] {
         let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
-        let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+        let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-        res_ref.fill_uniform(base2k, &mut source);
+        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         res_test.raw_mut().copy_from_slice(res_ref.raw());
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         // Reference
@@ -1178,10 +1205,10 @@ pub fn test_vec_znx_rotate<BR: crate::test_suite::TestBackend, BT: crate::test_s
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1266,13 +1293,12 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_rotate_assign_tmp_bytes());
 
     for size in [1, 2, 3, 4] {
-        let mut res_ref = module_host.vec_znx_alloc(params.n, cols, size);
+        let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_ref_backend, &mut source);
         let mut res_test = module_host.vec_znx_alloc(params.n, cols, size);
 
-        // Fill a with random i64
-        res_ref.fill_uniform(base2k, &mut source);
+        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         res_test.raw_mut().copy_from_slice(res_ref.raw());
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
         let p: i64 = -5;
@@ -1323,10 +1349,7 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
     }
 }
 
-pub fn test_vec_znx_fill_uniform<B: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<B>)
-where
-    Module<B>: VecZnxFillUniformSource<B>,
-{
+pub fn test_vec_znx_fill_uniform<B: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<B>) {
     let n: usize = params.n;
     let base2k: usize = 17;
     let size: usize = 5;
@@ -1361,23 +1384,72 @@ where
         })
     });
 
-    let k = 3 * base2k + 1;
-    let live_size = k.div_ceil(base2k);
-    let low_mask = (1i64 << (base2k - k % base2k)) - 1;
-    let mut host_init = VecZnx::alloc(params.n, cols, size);
-    host_init.raw_mut().fill(0xff);
-    let mut a = upload_vec_znx::<B>(&host_init);
-    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), 0, &mut source);
-    let a = download_vec_znx::<B>(&a);
-    assert!(a.at(0, live_size - 1).iter().all(|value| value & low_mask == 0));
-    for limb in live_size..size {
-        assert_eq!(a.at(0, limb), zero);
+    // Verify the specified stream and draw order independently of the backend's
+    // sampling helpers. Include the radix endpoints, partial final limbs, and
+    // poisoned destination tails and unselected columns.
+    for (seed, prefix_len) in [([0u8; 32], 0), ([0xa5u8; 32], 13), (std::array::from_fn(|i| i as u8), 61)] {
+        for base2k in [1, 17, 62] {
+            for k in [1, base2k, 3 * base2k + 1, size * base2k] {
+                for col in 0..cols {
+                    let mut expected = VecZnx::alloc(n, cols, size);
+                    for (i, value) in expected.raw_mut().iter_mut().enumerate() {
+                        *value = i64::MIN + i as i64;
+                    }
+                    let mut actual = upload_vec_znx::<B>(&expected);
+                    let mut source = Source::new(seed);
+                    let mut expected_source = Source::new(seed);
+                    // Exercise both fresh and previously consumed caller streams.
+                    let mut prefix = [0u8; 61];
+                    source.fill_bytes(&mut prefix[..prefix_len]);
+                    expected_source.fill_bytes(&mut prefix[..prefix_len]);
+                    let mut child_seed = [0u8; 32];
+                    expected_source.fill_bytes(&mut child_seed);
+                    let mut draws = Source::new(child_seed);
+                    let live_size = k.div_ceil(base2k);
+                    let padding = (base2k - k % base2k) % base2k;
+                    let mask = (1u64 << base2k) - 1;
+                    let half = 1i64 << (base2k - 1);
+                    for limb in 0..size {
+                        for value in expected.at_mut(col, limb) {
+                            *value = if limb < live_size {
+                                let digit = (draws.next_u64() & mask) as i64 - half;
+                                if limb == live_size - 1 {
+                                    let unit = 1i64 << padding;
+                                    digit.div_euclid(unit) * unit
+                                } else {
+                                    digit
+                                }
+                            } else {
+                                0
+                            };
+                        }
+                    }
+
+                    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<B>(&mut actual), col, &mut source);
+                    assert_eq!(
+                        download_vec_znx::<B>(&actual),
+                        expected,
+                        "uniform sampling differs from the contract: seed={seed:?}, base2k={base2k}, k={k}, col={col}"
+                    );
+                    // The call consumes exactly one 32-byte seed from its caller,
+                    // regardless of the number of generated limbs or coefficients.
+                    let mut actual_next = [0u8; 96];
+                    let mut expected_next = [0u8; 96];
+                    source.fill_bytes(&mut actual_next);
+                    expected_source.fill_bytes(&mut expected_next);
+                    assert_eq!(
+                        actual_next, expected_next,
+                        "uniform sampling advanced the caller source incorrectly"
+                    );
+                }
+            }
+        }
     }
 }
 
 pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1396,10 +1468,10 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_lsh_tmp_bytes(4));
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1410,14 +1482,12 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                 a_size * base2k + 1,
                 usize::MAX,
             ]) {
-                let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
-                let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Set d to garbage
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
                 // Reference
                 for i in 0..cols {
@@ -1481,12 +1551,12 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
 
     for res_size in [1, 2, 3, 4] {
         for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -1522,7 +1592,7 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
 
 pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1541,22 +1611,20 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_rsh_tmp_bytes(4));
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
             for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
-                let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
-                let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Set d to garbage
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
                 // Reference
                 for i in 0..cols {
@@ -1620,12 +1688,12 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
 
     for res_size in [1, 2, 3, 4] {
         for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -1663,7 +1731,7 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
 
 pub fn test_vec_znx_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1677,28 +1745,26 @@ pub fn test_vec_znx_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suit
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for b_size in [1, 2, 3, 4] {
-            let mut b = module_host.vec_znx_alloc(params.n, cols, b_size);
-            b.fill_uniform(base2k, &mut source);
+            let mut b_ref = module_ref.vec_znx_alloc(params.n, cols, b_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_ref, &mut source);
+            let b = download_vec_znx::<BR>(&b_ref);
             let b_digest: u64 = b.digest_u64();
-            let b_ref = upload_vec_znx::<BR>(&b);
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
-                let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
-                let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Set d to garbage
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
                 // Reference
                 for i in 0..cols {
@@ -1748,19 +1814,19 @@ pub fn test_vec_znx_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -1803,19 +1869,19 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let mut res_ref = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut res_ref_backend = module_ref.vec_znx_alloc(params.n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
             let mut res_test = module_host.vec_znx_alloc(params.n, cols, res_size);
 
-            res_ref.fill_uniform(base2k, &mut source);
+            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
 
             for i in 0..cols {
@@ -1842,9 +1908,168 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
     }
 }
 
+pub fn test_vec_znx_ci_embed_trace<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    _module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxCIEmbed<BR> + VecZnxCITrace<BR>,
+    Module<BT>: VecZnxCIEmbed<BT> + VecZnxCITrace<BT>,
+{
+    let base2k = params.base2k;
+    let n: usize = params.n;
+    let half: usize = n >> 1;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    for a_size in [1, 2, 3] {
+        for res_size in [1, 2, 4] {
+            let mut a_ref = module_ref.vec_znx_alloc(half, cols, a_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
+            let a = download_vec_znx::<BR>(&a_ref);
+            let a_test = upload_vec_znx::<BT>(&a);
+            let mut embedded_ref = module_ref.vec_znx_alloc(n, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut embedded_ref, &mut source);
+            let mut embedded_test = upload_vec_znx::<BT>(&download_vec_znx::<BR>(&embedded_ref));
+            for col in 0..cols {
+                module_ref.vec_znx_ci_embed(
+                    &mut vec_znx_backend_mut::<BR>(&mut embedded_ref),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&a_ref),
+                    col,
+                );
+                module_test.vec_znx_ci_embed(
+                    &mut vec_znx_backend_mut::<BT>(&mut embedded_test),
+                    col,
+                    &vec_znx_backend_ref::<BT>(&a_test),
+                    col,
+                );
+            }
+            let embedded = download_vec_znx::<BR>(&embedded_ref);
+            assert_eq!(embedded, download_vec_znx::<BT>(&embedded_test));
+            for col in 0..cols {
+                for limb in 0..res_size {
+                    let res = embedded.at(col, limb);
+                    if limb >= a_size {
+                        assert!(res.iter().all(|&x| x == 0));
+                        continue;
+                    }
+                    let a = a.at(col, limb);
+                    assert_eq!((res[0], res[half]), (a[0], 0));
+                    for i in 1..half {
+                        assert_eq!((res[i], res[n - i]), (a[i], a[i].wrapping_neg()));
+                    }
+                }
+            }
+
+            let mut b_ref = module_ref.vec_znx_alloc(n, cols, a_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut b_ref, &mut source);
+            let b = download_vec_znx::<BR>(&b_ref);
+            let b_test = upload_vec_znx::<BT>(&b);
+            let mut traced_ref = module_ref.vec_znx_alloc(half, cols, res_size);
+            module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut traced_ref, &mut source);
+            let mut traced_test = upload_vec_znx::<BT>(&download_vec_znx::<BR>(&traced_ref));
+            let mut round_trip = module_ref.vec_znx_alloc(half, cols, res_size);
+            for col in 0..cols {
+                module_ref.vec_znx_ci_trace(
+                    &mut vec_znx_backend_mut::<BR>(&mut traced_ref),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&b_ref),
+                    col,
+                );
+                module_test.vec_znx_ci_trace(
+                    &mut vec_znx_backend_mut::<BT>(&mut traced_test),
+                    col,
+                    &vec_znx_backend_ref::<BT>(&b_test),
+                    col,
+                );
+                module_ref.vec_znx_ci_trace(
+                    &mut vec_znx_backend_mut::<BR>(&mut round_trip),
+                    col,
+                    &vec_znx_backend_ref::<BR>(&embedded_ref),
+                    col,
+                );
+            }
+            let traced = download_vec_znx::<BR>(&traced_ref);
+            let round_trip = download_vec_znx::<BR>(&round_trip);
+            assert_eq!(traced, download_vec_znx::<BT>(&traced_test));
+            for col in 0..cols {
+                for limb in 0..res_size {
+                    let (res, twice) = (traced.at(col, limb), round_trip.at(col, limb));
+                    if limb >= a_size {
+                        assert!(res.iter().chain(twice).all(|&x| x == 0));
+                        continue;
+                    }
+                    let (b, a) = (b.at(col, limb), a.at(col, limb));
+                    assert_eq!(res[0], b[0].wrapping_mul(2));
+                    for i in 1..half {
+                        assert_eq!(res[i], b[i].wrapping_sub(b[n - i]));
+                    }
+                    assert!(twice.iter().zip(a).all(|(&t, &a)| t == a.wrapping_mul(2)));
+                }
+            }
+        }
+    }
+}
+
+pub fn test_scalar_znx_ci_embed<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    _module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: ScalarZnxCIEmbed<BR>,
+    Module<BT>: ScalarZnxCIEmbed<BT>,
+{
+    let base2k = params.base2k;
+    let n: usize = params.n;
+    let half: usize = n >> 1;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a_ref = module_ref.scalar_znx_alloc(half, cols);
+    for col in 0..cols {
+        module_ref.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BR>::as_vec_znx_backend_mut(&mut a_ref),
+            col,
+            &mut source,
+        );
+    }
+    let a = download_scalar_znx::<BR>(&a_ref);
+    let a_test = upload_scalar_znx::<BT>(&a);
+    let mut res_ref = module_ref.scalar_znx_alloc(n, cols);
+    let mut res_test = module_test.scalar_znx_alloc(n, cols);
+    for col in 0..cols {
+        module_ref.scalar_znx_ci_embed(
+            &mut scalar_znx_backend_mut::<BR>(&mut res_ref),
+            col,
+            &scalar_znx_backend_ref::<BR>(&a_ref),
+            col,
+        );
+        module_test.scalar_znx_ci_embed(
+            &mut scalar_znx_backend_mut::<BT>(&mut res_test),
+            col,
+            &scalar_znx_backend_ref::<BT>(&a_test),
+            col,
+        );
+    }
+    let res = download_scalar_znx::<BR>(&res_ref);
+    assert_eq!(res, download_scalar_znx::<BT>(&res_test));
+    for col in 0..cols {
+        let (res, a) = (res.at(col, 0), a.at(col, 0));
+        assert_eq!((res[0], res[half]), (a[0], 0));
+        for i in 1..half {
+            assert_eq!((res[i], res[n - i]), (a[i], a[i].wrapping_neg()));
+        }
+    }
+}
+
 pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1859,23 +2084,19 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
     let cols: usize = 2;
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
+        let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
+        module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
 
-        // Fill a with random i64
-        a.fill_uniform(base2k, &mut source);
+        let a = download_vec_znx::<BR>(&a_ref);
         let a_digest: u64 = a.digest_u64();
-        let a_ref = upload_vec_znx::<BR>(&a);
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
             {
-                let mut res_ref = VecZnx::alloc(n << 1, cols, res_size);
-                let mut res_test = VecZnx::alloc(n << 1, cols, res_size);
-
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(n << 1, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(n << 1, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Normalize on c
                 for i in 0..cols {
@@ -1901,13 +2122,10 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
             }
 
             {
-                let mut res_ref = VecZnx::alloc(n >> 1, cols, res_size);
-                let mut res_test = VecZnx::alloc(n >> 1, cols, res_size);
-
-                res_ref.fill_uniform(base2k, &mut source);
-                res_test.fill_uniform(base2k, &mut source);
-                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+                let mut res_ref_backend = module_ref.vec_znx_alloc(n >> 1, cols, res_size);
+                module_ref.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_ref_backend, &mut source);
+                let mut res_test_backend = module_test.vec_znx_alloc(n >> 1, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_test_backend, &mut source);
 
                 // Normalize on c
                 for i in 0..cols {
@@ -1937,7 +2155,7 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
 
 pub fn test_vec_znx_switch_ring_matches_wrapper<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
+    _module_host: &Module<HostBytesBackend>,
     _module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1951,17 +2169,16 @@ pub fn test_vec_znx_switch_ring_matches_wrapper<BR: crate::test_suite::TestBacke
     let mut source: Source = Source::new([4u8; 32]);
 
     for a_size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(params.n, cols, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let a_backend = upload_vec_znx::<BT>(&a);
+        let mut a_backend = module_test.vec_znx_alloc(params.n, cols, a_size);
+        module_test.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_n in [n >> 1, n << 1] {
             for res_size in [1, 2, 3, 4] {
-                let mut wrapper = VecZnx::alloc(res_n, cols, res_size);
+                let mut wrapper_backend = module_test.vec_znx_alloc(res_n, cols, res_size);
+                module_test.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut wrapper_backend, &mut source);
                 let mut backend = VecZnx::alloc(res_n, cols, res_size);
-                wrapper.fill_uniform(base2k, &mut source);
+                let wrapper = download_vec_znx::<BT>(&wrapper_backend);
                 backend.data_mut().copy_from_slice(wrapper.data());
-                let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
                 let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
                 module_test.vec_znx_switch_ring(

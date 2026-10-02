@@ -12,64 +12,24 @@ use core::arch::x86_64::{
     _mm512_i64gather_pd, _mm512_set1_epi64, _mm512_storeu_pd, _mm512_xor_si512,
 };
 
-use poulpy_cpu_ref::reference::fft64::vec_znx_dft::{Fft64AutomorphismPlan, vec_znx_dft_automorphism as fft64_automorphism_ref};
-use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut};
+use poulpy_cpu_ref::reference::fft64::{standard::fft64_automorphism_ref, vec_znx_dft::Fft64AutomorphismPlan};
 
-/// AVX-512F entry point for [`Fft64AutomorphismPlan`].
-///
-/// Falls back to the scalar reference when `m < 8` (below the SIMD
-/// width). The tail (`m & 7`) is handled by an AVX2 4-wide pass plus
-/// scalar mop-up.
-///
-/// # Safety
-/// Caller must ensure the CPU supports AVX-512F (verified at module
-/// construction for `FFT64Avx512`).
-pub fn fft64_vec_znx_dft_automorphism_avx512<BE>(
-    plan: &Fft64AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    a_col: usize,
-) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + poulpy_cpu_ref::reference::fft64::reim::ReimArith,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-{
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n() >> 1);
-    }
-
-    let m: usize = res.n() >> 1;
+/// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`; scalar below the 8-slot SIMD width.
+#[inline(always)]
+pub(crate) fn reim_automorphism_avx512(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    let m: usize = res.len() >> 1;
+    assert_eq!(a.len(), res.len());
+    assert_eq!(plan.perm.len(), m);
     if m < 8 {
-        // 8-wide gather has no slots to fill; defer to the scalar path.
-        fft64_automorphism_ref::<BE>(plan, res, res_col, a, a_col);
-        return;
+        return fft64_automorphism_ref(plan, res, a);
     }
-
-    let res_size: usize = res.size();
-    let a_size: usize = a.size();
-    let min_size: usize = res_size.min(a_size);
-    let perm: &[u32] = &plan.perm;
-
-    for limb in 0..min_size {
-        let (res_re, res_im) = res.at_mut(res_col, limb).split_at_mut(m);
-        let a_limb = a.at(a_col, limb);
-        let (a_re, a_im) = a_limb.split_at(m);
-
-        unsafe {
-            if plan.conj {
-                automorphism_conj_inner(m, perm, a_re, a_im, res_re, res_im);
-            } else {
-                automorphism_no_conj_inner(m, perm, a_re, a_im, res_re, res_im);
-            }
-        }
-    }
-
-    for limb in min_size..res_size {
-        let slice = res.at_mut(res_col, limb);
-        for v in slice.iter_mut() {
-            *v = 0.0;
+    let (res_re, res_im) = res.split_at_mut(m);
+    let (a_re, a_im) = a.split_at(m);
+    unsafe {
+        if plan.conj {
+            automorphism_conj_inner(m, &plan.perm, a_re, a_im, res_re, res_im);
+        } else {
+            automorphism_no_conj_inner(m, &plan.perm, a_re, a_im, res_re, res_im);
         }
     }
 }

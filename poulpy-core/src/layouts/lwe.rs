@@ -1,13 +1,9 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use std::fmt;
 
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
 };
 
 use crate::layouts::{Base2K, Degree, TorusPrecision};
@@ -278,15 +274,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWE<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for LWE<D, W>
-where
-    VecZnx<D, W>: FillUniform,
-{
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.mask.fill_uniform(log_bound, source);
-    }
-}
-
 impl<W: ZnxWord> LWE<AlignedBuf, W> {
     /// Allocates a new [`LWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
@@ -305,13 +292,13 @@ impl<W: ZnxWord> LWE<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
             body: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
             ),
             mask: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
                 n.as_usize(),
                 1,
                 size,
@@ -376,7 +363,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
@@ -387,7 +374,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,

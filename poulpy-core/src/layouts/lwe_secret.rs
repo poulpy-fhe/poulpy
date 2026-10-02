@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{HostBytesBackend, ZnxWord};
 use poulpy_hal::{
     api::VecZnxZero,
     layouts::{
@@ -36,7 +36,7 @@ impl<W: ZnxWord> LWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree) -> Self {
         LWESecret {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), 1)),
+                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), 1)),
                 n.into(),
                 1,
             ),
@@ -114,7 +114,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWESecret<D, W> {
 ///
 /// The LWE counterpart of [`GLWESecretSampling`](crate::layouts::GLWESecretSampling):
 /// each distribution is drawn in place by the backend through
-/// [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution).
+/// [`crate::ScalarZnxFillDistribution`].
 pub trait LWESecretSampling<BE: Backend> {
     /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
     fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
@@ -226,7 +226,7 @@ impl<BE: Backend> LWESecretToBackendRef<BE> for LWESecret<BE::OwnedBuf, BE::ZnxW
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWESecretBackendRef<'_, BE> {
         LWESecret {
             dist: self.dist,
@@ -235,7 +235,7 @@ impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &LWESecret<BE::BufRef<'
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendRef<BE> for &mut LWESecret<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendRef<BE> for &mut LWESecret<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWESecretBackendRef<'_, BE> {
         LWESecret {
             dist: self.dist,
@@ -257,7 +257,7 @@ impl<BE: Backend> LWESecretToBackendMut<BE> for LWESecret<BE::OwnedBuf, BE::ZnxW
     }
 }
 
-impl<'b, BE: Backend + 'b> LWESecretToBackendMut<BE> for &mut LWESecret<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWESecretToBackendMut<BE> for &mut LWESecret<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWESecretBackendMut<'_, BE> {
         let n = self.data.n();
         let cols = self.data.cols();

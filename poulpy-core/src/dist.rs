@@ -93,8 +93,7 @@ impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
 /// sum of `N` independent products and has variance `N * s^4`. The diagonal
 /// blocks `s_i^2` carry twice that, `2 * N * s^4`, because each unordered
 /// pair `s_a * s_b` contributes to the same coefficient from both orders.
-/// Both are measured to hold on the reference backend. The statistics of
-/// the tensor therefore stay a closed-form function of the base
+/// The tensor statistics are therefore a closed-form function of the base
 /// distribution recorded here; see `var_tensor_key` in the noise module.
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {

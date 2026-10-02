@@ -1,6 +1,8 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing},
-    layouts::{FillUniform, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing,
+    },
+    layouts::{HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -9,9 +11,10 @@ use rand::Rng;
 use std::f64::consts::SQRT_2;
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
-    GLWETensorKeyEncryptSk, GLWETensoring,
+    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub,
+    GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
         Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
@@ -24,14 +27,9 @@ use crate::{
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
 /// tensoring noise, in bits.
 ///
-/// The model is an upper estimate but the realised noise depends on the secret
-/// draw far more than the sampled variance alone would suggest: over 32 secret
-/// seeds x 32 convolution offsets x ranks 1..3, `noise_have - noise_want` had
-/// mean -0.5 / standard deviation 0.3 and peaked at +1.1 on the FFT64 reference
-/// backend (`n = 256`, `base2k = 17`), and mean -0.1 / standard deviation 0.7
-/// peaking at +1.9 on the NTT4x30 one (`base2k = 52`). Two bits keeps every
-/// measured draw inside the bound while still catching a noise regression of
-/// 4x or more.
+/// Realised noise varies with the secret draw. This test allows a factor of
+/// four above the model's estimated standard deviation (two bits on the log2
+/// scale). The same margin applies to every implementation under test.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
 
 pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
@@ -273,7 +271,7 @@ where
             );
 
             module.glwe_tensor_relinearize(&mut res_relin, &res_tensor, &tsk_prep, &mut scratch.borrow());
-            module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign(
@@ -421,8 +419,8 @@ where
             module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
 
             // Decrypt one side to ensure the square path remains functionally valid.
-            module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
-            module.glwe_decrypt(&res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
@@ -505,8 +503,21 @@ where
 
         let scale: usize = 2 * in_base2k;
 
-        pt_b.data_mut().fill_uniform(17, &mut source_xa);
-        pt_a.data_mut().fill_uniform(17, &mut source_xa);
+        let (b_size, a_size) = (pt_b.size(), pt_a.size());
+        module.vec_znx_fill_uniform_source(
+            17,
+            b_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_b.data_mut()),
+            0,
+            &mut source_xa,
+        );
+        module.vec_znx_fill_uniform_source(
+            17,
+            a_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            0,
+            &mut source_xa,
+        );
 
         let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
             module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
@@ -538,7 +549,7 @@ where
         for res_offset in 0..scale {
             module.glwe_mul_plain(scale + res_offset, &mut res, &a, &pt_b, &mut scratch_cnv.borrow());
 
-            module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
@@ -577,7 +588,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE>,
+    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -592,7 +603,7 @@ where
             rank: rank.into(),
         };
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        a.data_mut().fill_uniform(base2k, &mut source);
+        module.fill_glwe_from_source(&mut a, &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
             let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
@@ -600,7 +611,7 @@ where
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
-            pt_compact.data_mut().fill_uniform(base2k, &mut source);
+            module.fill_glwe_from_source(&mut pt_compact, &mut source);
             let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),
@@ -716,7 +727,14 @@ where
 
         let scale: usize = 2 * in_base2k;
 
-        pt_a.data_mut().fill_uniform(17, &mut source_xa);
+        let a_size = pt_a.size();
+        module.vec_znx_fill_uniform_source(
+            17,
+            a_size * 17,
+            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            0,
+            &mut source_xa,
+        );
 
         let mask = (1 << in_base2k) - 1;
         for j in 0..1 {
@@ -752,7 +770,7 @@ where
         for res_offset in 0..scale {
             module.glwe_mul_const(scale + res_offset, &mut res, &a, &pt_b, b_coeff, &mut scratch.borrow());
 
-            module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
+            glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
@@ -815,9 +833,8 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
     let rank: usize = 1;
     let n: usize = module.n();
 
-    // Keep both radices inside the envelope selected by each backend suite. In
-    // particular, FFT64's configured radix is 17; the old hard-coded radix 30
-    // overflowed its i64 BIG accumulator before exercising this regression.
+    // Keep both radices inside the envelope selected by the caller. A fixed
+    // radix could exceed the accumulator range before exercising this regression.
     let hi: usize = params.base2k;
     let lo: usize = hi.checked_sub(1).expect("cross-radix test requires base2k >= 2");
 

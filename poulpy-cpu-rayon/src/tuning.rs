@@ -21,14 +21,14 @@ use std::time::Instant;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAlloc,
-        VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     execution::ScratchWorkers,
     layouts::{
         Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, FillUniform, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnx, VecZnxBigOwned,
-        VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        CnvPVecRToBackendRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnx,
+        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, VmpPMatOwned, VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
     source::Source,
@@ -268,6 +268,7 @@ where
         + VmpPrepareTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxAdd<BE>
+        + VecZnxFillUniformSource<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + Convolution<BE>
@@ -283,13 +284,34 @@ where
     let mut source: Source = Source::new([0u8; 32]);
 
     let mut small: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
-    small.fill_uniform(16, &mut source);
     let mut addend: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
-    addend.fill_uniform(16, &mut source);
+    for col in 0..cols {
+        module.vec_znx_fill_uniform_source(
+            16,
+            size * 16,
+            &mut VecZnxToBackendMut::<BE>::to_backend_mut(&mut small),
+            col,
+            &mut source,
+        );
+        module.vec_znx_fill_uniform_source(
+            16,
+            size * 16,
+            &mut VecZnxToBackendMut::<BE>::to_backend_mut(&mut addend),
+            col,
+            &mut source,
+        );
+    }
     let mut sum: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
 
     let mut mat: MatZnx<BE::OwnedBuf, i64> = module.mat_znx_alloc(module.n(), rows, cols, cols, size);
-    mat.fill_uniform(16, &mut source);
+    for row in 0..rows {
+        for col_in in 0..cols {
+            let mut entry = MatZnxAtBackendMut::<BE>::at_backend_mut(&mut mat, row, col_in);
+            for col_out in 0..cols {
+                module.vec_znx_fill_uniform_source(16, size * 16, &mut entry, col_out, &mut source);
+            }
+        }
+    }
 
     let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(module.n(), rows, cols, cols, size, PrepareHint::Reuse);
     let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, size);

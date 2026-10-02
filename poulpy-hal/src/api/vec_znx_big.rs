@@ -501,7 +501,7 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// op         vec_znx_big_automorphism(p, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col,j] = sum_{0 <= i < a.n()} a[a_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
+/// definition res[res_col,j] = sigma_p(a[a_col,j]) in R_N; other columns of res are unchanged
 /// domain     res, a: dense VecZnxBig of degree N; p odd
 /// ensures    the selected output column is the limbwise automorphism with zero extension or truncation
 /// test       test_vec_znx_big_automorphism
@@ -524,7 +524,7 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// op         vec_znx_big_automorphism_assign(p, res, res_col, scratch)
 /// class      variant
 /// mutation   in-place
-/// definition res[res_col,j] = sum_{0 <= i < res.n()} old(res)[res_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
+/// definition res[res_col,j] = sigma_p(old(res)[res_col,j]) in R_N; other columns of res are unchanged
 /// domain     res: a dense VecZnxBig of degree N; p odd
 /// requires   scratch >= vec_znx_big_automorphism_assign_tmp_bytes()
 /// ensures    the selected output column is the limbwise automorphism of its pre-call value

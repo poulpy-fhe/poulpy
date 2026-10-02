@@ -84,6 +84,19 @@ RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
 cargo test -p poulpy-cpu-avx512 --features enable-ifma,enable-ckks
 ```
 
+CI uses `.github/scripts/test-backend.sh` to compile and run the selected
+contracts separately. On hosts without the required instructions, SDE runs HAL
+and core contracts with `POULPY_TEST_EMULATED=1`: ordinary HAL degrees are capped
+at 256 and core degrees at 64. Explicit large-degree HAL sweeps are excluded in
+that mode; focused tensor cases retain both specialized degrees, 32,768 and
+65,536. Statistical sampling fixtures keep their original sizes. Native runs
+keep the original sweep sizes and CKKS coverage.
+
+To measure actual AVX-512 emulation on an AVX-512-capable host, add
+`-force_emulate skx -force_emulate icl` to the SDE runner. `-icl` alone may execute
+host-supported instructions natively. Test execution is limited to five minutes;
+cold compilation is timed separately.
+
 ## Basic Usage
 
 ```rust
@@ -119,11 +132,15 @@ Each backend is usable anywhere Poulpy expects a backend type in the HAL/core/CK
 To implement your own Poulpy backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
-2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
-3. For each `poulpy-core` operation family, either call the corresponding `impl_*_reference_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+2. Implement each required HAL OEP method and inherit or override its derived defaults.
+3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `reference` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+Use either a family macro or a handwritten implementation of the same core
+`*Impl` trait. Reference helpers remain callable for methods you forward, while
+derived defaults reuse selected backend operations. Validate the resulting
+backend with the shared conformance tests; the [core backend guide](../poulpy-core/docs/core-contracts.md)
+describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:
 
@@ -131,8 +148,22 @@ Your backend will automatically integrate with the backend-generic layers:
 * `poulpy-core`
 * `poulpy-ckks`
 
-No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides; everything else is inherited from the `reference` layer for free.
+No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides, and each override is validated by the parity test against an attested backend (attestation is transitive back to `reference`: the portable backend runs it directly, and your backend may test against the portable backend or against any backend already attested), correct only when that test passes; everything else runs the `reference` layer, which is the implementation.
 
 ---
 
 For questions or guidance, feel free to open an issue or discussion in the repository.
+
+## Binary-FHE integration
+
+`enable-bin-fhe` selects the binary-FHE reference circuits and registers the
+complete paired and same-backend lifecycle suites. Backend opt-in and test
+registration share one declaration in `src/bin_fhe_impl.rs`. Custom operations
+implement the binary-FHE `*Impl` contracts, including their scratch queries.
+Enable `enable-ifma` as well to select this accelerated backend; `enable-rayon` adds its parallel variants.
+
+```sh
+RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512dq,+avx512bw,+avx512vl,+avx512ifma" cargo test -p poulpy-cpu-avx512 --features enable-ifma,enable-rayon,enable-bin-fhe bin_fhe_parity
+```
+
+CI executes binary-FHE when native hardware is available. The Intel SDE fallback runs HAL/core only.

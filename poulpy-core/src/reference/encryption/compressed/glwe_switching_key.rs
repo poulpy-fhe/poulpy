@@ -14,7 +14,9 @@ use crate::{
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend> {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -80,37 +82,40 @@ where
             scratch.available(),
             self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res)
         );
+        let tmp_bytes: usize = self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res);
+        {
+            let (mut sk_in_lifted, scratch_1) = scratch.borrow().take_scalar_znx_scratch(self.n(), sk_in.rank().into());
+            let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_in.data());
+            for i in 0..sk_in.rank().into() {
+                let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_in_lifted);
+                self.vec_znx_switch_ring(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
+            }
 
-        let (mut sk_in_lifted, scratch_1) = scratch.borrow().take_scalar_znx_scratch(self.n(), sk_in.rank().into());
-        let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_in.data());
-        for i in 0..sk_in.rank().into() {
-            let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_in_lifted);
-            self.vec_znx_switch_ring(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
+            let (mut sk_out_lifted, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk_out_ref.rank());
+            sk_out_lifted.dist = *sk_out.dist();
+            let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_out_ref.data());
+            for i in 0..sk_out_ref.rank().into() {
+                let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out_lifted.data_mut());
+                self.vec_znx_switch_ring(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
+            }
+
+            let (mut sk_out_prepared, scratch_3) = scratch_2.take_glwe_secret_prepared_scratch(self, sk_out_ref.rank());
+            self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out_lifted);
+
+            let (mut enc_scratch, _scratch_4) = scratch_3.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
+            self.gglwe_compressed_encrypt_sk(
+                res,
+                &sk_in_lifted,
+                &sk_out_prepared,
+                seed_xa,
+                enc_infos,
+                source_xe,
+                &mut enc_scratch,
+            );
+
+            *res.input_degree() = sk_in.n();
+            *res.output_degree() = sk_out_ref.n();
         }
-
-        let (mut sk_out_lifted, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk_out_ref.rank());
-        sk_out_lifted.dist = *sk_out.dist();
-        let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_out_ref.data());
-        for i in 0..sk_out_ref.rank().into() {
-            let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out_lifted.data_mut());
-            self.vec_znx_switch_ring(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
-        }
-
-        let (mut sk_out_prepared, scratch_3) = scratch_2.take_glwe_secret_prepared_scratch(self, sk_out_ref.rank());
-        self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out_lifted);
-
-        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
-        self.gglwe_compressed_encrypt_sk(
-            res,
-            &sk_in_lifted,
-            &sk_out_prepared,
-            seed_xa,
-            enc_infos,
-            source_xe,
-            &mut enc_scratch,
-        );
-
-        *res.input_degree() = sk_in.n();
-        *res.output_degree() = sk_out_ref.n();
+        scratch.wipe(tmp_bytes);
     }
 }

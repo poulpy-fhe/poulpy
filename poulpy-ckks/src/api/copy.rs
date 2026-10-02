@@ -24,7 +24,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// most-significant bits that do not fit are silently dropped and
 /// `log_budget` is reduced by the deficit.
 pub trait CKKSCopyOps<BE: Backend> {
-    fn ckks_copy_tmp_bytes(&self, res_size: usize) -> usize;
+    /// Scratch required for these source and destination layouts. The query
+    /// includes the selected core copy and shift implementations.
+    fn ckks_copy_tmp_bytes<Dst: CKKSCtBounds, Src: CKKSCtBounds>(&self, dst: &Dst, src: &Src) -> usize;
 
     /// Copies `src` into `dst`.
     fn ckks_copy<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

@@ -22,7 +22,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena},
+    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
 };
 
 /// Stages a generic input (e.g. a scratch-carved view) into one owned copy of
@@ -37,7 +37,7 @@ pub fn ship_coeff_encodings_staged<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: ShipScalar,

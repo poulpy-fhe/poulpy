@@ -6,6 +6,7 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
+use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
@@ -14,8 +15,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos, SlotsKind,
     api::{
-        Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps,
+        Basis, CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
@@ -77,7 +78,7 @@ pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    Module<BE>: CKKSEvalModOps<BE> + CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -134,7 +135,8 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSModuleAlloc<BE>
+        + GLWENormalize<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
@@ -175,7 +177,7 @@ pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    Module<BE>: CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
@@ -243,16 +245,22 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSAffineOps<BE>,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSSubOps<BE>
+        + CKKSAffineOps<BE>
+        + CKKSModuleAlloc<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;
 
+    let mut squared = module.ckks_ciphertext_alloc_from_infos(&*res);
     for _ in 0..log_interval_reduction {
-        module.ckks_square_assign(res, tsk, scratch)?;
-        module.ckks_mul_pow2_assign(res, 1, scratch)?;
+        module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
+        module.ckks_double_into(res, &squared, scratch)?;
         module.ckks_sub_one_assign(res, scratch)?;
     }
 

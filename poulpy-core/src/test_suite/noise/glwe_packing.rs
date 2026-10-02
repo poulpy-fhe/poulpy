@@ -9,6 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     layouts::{
@@ -18,8 +19,10 @@ use crate::{
     },
 };
 
-pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep::GLWEPackImpl>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -71,7 +74,7 @@ where
         (module)
             .glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
             .max((module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos))
-            .max(module.glwe_pack_tmp_bytes(&glwe_out_infos, &key_infos)),
+            .max(module.glwe_pack_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos)),
     );
 
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
@@ -147,8 +150,7 @@ where
     pt_want.encode_vec_i64(&data, pt_k.into());
 
     assert!(
-        module
-            .glwe_noise(&res, &pt_want, &sk_prep, &mut scratch.borrow())
+        glwe_noise_checked(module, &res, &pt_want, &sk_prep, &mut scratch.borrow())
             .std()
             .log2()
             <= ((k_ct - out_base2k) as f64)

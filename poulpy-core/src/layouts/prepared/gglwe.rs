@@ -11,7 +11,7 @@ use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
 };
 
-/// DFT-domain (prepared) variant of [`GGLWE`].
+/// DFT-domain (prepared) variant of [`GGLWE`](crate::layouts::GGLWE).
 ///
 /// Stores the gadget GLWE matrix with polynomials in the frequency domain
 /// of the backend's DFT/NTT transform, enabling O(N log N) polynomial
@@ -192,7 +192,7 @@ where
         lvl_0
     }
 
-    /// Transforms a standard [`GGLWE`] into the DFT domain, writing the result into `res`.
+    /// Transforms a standard [`GGLWE`](crate::layouts::GGLWE) into the DFT domain, writing the result into `res`.
     ///
     /// Both `res` and `other` must share the same ring degree, base2k, precision, and dsize.
     fn gglwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
@@ -268,7 +268,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'b>, B> {
+impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,

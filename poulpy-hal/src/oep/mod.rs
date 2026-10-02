@@ -8,10 +8,24 @@
 //!
 //! # Derived operations and the implementation order
 //!
-//! Operations classified *derived* or *variant* carry a default body composed
-//! from the basis methods of the same backend (see [`crate::oep::derived`]); a backend
-//! implements the basis and inherits the rest, then overrides where a fused
-//! kernel is worth it, overriding a body and its `_tmp_bytes` together.
+//! Required methods form the backend implementation surface. Operations with
+//! a default body compose those methods through backend-native views (see
+//! [`crate::oep::derived`]); a backend inherits these compositions and may
+//! override them with fused kernels. A *variant* classification does not imply
+//! an inherited body: mutation variants such as
+//! [`HalVecZnxBigImpl::vec_znx_big_add_small_assign`](crate::oep::HalVecZnxBigImpl::vec_znx_big_add_small_assign),
+//! [`HalVecZnxDftImpl::vec_znx_idft_apply_tmpa`](crate::oep::HalVecZnxDftImpl::vec_znx_idft_apply_tmpa), and
+//! [`HalSvpImpl::svp_apply_dft_to_dft_assign`](crate::oep::HalSvpImpl::svp_apply_dft_to_dft_assign) remain required because their
+//! signatures cannot supply the temporary storage needed by a generic
+//! composition. Their individual method docs explain these requirements.
+//!
+//! A derived default body defines the operation. Overrides must preserve its
+//! result and scratch contract; override a body and its `_tmp_bytes` together
+//! when the required scratch changes. [`crate::test_suite::derived`] compares
+//! overrides directly against these bodies, and
+//! [`crate::cross_backend_test_suite!`] compares backend implementations against
+//! a reference backend. Backend crates must register and execute the applicable
+//! tests for each implementation; exporting a generic test does not execute it.
 //!
 //! The exception is a `_tmp_bytes` that sizes a whole family rather than one
 //! body, `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and
@@ -27,6 +41,7 @@
 //!
 //! ```text
 //! HalVecZnxImpl        (root)
+//! HalVecZnxMonomialImpl -> HalVecZnxImpl
 //! HalVecZnxBigImpl     (root)
 //! HalVecZnxDftImpl    -> HalVecZnxBigImpl
 //! HalSvpImpl          -> HalVecZnxDftImpl
@@ -35,7 +50,8 @@
 //! ```
 //!
 //! The graph is acyclic; a new backend implements the families in topological
-//! order: `HalModuleImpl`, `HalVecZnxImpl`, `HalVecZnxBigImpl`,
+//! order: `HalModuleImpl`, `HalVecZnxImpl` (and `HalVecZnxMonomialImpl` outside
+//! the conjugate-invariant ring), `HalVecZnxBigImpl`,
 //! `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
 //! `HalConvolutionImpl` in any order.
 

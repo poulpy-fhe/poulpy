@@ -1,12 +1,12 @@
 use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDecryptOps, CKKSEncryptOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps,
+        CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
@@ -20,11 +20,10 @@ where
     Self: CKKSEncryptOps<BE>
         + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
-        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
         + CKKSSubOps<BE>
         + CKKSNegOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSImagOps<BE>
         + CKKSRotateOps<BE>
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
@@ -37,7 +36,6 @@ where
         + GLWEShift<BE>
         + GLWEMulPlain<BE>
         + GLWEMulConst<BE>
-        + GLWERotate<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyEncryptSk<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -65,18 +63,19 @@ where
             .max(self.ckks_add_tmp_bytes(ct_infos.max_size()));
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
-            .max(self.ckks_decrypt_tmp_bytes(ct_infos))
+            .max(self.ckks_decrypt_tmp_bytes(pt_prec, ct_infos))
+            .max(self.ckks_copy_tmp_bytes(ct_infos, ct_infos))
             .max(self.ckks_add_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_add_one_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_add_pt_vec_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_add_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_sub_one_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_pt_vec_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_neg_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_pow2_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_div_pow2_tmp_bytes(ct_infos.max_size()))
-            .max(self.ckks_mul_i_tmp_bytes(ct_infos.max_size()))
-            .max(self.ckks_div_i_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
@@ -104,7 +103,6 @@ where
     {
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.ckks_conjugate_tmp_bytes(ct_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))

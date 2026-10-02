@@ -80,6 +80,17 @@ pub trait CKKSPow2Ops<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
+    /// Computes `dst = 2 * src` as the lazy sum `src + src`.
+    ///
+    /// Metadata follows [`Self::ckks_mul_pow2_into`] with `bits = 1`. The sum is
+    /// not normalized, unless `dst` is narrower than `src`: the doubling is then
+    /// the normalizing shift of [`Self::ckks_mul_pow2_into`]. Size scratch with
+    /// [`Self::ckks_mul_pow2_tmp_bytes`].
+    fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+
     fn ckks_div_pow2_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = src / 2^bits`.

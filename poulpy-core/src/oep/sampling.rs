@@ -33,7 +33,7 @@ use crate::{Distribution, NoiseInfos};
 /// and a backend's buffers are opaque to generic code, so only the backend can
 /// produce the values. Everything `poulpy-core` samples comes through here:
 /// the long-lived secret keys ([`GLWESecretSampling`] / [`LWESecretSampling`]),
-/// the ephemeral secret of public-key encryption, and the encryption noise.
+/// the ephemerals of public-key encryption, and the encryption noise.
 ///
 /// # Safety
 /// Implementations must write only within column `res_col` of `res`, and for

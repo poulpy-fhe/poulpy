@@ -9,6 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
     encryption::DEFAULT_SIGMA_XE,
@@ -135,7 +136,7 @@ where
 
         module.glwe_trace_assign(&mut glwe_out, 0, &auto_keys, &mut scratch.borrow());
         let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
-        module.glwe_decrypt(&glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
+        glwe_decrypt_checked(module, &glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
         let pt_have: GLWEPlaintext<AlignedBuf, BE::ZnxWord> = download_glwe_plaintext(module, &pt_have_backend);
 
         {

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingImpl};
 
@@ -16,7 +16,7 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// method sees only the ciphertext, the validated plan, the radix, and the
 /// backend's own precomputed material, so a backend may implement the whole
 /// step as one fused native kernel. This crate carries no implementation; the
-/// reference implementation lives in `poulpy-cpu-ref`, and the complete
+/// reference implementation is [`crate::reference::encoding::paco_coeff_encodings_host`], and the complete
 /// scheme definition of the step (host ciphertext → four host plaintexts) is
 /// exposed as
 /// [`paco_coeff_encodings_host`](crate::encoding::paco_coeff_encodings_host)
@@ -27,7 +27,7 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend {
+pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by coefficient embedding and β
     /// packing. This includes any scalar buffers used by native FFT kernels.
     fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(module: &Module<Self>, plan: &PaCoPlan) -> Result<usize>

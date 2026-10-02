@@ -18,7 +18,7 @@
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
-use poulpy_hal::layouts::{Backend, HostDataRef, Module, VecZnx};
+use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard, VecZnx};
 
 use crate::api::{CKKSEncodingOps, PaCoScalar};
 use crate::{
@@ -193,7 +193,7 @@ where
 /// non-representable coefficients, or a failed encoding.
 pub fn paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D, BE::ZnxWord>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
     plan: &PaCoPlan,
     base2k: Base2K,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
@@ -201,7 +201,7 @@ where
     // Host reference encoder: recomposes the ciphertext limbs through the i64
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
     // backends bypass it via the OEP impl.
-    BE: Backend<ZnxWord = i64>,
+    BE: Backend<ZnxWord = i64, Ring = Standard>,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     D: HostDataRef,
     F: PaCoScalar,
@@ -317,7 +317,7 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(
 /// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1` — no sign
 /// adjustment is needed.
 pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
-    ct: &CKKSCiphertext<D, i64>,
+    ct: &CKKSCiphertext<D, i64, Standard>,
     p: &PaCoPlan,
 ) -> Result<(Vec<i64>, Vec<i64>)> {
     ensure!(

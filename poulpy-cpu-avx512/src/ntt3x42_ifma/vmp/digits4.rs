@@ -16,10 +16,10 @@ struct Contraction<'a> {
     output: SendPtr<u64>,
 }
 
-pub(super) fn apply<E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+pub(super) fn apply<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
@@ -868,7 +868,7 @@ mod tests {
                             let mut actual = module.vec_znx_dft_alloc(n, 2, output_size);
                             let bytes = vmp_apply_digits_strided_tmp_bytes_ifma(1, a_size, 4, 8, 1, 4);
                             let mut tmp = vec![0; bytes / size_of::<u64>()];
-                            vmp_apply_dft_to_dft_digits_strided_ifma_impl::<SerialTaskExecutor, false>(
+                            vmp_apply_dft_to_dft_digits_strided_ifma_impl::<_, SerialTaskExecutor, false>(
                                 &mut expected.to_backend_mut(),
                                 &input.to_backend_ref(),
                                 4,
@@ -878,7 +878,7 @@ mod tests {
                                 &mut tmp,
                             );
                             actual.data.fill(0xa5);
-                            apply::<SerialTaskExecutor>(
+                            apply::<_, SerialTaskExecutor>(
                                 &mut actual.to_backend_mut(),
                                 &input.to_backend_ref(),
                                 &key.to_backend_ref(),
@@ -892,7 +892,7 @@ mod tests {
                             #[cfg(feature = "enable-rayon")]
                             pool.install(|| {
                                 actual.data.fill(0xa5);
-                                apply::<poulpy_cpu_rayon::RayonTaskExecutor>(
+                                apply::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
                                     &mut actual.to_backend_mut(),
                                     &input.to_backend_ref(),
                                     &key.to_backend_ref(),

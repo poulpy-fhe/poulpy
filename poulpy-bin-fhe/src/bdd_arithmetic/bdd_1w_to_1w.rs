@@ -1,70 +1,8 @@
-use poulpy_core::{
-    GLWEBytesOf, GLWECopy, GLWEPacking, ScratchArenaTakeCore,
-    layouts::{GLWEToBackendMut, GetAutomorphismKey},
-};
-use poulpy_hal::{
-    api::ModuleLogN,
-    layouts::{Backend, Module, ScratchArena},
-};
+pub use crate::api::ExecuteBDDCircuit1WTo1W;
+use poulpy_core::layouts::{GLWEToBackendMut, GetAutomorphismKey};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::bdd_arithmetic::{ExecuteBDDCircuit, FheUint, FheUintPrepared, GetBitCircuitInfo, UnsignedInteger, circuits};
-impl<BE: Backend<ZnxWord = i64>> ExecuteBDDCircuit1WTo1W<BE> for Module<BE> where
-    Self: Sized + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>
-{
-}
-
-/// Backend-level executor for single-input BDD circuits (`Z → Z`).
-///
-/// Evaluates a BDD circuit that reads one encrypted integer and produces
-/// one encrypted integer.  After evaluating the per-bit BDD levels, the
-/// output bits are repacked into a single [`FheUint`] polynomial via
-/// [`GLWEPacking`].
-pub trait ExecuteBDDCircuit1WTo1W<BE: Backend>
-where
-    Self: GLWEBytesOf<BE>,
-    Self: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
-{
-    fn execute_bdd_circuit_1w_to_1w<C, H, T>(
-        &self,
-        out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
-        a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
-        key: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        T: UnsignedInteger,
-        C: GetBitCircuitInfo,
-        H: GetAutomorphismKey<BE>,
-        BE: Backend<ZnxWord = i64>,
-    {
-        self.execute_bdd_circuit_1w_to_1w_multi_thread(1, out, circuit, a, key, scratch);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Operations Z x Z -> Z
-    fn execute_bdd_circuit_1w_to_1w_multi_thread<C, H, T>(
-        &self,
-        threads: usize,
-        out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
-        a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
-        key: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        T: UnsignedInteger,
-        C: GetBitCircuitInfo,
-        H: GetAutomorphismKey<BE>,
-        BE: Backend<ZnxWord = i64>,
-    {
-        let (mut out_bits, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(T::BITS as usize, out);
-
-        // Evaluates out[i] = circuit[i](a, b)
-        self.execute_bdd_circuit_multi_thread(threads, &mut out_bits, a, circuit, &mut scratch_1);
-
-        // Repacks the bits
-        out.pack(self, out_bits, key, &mut scratch_1);
-    }
-}
+use crate::bdd_arithmetic::{FheUint, FheUintPrepared, UnsignedInteger, circuits};
 
 #[macro_export]
 macro_rules! define_bdd_1w_to_1w_trait {

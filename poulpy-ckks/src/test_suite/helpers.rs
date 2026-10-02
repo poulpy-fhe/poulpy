@@ -1,7 +1,7 @@
 //! Free-function test helpers for the CKKS test suite.
 //!
-//! Provides trait aliases ([`TestContextBackend`], [`TestContextModule`],
-//! [`TestContextHostModule`]), test-vector generators, "want" functions for
+//! Provides trait aliases ([`TestContextBackend`], [`TestContextSharedModule`],
+//! [`TestContextModule`], [`TestContextHostModule`]), test-vector generators, "want" functions for
 //! expected values, key-generation helpers, encode/upload/download utilities,
 //! encrypt/decrypt wrappers, and precision/metadata assertion helpers.
 //!
@@ -24,18 +24,19 @@ use crate::{
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
-        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSNormalizationState, CKKSPlaintextOwned,
-        CKKSPlaintextVecHostCodec, plaintext::CKKSPlaintext,
+        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
+        plaintext::CKKSPlaintext,
     },
     test_suite::reference_encoder::ReferenceEncoder,
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
-    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch,
+    GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWESecretPreparedFactory, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
+        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWELayout, GLWESecretPreparedFactory,
+        GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
         GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
@@ -43,8 +44,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
-        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena,
-        ScratchOwned, ZnxView, ZnxWord,
+        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena,
+        ScratchOwned, Standard, ZnxView, ZnxWord,
     },
     source::Source,
 };
@@ -166,13 +167,12 @@ where
 {
 }
 
-/// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite.
-pub trait TestContextModule<BE: Backend>:
+/// `Module<BE>` capabilities of the CKKS test suite shared by both rings.
+pub trait TestContextSharedModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + CKKSModuleAlloc<BE>
     + CKKSAllOpsTmpBytes<BE>
-    + CKKSEvalModOps<BE>
     + CKKSEncryptOps<BE>
     + CKKSDecryptOps<BE>
     + CKKSAddOps<BE>
@@ -181,8 +181,6 @@ pub trait TestContextModule<BE: Backend>:
     + CKKSNegOps<BE>
     + CKKSCopyOps<BE>
     + CKKSRotateOps<BE>
-    + CKKSConjugateOps<BE>
-    + CKKSImagOps<BE>
     + CKKSPow2Ops<BE>
     + CKKSPlaintextVecOps<BE>
     + CKKSAddManyOps<BE>
@@ -207,12 +205,11 @@ pub trait TestContextModule<BE: Backend>:
 {
 }
 
-impl<BE: Backend, M> TestContextModule<BE> for M where
+impl<BE: Backend, M> TestContextSharedModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSModuleAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
-        + CKKSEvalModOps<BE>
         + CKKSEncryptOps<BE>
         + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
@@ -221,8 +218,6 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + CKKSNegOps<BE>
         + CKKSCopyOps<BE>
         + CKKSRotateOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSImagOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSPlaintextVecOps<BE>
         + CKKSAddManyOps<BE>
@@ -247,11 +242,26 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
 {
 }
 
-/// Aggregates all `Module<HostBytesBackend>` capabilities needed by the CKKS
-/// test suite.
-pub trait TestContextHostModule: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend> {}
+/// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite:
+/// the shared ones plus the standard-only conjugation, `i` and EvalMod.
+pub trait TestContextModule<BE: Backend>:
+    TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+{
+}
 
-impl<M: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>> TestContextHostModule for M {}
+impl<BE: Backend, M> TestContextModule<BE> for M where
+    M: TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+{
+}
+
+/// Aggregates the `Module<HostBytesBackend<R>>` capabilities needed by the CKKS
+/// test suite.
+pub trait TestContextHostModule<R: Ring = Standard>:
+    ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>
+{
+}
+
+impl<R: Ring, M: ModuleNew<HostBytesBackend<R>> + CKKSModuleAlloc<HostBytesBackend<R>>> TestContextHostModule<R> for M {}
 
 // ─── scalar + test-vector marker ─────────────────────────────────────────────
 
@@ -511,7 +521,7 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
 pub fn alloc_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
@@ -536,8 +546,8 @@ where
 
 // ─── plaintext upload / download ─────────────────────────────────────────────
 
-/// Uploads a host-side plaintext to the backend.
-pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<BE>
+/// Uploads a host-side plaintext to a backend of the same ring.
+pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
 {
@@ -547,7 +557,7 @@ where
 }
 
 /// Downloads a backend plaintext to the host.
-pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord> {
+pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring> {
     pt.to_host_owned::<BE>()
 }
 
@@ -555,7 +565,7 @@ pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<Al
 
 /// Encodes complex slots into a host plaintext then uploads it to the backend.
 pub fn encode_and_upload_pt<BE, F, E>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     base2k: Base2K,
@@ -565,7 +575,7 @@ pub fn encode_and_upload_pt<BE, F, E>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -577,7 +587,7 @@ where
 
 /// Encodes a packed constant (at most 2 coefficients: re, im) and uploads.
 pub fn ckks_pt_cst<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     prec: CKKSLayout,
@@ -586,7 +596,7 @@ pub fn ckks_pt_cst<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let coeff_count = if im.is_some() { 2 } else { 1 };
@@ -605,7 +615,7 @@ where
 
 /// Encodes a full-degree constant (sets coefficient 0 = re, coefficient m = im) and uploads.
 pub fn ckks_pt_cst_full<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     prec: CKKSLayout,
@@ -615,7 +625,7 @@ pub fn ckks_pt_cst_full<BE, F>(
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     let n = m * 2;
@@ -634,13 +644,13 @@ where
 
 /// Encodes and uploads the add/sub test constant.
 pub fn add_sub_const_pt<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst::<BE, F>(
@@ -655,14 +665,14 @@ where
 
 /// Encodes and uploads the multiply test constant as a full-degree plaintext.
 pub fn mul_const_full_pt<BE, F>(
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     module: &Module<BE>,
     base2k: Base2K,
     m: usize,
 ) -> CKKSPlaintextOwned<BE>
 where
     BE: HostStaged,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
 {
     ckks_pt_cst_full::<BE, F>(host_module, module, base2k, PT_PREC, m, Some(MUL_CONST.0), Some(MUL_CONST.1))
@@ -677,13 +687,13 @@ where
 pub fn gen_sk_with_raw<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
     seed: [u8; 32],
 ) -> (BackendGLWESecret<BE>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
@@ -698,13 +708,13 @@ where
 pub fn gen_sk<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     seed: [u8; 32],
 ) -> GLWESecretPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     gen_sk_with_raw(params, module, host_module, seed).1
 }
@@ -718,7 +728,7 @@ pub fn gen_tsk<BE>(
 ) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let tsk_infos = params.tsk_layout();
     let mut xa = Source::new(next_test_seed(1));
@@ -741,7 +751,7 @@ pub fn gen_atk<BE>(
 ) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let atk_infos = params.atk_layout();
     let mut xa = Source::new(next_test_seed(1));
@@ -765,7 +775,7 @@ pub fn gen_switching_key<BE>(
 ) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let infos = params.ksk_layout(k_in);
     let mut xa = Source::new(next_test_seed(1));
@@ -777,6 +787,38 @@ where
     ksk_prepared
 }
 
+/// Generates the prepared embed and trace keys between the conjugate-invariant secret
+/// `ci_sk` and the standard secret `sk` of `module`, of twice its degree.
+pub fn gen_ci_keys<BE, S>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    ci_sk: &S,
+    sk: &BackendGLWESecret<BE>,
+    k_in: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    GLWECIEmbedKeyPrepared<BE::OwnedBuf, BE>,
+    GLWECITraceKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
+    S: GLWESecretToBackendRef<BE>,
+{
+    let infos = params.ksk_layout(k_in);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut embed = module.glwe_ci_embed_key_alloc_from_infos(&infos);
+    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
+    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    let mut embed_prepared = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut embed_prepared, &embed, scratch);
+    let mut trace_prepared = module.glwe_ci_trace_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut trace_prepared, &trace, scratch);
+    (embed_prepared, trace_prepared)
+}
+
 /// Generates the sparse-secret encapsulation key-switching keys
 /// (<https://eprint.iacr.org/2022/024>): samples a fresh sparse ephemeral secret
 /// of Hamming weight `ephemeral_secret_weight`, then returns the prepared
@@ -786,7 +828,7 @@ where
 pub fn gen_encapsulation_keys<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
     sk_dense_raw: &BackendGLWESecret<BE>,
     ephemeral_secret_weight: usize,
     k_in: usize,
@@ -798,8 +840,8 @@ pub fn gen_encapsulation_keys<BE>(
 )
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
 {
     // Sparse ephemeral secret skSparse (fixed Hamming weight).
     let mut source = Source::new(next_test_seed(7));
@@ -820,7 +862,7 @@ where
 pub fn ckks_encrypt<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
@@ -830,8 +872,8 @@ pub fn ckks_encrypt<BE, F, E>(
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -847,7 +889,7 @@ where
 pub fn ckks_encrypt_coeffs<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     coeffs: &[F],
@@ -856,10 +898,10 @@ pub fn ckks_encrypt_coeffs<BE, F>(
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
     let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
@@ -884,7 +926,7 @@ where
 pub fn ckks_encrypt_with_prec<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
@@ -895,8 +937,8 @@ pub fn ckks_encrypt_with_prec<BE, F, E>(
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<HostBytesBackend<BE::Ring>>: TestContextHostModule<BE::Ring>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -926,12 +968,12 @@ pub fn ckks_encrypt_pt<BE>(
     module: &Module<BE>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
-    host_pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    host_pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let pt = upload_pt(module, host_pt);
 
@@ -948,7 +990,7 @@ where
     ct
 }
 
-/// Asserts that the data of `ct` is canonical at `ct.k()`.
+/// Asserts that `ct`, when flagged canonical, is canonical at `ct.k()`.
 ///
 /// Canonical at `k` means, coefficient by coefficient: the low
 /// `(-k) mod base2k` bits of the last live limb are zero, every limb past
@@ -963,11 +1005,15 @@ where
 /// and nothing below `k`, so it is allowed here.
 ///
 /// Every decryption helper in this module runs it first, so each operation
-/// test holds its output to the invariant before checking the value.
+/// test holds an output its flag calls canonical to the invariant before
+/// checking the value.
 ///
 /// `BE` cannot be inferred from `CKKSCiphertextOwned<BE>`, which is a type
 /// alias over the backend's buffer and word types, so callers pass it.
 pub fn assert_canonical_at_k<BE: TestContextBackend>(label: &str, ct: &CKKSCiphertextOwned<BE>) {
+    if !ct.is_canonical() {
+        return;
+    }
     let host = ct.to_host_owned::<BE>();
     let base2k: usize = host.base2k().as_usize();
     let k: usize = host.k().as_usize();
@@ -1011,10 +1057,10 @@ pub fn ckks_decrypt_with_prec<BE>(
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     prec: CKKSLayout,
     scratch: &mut ScratchArena<'_, BE>,
-) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord>>
+) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     assert_canonical_at_k::<BE>("decrypt", ct);
     let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k());
@@ -1034,7 +1080,7 @@ pub fn ckks_decrypt_decode<BE, F, E>(
 ) -> (Vec<F>, Vec<F>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -1067,10 +1113,10 @@ where
 }
 
 /// Decodes a host-side plaintext to slot vectors.
-pub fn ckks_decode_pt<F, E>(
+pub fn ckks_decode_pt<F, E, R: Ring>(
     encoder: &ReferenceEncoder<E>,
     m: usize,
-    pt: &CKKSPlaintextOwned<HostBytesBackend>,
+    pt: &CKKSPlaintextOwned<HostBytesBackend<R>>,
 ) -> (Vec<F>, Vec<F>)
 where
     F: TestScalar,
@@ -1207,7 +1253,7 @@ pub fn assert_decrypt_precision<BE, F, E>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1258,7 +1304,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1333,9 +1379,9 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
 
-pub fn assert_ct_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_ct_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R>,
     log_delta: usize,
     log_budget: usize,
 ) {
@@ -1349,10 +1395,10 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
-pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
-    input: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R>,
+    input: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1362,11 +1408,11 @@ pub fn assert_unary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
     );
 }
 
-pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_binary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
-    a: &CKKSCiphertext<impl Data, W>,
-    b: &CKKSCiphertext<impl Data, W>,
+    ct: &CKKSCiphertext<D, W, R>,
+    a: &CKKSCiphertext<impl Data, W, R>,
+    b: &CKKSCiphertext<impl Data, W, R>,
 ) {
     assert_ct_meta(
         label,
@@ -1376,9 +1422,9 @@ pub fn assert_binary_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     );
 }
 
-pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
@@ -1390,9 +1436,9 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
-pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, S: CKKSNormalizationState>(
+pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
-    ct: &CKKSCiphertext<D, W, S>,
+    ct: &CKKSCiphertext<D, W, R>,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {

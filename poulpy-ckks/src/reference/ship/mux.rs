@@ -161,6 +161,7 @@ where
         }
     }
     let k = ct.k().as_usize();
+    ct.set_canonical(true);
     {
         let res_big_ref = res_big.to_backend_ref();
         let mut ct_mut = ct.to_backend_mut();

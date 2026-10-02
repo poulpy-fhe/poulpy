@@ -8,7 +8,9 @@ use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use bytemuck::Pod;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module};
+
+use crate::api::CKKSModuleInfos;
 
 /// Shape information shared by owned and borrowed encoding buffers.
 pub trait CKKSEncodingBufferInfos {
@@ -23,8 +25,9 @@ pub trait CKKSEncodingBufferInfos {
 /// A one-dimensional array of CKKS encoding scalars in backend storage.
 ///
 /// Slot values use planar layout `[re_0, ..., re_{m-1}, im_0, ..., im_{m-1}]`.
-/// The same storage holds the `2m` real polynomial coefficients after the
-/// in-place slot-to-coefficient transform.
+/// After the slot-to-coefficient transform, a standard ring uses all `2m`
+/// entries as coefficients. An invariant ring uses the first `m` entries for
+/// its independent coefficients and the second half as transform workspace.
 #[repr(C)]
 pub struct CKKSEncodingBuffer<D: Data, F> {
     /// Opaque host- or device-resident bytes.
@@ -92,6 +95,11 @@ impl<D: Data, F: Pod> CKKSEncodingBuffer<D, F> {
     }
 }
 
+/// Coefficients a transformed `len`-scalar slot buffer holds: `len` on the standard ring, `len / 2` on the invariant ring.
+pub(crate) fn slot_coeff_count<BE: Backend>(module: &Module<BE>, len: usize) -> usize {
+    len / 2 * (module.n() / module.ckks_max_slots())
+}
+
 pub type CKKSEncodingBufferBackendRef<'a, BE, F> = CKKSEncodingBuffer<<BE as Backend>::BufRef<'a>, F>;
 pub type CKKSEncodingBufferBackendMut<'a, BE, F> = CKKSEncodingBuffer<<BE as Backend>::BufMut<'a>, F>;
 
@@ -110,7 +118,7 @@ impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferViewMut<'a, BE, F> {
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferInfos for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferInfos for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn len(&self) -> usize {
         self.inner.len
     }
@@ -138,13 +146,13 @@ impl<BE: Backend, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBuffe
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferToBackendRef<BE, F> for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferToBackendRef<BE, F> for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn to_backend_ref(&self) -> CKKSEncodingBufferBackendRef<'_, BE, F> {
         CKKSEncodingBuffer::from_data(BE::view_ref_mut(&self.inner.data), self.inner.len)
     }
 }
 
-impl<'a, BE: Backend + 'a, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBufferViewMut<'a, BE, F> {
+impl<BE: Backend, F> CKKSEncodingBufferToBackendMut<BE, F> for CKKSEncodingBufferViewMut<'_, BE, F> {
     fn to_backend_mut(&mut self) -> CKKSEncodingBufferBackendMut<'_, BE, F> {
         CKKSEncodingBuffer::from_data(BE::view_mut_ref(&mut self.inner.data), self.inner.len)
     }

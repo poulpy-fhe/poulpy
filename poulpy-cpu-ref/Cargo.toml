@@ -10,12 +10,20 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-cpu-ref"
 
 [features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "enable-core"]
 enable-core = []
 enable-ckks = ["dep:poulpy-ckks", "enable-core"]
+enable-mhe = ["dep:poulpy-mhe", "enable-core"]
+# Ships the portable comparison adapters other backend crates test against.
+# They panic outside a controlled-sampling scope, so keep this out of a build
+# that is not running tests: enable it from `[dev-dependencies]` only.
+enable-test-suite = ["enable-core"]
 
 [dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
 anyhow = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
+poulpy-mhe = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
 #poulpy-bench = {workspace = true}
@@ -51,17 +59,18 @@ required-features = ["enable-core"]
 
 [[example]]
 name = "bdd_arithmetic"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [[example]]
 name = "circuit_bootstrapping"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [[example]]
 name = "max_array"
-required-features = ["enable-core"]
+required-features = ["enable-bin-fhe"]
 
 [dev-dependencies]
+paste = {workspace = true}
 dashu-int = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
@@ -72,18 +81,23 @@ poulpy-bench = {workspace = true} #  features = ["hal-bench", "bin-fhe-bench", "
 [[bench]]
 name = "full"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "light"
 harness = false
-required-features = ["enable-core", "enable-ckks"]
+required-features = ["enable-core", "enable-ckks", "enable-bin-fhe"]
 
 [[bench]]
 name = "normalize"
 harness = false
+
+[[bench]]
+name = "encrypt_pk"
+harness = false
+required-features = ["enable-core"]

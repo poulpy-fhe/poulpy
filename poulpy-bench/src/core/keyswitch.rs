@@ -1,15 +1,15 @@
-use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
-    GLWEKeyswitch,
+    GLWEKeyswitch, GLWEMaskFill,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::GGLWEPreparedFactory,
     },
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CopyFromHost, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -17,7 +17,6 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::core::fill::{host_gglwe, host_glwe, staging};
 use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 /// Times `glwe_keyswitch` alone.
@@ -31,12 +30,13 @@ use crate::core::params::{CoreParams, key_dnum_k_aux};
 ///
 /// Setup is outside `bencher.iter`, so a device backend measures the kernel and
 /// not the bus.
-pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>:
-        ModuleNew<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + GLWEKeyswitch<BE> + GGLWEPreparedFactory<BE>,
+pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + GLWEKeyswitch<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEMaskFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe = GLWELayout {
@@ -63,13 +63,12 @@ pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
     let mut source: Source = Source::new([0u8; 32]);
 
-    let host = staging(cp.n as usize);
     let mut ct_in = module.glwe_alloc_from_infos(glwe_in);
     let mut ct_out = module.glwe_alloc_from_infos(glwe_out);
     let mut key_coeffs = module.gglwe_alloc_from_infos(&key_infos);
 
-    host_glwe(&host, glwe_in, &mut source).transfer_into(&mut ct_in);
-    host_gglwe(&host, &key_infos, &mut source).transfer_into(&mut key_coeffs);
+    module.fill_glwe_from_source(&mut ct_in, &mut source);
+    fill_by_digit(&module, &mut key_coeffs, 1, &mut source);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module

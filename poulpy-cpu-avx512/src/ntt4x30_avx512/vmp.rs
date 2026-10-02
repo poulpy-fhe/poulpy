@@ -14,11 +14,13 @@ use core::arch::x86_64::{
 };
 
 use poulpy_core::oep::gglwe_product_digit_output_size;
+use poulpy_cpu_ref::reference::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
     VmpPMatBackendRef, ZnxView, ZnxViewMut, check_degree,
@@ -53,14 +55,16 @@ pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
 /// Every u64 stores two canonical u32 residues. The two planes hold prime
 /// pairs `(p0, p1)` and `(p2, p3)` for
 /// `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-pub(crate) fn vmp_prepare_avx_pm(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512>,
-    a: &MatZnxBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_prepare_avx_pm<R: Ring>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &MatZnxBackendRef<'_, NTT4x30Avx512<R>>,
     tmp: &mut [u64],
-) {
+) where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
     let n = res.n();
-    check_degree::<NTT4x30Avx512>(module.n(), n);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -87,8 +91,8 @@ pub(crate) fn vmp_prepare_avx_pm(
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
 
-            NTT4x30Avx512::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            NTT4x30Avx512::ntt_dft_execute(table, tmp_b);
+            NTT4x30Avx512::<R>::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
+            NTT4x30Avx512::<R>::ntt_dft_execute(table, tmp_b);
             unsafe { canonicalize_limb_q120(n, tmp_b) };
 
             for bp in 0..n_block_pairs {
@@ -408,11 +412,11 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool, E: TaskExecutor>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_avx<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_apply_dft_to_dft_avx<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -444,11 +448,11 @@ pub(crate) fn vmp_apply_dft_to_dft_avx<E: TaskExecutor>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_add_avx<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_apply_dft_to_dft_add_avx<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -500,41 +504,42 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
 /// Applies all gadget digits directly from their interleaved source limbs.
 /// The block-pair outer loop keeps the prepared-matrix working set hot and
 /// avoids materializing a temporary DFT vector for every digit.
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     tmp: &mut [u64],
 ) {
-    vmp_apply_dft_to_dft_digits_strided_avx_inner::<E>(module, res, a, dsize, product_limbs, pmat, None, tmp)
+    vmp_apply_dft_to_dft_digits_strided_avx_inner::<_, E>(module, res, a, dsize, product_limbs, pmat, None, tmp)
 }
 
+#[cfg(feature = "enable-ckks")]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     zero_prefix: usize,
     tmp: &mut [u64],
 ) {
     assert!(zero_prefix <= a.size());
-    vmp_apply_dft_to_dft_digits_strided_avx_inner::<E>(module, res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
+    vmp_apply_dft_to_dft_digits_strided_avx_inner::<_, E>(module, res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_digits_strided_avx_inner<E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+fn vmp_apply_dft_to_dft_digits_strided_avx_inner<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
@@ -753,9 +758,9 @@ fn vmp_apply_dft_to_dft_digits_strided_avx_inner<E: TaskExecutor>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`, in the prime-major prepared layout.
-pub(crate) fn vmp_extract_selected_rows_avx512_pm(
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512>,
-    a: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+pub(crate) fn vmp_extract_selected_rows_avx512_pm<R: Ring>(
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512<R>>,
+    a: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
     first_row: usize,
     row_step: usize,
 ) {

@@ -13,8 +13,7 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey};
 
 /// Backend-level key-encryption trait for [`BlindRotationKey`].
 ///
-/// Implemented for `Module<BE>` when the backend supports GGSW secret-key
-/// encryption.  The [`BlindRotationKey::encrypt_sk`] convenience method
+/// Dispatched by `Module<BE>` through [`crate::oep::BlindRotationKeyEncryptSkImpl`].  The [`BlindRotationKey::encrypt_sk`] convenience method
 /// delegates to this trait.
 ///
 /// Callers must supply:
@@ -29,30 +28,7 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey};
 /// # Panics
 ///
 /// Panics if `sk_lwe.dist()` is not a supported binary distribution.
-pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
-    /// Returns the minimum scratch-space size in bytes required by
-    /// [`blind_rotation_key_encrypt_sk`][Self::blind_rotation_key_encrypt_sk].
-    fn blind_rotation_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGSWInfos;
-
-    /// Encrypts each bit of `sk_lwe` as a GGSW ciphertext under `sk_glwe`,
-    /// storing the result in `res`.
-    #[allow(clippy::too_many_arguments)]
-    fn blind_rotation_key_encrypt_sk<S0, S1, E>(
-        &self,
-        res: &mut BlindRotationKey<B::OwnedBuf, BRA, B::ZnxWord>,
-        sk_glwe: &S0,
-        sk_lwe: &S1,
-        enc_infos: &E,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, B>,
-    ) where
-        S0: GLWESecretPreparedToBackendRef<B> + GLWEInfos,
-        E: EncryptionInfos,
-        S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution;
-}
+pub use crate::api::BlindRotationKeyEncryptSk;
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]

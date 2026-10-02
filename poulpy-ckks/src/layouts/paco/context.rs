@@ -19,12 +19,12 @@
 //! scheduled alone it is the unfused fast tail — one fused conj-rotate
 //! keyswitch and one μ-mask multiplication ([`PaCoPsiTailMaterial`]).
 
-use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::CKKSPlaintext;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena, Standard};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
@@ -34,6 +34,9 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
     layouts::{CKKSModuleAlloc, CKKSScalar},
 };
+
+/// Owned plaintext of `BE` on the standard ring, the only ring PaCo runs on.
+type PaCoPlaintext<BE> = CKKSPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Standard>;
 
 /// Compiled, backend-resident plaintext material for one validated PaCo plan.
 ///
@@ -53,9 +56,9 @@ use crate::{
 pub struct PaCoContext<BE: Backend, F> {
     plan: PaCoPlan,
     base2k: Base2K,
-    coeffs_to_slots: Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    coeffs_to_slots: Vec<LinearTransformation<PaCoPlaintext<BE>>>,
     psi_tail: PaCoPsiTailMaterial<BE>,
-    slots_to_coeffs: Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    slots_to_coeffs: Vec<LinearTransformation<PaCoPlaintext<BE>>>,
     galois_elements: Vec<i64>,
     scalar: PhantomData<F>,
 }
@@ -65,11 +68,11 @@ pub struct PaCoContext<BE: Backend, F> {
 pub(crate) enum PaCoPsiTailMaterial<BE: Backend> {
     /// The conjugation-augmented pair `(A, B)`: one plain conjugation
     /// keyswitch, then `A·w + B·conj(w)` at one level.
-    Pair([LinearTransformation<CKKSPlaintextOwned<BE>>; 2]),
+    Pair([LinearTransformation<PaCoPlaintext<BE>>; 2]),
     /// The operation-lean unfused tail (ψ scheduled alone): one fused
     /// conj-rotate keyswitch of `rotation` slots, one addition, and one
     /// multiplication by the share-scaled μ mask plaintext.
-    Mask { mu: CKKSPlaintextOwned<BE>, rotation: i64 },
+    Mask { mu: PaCoPlaintext<BE>, rotation: i64 },
 }
 
 /// Rejects generated factors that the host CKKS codec would overflow or
@@ -162,10 +165,11 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     /// backend-native slot encoding.
     ///
     /// Returns an error for a dimension-only or numerically unrepresentable
-    /// plan, incompatible module degree/cyclotomic order, invalid radix, or a
+    /// plan, incompatible module degree, invalid radix, or a
     /// factor/plaintext encoding failure.
     pub fn compile(module: &Module<BE>, base2k: Base2K, plan: PaCoPlan, scratch: &mut ScratchArena<'_, BE>) -> Result<Self>
     where
+        BE: Backend<Ring = Standard>,
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         F: PaCoScalar,
     {
@@ -175,17 +179,6 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
             "PaCo backend module degree {} does not match plan degree {}",
             module.n(),
             plan.n()
-        );
-        let expected_order = plan
-            .n()
-            .checked_mul(2)
-            .context("PaCo cyclotomic order overflows usize")
-            .and_then(|order| i64::try_from(order).context("PaCo cyclotomic order does not fit i64"))?;
-        ensure!(
-            module.cyclotomic_order() == expected_order,
-            "PaCo backend cyclotomic order {} does not match plan degree {} (expected {expected_order})",
-            module.cyclotomic_order(),
-            plan.n(),
         );
         ensure!(
             (1..=63).contains(&base2k.as_usize()),
@@ -205,7 +198,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                              dft: &PaCoDFTPlan,
                              giant_step: usize,
                              scratch: &mut ScratchArena<'_, BE>|
-         -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>> {
+         -> Result<LinearTransformation<PaCoPlaintext<BE>>> {
             validate_factor_encoding(diagonals, dft)?;
             let slots = diagonals.slots();
             ensure!(
@@ -239,7 +232,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                             dft: &PaCoDFTPlan,
                             giant_steps: &[usize],
                             scratch: &mut ScratchArena<'_, BE>|
-         -> Result<Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>> {
+         -> Result<Vec<LinearTransformation<PaCoPlaintext<BE>>>> {
             ensure!(
                 factors.len() == giant_steps.len(),
                 "PaCo generated {} factors for a {}-entry BSGS schedule",
@@ -374,7 +367,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
         &self.galois_elements
     }
 
-    pub(crate) fn coeffs_to_slots(&self) -> &[LinearTransformation<CKKSPlaintextOwned<BE>>] {
+    pub(crate) fn coeffs_to_slots(&self) -> &[LinearTransformation<PaCoPlaintext<BE>>] {
         &self.coeffs_to_slots
     }
 
@@ -382,7 +375,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
         &self.psi_tail
     }
 
-    pub(crate) fn slots_to_coeffs(&self) -> &[LinearTransformation<CKKSPlaintextOwned<BE>>] {
+    pub(crate) fn slots_to_coeffs(&self) -> &[LinearTransformation<PaCoPlaintext<BE>>] {
         &self.slots_to_coeffs
     }
 }

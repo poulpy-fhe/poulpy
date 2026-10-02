@@ -12,9 +12,10 @@ pub trait CKKSConjugateReference<BE: Backend> {
     where
         C: GLWEInfos,
         K: GGLWEInfos,
-        Self: GLWEAutomorphism<BE>,
+        Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
     {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
+            .max(self.glwe_shift_tmp_bytes(ct_infos.max_size()))
     }
 
     fn ckks_conjugate_into_reference<Dst, Src>(
@@ -64,3 +65,5 @@ pub trait CKKSConjugateReference<BE: Backend> {
         Ok(())
     }
 }
+
+impl<BE: Backend> CKKSConjugateReference<BE> for poulpy_hal::layouts::Module<BE> {}

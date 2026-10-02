@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds,
@@ -26,7 +26,7 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by
 /// the associated method signatures.
-pub unsafe trait CKKSShipCoeffEncodingImpl: Backend {
+pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by the coefficient encoding.
     fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
         module: &Module<Self>,

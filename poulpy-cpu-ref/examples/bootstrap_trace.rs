@@ -25,14 +25,14 @@
 //! - `cargo flamegraph -p poulpy-cpu-ref --example bootstrap_trace --features enable-ckks`
 //!   (SVG, open in any browser).
 
-use poulpy_ckks::test_suite::{NTT4X30_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
+use poulpy_ckks::test_suite::{BASE52_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
 use poulpy_cpu_ref::{
     FFT64ReimTable, NTT4x30Ref,
     layouts::{HostBytesBackend, Module},
 };
 
 fn main() {
-    let params = NTT4X30_PARAMS_F64;
+    let params = BASE52_PARAMS_F64;
 
     // `test_bootstrapping_e2e` builds its own modules internally; these only
     // satisfy the signature (they are ignored by the test body).

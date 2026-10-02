@@ -35,6 +35,7 @@
 //! DFT-domain operations require `n == n_full == N`. Flat accessors
 //! (`raw`, `as_ptr`) panic on a window.
 
+mod base2k;
 mod convolution;
 mod crt;
 mod encoding;
@@ -56,6 +57,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
+pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt};
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;
@@ -76,7 +78,7 @@ pub use vmp_pmat::*;
 pub use word::*;
 pub use znx_base::*;
 
-use std::ptr::NonNull;
+use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::{AlignedBuf, oep::HalModuleImpl};
 
@@ -157,163 +159,168 @@ where
 {
 }
 
-/// Minimal host-resident backend used as the default backend adapter for
-/// host-visible byte-slice views in generic helper code.
+/// Host-resident, storage-only backend of ring `R` (default [`Standard`](crate::layouts::Standard));
+/// the default instance adapts host byte-slice views in generic helper code.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct HostBytesBackend;
+pub struct HostBytesBackend<R: Ring = Standard>(PhantomData<R>);
 
-impl Backend for HostBytesBackend {
+// Shared byte-storage implementation for the host adapter and layout test fixtures.
+macro_rules! impl_host_byte_storage {
+    () => {
+        type OwnedBuf = $crate::AlignedBuf;
+        type BufRef<'a> = &'a [u8];
+        type BufMut<'a> = &'a mut [u8];
+        type Handle = ();
+        type Location = $crate::layouts::Host;
+
+        fn alloc_bytes(len: usize) -> Self::OwnedBuf {
+            $crate::alloc_aligned::<u8>(len)
+        }
+
+        fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
+            $crate::alloc_aligned::<u8>(len)
+        }
+
+        fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
+            $crate::AlignedBuf::from(bytes)
+        }
+
+        fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
+            buf.to_vec()
+        }
+
+        fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
+            assert!(
+                buf.len() >= dst.len(),
+                "backend buffer is smaller than the destination host slice"
+            );
+            dst.copy_from_slice(&buf[..dst.len()]);
+        }
+
+        fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+            assert!(
+                buf.len() >= src.len(),
+                "backend buffer is smaller than the source host slice"
+            );
+            let src_len = src.len();
+            buf[..src_len].copy_from_slice(src);
+            buf[src_len..].fill(0);
+        }
+
+        fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+            assert!(
+                buf.len() >= dst.len(),
+                "backend view is smaller than the destination host slice"
+            );
+            dst.copy_from_slice(&buf[..dst.len()]);
+        }
+
+        fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+            assert!(
+                buf.len() >= src.len(),
+                "backend view is smaller than the source host slice"
+            );
+            let src_len = src.len();
+            buf[..src_len].copy_from_slice(src);
+            buf[src_len..].fill(0);
+        }
+
+        fn len_bytes(buf: &Self::OwnedBuf) -> usize {
+            buf.len()
+        }
+
+        fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+            buf.len()
+        }
+
+        fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+            buf.len()
+        }
+
+        fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
+            buf.as_slice()
+        }
+
+        fn view_ref<'a, 'b>(buf: &'a Self::BufRef<'b>) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>) -> Self::BufMut<'a>
+        where
+            Self: 'b,
+        {
+            buf
+        }
+
+        fn view_mut(buf: &mut Self::OwnedBuf) -> Self::BufMut<'_> {
+            buf.as_mut_slice()
+        }
+
+        fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> Self::BufRef<'_> {
+            &buf[offset..offset + len]
+        }
+
+        fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
+            &mut buf[offset..offset + len]
+        }
+
+        fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            &buf[offset..offset + len]
+        }
+
+        fn region_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
+        where
+            Self: 'b,
+        {
+            &buf[offset..offset + len]
+        }
+
+        fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
+        where
+            Self: 'b,
+        {
+            &mut buf[offset..offset + len]
+        }
+
+        unsafe fn destroy(_handle: std::ptr::NonNull<Self::Handle>) {}
+    };
+}
+#[cfg(test)]
+pub(crate) use impl_host_byte_storage;
+
+impl<R: Ring> Backend for HostBytesBackend<R> {
     // Storage/normalization only; this backend does not perform products.
-    const MAX_BASE2K: usize = 62;
+    const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = crate::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
-    type OwnedBuf = AlignedBuf;
-    type BufRef<'a> = &'a [u8];
-    type BufMut<'a> = &'a mut [u8];
-    type Handle = ();
-    type Location = Host;
-
-    fn alloc_bytes(len: usize) -> Self::OwnedBuf {
-        crate::alloc_aligned::<u8>(len)
-    }
-
-    fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
-        crate::alloc_aligned::<u8>(len)
-    }
-
-    fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
-
-    fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.to_vec()
-    }
-
-    fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
-        assert!(
-            buf.len() >= dst.len(),
-            "backend buffer length {} is smaller than destination host slice length {}",
-            buf.len(),
-            dst.len()
-        );
-        dst.copy_from_slice(&buf[..dst.len()]);
-    }
-
-    fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
-        assert!(
-            buf.len() >= src.len(),
-            "backend buffer length {} is smaller than source host slice length {}",
-            buf.len(),
-            src.len()
-        );
-        let src_len = src.len();
-        buf[..src_len].copy_from_slice(src);
-        buf[src_len..].fill(0);
-    }
-
-    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert!(
-            buf.len() >= dst.len(),
-            "backend view length {} is smaller than destination host slice length {}",
-            buf.len(),
-            dst.len()
-        );
-        dst.copy_from_slice(&buf[..dst.len()]);
-    }
-
-    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert!(
-            buf.len() >= src.len(),
-            "backend view length {} is smaller than source host slice length {}",
-            buf.len(),
-            src.len()
-        );
-        let src_len = src.len();
-        buf[..src_len].copy_from_slice(src);
-        buf[src_len..].fill(0);
-    }
-
-    fn len_bytes(buf: &Self::OwnedBuf) -> usize {
-        buf.len()
-    }
-
-    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
-        buf.len()
-    }
-
-    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
-        buf.len()
-    }
-
-    fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
-        buf.as_slice()
-    }
-
-    fn view_ref<'a, 'b>(buf: &'a Self::BufRef<'b>) -> Self::BufRef<'a>
-    where
-        Self: 'b,
-    {
-        buf
-    }
-
-    fn view_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>) -> Self::BufRef<'a>
-    where
-        Self: 'b,
-    {
-        buf
-    }
-
-    fn view_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>) -> Self::BufMut<'a>
-    where
-        Self: 'b,
-    {
-        buf
-    }
-
-    fn view_mut(buf: &mut Self::OwnedBuf) -> Self::BufMut<'_> {
-        buf.as_mut_slice()
-    }
-
-    fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> Self::BufRef<'_> {
-        &buf[offset..offset + len]
-    }
-
-    fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
-        &mut buf[offset..offset + len]
-    }
-
-    fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
-    where
-        Self: 'b,
-    {
-        &buf[offset..offset + len]
-    }
-
-    fn region_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
-    where
-        Self: 'b,
-    {
-        &buf[offset..offset + len]
-    }
-
-    fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
-    where
-        Self: 'b,
-    {
-        &mut buf[offset..offset + len]
-    }
-
-    unsafe fn destroy(_handle: NonNull<Self::Handle>) {}
+    type Ring = R;
+    impl_host_byte_storage!();
 }
 
-unsafe impl HalModuleImpl for HostBytesBackend {
+// Storage-only backend: no transform arithmetic to model.
+impl<R: Ring> MaxBase2k for HostBytesBackend<R> {
+    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
+        None
+    }
+}
+
+unsafe impl<R: Ring> HalModuleImpl for HostBytesBackend<R> {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { crate::layouts::Module::from_nonnull(NonNull::dangling(), n) }
@@ -512,14 +519,15 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// This is useful for proof or delegating backends that want to remain a
 /// distinct backend type while reusing the same owned buffer, borrowed views,
 /// scalar types, and handle representation as a source backend.
+/// A trailing `; generic R: Ring` forwards every instantiation of a generic marker.
 #[macro_export]
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
-    ($be:ty, $from:ty $(, $executor:ty)?) => {
-        impl poulpy_hal::layouts::Backend for $be {
+    ($be:ty, $from:ty $(, $executor:ty)? $(; generic $g:ident: $gb:path)?) => {
+        impl$(<$g: $gb>)? poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
-            const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
+            const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
@@ -530,6 +538,7 @@ macro_rules! impl_backend_from {
             type BufMut<'a> = <$from as poulpy_hal::layouts::Backend>::BufMut<'a>;
             type Handle = <$from as poulpy_hal::layouts::Backend>::Handle;
             type Location = <$from as poulpy_hal::layouts::Backend>::Location;
+            type Ring = <$from as poulpy_hal::layouts::Backend>::Ring;
 
             fn alloc_bytes(len: usize) -> Self::OwnedBuf {
                 <$from as poulpy_hal::layouts::Backend>::alloc_bytes(len)
@@ -541,10 +550,6 @@ macro_rules! impl_backend_from {
 
             fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
                 <$from as poulpy_hal::layouts::Backend>::from_host_bytes(bytes)
-            }
-
-            fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-                <$from as poulpy_hal::layouts::Backend>::from_bytes(bytes)
             }
 
             fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
@@ -682,22 +687,40 @@ macro_rules! impl_backend_from {
 
         // A delegating backend forwards all storage behavior verbatim, so every
         // container layout is shared with the source backend by construction.
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
+}
+
+/// The byte length of an owned allocation of `len` bytes: `len` rounded up to
+/// the [`DEFAULTALIGN`](crate::DEFAULTALIGN) padding of
+/// [`alloc_aligned`](crate::alloc_aligned), what a layout's `from_bytes`
+/// compares its buffer against.
+pub fn padded_bytes(len: usize) -> usize {
+    len.next_multiple_of(crate::DEFAULTALIGN)
 }
 
 #[cfg(test)]
 mod host_transfer_tests {
     use super::*;
+
+    /// A layout whose `bytes_of` is not a multiple of the padding accepts a
+    /// buffer of exactly that many bytes: it is padded on the way in.
+    #[test]
+    fn layout_from_bytes_accepts_an_unpadded_byte_count() {
+        let bytes = VecZnx::<AlignedBuf, i64>::bytes_of(4, 1, 1);
+        assert_eq!(bytes, 32);
+        let v = VecZnx::<AlignedBuf, i64>::from_bytes(4, 1, 1, vec![0u8; bytes]);
+        assert_eq!((v.n(), v.data().len()), (4, padded_bytes(bytes)));
+    }
 
     /// `from_bytes` always copies into aligned storage, padding the length up
     /// to the allocation granularity and zeroing the tail.

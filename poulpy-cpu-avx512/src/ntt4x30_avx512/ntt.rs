@@ -59,6 +59,8 @@ use core::arch::x86_64::{
     _mm512_set1_epi64, _mm512_srl_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 
+use poulpy_hal::layouts::Ring;
+
 use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
@@ -958,7 +960,7 @@ unsafe fn intt_iter_red(
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P, impl Ring>, data: &mut [u64]) {
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1055,7 +1057,7 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
 /// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data: &mut [u64]) {
     assert_eq!(
         data.len(),
         4 * table.n,
@@ -1136,11 +1138,13 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: 
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
+
     use super::*;
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
-        ntt::{NttTable, NttTableInv, ntt_ref},
+        ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
+        standard::ntt_ref,
     };
 
     /// AVX-512F NTT followed by AVX-512F iNTT is the identity — mirrors the ref test.

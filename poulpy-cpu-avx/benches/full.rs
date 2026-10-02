@@ -21,8 +21,8 @@ criterion_group! {
      bench_core_ckks::<Ntt>,
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
-     bench_ckks_bootstrapping::<Ntt>,
-     bench_ckks_bootstrapping::<Fft>,
+     bench_ckks_bootstrapping::<Ntt, 52>,
+     bench_ckks_bootstrapping::<Fft, 19>,
      bench_binfhe::<Fft, CGGI>
 }
 

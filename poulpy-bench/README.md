@@ -164,6 +164,22 @@ cargo bench -p poulpy-cpu-ref --bench standard  --features enable-ckks -- "vec_z
 cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- --list "core"
 ```
 
+### CKKS bootstrapping presets
+
+`schemes::suites::bench_ckks_bootstrapping` benchmarks every preset in
+`poulpy_ckks::presets::bootstrapping::all()`, including
+`n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
+and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
+Each case checks its measured precision against the preset's advertised minimum.
+
+```sh
+# List the logN15 cases without allocating bootstrapping keys
+cargo bench -p poulpy-cpu-ref --bench full --features enable-ckks -- n15_d35_k180_p18_c2s --list
+
+# Run the logN15 preset on the reference NTT backend
+cargo bench -p poulpy-cpu-ref --bench full --features enable-ckks -- 'NTT4x30Ref/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
+```
+
 ## Normalization sweep
 
 `hal::params::default_bench_params_normalize()` covers input and output bases

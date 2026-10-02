@@ -5,20 +5,19 @@ use std::fmt;
 use poulpy_hal::{
     api::VecZnxCopy,
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo, vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+        vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
     },
-    source::Source,
 };
 
 use crate::{
-    encryption::lwe::LWEFillMaskReference,
+    api::LWEFillMask,
     layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetBase2k, TorusPrecision},
 };
 
 /// Seed-compressed LWE ciphertext layout.
 ///
-/// Stores only the body (constant term) of an [`LWE`] ciphertext; the
+/// Stores only the body (constant term) of an [`LWE`](crate::layouts::LWE) ciphertext; the
 /// mask coefficients are regenerated deterministically from a 32-byte
 /// PRNG seed during decompression.
 #[derive(PartialEq, Eq, Clone)]
@@ -65,12 +64,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWECompressed<D, W> {
             self.seed,
             self.data
         )
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for LWECompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 
@@ -131,7 +124,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
 
 pub trait LWEDecompress
 where
-    Self: LWEFillMaskReference<Self::Backend> + VecZnxCopy<Self::Backend>,
+    Self: LWEFillMask<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -148,14 +141,14 @@ where
             assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
             self.vec_znx_copy(&mut res.body, 0, &other.data, 0);
         }
-        self.fill_lwe_mask_from_seed_reference(other.base2k().into(), res, other.seed);
+        self.fill_lwe_mask_from_seed(other.base2k().into(), res, other.seed);
         res.set_base2k(other.base2k());
     }
 }
 
 impl<B: Backend> LWEDecompress for Module<B>
 where
-    Self: LWEFillMaskReference<B> + VecZnxCopy<B>,
+    Self: LWEFillMask<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }
@@ -177,7 +170,7 @@ impl<BE: Backend> LWECompressedToBackendRef<BE> for LWECompressed<BE::OwnedBuf, 
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
             k: self.k,
@@ -188,7 +181,7 @@ impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &LWECompressed<BE::
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
             k: self.k,
@@ -214,7 +207,7 @@ impl<BE: Backend> LWECompressedToBackendMut<BE> for LWECompressed<BE::OwnedBuf, 
     }
 }
 
-impl<'b, BE: Backend + 'b> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
         LWECompressed {
             k: self.k,

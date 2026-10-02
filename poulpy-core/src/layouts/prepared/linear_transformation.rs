@@ -34,7 +34,7 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 /// stores it as a `PreparedDiagonal`. Because this type implements [`LWEInfos`],
 /// the shared evaluator reads `base2k` / `k` / `size` off it exactly as it
 /// does off a plaintext — which is what lets both flavors share the single
-/// [`LinearTransformation`](crate::layouts::LinearTransformation) container
+/// [`crate::layouts::LinearTransformation`] container
 /// (`LinearTransformation<PreparedDiagonal<…>>` vs
 /// `LinearTransformation<CKKSPlaintext<…>>`).
 ///
@@ -52,6 +52,9 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     /// it as opaque and never reads it. Mirrors the streamed plaintext's
     /// `log_delta`; set by the scheme layer during the populate step.
     pub(crate) log_scale: usize,
+    /// Whether the scheme claims the diagonal's slots are real. Opaque to the
+    /// core engine like `log_scale`; `false` (no claim) until the scheme sets it.
+    pub(crate) real_slots: bool,
 }
 
 impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
@@ -74,6 +77,16 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     /// populate step.
     pub fn set_log_scale(&mut self, log_scale: usize) {
         self.log_scale = log_scale;
+    }
+
+    /// Whether the scheme claims the diagonal's slots are real (opaque to the core engine).
+    pub fn real_slots(&self) -> bool {
+        self.real_slots
+    }
+
+    /// Sets the real-slot claim; called by the scheme layer during the populate step.
+    pub fn set_real_slots(&mut self, real_slots: bool) {
+        self.real_slots = real_slots;
     }
 }
 

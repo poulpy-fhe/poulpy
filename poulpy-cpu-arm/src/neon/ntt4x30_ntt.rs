@@ -5,6 +5,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
+use poulpy_hal::layouts::Ring;
 
 use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q120, store_q120, sub_q120};
 
@@ -49,7 +50,7 @@ unsafe fn modq_red_q120(x: Q120, h: int64x2_t, mask: Q120, cst: Q120) -> Q120 {
 }
 
 #[inline(always)]
-unsafe fn broadcast_mask(v: u64) -> Q120 {
+pub(crate) unsafe fn broadcast_mask(v: u64) -> Q120 {
     use core::arch::aarch64::vdupq_n_u64;
     unsafe {
         let m = vdupq_n_u64(v);
@@ -349,7 +350,7 @@ unsafe fn intt_iter_red(
 /// Forward Q120 NTT — NEON.
 ///
 /// `data.len()` must be `4 * table.n`.
-pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "ntt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
@@ -418,7 +419,7 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 /// Inverse Q120 NTT — NEON.
 ///
 /// `data.len()` must be `4 * table.n`.
-pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
     assert_eq!(data.len(), 4 * n, "intt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
@@ -488,11 +489,13 @@ pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
-        ntt::{NttTable, NttTableInv, ntt_ref},
+        ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
+        standard::ntt_ref,
     };
 
     /// NEON NTT then NEON iNTT round-trips to the original (mod each Q[k]).

@@ -1,21 +1,23 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::VecZnxCopy,
+    api::{VecZnxCopy, VecZnxNormalize},
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillReference},
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait GLWECompressedEncryptSkReference<BE: Backend> {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -35,11 +37,24 @@ pub trait GLWECompressedEncryptSkReference<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    fn glwe_compressed_encrypt_zero_sk_reference<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWECompressedEncryptSkReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFillReference<BE> + VecZnxCopy<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -78,13 +93,7 @@ where
             );
 
             let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-            self.fill_glwe_mask_from_seed_reference(
-                res_backend.base2k().into(),
-                &mut full_ct,
-                1,
-                res_backend.rank().as_usize(),
-                seed_xa,
-            );
+            self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
             self.glwe_encrypt_sk_internal(
                 res_backend.base2k().into(),
                 &mut full_ct.data,
@@ -97,5 +106,52 @@ where
             let full_ct_ref = full_ct.to_backend_ref();
             self.vec_znx_copy(&mut res_backend.data, 0, &full_ct_ref.data, 0);
         }
+        scratch.wipe(self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
+    }
+
+    fn glwe_compressed_encrypt_zero_sk_reference<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>,
+    {
+        res.seed_mut().copy_from_slice(&seed_xa);
+
+        let mut res_backend = res.to_backend_mut();
+        assert!(
+            scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
+            "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
+            scratch.available(),
+            self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
+        );
+
+        let tmp_bytes: usize = self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend);
+        {
+            let (base2k, size): (usize, usize) = (res_backend.base2k().into(), res_backend.size());
+            let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
+            self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
+            self.glwe_encrypt_sk_internal(base2k, &mut full_ct.data, None, sk, enc_infos, source_xe, &mut scratch_1);
+            // Without a plaintext the internal leaves the body unnormalized.
+            let full_ct_ref = full_ct.to_backend_ref();
+            self.vec_znx_normalize(
+                &mut res_backend.data,
+                base2k,
+                size * base2k,
+                0,
+                0,
+                &full_ct_ref.data,
+                base2k,
+                0,
+                &mut scratch_1,
+            );
+        }
+        scratch.wipe(tmp_bytes);
     }
 }

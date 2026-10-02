@@ -1,10 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, ReaderFrom, WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef,
+    MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 use std::{
     fmt,
@@ -170,13 +167,13 @@ impl<'a, BE: Backend + 'a> Deref for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGSWBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendRef<'a, BE> {
+impl<BE: Backend> LWEInfos for GGSWBackendRef<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -194,13 +191,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GGSWBackendRef<'a, BE> {
+impl<BE: Backend> GLWEInfos for GGSWBackendRef<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendRef<'a, BE> {
+impl<BE: Backend> GGSWInfos for GGSWBackendRef<'_, BE> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -214,7 +211,7 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> LWEInfos for GGSWBackendMut<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -232,13 +229,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GLWEInfos for GGSWBackendMut<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GGSWInfos for GGSWBackendMut<'_, BE> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -252,7 +249,7 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWBackendRef<'a, BE> {
+impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
             dsize: self.inner.dsize(),
@@ -263,7 +260,7 @@ impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
             dsize: self.inner.dsize,
@@ -274,7 +271,7 @@ impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWToBackendMut<BE> for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
             dsize: self.inner.dsize,
@@ -285,19 +282,19 @@ impl<'a, BE: Backend + 'a> GGSWToBackendMut<BE> for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for GGSWBackendRef<'a, BE> {
+impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendRef<'_, BE> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
         GGSWBackendRef::at_view(self, row, col)
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendMut<'_, BE> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
         GGSWBackendMut::at_view(self, row, col)
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for &GGSWBackendRef<'a, BE> {
+impl<BE: Backend> GGSWAtViewRef<BE> for &GGSWBackendRef<'_, BE> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
         GGSWBackendRef::at_view(self, row, col)
     }
@@ -360,18 +357,13 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSW<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGSW<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
-    }
-}
-
 impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
     pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
         let data = self.data.at(row, col);
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -388,6 +380,7 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -402,6 +395,7 @@ pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     GLWE {
         base2k: ggsw.base2k,
         k: ggsw.k(),
+        canonical: true,
         data,
     }
 }
@@ -427,6 +421,7 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     GLWE {
         base2k: ggsw.base2k,
         k: ggsw.k(),
+        canonical: true,
         data,
     }
 }
@@ -436,7 +431,12 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -450,7 +450,12 @@ impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -462,7 +467,12 @@ pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = ggsw.base2k;
     let k = ggsw.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col);
-    GLWE { base2k, k, data }
+    GLWE {
+        base2k,
+        k,
+        canonical: true,
+        data,
+    }
 }
 
 pub trait GGSWAtViewMut<BE: Backend> {
@@ -477,7 +487,7 @@ impl<BE: Backend> GGSWAtViewMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewMut<BE> for GGSWBackendMut<'a, BE> {
+impl<BE: Backend> GGSWAtViewMut<BE> for GGSWBackendMut<'_, BE> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GGSWBackendMut::at_view_mut(self, row, col)
     }
@@ -529,7 +539,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
 
         GGSW {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                <HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),
@@ -607,7 +617,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
             dsize: self.dsize,
@@ -618,7 +628,7 @@ impl<'b, BE: Backend + 'b> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'b>, BE
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         ggsw_backend_mut_from_mut::<BE>(self)
     }
@@ -646,7 +656,7 @@ impl<'a, BE: Backend + 'a> GGSWBackendRowViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> LWEInfos for GGSWBackendRowViewMut<'_, BE> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -661,13 +671,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWBackendRowViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEInfos for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GLWEInfos for GGSWBackendRowViewMut<'_, BE> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GGSWInfos for GGSWBackendRowViewMut<'_, BE> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -679,13 +689,13 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWBackendRowViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRowViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         self.inner.to_backend_ref()
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWToBackendMut<BE> for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendRowViewMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
             dsize: self.inner.inner.dsize,
@@ -696,13 +706,13 @@ impl<'a, BE: Backend + 'a> GGSWToBackendMut<BE> for GGSWBackendRowViewMut<'a, BE
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendRowViewMut<'_, BE> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
         self.inner.at_view(row, col)
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewMut<BE> for GGSWBackendRowViewMut<'a, BE> {
+impl<BE: Backend> GGSWAtViewMut<BE> for GGSWBackendRowViewMut<'_, BE> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         self.inner.at_view_mut(row, col)
     }

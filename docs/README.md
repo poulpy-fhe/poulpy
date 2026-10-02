@@ -7,7 +7,11 @@
 - [Grafting vs. the Bivariate Representation](grafting-vs-bivariate.md) — how Poulpy's bivariate base-`2^K` representation compares to RNS Grafting for bit-granular scale and modulus management.
 - [HAL model and contracts](../poulpy-hal/src/api/mod.rs), the rustdoc of `poulpy_hal::api` (`cargo doc -p poulpy-hal --open`): the value model, canonical form, limb rule, mutation and exactness classes, the degree-embedding rule and the contract block every HAL operation carries, with the derived operations and the backend implementation order in [`poulpy_hal::oep`](../poulpy-hal/src/oep/mod.rs) and the window views in [`poulpy_hal::layouts`](../poulpy-hal/src/layouts/mod.rs).
 
+- [Implementing a core backend](../poulpy-core/docs/core-contracts.md), reference algorithms, derived defaults, backend overrides, scratch contracts and parity tests.
+
 ## CKKS
+
+- [Implementing CKKS operations](../poulpy-ckks/docs/ckks-contracts.md), explicit reference wiring, derived defaults, backend overrides, scratch, and caller-selected parity.
 
 - [Polynomial Evaluation](polynomial_evaluation.md) — evaluating a polynomial on encrypted slots with the Baby-Step Giant-Step method, the two split strategies, the supported polynomial flavors, and the modulus consumed per degree.
 - [Linear Transformations](linear_transformation.md) — the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method, with hoisting, lazy normalization, and the cost in key-switches.

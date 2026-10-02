@@ -1,5 +1,6 @@
 //! Backend extension points for coefficient-domain [`VecZnx`](poulpy_hal::layouts::VecZnx) operations.
 
+use poulpy_hal::layouts::Ring;
 use std::mem::size_of;
 
 use crate::reference::vec_znx::{
@@ -55,14 +56,14 @@ pub trait BigWordHadamardProduct: Backend<ZnxWord = i64> {
     fn big_word_hadamard_product(res: &mut [Self::BigWord], a: &[i64], b: &[i64]);
 }
 
-impl BigWordHadamardProduct for crate::FFT64Ref {
+impl<R: Ring> BigWordHadamardProduct for crate::FFT64Ref<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }
 
-impl BigWordHadamardProduct for crate::NTT4x30Ref {
+impl<R: Ring> BigWordHadamardProduct for crate::NTT4x30Ref<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)

@@ -13,7 +13,7 @@ use poulpy_hal::{
 use crate::ScratchArenaTakeCore;
 use crate::api::GLWEBytesOf;
 use crate::layouts::{GGSW, GGSWInfos, GGSWToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GLWEViewRef, LWEInfos};
-use crate::noise::glwe::glwe_noise_backend_inner;
+use crate::noise::glwe::{glwe_noise_backend_inner, glwe_noise_body_tmp_bytes};
 use crate::{
     GLWENormalize,
     api::{GGSWNoise, GLWENoise},
@@ -70,7 +70,7 @@ where
         assert_eq!(self.n() as u32, infos.n());
 
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
-        let lvl_1_glwe_noise: usize = self.glwe_noise_tmp_bytes(infos);
+        let lvl_1_glwe_noise: usize = glwe_noise_body_tmp_bytes(self, infos);
         let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(self.n(), 1, infos.size())
             + self.bytes_of_vec_znx_big(self.n(), 1, infos.size())
             + self.vec_znx_big_normalize_tmp_bytes();

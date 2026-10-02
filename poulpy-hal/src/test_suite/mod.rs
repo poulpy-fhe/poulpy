@@ -11,6 +11,7 @@ use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
     ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
+use crate::oep::HalVecZnxImpl;
 
 pub mod convolution;
 pub mod derived;
@@ -65,11 +66,11 @@ pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
 /// `MatZnx`) and keep all intermediate layouts backend-local.
 ///
 /// Pinned to `ZnxWord = i64`: the suites drive `encode_*`/`decode_*` and
-/// `FillUniform`, which are i64-only. A backend with a narrower coefficient
-/// word needs its own suites.
-pub trait TestBackend: Backend<ZnxWord = i64> {}
+/// `vec_znx_fill_uniform_source`, which are i64-only. A backend with a narrower
+/// coefficient word needs its own suites.
+pub trait TestBackend: Backend<ZnxWord = i64> + HalVecZnxImpl {}
 
-impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}
+impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl> TestBackend for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
@@ -116,7 +117,7 @@ pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::Znx
 pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
-    ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
+    ScalarZnx::from_data(<HostBytesBackend>::from_host_bytes(&host_bytes), shape.n(), shape.cols())
 }
 
 pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -127,7 +128,7 @@ pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>)
 pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
-    VecZnx::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), shape)
+    VecZnx::from_shape(<HostBytesBackend>::from_host_bytes(&host_bytes), shape)
 }
 
 pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -146,7 +147,7 @@ pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     MatZnx::from_data(
-        HostBytesBackend::from_host_bytes(&host_bytes),
+        <HostBytesBackend>::from_host_bytes(&host_bytes),
         shape.n(),
         shape.rows(),
         shape.cols_in(),

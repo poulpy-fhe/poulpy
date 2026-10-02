@@ -21,39 +21,28 @@ The crate exposes:
 
 ## Toolchain
 
-`poulpy-ckks` requires **nightly Rust** by default: the portable quad-precision scalar [`Quad`] is a newtype over the unstable primitive `f128` (`#![feature(f128)]`). The workspace pins a known-good nightly in `rust-toolchain.toml`.
+`poulpy-ckks` requires **nightly Rust** by default: the portable quad-precision scalar [`Quad`](src/scalar.rs) is a newtype over the unstable primitive `f128` (`#![feature(f128)]`). The workspace pins a known-good nightly in `rust-toolchain.toml`.
 
-On non-Apple x86_64, the optional `libquadmath` feature routes `Quad`'s libm-backed math (transcendentals, `sqrt`, `%`, and the rounding family) through libquadmath (via the `f128` crate) for faster on-the-fly FFT-table builds; the `Quad` type, its storage, and its `+ - * /` are identical in every configuration. Elsewhere — other architectures, and macOS, whose toolchain does not ship libquadmath — the feature is a no-op.
+The optional `libquadmath` feature changes the backing math library for `Quad`
+on supported targets; its storage and arithmetic interfaces stay the same.
+See [`Cargo.toml`](Cargo.toml) for the target conditions.
 
-## Tests And Backend Integration
+## Tests and backend integration
 
-`poulpy-ckks` exposes its public API as soon as the crate is imported. Backend
-crates own the feature flags that wire concrete CKKS implementations into that
-API.
+The public API is available when the crate is imported. Backend crates select
+implementations by explicitly implementing the corresponding `oep::*Impl`
+contracts, usually through the `impl_ckks_*_reference!` macros.
 
 ```sh
 cargo test -p poulpy-ckks
 ```
 
-The full backend-generic CKKS conformance suite is instantiated by backend
-crates. To run it against the portable reference backends:
-
-```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks
-```
-
-To run the reference CKKS example:
-
-```sh
-cargo run -p poulpy-cpu-ref --example ckks_poly2 --features enable-ckks
-```
-
-Like the rest of Poulpy, the public API is backend-agnostic. `poulpy-ckks`
-does not depend on any concrete backend crate. Default dispatches and fallback
-implementations flow through `poulpy-hal` and `poulpy-core`, while
-`poulpy-ckks` remains free to override behavior at the scheme level when
-CKKS-specific semantics require it. Concrete execution comes from backend
-crates such as `poulpy-cpu-ref` and `poulpy-cpu-avx`.
+The `test-utils` feature exposes independent mathematical conformance tests and
+paired tests that accept a caller-selected comparison backend. Backend crates
+register the supported operation/scalar combinations. See the
+[repository README](../README.md) for concrete commands, examples, and CI
+coverage, and [Implementing CKKS operations](docs/ckks-contracts.md) for the
+replacement and parity contracts.
 
 ## Design Notes
 
@@ -101,50 +90,66 @@ the other evaluator methods update it automatically.
 Another important design point is that cryptographic and arithmetic operations
 are invoked through traits on `Module<BE>`, not through methods on the
 ciphertext/plaintext types themselves. This matches the rest of Poulpy: data
-lives in layouts, behavior lives in module traits, and backend-specific
-overrides remain possible. Data-management methods (`.set_meta_checked()`,
-`.to_host_owned()`) and typestate transitions (`.normalize()`) are the
-exceptions: they live on the struct because they are inherently tied to the
-type, not to the backend.
+lives in layouts, behavior lives in module traits, and a backend may override
+an operation with a faster route to the same result, validated by the parity
+test. Data-management methods (`.set_meta_checked()`,
+`.to_host_owned()`) are the exception: they live on the struct because they
+are inherently tied to the type, not to the backend.
 
-## Crate Organization
+The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
+backend (`Backend::Ring`): a module only accepts operands of its own ring, so
+mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
+ciphertext with real slots still belongs to the standard ring; CI encoding
+marks its plaintexts real, and arithmetic and linear transformations
+propagate that claim.
+Compact plaintexts must have a degree that embeds in the module; scalar
+coefficient banks need the same ring kind but may have arbitrary lengths.
 
-The crate is arranged in four interdependent modules (plus supporting
-modules for encoding, data structures, testing, and error handling)
-that follow the same pattern used throughout the Poulpy workspace:
+Secret and evaluation keys use the Core key types and preparation methods.
+Prepared keys, diagonals, and baby-step caches carry the backend type, so CI
+and standard prepared objects cannot be mixed. Raw key coefficients have no
+ring tag: callers must prepare them with the backend used to generate them.
 
+## Crate organization
+
+Public calls follow `api → delegates → oep`. A backend's explicit `*Impl`
+implementation selects the operation. Lower-layer algorithms are public
+`reference` implementations composed from core and HAL operations. Simple
+compositions of CKKS operations are crate-private derived defaults on the OEP
+traits; they call the selected constituent operations.
+
+```text
+core + HAL operations → CKKS reference algorithms
+                                 ↓ explicit backend wiring
+public API → delegates → OEP *Impl contracts
+                                 ↳ derived defaults over CKKS operations
 ```
-   ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌────────────────┐
-   │   api   │────►│   oep   │────►│  delegates  │◄────│    default     │
-   └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
-```
 
-**Overriding a method**: a backend replaces the default behavior for any
-operation by implementing the corresponding `oep` trait directly instead
-of relying on the blanket wiring to `reference`.  Only hot-path operations
-need explicit overrides; everything else is inherited for free.
+To replace a method, implement its OEP family directly and call the public
+reference methods for the unchanged members. Do not also invoke that family's
+reference macro. Other families can retain their own reference wiring. An
+override must compute the same circuit and pass parity against a validated
+implementation chosen by the caller. This validation is transitive for the
+operations and parameter ranges tested; passing finite tests is not a proof for
+all parameters.
 
-### Layer descriptions
-
-| Module | Visibility | Role |
-|--------|-----------|------|
-| `api` | public | Typed, ergonomic evaluator traits (`CKKSAddOps`, `CKKSMulOps`, `CKKSAffineOps`, …) that `Module<BE>` implements. These are what user code calls. |
-| `delegates` | crate-private | Implements each `api` trait on `Module<BE>` by delegating to `oep`. Also owns composite operations (affine, mul-add, dot-product, etc.) that are built from two or more primitives and therefore live above the OEP layer. |
-| `oep` | public | Operation Exposition Pattern. Each `CKKS*Impl<BE>` unsafe trait defines the raw dispatch surface: static methods taking `&Module<BE>` directly. A blanket `impl` wires every backend that satisfies the HAL bounds to the corresponding `reference` method. Macros (`impl_ckks_*_reference!`) are the only thing a backend crate needs to call to opt in. `CKKSImpl<BE>` is the aggregate supertrait required by composite ops. |
-| `reference` | public | One trait per operation family (e.g. `CKKSAddReference<BE>`) holding the reference implementations as regular methods on `Module<BE>`. Backends that need to override an operation implement the corresponding `oep` trait directly instead of relying on this layer. |
-| `layouts` | public | CKKS-level data wrappers: `CKKSCiphertext<D>`, `CKKSPlaintext<D>`, `UnnormalizedCKKSCiphertext<D>`, allocation helpers (`CKKSModuleAlloc`), and the `CKKSPlaintextVecHostCodec<F>` encoding trait. |
-| `encoding` | public | Scheme-level encoding definitions shared by backends (e.g. the PaCo and SHIP host references `paco_coeff_encodings_host` / `ship_coeff_encodings_host`). Slot/coefficient encoding itself is a backend-resident operation exposed by `api::CKKSEncodingOps` and dispatched through `oep::CKKSEncodingImpl`. |
-| `test_suite` | public (feature `test-utils`) | Backend-agnostic test suite. Enable the `test-utils` feature (backend crates do so in dev-dependencies) and invoke `ckks_backend_test_suite!` in a backend crate's test module to run the full suite against that backend without duplicating test logic. |
-| `error` | private | `CKKSError`, `CKKSResult`, and `CKKSCompositionError`, re-exported at the crate root, plus checked arithmetic helpers used by the reference implementations. |
+| Module | Role |
+|---|---|
+| `api` | Public evaluator traits implemented on `Module<BE>`. |
+| `delegates` | Crate-private dispatch, validation, and API compositions such as affine operations and dot products. |
+| `oep` | Explicit backend `*Impl` contracts; no blanket selection of operation implementations. `CKKSImpl` aggregates capabilities. |
+| `oep::derived` | Crate-private same-layer defaults: add/subtract one, one-shot polynomial evaluation, and the six DFT format/direction wrappers. |
+| `reference` | Callable lower-layer algorithms and canonical encoding definitions. Their implementation bounds do not constrain an unrelated override. |
+| `layouts` | Ciphertexts, plaintexts, metadata, allocation, prepared plans, and backend-resident encoding buffers. |
+| `encoding` | PaCo and SHIP scheme embeddings and explicitly named host helpers, also exposed through `reference::encoding`. |
+| `test_suite` | Independent mathematical tests and caller-selected paired tests, enabled with `test-utils`. |
+| `error` | Checked errors re-exported as `CKKSError`, `CKKSResult`, and `CKKSCompositionError`. |
 
 ## Public Types
 
 The main CKKS-facing types are:
 
 - `CKKSCiphertext<D>` — encrypted CKKS value; wraps a core GLWE ciphertext
-- `UnnormalizedCKKSCiphertext<D>` — typestate wrapper for ciphertexts produced
-  by unnormalized linear operations; cannot be passed to DFT-domain primitives
-  until `.normalize(module, scratch)` is called
 - `CKKSPlaintext<D>` — quantized CKKS plaintext in the torus / ZNX domain
 - `CKKSMeta` — semantic precision metadata
 - `CKKSPlaintextVecHostCodec<F>` — trait for encoding/decoding host floats
@@ -156,6 +161,7 @@ The main CKKS-facing types are:
 pub struct CKKSMeta {
     pub log_delta: usize,
     pub log_sparsity: usize,
+    pub slots: SlotsKind,
 }
 ```
 
@@ -218,14 +224,24 @@ in place. `api::CKKSEncodingHostOps` layers host-slice convenience adapters on
 top:
 
 ```rust,ignore
-use poulpy_ckks::api::CKKSEncodingHostOps;
+use poulpy_ckks::{
+    CKKSMeta, SlotsKind,
+    api::CKKSEncodingHostOps,
+    layouts::CKKSModuleAlloc,
+};
+use poulpy_hal::api::ModuleN;
 
 let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-// allocate a plaintext via the module, then encode
-let mut pt = module.ckks_pt_vec_alloc(base2k.into(), prec);
+let mut pt = module.ckks_pt_vec_alloc(base2k.into(), 50usize.into());
+pt.set_meta_checked(CKKSMeta {
+    log_delta: 40,
+    log_sparsity: (module.n() / (2 * m)).ilog2() as usize,
+    slots: SlotsKind::Complex,
+})?;
+// The host adapter needs module.ckks_reim_tmp_bytes(m) scratch bytes.
 module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch)?;
 
 let mut re_out = vec![0.0f64; m];
@@ -233,10 +249,13 @@ let mut im_out = vec![0.0f64; m];
 module.ckks_decode_reim_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
 ```
 
-The scalar `F` (e.g. `f64`) is fixed by the backend's
-`oep::CKKSEncodingImpl<BE, F>` implementation, and FFT plans are owned and
-cached by the module itself, so user code never constructs an encoder object
-or an FFT table.
+The backend implements `oep::CKKSEncodingImpl<F>` for each supported scalar
+precision. Its module owns and caches the transform plans; callers pass only
+encoding buffers and plaintexts. The canonical slot ordering, normalization,
+and quantization live in [`reference::encoding`](src/reference/encoding.rs).
+Quantization rejects non-finite and out-of-range values before modifying the
+plaintext. Host slices appear in the explicitly named host helpers and
+convenience adapters; the resident OEP signatures require no host access.
 
 ## End-to-End Example: Chebyshev sine approximation
 
@@ -253,18 +272,9 @@ polynomial on an ordered union such as `[-1, -τ] ∪ [τ, 1]`; its Chebyshev
 input map spans the union's convex hull, while the excluded gaps do not
 contribute to the reported sup-norm error.
 
-The crate includes a runnable example at
-[`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)
-that approximates `sin(x)` on `[-1, 1]` with a degree-31 Chebyshev interpolation,
-`sin(x) ≈ Σ cᵢ·Tᵢ(x)`, and evaluates it homomorphically through the Baby-Step
-Giant-Step polynomial evaluator. It follows the standard six-phase CKKS workflow:
-
-1. **setup** — build the module, secret key, and relinearization (tensor) key
-2. **encoding** — Chebyshev-interpolate `sin`, decompose it into BSGS form, and encode the input slots
-3. **encryption** — encrypt the slot vector `x`
-4. **evaluation** — populate the Chebyshev power basis and run the BSGS evaluation
-5. **decryption** — decrypt and decode the result
-6. **verification** — compare against the reference `f64::sin`
+The [repository README](../README.md) links a runnable example that
+interpolates `sin(x)` on `[-1, 1]`, encodes the polynomial and input, evaluates
+with the Baby-Step Giant-Step method, and checks the decrypted result.
 
 The polynomial is interpolated and decomposed on the host, then evaluated on a
 power basis built from the encrypted input:
@@ -302,8 +312,8 @@ Leveled operations are invoked through traits implemented on
 |-------|-----------|
 | `CKKSEncryptOps` / `CKKSDecryptOps` | encryption and decryption |
 | `CKKSEncodingOps` / `CKKSEncodingHostOps` | backend-resident slot/coefficient encoding and decoding, plus host-slice adapters |
-| `CKKSAddOps` | normalized and unnormalized ciphertext and plaintext addition |
-| `CKKSSubOps` | normalized and unnormalized subtraction |
+| `CKKSAddOps` | ciphertext and plaintext addition |
+| `CKKSSubOps` | ciphertext and plaintext subtraction |
 | `CKKSNegOps` | negation |
 | `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
@@ -319,6 +329,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
 | `CKKSApproximationOps` | interval mapping and evaluation of a prepared `PolynomialApproximation` |
 | `CKKSPolynomialEvaluationOps` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
+| `CKKSComplexPolynomialEvaluationOps` | complex-coefficient polynomial evaluation (standard ring) |
 | `CKKSLinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
 | `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |
 | `CKKSEvalModOps` | homomorphic modular reduction (`EvalMod`) |
@@ -340,37 +351,23 @@ module.ckks_add_into(&mut dst, &lhs, &rhs, scratch)?;
 module.ckks_add_assign(&mut lhs, &rhs, scratch)?;
 ```
 
-### Unnormalized Operations
+### Lazy normalization
 
-The `*_unnormalized` methods on `CKKSAddOps` and `CKKSSubOps` (e.g.
-`ckks_add_into_unnormalized`, `ckks_sub_assign_unnormalized`) write into an
-`UnnormalizedCKKSCiphertext`. This type does not implement
-`GLWEToBackendRef`/`GLWEToBackendMut`, so it cannot be accidentally passed to
-any DFT-domain primitive (keyswitching, convolution, automorphisms). Call
-`.normalize(module, scratch)` to propagate carries and recover a
-`CKKSCiphertext`.
+Additions, subtractions, plaintext additions and `ckks_double_into` do not
+normalize their result: they clear the wrapped GLWE's canonical flag.
+Negation, copies and multiplication by `±i` keep their operand's flag. The next
+operation that reads the digits through a DFT (products, rotations,
+conjugation, keyswitching, decryption) normalizes a flag-clear operand first,
+so a chain of linear steps costs one normalization. Normalize a value that
+several such operations read once, with `glwe_normalize_assign`. Serializing
+a ciphertext whose flag is clear fails: normalize it first.
 
-Note that `.normalize()` is an exception to the principle stated above:
-it is a method on the struct rather than on `Module<BE>`. It lives there
-because it must *consume* the `UnnormalizedCKKSCiphertext` by value as the
-only typestate exit, which cannot be expressed as a module method. The
-actual computation is still dispatched through the `module` argument it
-receives.
+## Backend selection
 
-## Backends
-
-`poulpy-ckks` does not depend on any concrete backend crate. In practice, most
-users will choose one of:
-
-- `poulpy-cpu-ref` for portable reference execution
-- `poulpy-cpu-avx` for optimized x86_64 execution when AVX2/FMA is available
-- `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
-  target features are available
-
-Backend selection happens through the `BE` parameter of `Module<BE>`. Encoding
-dispatches through the backend like every other operation
-(`oep::CKKSEncodingImpl<BE, F>`); backend crates opt in with the
-`impl_ckks_*` macros, so no backend-specific type appears in user code.
+The `BE` parameter of `Module<BE>` selects execution. The CKKS crate contains no
+concrete backend dependency or hardware feature selection. Backend crates own
+their implementation wiring and supported scalar precisions; see the
+[repository README](../README.md) for available implementations.
 
 ## Roadmap
 
@@ -384,24 +381,44 @@ The core leveled evaluator building blocks are now implemented:
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../docs/ship.md))
 
-Planned evaluator work:
-
-- conjugate invariant ring
-
 Higher-level functionality on top of that foundation:
 
 - scheme switching
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-The intent is to keep the low-level API modular and agnostic enough of the encoding
-(for example to easily support the conjugate invariant ring) while progressively adding
-these higher-level features without changing the backend-agnostic programming model.
+## Conjugate invariant CKKS
 
-## Where to Look Next
+A CI backend such as `FFT64CIRef` or `NTT4x30CIRef` supports `N` real slots
+at degree `N`, constructed with `Module::<Backend>::new(N)`.
+`CKKSModuleInfos::ckks_max_slots` reports the capacity, and
+`ckks_galois_element` provides the identifiers for rotation keys. On both
+rings, shifts wrap modulo the slot count and negative shifts rotate backwards.
 
-- `src/api/encoding.rs` for the slot/coefficient encoding API (the reference packing lives in `poulpy-cpu-ref/src/ckks_encoding.rs`)
-- `src/layouts/` for CKKS data structures
-- `src/api/` for evaluator trait definitions
-- `src/test_suite/` for end-to-end usage patterns
-- `poulpy-cpu-ref/examples/ckks_poly2.rs` for the full end-to-end runnable example
+The slot encoder accepts planar real/imaginary buffers, discards imaginary
+inputs, decodes with zero imaginary parts, and marks encoded plaintexts real.
+Compact plaintexts use one coefficient per real slot, subject to the backend's
+minimum degree. Raw coefficient encoding uses the invariant basis directly.
+
+Leveled arithmetic, real polynomial evaluation, and real linear
+transformations use the module's invariant ring. Host-side polynomial coefficients are
+encoded with a `Module<HostBytesBackend<ConjugateInvariant>>`. Conjugation, multiplication by
+`i`, complex polynomial evaluation, DFT, EvalMod, bootstrapping, PaCo and SHIP
+are standard-only: CI backends do not implement them, so using them is a
+compile error. Real linear transformations reject nonzero imaginary diagonals.
+Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
+producing ring and backend.
+
+Standard modules embed CI ciphertexts of degree `N` into the standard ring of degree
+`2N` and map them back by the relative trace (`CKKSCIRingMapOps`), which CI modules do not implement.
+Each map switches between the CI secret and a standard secret with its key,
+`GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
+
+## Where to look next
+
+- [Implementing CKKS operations](docs/ckks-contracts.md) for reference ownership, overrides, scratch, and parity.
+- [`src/api/encoding.rs`](src/api/encoding.rs) and [`src/reference/encoding.rs`](src/reference/encoding.rs) for resident encoding interfaces and canonical scheme math.
+- [`src/layouts/`](src/layouts/) for CKKS data structures.
+- [`src/api/`](src/api/) for evaluator traits.
+- [`src/test_suite/`](src/test_suite/) for independent and paired conformance tests.
+- [Repository README](../README.md) for runnable examples and backend test commands.

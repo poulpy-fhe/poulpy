@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
     glwe_prepare_right, glwe_tensor_apply_prepared_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -124,7 +124,7 @@ pub trait CKKSMulReference<BE: Backend> {
 
     fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + Sized,
+        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
@@ -133,7 +133,7 @@ pub trait CKKSMulReference<BE: Backend> {
         let cols = a.rank().as_usize() + 1;
         let k: usize = a.k().into();
         let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(self.n(), cols, size, PrepareHint::Reuse);
+        let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
             prep,
@@ -294,17 +294,14 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
-        Self: GLWEMulConst<BE> + GLWERotate<BE>,
+        Self: GLWEMulConst<BE>,
     {
         let b_infos = GLWEPlaintextLayout {
             n: res.n(),
             base2k: res.base2k(),
             k: b_k,
         };
-        self.glwe_bytes_of_from_infos(res)
-            + self
-                .glwe_mul_const_tmp_bytes(res, a, &b_infos)
-                .max(self.glwe_rotate_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res) + self.glwe_mul_const_tmp_bytes(res, a, &b_infos)
     }
 
     fn ckks_mul_pt_vec_into_reference<Dst, A, P>(
@@ -610,3 +607,5 @@ pub(crate) fn mul_pt_params_raw(
         cnv_offset,
     ))
 }
+
+impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}

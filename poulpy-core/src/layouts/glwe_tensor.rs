@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
@@ -77,12 +74,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensor<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWETensor<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
-    }
-}
-
 #[expect(
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
@@ -101,7 +92,7 @@ impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWETensor {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, size)),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, size)),
                 n.into(),
                 pairs,
                 size,
@@ -134,6 +125,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -147,6 +139,7 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_ref(),
         }
     }
@@ -160,27 +153,34 @@ where
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: self.data.to_backend_mut(),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
         }
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
+            canonical: true,
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
         }
     }
+
+    fn set_canonical(&mut self, _canonical: bool) {}
 }

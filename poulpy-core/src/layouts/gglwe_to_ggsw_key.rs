@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos,
@@ -108,7 +105,7 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGLWEToGGSWKeyBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -215,14 +212,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEToGGSWKey<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWEToGGSWKey<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.keys
-            .iter_mut()
-            .for_each(|key: &mut GGLWE<D, W>| key.fill_uniform(log_bound, source))
-    }
-}
-
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEToGGSWKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GGLWEToGGSWKey)",)?;
@@ -289,7 +278,7 @@ impl<W: ZnxWord> GGLWEToGGSWKey<AlignedBuf, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKey<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
     pub fn at_mut(&mut self, i: usize) -> &mut GGLWE<D, W> {
         assert!((i as u32) < self.rank());
@@ -297,7 +286,7 @@ impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKey<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
     pub fn at(&self, i: usize) -> &GGLWE<D, W> {
         assert!((i as u32) < self.rank());

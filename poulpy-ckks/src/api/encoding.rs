@@ -12,7 +12,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar, ScratchArenaTakeCKKS,
         copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
@@ -31,6 +31,12 @@ impl<T> CKKSEncodingScalar for T where T: CKKSScalar + FloatConst + Pod + Send +
 
 /// Backend-resident CKKS encoding operations at scalar precision `F`.
 ///
+/// A conjugate invariant module packs up to `N` real slots. Encoding discards
+/// imaginary inputs; decoding returns zero imaginary parts. Slot transforms
+/// use `2m` scalars for `m` slots, with the independent invariant coefficients
+/// in the first `m` entries. Coefficient-only operations use the supplied
+/// coefficient count directly.
+///
 /// Every scalar operand is a backend buffer. Host ingress and egress live in
 /// [`CKKSEncodingHostOps`], so device code can use this trait without exposing
 /// Rust slices or introducing an implicit transfer.
@@ -46,28 +52,20 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
     /// mapping.
     fn ckks_encode_slots_assign_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
-        C: CKKSEncodingBufferToBackendMut<BE, F>,
-    {
-        self.ckks_slots_to_coeffs_assign(slots)?;
-        self.ckks_encode_coeffs_into(pt, slots)
-    }
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// Decodes a plaintext into a planar backend slot buffer `[re | im]` by
     /// composing coefficient mapping and the coefficient→slot transform.
     fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
     where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
-        C: CKKSEncodingBufferToBackendMut<BE, F>,
-    {
-        self.ckks_decode_coeffs_into(pt, slots)?;
-        self.ckks_coeffs_to_slots_assign(slots)
-    }
+        C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// Quantizes backend-resident polynomial coefficients without an IFFT.
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>;
 
     /// Dequantizes a plaintext into backend-resident polynomial coefficients.
@@ -76,12 +74,12 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
-    /// In-place planar complex slots → polynomial coefficients.
+    /// In-place planar slots → polynomial coefficients.
     fn ckks_slots_to_coeffs_assign<C>(&self, values: &mut C) -> Result<()>
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
-    /// In-place polynomial coefficients → planar complex slots.
+    /// In-place polynomial coefficients → planar slots.
     fn ckks_coeffs_to_slots_assign<C>(&self, values: &mut C) -> Result<()>
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>;
@@ -102,7 +100,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Encodes host complex slots through one backend-native arena buffer.
     fn ckks_encode_reim_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
         ckks_ensure!(re.len() == im.len(), "real and imaginary slot counts differ");
         ckks_ensure!(
@@ -120,7 +118,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             "CKKS encoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        scratch.scope(|arena| {
+        scratch.scope(|arena| -> Result<()> {
             let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(len);
             copy_reim_host_into_encoding_buffer::<BE, F, _>(&mut values, re, im)?;
             self.ckks_encode_slots_assign_into(pt, &mut values)
@@ -149,19 +147,17 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             "CKKS decoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        scratch
-            .scope(|arena| {
-                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(len);
-                self.ckks_decode_slots_into(pt, &mut values)?;
-                copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im)
-            })
-            .map_err(Into::into)
+        scratch.scope(|arena| -> Result<()> {
+            let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(len);
+            self.ckks_decode_slots_into(pt, &mut values)?;
+            copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im).map_err(Into::into)
+        })
     }
 
     /// Quantizes host polynomial coefficients without applying an IFFT.
     fn ckks_encode_coeffs_host_into<P>(&self, pt: &mut P, coeffs: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(coeffs.len());
         ckks_ensure!(
@@ -169,7 +165,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             "CKKS coefficient encoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        scratch.scope(|arena| {
+        scratch.scope(|arena| -> Result<()> {
             let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
             copy_host_into_encoding_buffer::<BE, F, _>(&mut values, coeffs)?;
             self.ckks_encode_coeffs_into(pt, &values)
@@ -187,13 +183,11 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             "CKKS coefficient decoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        scratch
-            .scope(|arena| {
-                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
-                self.ckks_decode_coeffs_into(pt, &mut values)?;
-                copy_encoding_buffer_into_host::<BE, F, _>(&values, coeffs)
-            })
-            .map_err(Into::into)
+        scratch.scope(|arena| -> Result<()> {
+            let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
+            self.ckks_decode_coeffs_into(pt, &mut values)?;
+            copy_encoding_buffer_into_host::<BE, F, _>(&values, coeffs).map_err(Into::into)
+        })
     }
 }
 

@@ -9,12 +9,13 @@ use crate::{
         ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRshAdd,
-        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
+        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceAll, VecZnxLshAdd, VecZnxLshSub,
+        VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign,
+        VecZnxSwitchRing,
     },
     layouts::{
-        FillUniform, Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
+        Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef,
+        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
     },
     source::Source,
     test_suite::{TestBackend, TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -30,27 +31,20 @@ fn sparse_degrees(n: usize) -> Vec<usize> {
 const SIZES: [(usize, usize, usize); 3] = [(2, 3, 4), (3, 2, 2), (1, 4, 3)];
 
 /// `switch_ring_{a.n() -> n}(a)` on the backend; a copy when `a` is dense.
-fn embed<BE: TestBackend>(module: &Module<BE>, n: usize, a: &VecZnxOwned<i64>) -> VecZnx<BE::OwnedBuf, i64>
+fn embed<BE: TestBackend>(module: &Module<BE>, n: usize, a: &VecZnx<BE::OwnedBuf, i64>) -> VecZnx<BE::OwnedBuf, i64>
 where
     Module<BE>: ModuleN + VecZnxSwitchRing<BE>,
 {
-    let a_be = upload_vec_znx::<BE>(a);
     let mut res = upload_vec_znx::<BE>(&VecZnx::alloc(n, a.cols(), a.size()));
     for col in 0..a.cols() {
         module.vec_znx_switch_ring(
             &mut vec_znx_backend_mut::<BE>(&mut res),
             col,
-            &vec_znx_backend_ref::<BE>(&a_be),
+            &vec_znx_backend_ref::<BE>(a),
             col,
         );
     }
     res
-}
-
-fn random_host(n: usize, cols: usize, size: usize, base2k: usize, source: &mut Source) -> VecZnxOwned<i64> {
-    let mut a = VecZnx::alloc(n, cols, size);
-    a.fill_uniform(base2k, source);
-    a
 }
 
 /// Runs `op(res, a, b)` once with the embedded dense operands and once with the
@@ -60,15 +54,14 @@ fn check_binary<BE: TestBackend>(
     n: usize,
     what: &str,
     res_size: usize,
-    a: &VecZnxOwned<i64>,
-    b: &VecZnxOwned<i64>,
+    a: &VecZnx<BE::OwnedBuf, i64>,
+    b: &VecZnx<BE::OwnedBuf, i64>,
     op: impl Fn(&mut VecZnxBackendMut<'_, BE>, usize, &VecZnxBackendRef<'_, BE>, usize, &VecZnxBackendRef<'_, BE>, usize),
 ) where
     Module<BE>: ModuleN + VecZnxSwitchRing<BE>,
 {
     let cols = a.cols();
     let (a_dense, b_dense) = (embed(module, n, a), embed(module, n, b));
-    let (a_be, b_be) = (upload_vec_znx::<BE>(a), upload_vec_znx::<BE>(b));
     let mut want = upload_vec_znx::<BE>(&VecZnx::alloc(n, cols, res_size));
     let mut have = upload_vec_znx::<BE>(&VecZnx::alloc(n, cols, res_size));
     for col in 0..cols {
@@ -83,9 +76,9 @@ fn check_binary<BE: TestBackend>(
         op(
             &mut vec_znx_backend_mut::<BE>(&mut have),
             col,
-            &vec_znx_backend_ref::<BE>(&a_be),
+            &vec_znx_backend_ref::<BE>(a),
             col,
-            &vec_znx_backend_ref::<BE>(&b_be),
+            &vec_znx_backend_ref::<BE>(b),
             col,
         );
     }
@@ -108,7 +101,7 @@ fn check_assign<BE: TestBackend>(
     n: usize,
     what: &str,
     res_size: usize,
-    a: &VecZnxOwned<i64>,
+    a: &VecZnx<BE::OwnedBuf, i64>,
     base2k: usize,
     source: &mut Source,
     op: impl Fn(&mut VecZnxBackendMut<'_, BE>, usize, &VecZnxBackendRef<'_, BE>, usize),
@@ -116,11 +109,11 @@ fn check_assign<BE: TestBackend>(
     Module<BE>: ModuleN + VecZnxSwitchRing<BE>,
 {
     let cols = a.cols();
-    let seed = random_host(n, cols, res_size, base2k, source);
+    let mut seed = module.vec_znx_alloc(n, cols, res_size);
+    module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed, source);
     let a_dense = embed(module, n, a);
-    let a_be = upload_vec_znx::<BE>(a);
-    let mut want = upload_vec_znx::<BE>(&seed);
-    let mut have = upload_vec_znx::<BE>(&seed);
+    let mut want = embed(module, n, &seed);
+    let mut have = embed(module, n, &seed);
     for col in 0..cols {
         op(
             &mut vec_znx_backend_mut::<BE>(&mut want),
@@ -131,7 +124,7 @@ fn check_assign<BE: TestBackend>(
         op(
             &mut vec_znx_backend_mut::<BE>(&mut have),
             col,
-            &vec_znx_backend_ref::<BE>(&a_be),
+            &vec_znx_backend_ref::<BE>(a),
             col,
         );
     }
@@ -174,8 +167,10 @@ where
                 if b_n < 8 {
                     continue;
                 }
-                let a = random_host(a_n, cols, a_size, base2k, &mut source);
-                let b = random_host(b_n, cols, b_size, base2k, &mut source);
+                let mut a = module.vec_znx_alloc(a_n, cols, a_size);
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
+                let mut b = module.vec_znx_alloc(b_n, cols, b_size);
+                module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
                 check_binary(module, n, "vec_znx_add", res_size, &a, &b, |r, rc, x, xc, y, yc| {
                     module.vec_znx_add(r, rc, x, xc, y, yc)
                 });
@@ -183,7 +178,8 @@ where
                     module.vec_znx_sub(r, rc, x, xc, y, yc)
                 });
             }
-            let a = random_host(sparse_n, cols, a_size, base2k, &mut source);
+            let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+            module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
             check_assign(
                 module,
                 n,
@@ -222,7 +218,8 @@ where
                     .max(module.vec_znx_lsh_tmp_bytes(res_size)),
             ));
             for k in [0usize, 3, base2k, base2k + 5] {
-                let a = random_host(sparse_n, cols, a_size, base2k, &mut source);
+                let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 check_assign(
                     module,
                     n,
@@ -268,14 +265,14 @@ where
     }
 
     // A degree above the destination's is not an embedding and is rejected.
-    let too_big = random_host(n << 1, cols, 1, base2k, &mut source);
-    let too_big_be = upload_vec_znx::<BE>(&too_big);
+    let mut too_big = module.vec_znx_alloc(n << 1, cols, 1);
+    module.vec_znx_fill_uniform_source_all(base2k, base2k, &mut too_big, &mut source);
     let mut res = upload_vec_znx::<BE>(&VecZnx::alloc(n, cols, 1));
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_add_assign(
             &mut vec_znx_backend_mut::<BE>(&mut res),
             0,
-            &vec_znx_backend_ref::<BE>(&too_big_be),
+            &vec_znx_backend_ref::<BE>(&too_big),
             0,
         );
     }))
@@ -285,20 +282,19 @@ where
 
 /// A degree-`a.n()` `VecZnxBig` holding `a`, through `vec_znx_big_from_small`
 /// at that degree.
-fn big_at_own_degree<BE: TestBackend>(module: &Module<BE>, a: &VecZnxOwned<i64>) -> VecZnxBigOwned<BE>
+fn big_at_own_degree<BE: TestBackend>(module: &Module<BE>, a: &VecZnx<BE::OwnedBuf, i64>) -> VecZnxBigOwned<BE>
 where
     Module<BE>: VecZnxBigFromSmall<BE>,
 {
-    let a_be = upload_vec_znx::<BE>(a);
     let mut big: VecZnxBigOwned<BE> = VecZnxBig::alloc(a.n(), a.cols(), a.size());
     for col in 0..a.cols() {
-        module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a_be), col);
+        module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(a), col);
     }
     big
 }
 
 /// The embedded operand as a degree-`n` `VecZnxBig`.
-fn big_embedded<BE: TestBackend>(module: &Module<BE>, n: usize, a: &VecZnxOwned<i64>) -> VecZnxBigOwned<BE>
+fn big_embedded<BE: TestBackend>(module: &Module<BE>, n: usize, a: &VecZnx<BE::OwnedBuf, i64>) -> VecZnxBigOwned<BE>
 where
     Module<BE>: ModuleN + VecZnxSwitchRing<BE> + VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
 {
@@ -406,11 +402,12 @@ where
     for sparse_n in sparse_degrees(n) {
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(sparse_n, n), (n, sparse_n)] {
-                let a = random_host(a_n, cols, a_size, base2k, &mut source);
-                let b = random_host(b_n, cols, b_size, base2k, &mut source);
+                let mut a = module.vec_znx_alloc(a_n, cols, a_size);
+                module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
+                let mut b = module.vec_znx_alloc(b_n, cols, b_size);
+                module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
                 let (a_dense, b_dense) = (big_embedded(module, n, &a), big_embedded(module, n, &b));
                 let (a_own, b_own) = (big_at_own_degree(module, &a), big_at_own_degree(module, &b));
-                let (a_small, b_small) = (upload_vec_znx::<BE>(&a), upload_vec_znx::<BE>(&b));
                 let (a_small_dense, b_small_dense) = (embed(module, n, &a), embed(module, n, &b));
 
                 for (what, op) in big_bin.iter() {
@@ -458,7 +455,7 @@ where
                         col,
                         &a_own.to_backend_ref(),
                         col,
-                        &vec_znx_backend_ref::<BE>(&b_small),
+                        &vec_znx_backend_ref::<BE>(&b),
                         col,
                     );
                 }
@@ -479,7 +476,7 @@ where
                     module.vec_znx_big_sub_small_a(
                         &mut have.to_backend_mut(),
                         col,
-                        &vec_znx_backend_ref::<BE>(&a_small),
+                        &vec_znx_backend_ref::<BE>(&a),
                         col,
                         &b_own.to_backend_ref(),
                         col,
@@ -504,7 +501,7 @@ where
                         col,
                         &a_own.to_backend_ref(),
                         col,
-                        &vec_znx_backend_ref::<BE>(&b_small),
+                        &vec_znx_backend_ref::<BE>(&b),
                         col,
                     );
                 }
@@ -516,8 +513,10 @@ where
             }
 
             // In-place forms: the destination is a random degree-N Big, the operand is sparse.
-            let a = random_host(sparse_n, cols, a_size, base2k, &mut source);
-            let seed = random_host(n, cols, res_size, base2k, &mut source);
+            let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+            module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
+            let mut seed = module.vec_znx_alloc(n, cols, res_size);
+            module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed, &mut source);
             let a_dense = big_embedded(module, n, &a);
             let a_own = big_at_own_degree(module, &a);
             for (what, op) in big_assign.iter() {
@@ -533,7 +532,6 @@ where
                     "{what}: a.n()={sparse_n} sizes=({a_size}, {res_size})"
                 );
             }
-            let a_small = upload_vec_znx::<BE>(&a);
             let a_small_dense = embed(module, n, &a);
 
             // The basis promotion is a sparse-capable slot too: the degree-n
@@ -547,7 +545,7 @@ where
                     &vec_znx_backend_ref::<BE>(&a_small_dense),
                     col,
                 );
-                module.vec_znx_big_from_small(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a_small), col);
+                module.vec_znx_big_from_small(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a), col);
             }
             assert_eq!(
                 normalized(module, base2k, &want, &mut scratch),
@@ -564,7 +562,7 @@ where
                         &vec_znx_backend_ref::<BE>(&a_small_dense),
                         col,
                     );
-                    op(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a_small), col);
+                    op(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a), col);
                 }
                 assert_eq!(
                     normalized(module, base2k, &want, &mut scratch),

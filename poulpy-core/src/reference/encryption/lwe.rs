@@ -8,17 +8,15 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, VecZnxBigAddNormal,
+    EncryptionInfos, LWEFillMask, VecZnxBigAddNormal,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEFillMaskReference<BE: Backend> {
     fn fill_lwe_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
-    where
-        R: LWEToBackendMut<BE>;
-
-    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>;
 }
@@ -35,17 +33,11 @@ where
         assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
         self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
-
-    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
-    where
-        R: LWEToBackendMut<BE>,
-    {
-        let mut source_xa = Source::new(seed_xa);
-        self.fill_lwe_mask_from_source_reference(base2k, res, &mut source_xa);
-    }
 }
 
-#[doc(hidden)]
+/// Portable implementation using HAL operations.
+///
+/// Backend implementations may call this helper without changing their override selection.
 pub trait LWEEncryptSkReference<BE: Backend> {
     fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -70,7 +62,7 @@ pub trait LWEEncryptSkReference<BE: Backend> {
 impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
-        + LWEFillMaskReference<BE>
+        + LWEFillMask<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSum<BE>
@@ -121,44 +113,47 @@ where
             scratch.available(),
             self.lwe_encrypt_sk_tmp_bytes_reference(res)
         );
-
-        let base2k: usize = res.base2k().into();
-        let res_n: usize = res.n().into();
-        let res_size = res.size();
-        self.fill_lwe_mask_from_source_reference(base2k, res, source_xa);
-
-        // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
-        let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
+        let tmp_bytes: usize = self.lwe_encrypt_sk_tmp_bytes_reference(res);
         {
-            let res_ref = res.to_backend_ref();
-            self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
+            let base2k: usize = res.base2k().into();
+            let res_n: usize = res.n().into();
+            let res_size = res.size();
+            self.fill_lwe_mask_from_source(base2k, res, source_xa);
+
+            // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
+            let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
+            {
+                let res_ref = res.to_backend_ref();
+                self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
+            }
+
+            // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
+            let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res_size);
+            self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
+
+            // tmp_scalar = m - <mask, sk>
+            self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);
+
+            // tmp_scalar = m - <mask, sk> + e
+            self.vec_znx_big_add_normal(base2k, &mut tmp_scalar, 0, enc_infos.noise_infos(), source_xe);
+
+            // Normalize into res.body.
+            {
+                let res_k = res.k().as_usize();
+                let mut res_mut = res.to_backend_mut();
+                self.vec_znx_big_normalize(
+                    &mut res_mut.body,
+                    base2k,
+                    res_k,
+                    0,
+                    0,
+                    &tmp_scalar.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch_2.borrow(),
+                )
+            }
         }
-
-        // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
-        let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res_size);
-        self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
-
-        // tmp_scalar = m - <mask, sk>
-        self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);
-
-        // tmp_scalar = m - <mask, sk> + e
-        self.vec_znx_big_add_normal(base2k, &mut tmp_scalar, 0, enc_infos.noise_infos(), source_xe);
-
-        // Normalize into res.body.
-        {
-            let res_k = res.k().as_usize();
-            let mut res_mut = res.to_backend_mut();
-            self.vec_znx_big_normalize(
-                &mut res_mut.body,
-                base2k,
-                res_k,
-                0,
-                0,
-                &tmp_scalar.to_backend_ref(),
-                base2k,
-                0,
-                &mut scratch_2.borrow(),
-            )
-        }
+        scratch.wipe(tmp_bytes);
     }
 }

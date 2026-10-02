@@ -1,8 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
-    source::Source,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
@@ -25,7 +22,7 @@ pub struct GLWEAutomorphismKeyCompressed<D: Data, W: ZnxWord> {
     pub(crate) p: i64,
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
     fn p(&self) -> i64 {
         self.p
     }
@@ -79,12 +76,6 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEAutomorphismKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEAutomorphismKeyCompressed<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.key.fill_uniform(log_bound, source);
     }
 }
 
@@ -180,19 +171,19 @@ impl_gglwe_compressed_to_backend_for_field!(
     GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>
 );
 
-impl<D: HostDataMut, W: ZnxWord> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.key.seed
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.key.seed
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }

@@ -36,6 +36,7 @@ mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
 mod glwe_automorphism_key;
+mod glwe_ci_key;
 mod glwe_plaintext;
 mod glwe_public_key;
 mod glwe_secret;
@@ -64,10 +65,11 @@ pub use self::compressed::{
     GGLWEToGGSWKeyDecompress, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
     GGSWCompressedToBackendRef, GGSWDecompress, GLWEAutomorphismKeyCompressed, GLWEAutomorphismKeyDecompress, GLWECompressed,
     GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEDecompress,
-    GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress, GLWETensorKeyCompressed, GLWETensorKeyDecompress,
-    GLWEToLWESwitchingKeyCompressed, GLWEToLWESwitchingKeyDecompress, LWECompressed, LWECompressedToBackendMut,
-    LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed, LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed,
-    LWEToGLWEKeyDecompress,
+    GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut,
+    GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyDecompress, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress,
+    GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWEToLWESwitchingKeyCompressed, GLWEToLWESwitchingKeyDecompress,
+    LWECompressed, LWECompressedToBackendMut, LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed,
+    LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed, LWEToGLWEKeyDecompress,
 };
 pub use diagonals::*;
 pub use gglwe::*;
@@ -75,6 +77,7 @@ pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;
+pub use glwe_ci_key::*;
 pub use glwe_plaintext::*;
 pub use glwe_public_key::*;
 pub use glwe_secret::*;
@@ -97,6 +100,8 @@ pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
 
+use std::marker::PhantomData;
+
 use crate::dist::Distribution;
 use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec_znx_alloc_zeroed};
 
@@ -104,8 +109,8 @@ use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec
 ///
 /// These resolve to `<Layout><<BE as Backend>::OwnedBuf>` so that user
 /// code can declare types in terms of the owning backend instead of the
-/// raw storage type. On CPU backends this is just `AlignedBuf`; on future
-/// device backends it is the backend's device buffer type.
+/// raw storage type. Each backend selects its own buffer representation through
+/// [`Backend::OwnedBuf`].
 pub type BackendGLWE<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 pub type BackendGGLWE<BE> = GGLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 pub type BackendGGSW<BE> = GGSW<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
@@ -236,6 +241,9 @@ pub trait ModuleCoreAlloc {
         rank: Rank,
     ) -> GLWETensorKey<Self::OwnedBuf, Self::ZnxWord>;
 
+    fn glwe_ci_embed_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECIEmbedKey<Self::OwnedBuf, Self::ZnxWord>;
+    fn glwe_ci_trace_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECITraceKey<Self::OwnedBuf, Self::ZnxWord>;
+
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord>;
     fn glwe_to_lwe_key_alloc(
         &self,
@@ -302,6 +310,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
+            canonical: true,
         }
     }
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<B::OwnedBuf, B::ZnxWord> {
@@ -320,6 +329,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
+            canonical: true,
         }
     }
 
@@ -483,8 +493,19 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     }
 
     fn glwe_public_key_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKey<B::OwnedBuf, B::ZnxWord> {
+        assert!(infos.rank().as_usize() >= 1, "invalid public key: rank must be at least 1");
+        let (n, rank, size) = (infos.n().as_usize(), infos.rank().as_usize(), infos.size());
         GLWEPublicKey {
-            key: self.glwe_alloc_from_infos(infos),
+            data: MatZnx::from_data(
+                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
+                n,
+                1,
+                rank,
+                rank + 1,
+                size,
+            ),
+            base2k: infos.base2k(),
+            k: infos.k(),
             dist: Distribution::NONE,
         }
     }
@@ -573,6 +594,14 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             dsize,
             stride: 1,
         })
+    }
+
+    fn glwe_ci_embed_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECIEmbedKey<B::OwnedBuf, B::ZnxWord> {
+        GLWECIKey(self.glwe_switching_key_alloc_from_infos(infos), PhantomData)
+    }
+
+    fn glwe_ci_trace_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWECITraceKey<B::OwnedBuf, B::ZnxWord> {
+        GLWECIKey(self.glwe_switching_key_alloc_from_infos(infos), PhantomData)
     }
 
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {
@@ -780,6 +809,17 @@ pub trait ModuleCoreCompressedAlloc {
         rank: Rank,
     ) -> GGSWCompressed<Self::OwnedBuf, Self::ZnxWord>;
 
+    fn glwe_public_key_compressed_alloc_from_infos<A: GLWEInfos>(
+        &self,
+        infos: &A,
+    ) -> GLWEPublicKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
+    fn glwe_public_key_compressed_alloc(
+        &self,
+        base2k: Base2K,
+        k: TorusPrecision,
+        rank: Rank,
+    ) -> GLWEPublicKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
+
     fn glwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
@@ -915,6 +955,21 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         rank: Rank,
     ) -> GGSWCompressed<B::OwnedBuf, B::ZnxWord> {
         GGSWCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, dsize, k_aux, rank)
+    }
+
+    fn glwe_public_key_compressed_alloc_from_infos<A: GLWEInfos>(
+        &self,
+        infos: &A,
+    ) -> GLWEPublicKeyCompressed<B::OwnedBuf, B::ZnxWord> {
+        GLWEPublicKeyCompressed::alloc_from_infos::<B, _>(infos)
+    }
+    fn glwe_public_key_compressed_alloc(
+        &self,
+        base2k: Base2K,
+        k: TorusPrecision,
+        rank: Rank,
+    ) -> GLWEPublicKeyCompressed<B::OwnedBuf, B::ZnxWord> {
+        GLWEPublicKeyCompressed::alloc::<B>(self.ring_degree(), base2k, k, rank)
     }
 
     fn glwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos>(
@@ -1298,6 +1353,40 @@ pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision)
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_aux: TorusPrecision) -> usize {
     let digits: u32 = GGLWELayout::dnum_for_input(base2k, input_k, dsize).0;
     (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
+}
+
+/// Practical limb window used for an immediately normalized GGSW external
+/// product.
+///
+/// This is public so fused higher-level operations which use
+/// [`crate::api::GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
+/// exactly the same rule as the reference implementation. Although any lower
+/// limb can affect rounding through a sufficiently long carry chain, the
+/// window includes the worst-case norm growth of the signed DFT products and
+/// their VMP accumulation.
+pub fn glwe_external_product_output_size<BE, R, A, G>(res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let product_terms = ggsw_infos
+        .n()
+        .as_usize()
+        .saturating_mul(ggsw_infos.dnum().as_usize())
+        .saturating_mul(ggsw_infos.dsize().as_usize())
+        .saturating_mul((ggsw_infos.rank() + 1).as_usize());
+    gadget_product_output_size(GadgetProductOutputSizeParams {
+        key_size: ggsw_infos.size(),
+        key_base2k: ggsw_infos.base2k(),
+        input_k: a_infos.k(),
+        output_k: res_infos.k(),
+        dsize: ggsw_infos.dsize(),
+        k_aux: ggsw_infos.k_aux(),
+        product_terms,
+        extra_live_limbs: 0,
+    })
 }
 
 /// Inputs used to size the key region materialized for a gadget product.

@@ -5,6 +5,7 @@
 //! traits to the backend-owned high-level extension point.
 
 mod automorphism;
+mod ci_conversion;
 mod conversion;
 mod decryption;
 mod encryption;

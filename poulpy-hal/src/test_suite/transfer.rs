@@ -29,8 +29,11 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
         BE::copy_to_host(&owned, &mut back);
         assert_eq!(back, src, "copy_to_host at the unpadded length, len {len}");
 
-        // Owned buffer filled through copy_from_host.
+        // Owned buffer filled through copy_from_host, poisoned first so the
+        // zero tail is the transfer's own and not the allocation's.
         let mut owned2 = BE::alloc_bytes(len);
+        let poison = vec![0xffu8; BE::len_bytes(&owned2)];
+        BE::copy_from_host(&mut owned2, &poison);
         BE::copy_from_host(&mut owned2, &src);
         let mut all2 = vec![0xffu8; BE::len_bytes(&owned2)];
         BE::copy_to_host(&owned2, &mut all2);
@@ -40,8 +43,9 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
             "copy_from_host padding not zero, len {len}"
         );
 
-        // View copies over the whole padded buffer.
+        // View copies over the whole padded buffer, poisoned first as above.
         let mut owned3 = BE::alloc_bytes(len);
+        BE::copy_host_to_view(&mut BE::view_mut(&mut owned3), &poison);
         BE::copy_host_to_view(&mut BE::view_mut(&mut owned3), &src);
         let mut back3 = vec![0u8; len];
         BE::copy_view_to_host(&BE::view(&owned3), &mut back3);

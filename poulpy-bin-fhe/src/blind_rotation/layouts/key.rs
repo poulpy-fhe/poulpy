@@ -1,7 +1,6 @@
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{CopyFromHost, CopyToHost, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
-    source::Source,
+    layouts::{CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
 };
 
 use std::{fmt, marker::PhantomData};
@@ -215,12 +214,6 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> fmt::Display for BlindR
     }
 }
 
-impl<D: HostDataMut, BRT: BlindRotationAlgo, W: ZnxWord> FillUniform for BlindRotationKey<D, BRT, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.keys.iter_mut().for_each(|key| key.fill_uniform(log_bound, source));
-    }
-}
-
 impl<D: HostDataMut, BRT: BlindRotationAlgo, W: ZnxWord> ReaderFrom for BlindRotationKey<D, BRT, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
@@ -305,5 +298,33 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey
 
     fn dnum(&self) -> Dnum {
         self.keys[0].dnum()
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
+    /// Constructs a key from coefficient-domain elements and its secret distribution.
+    pub fn from_parts(keys: Vec<GGSW<D, W>>, distribution: Distribution) -> Self {
+        assert!(!keys.is_empty());
+        Self {
+            keys,
+            dist: distribution,
+            _phantom: PhantomData,
+        }
+    }
+    /// Coefficient-domain key elements.
+    pub fn keys(&self) -> &[GGSW<D, W>] {
+        &self.keys
+    }
+    /// Mutable coefficient-domain key elements for backend implementations.
+    pub fn keys_mut(&mut self) -> &mut [GGSW<D, W>] {
+        &mut self.keys
+    }
+    /// Secret distribution carried by the key.
+    pub fn distribution(&self) -> Distribution {
+        self.dist
+    }
+    /// Updates distribution metadata after encryption or decompression.
+    pub fn set_distribution(&mut self, distribution: Distribution) {
+        self.dist = distribution;
     }
 }

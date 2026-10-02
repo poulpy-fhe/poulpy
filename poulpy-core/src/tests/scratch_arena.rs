@@ -15,9 +15,8 @@ use crate::{
 struct TestBackend;
 
 impl Backend for TestBackend {
-    const MAX_BASE2K: usize = 62;
-
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
+    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
@@ -33,10 +32,6 @@ impl Backend for TestBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         bytes.to_vec()
-    }
-
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {

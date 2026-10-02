@@ -1,10 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, ReaderFrom, WriterTo,
-    },
-    source::Source,
+use poulpy_hal::layouts::{
+    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef,
+    MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 
 use crate::{
@@ -36,7 +33,7 @@ where
     fn rank_out(&self) -> Rank;
     /// Row stride into the stored matrix: digit `i` is stored row
     /// `(i + 1) * stride - 1`. A key used as stored has stride 1; a
-    /// [`GGLWEView`](super::GGLWEView) coarsening it to `dsize` reports
+    /// [`crate::layouts::GGLWEBackendRef`] coarsening it to `dsize` reports
     /// `dsize / stored dsize`.
     fn stride(&self) -> usize {
         1
@@ -328,7 +325,7 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> DerefMut for GGLWEBackendMut<'a, BE> {
+impl<BE: Backend> DerefMut for GGLWEBackendMut<'_, BE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -337,7 +334,7 @@ impl<'a, BE: Backend + 'a> DerefMut for GGLWEBackendMut<'a, BE> {
 impl_gglwe_infos_for_inner!(GGLWEBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
 impl_gglwe_infos_for_inner!(GGLWEBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
-impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendRef<'a, BE> {
+impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
@@ -348,13 +345,13 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendRef<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for GGLWEBackendRef<'a, BE> {
+impl<BE: Backend> GGSWAtViewRef<BE> for GGLWEBackendRef<'_, BE> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
         GGLWEBackendRef::at_view(self, row, col)
     }
 }
 
-impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendMut<'a, BE> {
+impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
@@ -365,7 +362,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEBackendMut<'a, BE> {
+impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.inner.base2k,
@@ -440,6 +437,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -454,6 +452,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     GLWE {
         base2k: gglwe.base2k,
         k: gglwe.k(),
+        canonical: true,
         data,
     }
 }
@@ -479,6 +478,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     GLWE {
         base2k: gglwe.base2k,
         k: gglwe.k(),
+        canonical: true,
         data,
     }
 }
@@ -500,7 +500,12 @@ impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -512,7 +517,12 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = gglwe.base2k;
     let k = gglwe.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
-    GLWE { base2k, k, data }
+    GLWE {
+        base2k,
+        k,
+        canonical: true,
+        data,
+    }
 }
 
 pub trait GGLWEAtViewMut<BE: Backend> {
@@ -527,7 +537,7 @@ impl<BE: Backend> GGLWEAtViewMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWEAtViewMut<BE> for &mut GGLWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWEAtViewMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(*self, row, col))
     }
@@ -536,12 +546,6 @@ impl<'b, BE: Backend + 'b> GGLWEAtViewMut<BE> for &mut GGLWE<BE::BufMut<'b>, BE:
 impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWE<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWE<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
     }
 }
 
@@ -564,6 +568,7 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
         GLWE {
             base2k: self.base2k,
             k: self.k(),
+            canonical: true,
             data,
         }
     }
@@ -574,7 +579,12 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
-        GLWE { base2k, k, data }
+        GLWE {
+            base2k,
+            k,
+            canonical: true,
+            data,
+        }
     }
 }
 
@@ -633,7 +643,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
 
         GGLWE {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                <HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     rank_in.into(),
@@ -700,7 +710,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.base2k(),
@@ -711,7 +721,7 @@ impl<'b, BE: Backend + 'b> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'b>, 
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'b>, BE::ZnxWord> {
+impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.base2k(),

@@ -3,15 +3,12 @@ use std::{
     marker::PhantomData,
 };
 
-use rand_core::Rng;
-
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
-    source::Source,
 };
 
 /// A single-limb polynomial vector in `Z[X]/(X^N + 1)`.
@@ -153,7 +150,7 @@ impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
     /// length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == Self::bytes_of(n, cols));
+        assert!(data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, cols)));
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
@@ -168,27 +165,6 @@ impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
     }
     fn zero_at(&mut self, i: usize, j: usize) {
         self.at_mut(i, j).fill(W::zero());
-    }
-}
-
-impl<D: HostDataMut, W: ZnxWord> FillUniform for ScalarZnx<D, W> {
-    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
-        assert!(
-            log_bound <= W::BITS,
-            "log_bound {log_bound} exceeds the {}-bit coefficient word",
-            W::BITS
-        );
-        if log_bound == W::BITS {
-            source.fill_bytes(self.data.as_mut());
-            return;
-        }
-        let mask: u64 = (1u64 << log_bound) - 1;
-        let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
-            let r = source.next_u64() & mask;
-            *x = W::from_i64(((r << shift) as i64) >> shift);
-        }
     }
 }
 
@@ -225,7 +201,7 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         ScalarZnx {
             data: B::view_ref(&self.data),
@@ -235,7 +211,7 @@ impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>,
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         scalar_znx_backend_ref_from_mut::<B>(self)
     }
@@ -256,7 +232,7 @@ impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
+impl<B: Backend> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
         scalar_znx_backend_mut_from_mut::<B>(self)
     }

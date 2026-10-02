@@ -1,12 +1,13 @@
 //! Backend extension points for vector-matrix product (VMP) operations
 //! on [`VmpPMat`](poulpy_hal::layouts::VmpPMat).
 
+use crate::reference::fft64::ring_arith::Fft64RingArith;
 use std::mem::size_of;
 
 use crate::reference::{
     fft64::{
         module::FFTModuleHandle,
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+        reim::ReimArith,
         reim4::Reim4BlkMatVec,
         vmp::{
             vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
@@ -89,9 +90,8 @@ where
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64>,
-        Self:
-            Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -101,7 +101,7 @@ where
         assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
         let bytes = fft64_vmp_prepare_tmp_bytes(n);
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_table_for(n), res, a, tmp);
+        fft64_vmp_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -128,7 +128,7 @@ where
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -148,7 +148,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
-        KERNEL: ReimArith + Reim4BlkMatVec,
+        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
         E: TaskExecutor,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -173,7 +173,7 @@ where
     ) where
         Module<Self>: VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<Self> + VecZnxDftZero<Self>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
-        KERNEL: ReimArith + Reim4BlkMatVec,
+        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
         E: TaskExecutor,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -253,7 +253,10 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::reference::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttFromZnx64
+            + NttCFromB,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,

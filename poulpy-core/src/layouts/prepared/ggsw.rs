@@ -9,7 +9,7 @@ use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
 };
 
-/// DFT-domain (prepared) variant of [`GGSW`].
+/// DFT-domain (prepared) variant of [`GGSW`](crate::layouts::GGSW).
 ///
 /// Stores the GGSW gadget matrix with polynomials in the frequency domain
 /// of the backend's DFT/NTT transform, enabling O(N log N) polynomial

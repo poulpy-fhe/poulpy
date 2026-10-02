@@ -3,9 +3,15 @@
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
-//! homomorphic encryption scheme, built on top of the low-level primitives
-//! provided by `poulpy-core`, `poulpy-hal`, and the available compute
-//! backends (`poulpy-cpu-ref`, `poulpy-cpu-avx`).
+//! homomorphic encryption scheme, built from `poulpy-core` and `poulpy-hal`.
+//!
+//! Public calls dispatch through explicit backend [`oep`] contracts. Public
+//! [`reference`](mod@crate::reference) algorithms compose lower-layer operations;
+//! simple CKKS compositions are crate-private derived defaults on the contracts.
+//! A backend may replace a method while reusing the reference for other members
+//! of its family. Replacements must compute the same circuit and pass parity
+//! against a caller-selected validated implementation. Validation is transitive
+//! for the operations and parameter ranges covered by those tests.
 //!
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by
@@ -13,7 +19,11 @@
 //! [`CKKSMeta`]:
 //!
 //! - `log_delta`: base-2 logarithm of the encoded plaintext scaling factor
-//! - `log_budget`: remaining homomorphic headroom, also tracked in bits
+//! - `log_sparsity`: base-2 logarithm of the slot replication
+//!
+//! Remaining homomorphic headroom, `log_budget`, is derived from the wrapped
+//! ciphertext or plaintext width as `k() - log_delta`; it is not stored in
+//! [`CKKSMeta`].
 //!
 //! [`CKKSMeta`] also records the [`SlotsKind`] of a value: whether its slots are
 //! known to be real, or may carry an imaginary part. Operations compose that
@@ -28,34 +38,35 @@
 //! width, and allocating a destination at exactly the `k` you want is how
 //! results are narrowed.
 //!
-//! Safe add/sub operations return K-normalized ciphertexts. Their
-//! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
-//! and write into an [`layouts::UnnormalizedCKKSCiphertext`] for callers who
-//! want to fuse several linear steps before normalizing explicitly. Limb
-//! digits in that wrapper may hold un-propagated carries (wider than `base2k`
-//! bits), so passing it to any DFT-domain primitive (keyswitching,
-//! convolution, automorphisms) would produce incorrect decryptions. The
-//! wrapper does not implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`],
-//! making such misuse a compile error. Call
-//! [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the next
-//! keyswitching or convolution step.
+//! Linear operations (additions, subtractions, plaintext additions, doubling,
+//! negation, copies, multiplication by `±i`) do not normalize. Additions,
+//! subtractions and doubling clear the wrapped GLWE's canonical flag, the others
+//! keep their operand's, and the next operation that reads the digits through a
+//! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
+//! flag-clear operand first. A value several such operations read is best
+//! normalized once with `glwe_normalize_assign`, and serializing requires a
+//! normalized ciphertext. Each lazy addition can grow the digits by one bit; a
+//! sum of `n` terms stays within `i64` while `n <= 2^(63 - base2k)`.
 //!
 //! ## Modules
 //!
 //! | Module | Role |
 //! |--------|------|
 //! | [`approximation`] | Reusable minimax fitting, precision/depth selection, composite sign generation, and prepared interval-mapped polynomial evaluation |
-//! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
+//! | [`encoding`] / [`reference::encoding`] | Canonical slot ordering, quantization, and PaCo/SHIP embeddings, with explicit host reference helpers |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`presets`] | Ready-to-use parameter sets |
 //! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
-//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::CKKSDFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
+//! | [`api::CKKSBootstrappingOps`] | API composition of encapsulated ModUp, DFT, and EvalMod; parameterized by [`layouts::BootstrappingPlan`] |
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::CyclotomicOrder;
+use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::galois_element;
 
 pub mod api;
 pub mod approximation;
@@ -85,12 +96,10 @@ pub mod layouts;
 pub mod prelude {
     pub use crate::api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps,
-        CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps,
-        CKKSSubOps,
+        CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
+        CKKSRotateOps, CKKSSubOps,
     };
-    pub use crate::layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
-    };
+    pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
     };
@@ -138,6 +147,27 @@ pub trait CKKSCtBounds: GLWEInfos + CKKSInfos {}
 
 impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 
+/// Ring-dependent CKKS slot geometry and automorphism identifiers.
+pub trait CKKSModuleInfos {
+    /// Maximum number of slots: `N` real slots or `N/2` complex slots.
+    fn ckks_max_slots(&self) -> usize;
+
+    /// Automorphism identifier used by CKKS rotations and their evaluation keys.
+    /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards.
+    fn ckks_galois_element(&self, rotation: i64) -> i64;
+}
+
+impl<BE: Backend> CKKSModuleInfos for Module<BE> {
+    fn ckks_max_slots(&self) -> usize {
+        (self.cyclotomic_order() / 4) as usize
+    }
+
+    fn ckks_galois_element(&self, rotation: i64) -> i64 {
+        // 5 has order `max_slots` in the Galois group on both rings.
+        galois_element(rotation.rem_euclid(self.ckks_max_slots() as i64), self.cyclotomic_order())
+    }
+}
+
 /// Which subfield the encoded slots are known to live in.
 ///
 /// The reals are a subring of the complexes, so the two variants are ordered
@@ -164,6 +194,14 @@ impl SlotsKind {
         }
     }
 
+    /// Kind of a value that lies in both fields: `Complex` only when both are.
+    pub fn meet(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Complex, Self::Complex) => Self::Complex,
+            _ => Self::Real,
+        }
+    }
+
     /// Whether the slots are known to be real.
     pub fn is_real(self) -> bool {
         self == Self::Real
@@ -180,16 +218,16 @@ pub struct CKKSMeta {
     /// Base 2 logarithm of the decimal precision.
     pub log_delta: usize,
     /// Sparse-packing factor: `log2` of the coefficient gap (equivalently, of the
-    /// slot replication). `0` is dense / full packing (`N/2` slots). For
-    /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
-    /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
-    /// coefficient gap of `2^s`.
+    /// slot replication). Dense packing has `N/2` complex slots in the standard
+    /// ring or `N` real slots in the conjugate invariant ring. With
+    /// `log_sparsity = s`, `M(X^{2^s})` carries `max_slots >> s` distinct slots,
+    /// each replicated `2^s` times.
     ///
     /// A plaintext may store its `M` compactly, at the degree
     /// `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()` is
     /// then below the ring degree and every consumer reads it through the ring
     /// embedding. `log_sparsity` keeps counting the gap under the ring
-    /// embedding, `log2` of the replication among the `N/2` ring slots,
+    /// embedding, `log2` of the replication among the ring slots,
     /// whatever degree the plaintext is stored at.
     pub log_sparsity: usize,
     /// Subfield the slots are known to live in. See [`SlotsKind`].
@@ -393,6 +431,27 @@ where
     a.k().as_usize().saturating_sub(res.k().as_usize())
 }
 
+/// Whether a limb-wise op can read `a` into `res` without normalizing: `res`
+/// holds every limb of a non-canonical `a` (its carries may sit beyond `a.k()`).
+pub(crate) fn ckks_holds_limbs<BE, R, A>(res: &R, a: &A) -> bool
+where
+    BE: Backend,
+    R: GLWEToBackendRef<BE>,
+    A: GLWEToBackendRef<BE>,
+{
+    a.is_canonical() || res.to_backend_ref().max_size() >= a.to_backend_ref().max_size()
+}
+
+/// Whether a limb-wise unary op can write `src` into `dst` without normalizing.
+pub(crate) fn ckks_unary_exact<BE, R, A>(res: &R, a: &A) -> bool
+where
+    BE: Backend,
+    R: GLWEToBackendRef<BE> + CKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSInfos,
+{
+    ckks_offset_unary(res, a) == 0 && ckks_holds_limbs(res, a)
+}
+
 /// Shared unary-op preamble: stamps `src`'s metadata with the budget charged
 /// by `offset + extra_charge` and `extra_log_delta` bits moved under
 /// `log_delta`, then aligns `src` into `dst` (left shift by
@@ -436,45 +495,33 @@ where
     Ok(())
 }
 
-/// Relabels `ct` at `k`, and when that lowers `k` normalizes at the new `k`,
-/// so the bits the relabel leaves below it are rounded away instead of kept.
-/// Raising `k` leaves canonical data canonical. Every relabel that follows a
-/// write goes through here or [`ckks_set_log_delta_normalized`], so no
-/// operation returns data below the `k` it reports.
-pub(crate) fn ckks_set_k_normalized<BE, M, R>(
+/// Copies `src` into `dst` with `src`'s metadata: verbatim when `dst` is wide
+/// enough, otherwise through [`ckks_shift_stamp_unary`], which charges the
+/// offset to the budget and normalizes. Validates before mutating.
+pub(crate) fn ckks_copy_stamp_unary<BE, M, Dst, Src>(
     module: &M,
-    ct: &mut R,
-    k: TorusPrecision,
+    op: &'static str,
+    dst: &mut Dst,
+    src: &Src,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
-) where
+) -> CKKSResult<()>
+where
     BE: Backend,
-    M: poulpy_core::GLWENormalize<BE> + ?Sized,
-    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    M: poulpy_core::GLWECopy<BE> + poulpy_core::GLWEShift<BE> + ?Sized,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSInfos,
 {
-    let lowered = k.as_usize() < ct.k().as_usize();
-    ct.set_k(k);
-    if lowered {
-        module.glwe_normalize_assign(ct, scratch);
+    if !ckks_unary_exact(dst, src) {
+        return ckks_shift_stamp_unary(module, op, dst, src, 0, 0, 0, scratch);
     }
-}
-
-/// [`SetCKKSInfos::set_log_delta`] with the normalization
-/// [`ckks_set_k_normalized`] applies when the relabel lowers `k`.
-pub(crate) fn ckks_set_log_delta_normalized<BE, M, R>(
-    module: &M,
-    ct: &mut R,
-    log_delta: usize,
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: poulpy_core::GLWENormalize<BE> + ?Sized,
-    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-{
-    let k = ct.log_budget() + log_delta;
-    let mut meta = ct.meta();
-    meta.log_delta = log_delta;
-    ct.set_meta(meta);
-    ckks_set_k_normalized(module, ct, k.into(), scratch);
+    // The scratch queries size the copy for the destination as allocated, so it
+    // runs before the relabel.
+    module.glwe_copy(dst, src, scratch);
+    dst.set_meta(src.meta());
+    dst.set_log_budget(src.log_budget());
+    // The copy is exact: lowering `k` back to `src`'s keeps `src`'s form.
+    dst.set_canonical(src.is_canonical());
+    Ok(())
 }
 
 #[cfg(test)]
@@ -487,6 +534,14 @@ mod slots_kind_tests {
         assert_eq!(Real.join(Complex), Complex);
         assert_eq!(Complex.join(Real), Complex);
         assert_eq!(Complex.join(Complex), Complex);
+    }
+
+    #[test]
+    fn meet_keeps_complex_only_when_both_operands_are_complex() {
+        assert_eq!(Real.meet(Real), Real);
+        assert_eq!(Real.meet(Complex), Real);
+        assert_eq!(Complex.meet(Real), Real);
+        assert_eq!(Complex.meet(Complex), Complex);
     }
 
     #[test]

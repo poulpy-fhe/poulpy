@@ -1,15 +1,14 @@
+use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
+use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
-use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
-use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut,
-        vec_znx_host_backend_mut,
+        Backend, Data, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut, vec_znx_host_backend_mut,
     },
 };
 
@@ -243,8 +242,7 @@ impl LookupTable {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {
-}
+impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {}
 
 pub(crate) trait DivRound {
     fn div_round(self, rhs: Self) -> Self;
@@ -352,14 +350,7 @@ where
 
         for a in res.data.iter_mut() {
             let mut a_data = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(a.data_mut());
-            self.vec_znx_normalize_assign(
-                res.base2k.into(),
-                res.k.as_usize(),
-                0,
-                &mut a_data,
-                0,
-                &mut scratch.borrow(),
-            );
+            self.vec_znx_normalize_assign(res.base2k.into(), res.k.as_usize(), 0, &mut a_data, 0, &mut scratch.borrow());
         }
 
         res.rotate(self, -(drift as i64));
@@ -383,13 +374,17 @@ where
 
         (0..extension_factor - k_lo).for_each(|i| {
             let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
-                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
+                    res.data[i].data_mut(),
+                );
             self.vec_znx_rotate_assign(k_hi as i64, &mut data, 0, &mut scratch.borrow());
         });
 
         (extension_factor - k_lo..extension_factor).for_each(|i| {
             let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
-                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
+                    res.data[i].data_mut(),
+                );
             self.vec_znx_rotate_assign(k_hi as i64 + 1, &mut data, 0, &mut scratch.borrow());
         });
 
