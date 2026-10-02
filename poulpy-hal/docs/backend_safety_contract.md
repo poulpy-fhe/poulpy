@@ -19,12 +19,35 @@ Implementors must uphold all of the following for **every** call:
 
 * **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
   valid for the duration of the call; it may be reused by the caller
-  afterwards. Do not retain pointers past return.
+  afterwards. Do not retain pointers past return, except for deferred work
+  under the synchronization contract below.
 
 * **Synchronization**: The call must appear **logically synchronous** to the
-  caller. If you enqueue asynchronous work (e.g., CUDA streams), you must
-  ensure completion before returning or clearly document and implement a
-  synchronization contract used by all backends consistently.
+  caller: every later call observes its complete effect. A backend may defer
+  execution (e.g., CUDA streams) only under the following contract, which is
+  the same for all backends.
+
+  * **Order**: deferred work takes effect in submission order on every
+    buffer it reads or writes. A caller can therefore reuse a scratch region
+    or overwrite an operand as soon as the call returns.
+  * **Transfers**: a hook that reads backend storage (`to_host_bytes`,
+    `copy_to_host`, `copy_view_to_host`) first waits for the pending work on
+    that storage. Results are observable without an explicit wait.
+  * **Explicit wait**: `HalModuleImpl::synchronize`, reached through
+    `ModuleSynchronize::synchronize`, returns only when every operation
+    previously submitted through that module has completed. Timed regions
+    must end with it.
+  * **Host memory**: host data borrowed by a call (the slices of the transfer
+    hooks, sampling sources) is not accessed after the call returns.
+  * **Release**: storage is not released while pending work refers to it.
+    Dropping an owned buffer, which includes a scratch arena, waits for that
+    work or defers the release.
+  * **Failures**: every condition a call reports by panic or error is
+    detected before it returns. A device failure that surfaces later is
+    reported by panic no later than the next transfer or explicit wait.
+
+  A backend that completes each call before returning satisfies all of the
+  above and keeps the default no-op `synchronize`.
 
 * **Aliasing & overlaps**: If res, a, b, etc... alias or overlap in ways
   that violate your kernel’s requirements, you must either handle safely or reject

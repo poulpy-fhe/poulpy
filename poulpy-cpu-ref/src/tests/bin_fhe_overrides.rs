@@ -321,9 +321,13 @@ impl Backend for OpaqueBackend<'_> {
     }
     unsafe fn destroy(_: NonNull<()>) {}
 }
+thread_local! { static SYNCHRONIZE_CALLS: Cell<usize> = const { Cell::new(0) }; }
 unsafe impl HalModuleImpl for OpaqueBackend<'_> {
     fn new(n: u64) -> Module<Self> {
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }
+    }
+    fn synchronize(_: &Module<Self>) {
+        SYNCHRONIZE_CALLS.set(SYNCHRONIZE_CALLS.get() + 1);
     }
 }
 unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
@@ -797,6 +801,17 @@ const _: () = {
         module.glwe_external_product_dft(res, a, key, scratch);
     }
 };
+
+#[test]
+fn synchronize_dispatches_to_the_backend_hook() {
+    let module = Module::<OpaqueBackend<'static>>::new(32);
+    SYNCHRONIZE_CALLS.set(0);
+    module.synchronize();
+    assert_eq!(SYNCHRONIZE_CALLS.get(), 1);
+    // The default hook of a backend that completes each call is a no-op.
+    Module::<crate::FFT64Ref>::new(32).synchronize();
+    assert_eq!(SYNCHRONIZE_CALLS.get(), 1);
+}
 
 #[test]
 fn external_product_dft_query_accepts_opaque_noncontiguous_backend() {

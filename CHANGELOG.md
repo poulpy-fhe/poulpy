@@ -6,6 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- `ModuleSynchronize::synchronize` waits for a module's deferred work through the new defaulted `HalModuleImpl::synchronize` hook, a no-op on backends that complete each call before returning. The backend safety contract now defines when a backend may defer execution: submission order, transfers that wait for the storage they read, and the release and failure rules.
 - `ScratchArena::wipe(len)` zeroes the first `len` bytes the arena can carve out, through `Backend::copy_host_to_view`.
 - **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
 - `impl_backend_from!` accepts a trailing `; generic R: Ring` to forward every instantiation of a generic backend marker.
