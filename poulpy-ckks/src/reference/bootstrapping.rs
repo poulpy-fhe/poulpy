@@ -269,11 +269,23 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             ))
             .max(eval_mod_tmp);
 
+        // CoeffsToSlots always reads the raised ciphertext. SlotsToCoeffs runs
+        // in place on the input before ModUp in the S2C-first pipeline, and on
+        // the EvalMod outputs otherwise.
+        let s2c_layout = match ctx.pipeline() {
+            BootstrappingPipeline::C2SFirst => &boot_layout,
+            BootstrappingPipeline::S2CFirst => &in_layout,
+        };
         nested = nested
-            .max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, ctx.coeffs_to_slots(), &keys_layout.automorphism_key))
-            .max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, ctx.slots_to_coeffs(), &keys_layout.automorphism_key));
+            .max(self.ckks_dft_tmp_bytes(
+                &boot_layout,
+                &boot_layout,
+                ctx.coeffs_to_slots(),
+                &keys_layout.automorphism_key,
+            ))
+            .max(self.ckks_dft_tmp_bytes(s2c_layout, s2c_layout, ctx.slots_to_coeffs(), &keys_layout.automorphism_key));
         if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
-            nested = nested.max(self.ckks_dft_tmp_bytes(&boot_layout, &in_layout, bypass, &keys_layout.automorphism_key));
+            nested = nested.max(self.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, &keys_layout.automorphism_key));
         }
 
         if ctx.pipeline() == BootstrappingPipeline::C2SFirst {

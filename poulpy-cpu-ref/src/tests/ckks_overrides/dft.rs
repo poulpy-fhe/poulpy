@@ -120,11 +120,13 @@ use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
 use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::ScratchArena;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 const DFT_EXTRA_SCRATCH: usize = 1 << 25;
 const DFT_PREPARE_SCRATCH: usize = 512;
 thread_local! {
     static DFT_QUERIES: Cell<usize> = const { Cell::new(0) };
+    /// Transform kind, destination width and source width of each query, in bits.
+    static DFT_QUERY_LAYOUTS: RefCell<Vec<(poulpy_ckks::layouts::DFTType, usize, usize)>> = const { RefCell::new(Vec::new()) };
     static DFT_CALLS: Cell<usize> = const { Cell::new(0) };
     static REPACK_CALLS: Cell<usize> = const { Cell::new(0) };
 }
@@ -153,6 +155,8 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         K: poulpy_core::layouts::GGLWEInfos,
     {
         DFT_QUERIES.set(DFT_QUERIES.get() + 1);
+        DFT_QUERY_LAYOUTS
+            .with_borrow_mut(|layouts| layouts.push((dft.plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
         poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key) + DFT_EXTRA_SCRATCH
     }
 
@@ -290,6 +294,7 @@ unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::df
 #[test]
 fn bootstrap_sizing_includes_selected_dft_workspace() {
     use poulpy_ckks::api::CKKSBootstrappingOps;
+    use poulpy_ckks::layouts::DFTType;
     use poulpy_ckks::layouts::eval_mod::EvalModPlan;
     use poulpy_ckks::layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
@@ -336,9 +341,34 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());
     DFT_QUERIES.set(0);
+    DFT_QUERY_LAYOUTS.with_borrow_mut(Vec::clear);
     let bytes = module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
     assert!(bytes >= DFT_EXTRA_SCRATCH);
     assert!(DFT_QUERIES.get() >= 2);
+    // S2C-first: SlotsToCoeffs runs in place on the input, CoeffsToSlots reads the raised ciphertext.
+    let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
+    assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 64, 64)]);
+
+    let plan = BootstrappingPlan::new(
+        BootstrappingPipeline::C2SFirst,
+        BootstrappingTechniques::default(),
+        self::plan(DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
+        EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, meta, 16),
+        self::plan(DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
+    )
+    .unwrap();
+    let context = BootstrappingContext::<OverrideBackend, f64>::compile(
+        &module,
+        16usize.into(),
+        &plan,
+        &mut ScratchOwned::<OverrideBackend>::alloc(1 << 20).borrow(),
+    )
+    .unwrap();
+    DFT_QUERY_LAYOUTS.with_borrow_mut(Vec::clear);
+    module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
+    // C2S-first: both transforms run on working-width ciphertexts.
+    let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
+    assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 256, 256)]);
 }
 
 #[test]
