@@ -26,7 +26,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena},
+    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
 };
 
 /// Stages a generic input (e.g. a scratch-carved view) into one owned copy of
@@ -43,7 +43,7 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: PaCoScalar,
@@ -88,12 +88,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 plan: &::poulpy_ckks::layouts::PaCoPlan,
                 base2k: ::poulpy_core::layouts::Base2K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) -> ::poulpy_ckks::CKKSResult<
-                [::poulpy_ckks::layouts::CKKSPlaintext<
-                    <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
-                >; 4],
-            >
+            ) -> ::poulpy_ckks::CKKSResult<[::poulpy_ckks::layouts::CKKSPlaintextOwned<$be>; 4]>
             where
                 F: ::poulpy_ckks::api::PaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,

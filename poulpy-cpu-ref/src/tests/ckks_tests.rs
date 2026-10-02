@@ -74,15 +74,21 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+        bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
     }
 }
 
@@ -94,15 +100,21 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+        bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
     }
 }
 
@@ -121,15 +133,21 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+        bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
     }
 }
 
@@ -141,15 +159,21 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+        bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
     }
 }
 
@@ -168,6 +192,8 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
     }
 }
@@ -181,8 +207,10 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
 
@@ -201,8 +229,10 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        automorphism => poulpy_ckks::test_suite::parity::test_automorphism_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
 
@@ -210,5 +240,145 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30ref_encryption_rank2,
     backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
     backend_test = crate::NTT4x30Ref,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
+// Conjugate-invariant backends run the ring-generic suites against the same pairs.
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_fft64ref_f64,
+    backend_ref = crate::NTT4x30CIRef,
+    backend_test = crate::FFT64CIRef,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_fft64ref_quad,
+    backend_ref = crate::NTT4x30CIRef,
+    backend_test = crate::FFT64CIRef,
+    scalar = poulpy_ckks::Quad,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_fft64ref_encryption,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64CIRef,
+    backend_test = crate::FFT64CIRef,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_ntt4x30ref_f64,
+    backend_ref = crate::FFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_ntt4x30ref_quad,
+    backend_ref = crate::FFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
+    scalar = poulpy_ckks::Quad,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_ntt4x30ref_encryption,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_f32_encoding,
+    backend_ref = crate::FFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
+    scalar = f32,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    tests = {
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "encoding is not bit-exact across backends yet"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+    }
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_fft64ref_rank2,
+    backend_ref = crate::NTT4x30CIRef,
+    backend_test = crate::FFT64CIRef,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_fft64ref_encryption_rank2,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64CIRef,
+    backend_test = crate::FFT64CIRef,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_ntt4x30ref_rank2,
+    backend_ref = crate::FFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_ntt4x30ref_encryption_rank2,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64CIRef,
+    backend_test = crate::NTT4x30CIRef,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }

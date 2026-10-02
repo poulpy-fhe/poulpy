@@ -68,3 +68,8 @@ required-features = ["enable-avx", "enable-ckks", "enable-bin-fhe"]
 name = "normalize"
 harness = false
 required-features = ["enable-avx"]
+
+[[bench]]
+name = "encrypt_pk"
+harness = false
+required-features = ["enable-avx"]

@@ -1,38 +1,33 @@
-use std::fmt::Debug;
+use poulpy_hal::layouts::{Ring, Standard};
+use std::{fmt::Debug, marker::PhantomData};
 
 use bytemuck::Zeroable;
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::{
     layouts::{Backend, Module},
-    reference::fft64::reim::{ReimFFTTable, ReimIFFTTable},
+    reference::fft64::{
+        conjugate_invariant::DctPlan,
+        reim::{ReimFFTTable, ReimIFFTTable},
+    },
 };
 
-/// Forward and inverse negacyclic FFT tables for one ring degree.
-pub struct FFT64Plan<F>
+/// Forward and inverse evaluation transforms for one ring degree.
+pub struct FFT64Plan<F, R: Ring = Standard>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    fft: ReimFFTTable<F>,
-    ifft: ReimIFFTTable<F>,
+    pub(super) fft: ReimFFTTable<F>,
+    pub(super) ifft: ReimIFFTTable<F>,
+    /// DCT tables, empty on the standard ring.
+    pub(super) dct: DctPlan<F>,
+    pub(super) ring: PhantomData<R>,
 }
 
-impl<F> FFT64Plan<F>
+impl<F, R: Ring> FFT64Plan<F, R>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    /// Creates the plan for `Z[X]/(X^n + 1)`.
-    pub fn new(n: usize) -> Self {
-        assert!(
-            n >= 2 && n.is_power_of_two(),
-            "ring degree must be a power of two >= 2, got {n}"
-        );
-        Self {
-            fft: ReimFFTTable::new(n >> 1),
-            ifft: ReimIFFTTable::new(n >> 1),
-        }
-    }
-
     pub fn fft(&self) -> &ReimFFTTable<F> {
         &self.fft
     }
@@ -42,20 +37,37 @@ where
     }
 }
 
+/// Ring-specific construction of an [`FFT64Plan`].
+pub trait FFT64PlanNew: Sized {
+    /// Builds the plan for ring degree `n`.
+    fn new(n: usize) -> Self;
+}
+
+pub(super) fn plan_half_degree(n: usize) -> usize {
+    assert!(
+        n >= 2 && n.is_power_of_two(),
+        "ring degree must be a power of two >= 2, got {n}"
+    );
+    n >> 1
+}
+
 /// Complete geometric family of FFT plans up to a maximum ring degree.
-pub struct FFT64PlanSet<F>
+pub struct FFT64PlanSet<F, R: Ring = Standard>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    plans: Vec<FFT64Plan<F>>,
+    plans: Vec<FFT64Plan<F, R>>,
     max_n: usize,
 }
 
-impl<F> FFT64PlanSet<F>
+impl<F, R: Ring> FFT64PlanSet<F, R>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    pub fn new(max_n: usize) -> Self {
+    pub fn new(max_n: usize) -> Self
+    where
+        FFT64Plan<F, R>: FFT64PlanNew,
+    {
         assert!(
             max_n >= 2 && max_n.is_power_of_two(),
             "maximum ring degree must be a power of two >= 2, got {max_n}"
@@ -70,7 +82,7 @@ where
         self.max_n
     }
 
-    pub fn for_ring(&self, n: usize) -> &FFT64Plan<F> {
+    pub fn for_ring(&self, n: usize) -> &FFT64Plan<F, R> {
         assert!(
             n >= 2 && n.is_power_of_two() && n <= self.max_n,
             "unsupported ring degree {n}; maximum is {}",
@@ -79,7 +91,7 @@ where
         &self.plans[n.ilog2() as usize - 1]
     }
 
-    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F> {
+    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F, R> {
         self.for_ring(slots.checked_mul(2).expect("slot count overflow"))
     }
 }
@@ -91,9 +103,10 @@ where
 /// defaults share the same FFT64 handle contract across scalar and accelerated backends.
 pub trait FFTModuleHandle<F>: poulpy_hal::api::ModuleN
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
+    type Ring: Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
 
     fn get_fft_table_for(&self, n: usize) -> &ReimFFTTable<F> {
         self.get_fft_plan(n).fft()
@@ -112,9 +125,10 @@ where
 /// The handle must be fully initialized before `Module::new()` returns.
 pub unsafe trait FFTHandleProvider<F>
 where
-    F: Float + FloatConst + Debug + Zeroable,
+    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
+    type Ring: Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
 }
 
 /// Construct FFT64 backend handles for [`Module::new`](crate::api::ModuleNew::new).
@@ -134,10 +148,25 @@ pub unsafe trait FFT64HandleFactory: Sized {
 
 impl<BE: Backend<ZnxWord = i64>> FFTModuleHandle<BE::DftWord> for Module<BE>
 where
-    BE::DftWord: Float + FloatConst + Debug,
+    BE::DftWord: Float + FloatConst + Debug + Send + Sync,
     BE::Handle: FFTHandleProvider<BE::DftWord>,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord> {
+    type Ring = <BE::Handle as FFTHandleProvider<BE::DftWord>>::Ring;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord, Self::Ring> {
         unsafe { (&*self.ptr()).get_fft_plan(n) }
+    }
+}
+
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> poulpy_hal::api::NegacyclicFFT<F> for FFT64Plan<F> {
+    fn m(&self) -> usize {
+        self.fft().m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        self.fft().execute(data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        self.ifft().execute(data);
     }
 }

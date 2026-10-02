@@ -16,6 +16,10 @@
 //!
 //! An override must reproduce the reference circuit and pass parity against a
 //! caller-selected comparison backend. Validation across backends is transitive.
+//!
+//! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
+//! EvalMod, encapsulated ModUp and the PaCo/SHIP coefficient encodings exist
+//! only on the standard ring: conjugate-invariant backends do not implement them.
 
 mod add;
 mod bootstrapping;
@@ -41,7 +45,9 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference;
-pub use bootstrapping::{CKKSEncapsulatedModUpImpl, impl_ckks_encapsulated_mod_up_reference};
+pub use bootstrapping::{
+    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, impl_ckks_bootstrapping_reference, impl_ckks_encapsulated_mod_up_reference,
+};
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_reference;
@@ -61,7 +67,10 @@ pub use neg::impl_ckks_neg_reference;
 pub use paco::CKKSPaCoCoeffEncodingImpl;
 pub use plaintext::CKKSPlaintextZnxImpl;
 pub use plaintext::impl_ckks_plaintext_reference;
-pub use polynomial_evaluation::{CKKSPolynomialEvaluationImpl, impl_ckks_polynomial_evaluation_reference};
+pub use polynomial_evaluation::{
+    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_reference,
+    impl_ckks_polynomial_evaluation_reference,
+};
 pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_reference;
 pub use rotate::CKKSRotateImpl;

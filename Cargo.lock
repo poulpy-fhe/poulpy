@@ -725,6 +725,7 @@ dependencies = [
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",
+ "poulpy-mhe",
  "rand",
  "rand_chacha",
  "rand_core",
@@ -748,6 +749,14 @@ dependencies = [
  "rand_chacha",
  "rand_core",
  "rand_distr",
+]
+
+[[package]]
+name = "poulpy-mhe"
+version = "0.8.3"
+dependencies = [
+ "poulpy-core",
+ "poulpy-hal",
 ]
 
 [[package]]

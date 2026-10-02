@@ -1,18 +1,22 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
+    prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    oep::derived::rotate::{ckks_rotate_by_assign, ckks_rotate_by_into, ckks_rotate_by_tmp_bytes},
+};
 
 /// # Safety
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSRotateImpl: Backend {
+pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_rotate_into_impl<Dst, Src>(
@@ -34,6 +38,48 @@ pub unsafe trait CKKSRotateImpl: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
+
+    /// Scratch of a rotation by a slot shift: the keyed rotation or the identity copy.
+    fn ckks_rotate_by_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
+        module: &Module<Self>,
+        ct_infos: &C,
+        key_infos: &K,
+    ) -> usize {
+        ckks_rotate_by_tmp_bytes(module, ct_infos, key_infos)
+    }
+
+    /// Rotation by `k` slots through the key of `ckks_galois_element(k)`; a
+    /// shift by a multiple of the slot count is a copy and needs no key.
+    fn ckks_rotate_by_into_impl<Dst, Src, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        k: i64,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        H: GetAutomorphismKey<Self>,
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+    {
+        ckks_rotate_by_into(module, dst, src, k, keys, scratch)
+    }
+
+    /// In-place [`Self::ckks_rotate_by_into_impl`]; the identity leaves `dst` unchanged.
+    fn ckks_rotate_by_assign_impl<Dst, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        k: i64,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        H: GetAutomorphismKey<Self>,
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+    {
+        ckks_rotate_by_assign(module, dst, k, keys, scratch)
+    }
 }
 
 /// Implements this contract with the callable reference algorithms.

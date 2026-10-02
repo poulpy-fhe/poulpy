@@ -42,7 +42,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, ZnxWord},
+    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard, ZnxWord},
     source::Source,
 };
 
@@ -247,6 +247,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
+        BE: Backend<Ring = Standard>,
         BE::OwnedBuf: HostDataMut,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + CyclotomicOrder

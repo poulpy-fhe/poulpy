@@ -740,6 +740,60 @@ pub trait VecZnxSwitchRing<B: Backend> {
     fn vec_znx_switch_ring(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Embedding of a conjugate-invariant column into the standard ring of twice its degree.
+///
+/// ```text
+/// op         vec_znx_ci_embed(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col,j] = a[a_col,j,0] + sum_{0<i<N} a[a_col,j,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: dense VecZnx of degree 2N; a: dense VecZnx of degree N
+/// ensures    limbs from a.size() onward are zero; the digits are not renormalized
+/// test       test_vec_znx_ci_embed_trace
+/// ```
+pub trait VecZnxCIEmbed<B: Backend> {
+    /// Writes the embedded `a[a_col]` into `res[res_col]`.
+    fn vec_znx_ci_embed(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+/// Relative trace of a standard column onto the conjugate-invariant ring of half its degree.
+///
+/// ```text
+/// op         vec_znx_ci_trace(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col,j,0] = 2 a[a_col,j,0]; res[res_col,j,i] = a[a_col,j,i] - a[a_col,j,2N-i] for 0 < i < N; the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: dense VecZnx of degree N; a: dense VecZnx of degree 2N
+/// ensures    res[res_col] is the compressed a(X) + a(X^-1); limbs from a.size() onward are zero; the digits are not renormalized
+/// test       test_vec_znx_ci_embed_trace
+/// ```
+pub trait VecZnxCITrace<B: Backend> {
+    /// Writes the trace of `a[a_col]` into `res[res_col]`.
+    fn vec_znx_ci_trace(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+/// Embedding of a conjugate-invariant scalar column into the standard ring of twice its degree.
+///
+/// ```text
+/// op         scalar_znx_ci_embed(res, res_col, a, a_col)
+/// class      variant
+/// mutation   out-of-place
+/// definition res[res_col] = a[a_col,0] + sum_{0<i<N} a[a_col,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
+/// domain     standard module of degree at least 2N; res: ScalarZnx of degree 2N; a: ScalarZnx of degree N
+/// ensures    res[res_col] is the image of a[a_col] in the standard ring
+/// test       test_scalar_znx_ci_embed
+/// ```
+pub trait ScalarZnxCIEmbed<B: Backend> {
+    /// Writes the embedded `a[a_col]` into `res[res_col]`.
+    fn scalar_znx_ci_embed(
+        &self,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
 /// Copy of one column into another.
 ///
 /// ```text

@@ -30,16 +30,23 @@
 //! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 
+mod encoding;
 mod module;
-mod reim;
+pub(crate) mod reim;
 mod znx;
 
+use std::marker::PhantomData;
+
+use poulpy_hal::layouts::{Ring, Standard};
+
 pub use crate::reference::fft64::module::FFTModuleHandle;
-pub use reim::FFT64ReimTable;
+pub use encoding::FFT64ReimTable;
 
 /// Reference (portable) CPU backend using f64 FFT.
 ///
-/// `FFT64Ref` is a zero-sized marker type that selects the reference CPU backend
+/// `FFT64Ref<R>` is a zero-sized marker type that selects the reference CPU backend
+/// over ring `R` (the standard ring by default, [`FFT64CIRef`](crate::FFT64CIRef) for the
+/// conjugate invariant ring)
 /// when used as the type parameter `B` in [`poulpy_hal::layouts::Module<B>`](poulpy_hal::layouts::Module)
 /// and related HAL types. It implements all open extension point (OEP) traits from
 /// `poulpy_hal::oep` by delegating to the portable reference functions in
@@ -54,9 +61,9 @@ pub use reim::FFT64ReimTable;
 ///
 /// # Thread safety
 ///
-/// `FFT64Ref` is `Send + Sync` (derived from being a zero-sized, field-less struct).
+/// `FFT64Ref` is `Send + Sync` (derived from being a zero-sized struct).
 /// The `Module<FFT64Ref>` that holds the FFT tables is also `Send + Sync`, so modules can
 /// be shared across threads. Individual operations require exclusive (`&mut`) access to their
 /// output buffers and scratch space, preventing data races at the API level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Ref;
+pub struct FFT64Ref<R: Ring = Standard>(PhantomData<R>);

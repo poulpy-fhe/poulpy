@@ -1,3 +1,4 @@
+use crate::reference::fft64::ring_arith::Fft64RingArith;
 use crate::{
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
@@ -5,7 +6,8 @@ use crate::{
     },
     reference::{
         fft64::{
-            reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+            module::FFT64Plan,
+            reim::ReimArith,
             reim4::{Reim4BlkMatVec, Reim4Convolution},
             vec_znx_dft::vec_znx_dft_apply,
         },
@@ -15,36 +17,36 @@ use crate::{
 use poulpy_hal::execution::TaskExecutor;
 
 pub fn convolution_prepare_left<BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, tmp)
+    convolution_prepare::<_, BE>(plan, res, a, tmp)
 }
 
 pub fn convolution_prepare_right<BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, tmp)
+    convolution_prepare::<_, BE>(plan, res, a, tmp)
 }
 
 fn convolution_prepare<R, BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::DftWord>,
 {
@@ -58,10 +60,10 @@ fn convolution_prepare<R, BE>(
     let n: usize = res.n();
     assert_eq!(a.n(), n, "convolution_prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(
-        table.m() << 1,
+        plan.fft().m() << 1,
         n,
         "convolution_prepare: table degree {} != res.n():{n}",
-        table.m() << 1
+        plan.fft().m() << 1
     );
     let m: usize = n >> 1;
 
@@ -74,7 +76,7 @@ fn convolution_prepare<R, BE>(
             let j = task % res_size;
             if j < min_size {
                 BE::reim_from_znx(limb, a.at(col, j));
-                BE::reim_dft_execute(table, limb);
+                BE::fft64_forward(plan, limb);
             }
             for blk_i in 0..m / 4 {
                 let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
@@ -90,7 +92,7 @@ fn convolution_prepare<R, BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply::<BE>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];
@@ -103,13 +105,13 @@ fn convolution_prepare<R, BE>(
 }
 
 pub fn convolution_prepare_self<BE>(
-    table: &ReimFFTTable<f64>,
+    plan: &FFT64Plan<f64, BE::Ring>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "convolution_prepare_self");
@@ -136,10 +138,10 @@ pub fn convolution_prepare_self<BE>(
         right.n()
     );
     assert_eq!(
-        table.m() << 1,
+        plan.fft().m() << 1,
         n,
         "convolution_prepare_self: table degree {} != left.n():{n}",
-        table.m() << 1
+        plan.fft().m() << 1
     );
     let m: usize = n >> 1;
 
@@ -154,7 +156,7 @@ pub fn convolution_prepare_self<BE>(
             let j = task % res_size;
             if j < min_size {
                 BE::reim_from_znx(limb, a.at(col, j));
-                BE::reim_dft_execute(table, limb);
+                BE::fft64_forward(plan, limb);
             }
             for blk_i in 0..m / 4 {
                 let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
@@ -173,7 +175,7 @@ pub fn convolution_prepare_self<BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply::<BE>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let left_col: &mut [f64] = &mut left_raw[i * n * res_size..];
@@ -320,7 +322,7 @@ pub fn convolution_apply_dft<BE>(
     b_col: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -344,7 +346,7 @@ pub fn convolution_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    BE::reim4_convolution_apply(
+    BE::fft64_convolution_apply(
         m,
         min_size,
         offset,
@@ -376,7 +378,7 @@ pub fn convolution_apply_dft_add<BE>(
     b_col: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -400,7 +402,7 @@ pub fn convolution_apply_dft_add<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    BE::reim4_convolution_apply_accumulate(
+    BE::fft64_convolution_apply_accumulate(
         m,
         min_size,
         offset,
@@ -430,7 +432,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     col_j: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -462,7 +464,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    BE::reim4_convolution_pairwise_apply(
+    BE::fft64_convolution_pairwise_apply(
         m,
         min_size,
         offset,

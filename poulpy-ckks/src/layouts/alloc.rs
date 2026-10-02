@@ -1,7 +1,7 @@
 use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
+use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSModuleInfos};
 
 use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned};
 
@@ -11,7 +11,9 @@ use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwn
 /// the blanket impl for `Module<BE>` is empty: the whole constructor matrix is
 /// two primitive shapes (ciphertext with explicit rank, plaintext with explicit
 /// degree) plus thin conveniences over them.
-pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> {
+pub trait CKKSModuleAlloc<BE: Backend>:
+    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + CKKSModuleInfos
+{
     /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
     /// (`log_delta`, `log_sparsity`), mirroring
     /// [`Self::ckks_plaintext_alloc_from_infos`]. Use
@@ -79,18 +81,23 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
         self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
     }
 
-    /// Allocates the compact plaintext for `slots` complex slots: degree
-    /// `2 * slots`, raised to the backend's minimum degree and capped at the
-    /// ring degree. Its value under the ring embedding is `M(X^(N/n))` for the
-    /// degree-`n` polynomial `M` it stores; `slots == N/2` gives the dense
-    /// plaintext.
+    /// Allocates the compact plaintext for `slots` slots: degree
+    /// `slots * N / ckks_max_slots` (`2 * slots` on the standard ring, `slots`
+    /// on the invariant ring), raised to the backend's minimum degree and capped
+    /// at the ring degree. Its value under the ring embedding is `M(X^(N/n))`
+    /// for the degree-`n` polynomial `M` it stores; `slots == ckks_max_slots`
+    /// gives the dense plaintext.
     fn ckks_pt_vec_alloc_compact(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
     where
         Self: GetDegree,
     {
         assert!(slots.is_power_of_two(), "a compact plaintext holds a power-of-two slot count");
         let ring = self.ring_degree().as_usize();
-        let n = (2 * slots).max(BE::MIN_DEGREE).min(ring);
+        let n = slots
+            .checked_mul(ring / self.ckks_max_slots())
+            .expect("slot count overflow")
+            .max(BE::MIN_DEGREE)
+            .min(ring);
         self.ckks_plaintext_alloc(n.into(), base2k, k)
     }
 }

@@ -51,7 +51,8 @@ the caller owns scheme arithmetic and precision, while the derived schedule
 chooses the order of those calls.
 
 `impl_core_reference_full!` selects the available reference algorithms and
-derived defaults, except sampling. Use individual family macros when replacing
+derived defaults, except sampling and the monomial families (LWE conversion,
+packing, GLWE/GGSW rotate, `mul_xp_minus_one`). Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 `SamplingImpl`. Preparation and decompression helpers reuse selected operations;
 see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
@@ -95,6 +96,28 @@ product calls these selected methods after any radix conversion, so it can be
 retained for another DFT layout. `GLWEExternalProductDftReference` exposes the
 contiguous-limb fallback without dispatching back to the override. Incompatible
 reference digit loops are rejected at compile time.
+
+## Public keys
+
+`GLWEPublicKey` defines the rank-`r` public key, `GLWEPublicKeyGenerate` its
+generation and `GLWEEncryptPk` public-key encryption. A replacement must keep
+their draw order from `source_xa`, `source_xe` and `source_xu`: the parity
+tests compare the outputs and the source states. A ciphertext's phase is
+`m + Sum_l u_l e_l + e_0 + Sum_j e_j s_j`. `GLWEPublicKey` stores its `r`
+encryptions of zero as a GGLWE does, one matrix of one row, entry `l` at input
+column `l`; `at` and `at_mut` view an entry as a GLWE. The entries are
+canonical: generation writes them so, `read_from` trusts the stream, and a
+writer through a mutable view must leave them so. `GLWEPublicKeyPrepared` is
+that matrix prepared by one `vmp_prepare`, and the reference encryption
+computes `Sum_l u_l pk_l` as one vector-matrix product, then adds each
+column's error before its single normalization at the output's `k`.
+
+Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
+sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one
+more with the pseudorandom `b_l`, so a ciphertext is MLWE(`n`, `r`), the
+instance the key rests on. A single ephemeral would give `r + 1` ring-LWE
+samples of degree `n` in one secret, so parameters sized for dimension `n r`
+would not protect it.
 
 ## Testing a replacement
 

@@ -293,7 +293,7 @@ where
 
 fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE> {
     let host_bytes = BE::to_host_bytes(v.data());
-    VecZnxBig::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), v.shape())
+    VecZnxBig::from_shape(<HostBytesBackend>::from_host_bytes(&host_bytes), v.shape())
 }
 
 pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)

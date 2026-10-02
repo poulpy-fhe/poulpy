@@ -17,14 +17,16 @@ pub use encryption::*;
 pub use plaintext::*;
 
 /// Registers paired tests for a caller-selected backend pair and scalar type.
-/// Each helper receives `(params, comparison_module, tested_module)`.
+/// Each helper receives `(params, comparison_module, tested_module)`; a test may
+/// carry attributes such as `#[ignore]`.
 #[macro_export]
 macro_rules! ckks_parity_test_suite {
     (mod $name:ident, backend_ref = $reference:ty, backend_test = $tested:ty,
      scalar = $scalar:ty, params = $params:expr,
-     tests = { $($test:ident => $helper:path),+ $(,)? } $(,)?) => {
+     tests = { $($(#[$attr:meta])* $test:ident => $helper:path),+ $(,)? } $(,)?) => {
         mod $name {
-            $(#[test]
+            $($(#[$attr])*
+            #[test]
             fn $test() {
                 use $helper as helper;
                 let params = $params;

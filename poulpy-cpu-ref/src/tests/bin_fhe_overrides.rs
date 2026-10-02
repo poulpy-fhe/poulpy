@@ -7,6 +7,7 @@ use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 
 crate::impl_sampling_host!(OverrideBackend, fft64);
 poulpy_core::impl_conversion_reference_full!(OverrideBackend);
+poulpy_core::impl_ggsw_conversion_reference_full!(OverrideBackend);
 poulpy_core::impl_decryption_reference_full!(OverrideBackend);
 poulpy_core::impl_encryption_reference_full!(OverrideBackend);
 poulpy_core::impl_ggsw_rotate_derived_full!(OverrideBackend);

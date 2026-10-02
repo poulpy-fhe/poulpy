@@ -1,8 +1,11 @@
 //! Downstream specialization probes: reference families remain available while
 //! polynomial kernels and EvalMod independently select execution and scratch.
 use crate::hal_impl::delegating_backend::DifferentSamplingFFT64Ref as OverrideBackend;
-use poulpy_ckks::api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps};
+use poulpy_ckks::api::{
+    CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+};
 use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
+use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
 use poulpy_ckks::{CKKSMeta, CoeffsMeta, SetCKKSInfos};
 use poulpy_core::layouts::{GetTensorKey, LWEInfos, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef};
 use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
@@ -84,6 +87,9 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
             module, res, poly, power_basis, tsk, scratch,
         )
     }
+}
+
+unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,

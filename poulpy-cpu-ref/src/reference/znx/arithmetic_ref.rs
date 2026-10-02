@@ -5,7 +5,6 @@ use crate::reference::znx::{
     ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
     ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
     add::{znx_add_assign_ref, znx_add_ref},
-    automorphism::znx_automorphism_ref,
     automorphism_rotate::znx_automorphism_rotate_ref,
     copy::znx_copy_ref,
     neg::{znx_negate_assign_ref, znx_negate_ref},
@@ -14,6 +13,7 @@ use crate::reference::znx::{
         znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref, znx_normalize_middle_step_assign_ref,
         znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
     },
+    standard::znx_automorphism_ref,
     sub::{znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref},
     switch_ring::znx_switch_ring_ref,
     zero::znx_zero_ref,
@@ -69,6 +69,11 @@ impl ZnxAutomorphism for ZnxRef {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_ref(p, res, a);
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        znx_automorphism_ref(p, res, a)
     }
 }
 

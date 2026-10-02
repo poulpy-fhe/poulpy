@@ -8,15 +8,14 @@
 
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{Base2K, GLWEPlaintext};
-use poulpy_hal::layouts::Backend;
+use poulpy_core::layouts::Base2K;
+use poulpy_hal::{
+    AlignedBuf, alloc_aligned,
+    layouts::{Backend, VecZnx},
+};
 
 use crate::SlotsKind;
-use crate::{
-    CKKSMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext},
-};
+use crate::{CKKSMeta, SetCKKSInfos, layouts::CKKSModuleAlloc};
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
@@ -38,15 +37,20 @@ where
     let k_total: usize = meta.log_delta;
 
     // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
-    // coefficient `1 << log_delta`, so the limb bytes are built with the integer
-    // codec and uploaded as raw bytes — no float codec or backend transfer op.
-    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
-    let max_k = host_pt.encoded_k();
-    host_pt.encode_vec_i64(&[1i64 << meta.log_delta], max_k);
+    // coefficient `1 << log_delta`, so its limbs are built on the host with the
+    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
+    let size = k_total.div_ceil(base2k.as_usize());
+    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
+        1,
+        1,
+        size,
+    );
+    limbs.encode_vec_i64(base2k.as_usize(), 0, size * base2k.as_usize(), &[1i64 << meta.log_delta]);
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
     pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(host_pt.data().data().as_slice());
+    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
     Ok(pt)
 }
 

@@ -33,11 +33,10 @@ use core::arch::x86_64::{
 };
 
 use poulpy_cpu_ref::reference::ntt4x30::{
-    NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
-    NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
-    NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
+    NttAdd, NttAddAssign, NttCFromB, NttCopy, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc, NttMulBbc1ColX2,
+    NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2,
+    NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
     mat_vec::{BbbMeta, BbcMeta},
-    ntt::{NttTable, NttTableInv},
     primes::Primes30,
     types::Q_SHIFTED,
 };
@@ -50,7 +49,7 @@ use super::arithmetic_avx512::{
 use super::mat_vec_avx512::{
     vec_mat1col_product_bbc_avx512, vec_mat1col_product_x2_bbc_avx512, vec_mat2cols_product_x2_bbc_avx512,
 };
-use super::ntt::{intt_avx512, ntt_avx512};
+use poulpy_hal::layouts::Ring;
 
 use super::NTT4x30Avx512;
 
@@ -294,30 +293,10 @@ unsafe fn ntt_negate_assign_avx512(n: usize, res: &mut [u64]) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// NTT execution — AVX-512F butterfly
-// ──────────────────────────────────────────────────────────────────────────────
-
-impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Avx512 {
-    #[inline(always)]
-    fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { ntt_avx512::<Primes30>(table, data) }
-    }
-}
-
-impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Avx512 {
-    #[inline(always)]
-    fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { intt_avx512::<Primes30>(table, data) }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Domain conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttFromZnx64 for NTT4x30Avx512 {
+impl<R: Ring> NttFromZnx64 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -325,7 +304,7 @@ impl NttFromZnx64 for NTT4x30Avx512 {
     }
 }
 
-impl NttToZnx128 for NTT4x30Avx512 {
+impl<R: Ring> NttToZnx128 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -337,7 +316,7 @@ impl NttToZnx128 for NTT4x30Avx512 {
 // Addition / subtraction / negation / copy / zero — AVX-512F lazy arithmetic
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttAdd for NTT4x30Avx512 {
+impl<R: Ring> NttAdd for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -345,7 +324,7 @@ impl NttAdd for NTT4x30Avx512 {
     }
 }
 
-impl NttAddAssign for NTT4x30Avx512 {
+impl<R: Ring> NttAddAssign for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -353,7 +332,7 @@ impl NttAddAssign for NTT4x30Avx512 {
     }
 }
 
-impl NttSub for NTT4x30Avx512 {
+impl<R: Ring> NttSub for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -361,7 +340,7 @@ impl NttSub for NTT4x30Avx512 {
     }
 }
 
-impl NttSubAssign for NTT4x30Avx512 {
+impl<R: Ring> NttSubAssign for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -369,7 +348,7 @@ impl NttSubAssign for NTT4x30Avx512 {
     }
 }
 
-impl NttSubNegateAssign for NTT4x30Avx512 {
+impl<R: Ring> NttSubNegateAssign for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -377,7 +356,7 @@ impl NttSubNegateAssign for NTT4x30Avx512 {
     }
 }
 
-impl NttNegate for NTT4x30Avx512 {
+impl<R: Ring> NttNegate for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -385,7 +364,7 @@ impl NttNegate for NTT4x30Avx512 {
     }
 }
 
-impl NttNegateAssign for NTT4x30Avx512 {
+impl<R: Ring> NttNegateAssign for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -393,14 +372,14 @@ impl NttNegateAssign for NTT4x30Avx512 {
     }
 }
 
-impl NttZero for NTT4x30Avx512 {
+impl<R: Ring> NttZero for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl NttCopy for NTT4x30Avx512 {
+impl<R: Ring> NttCopy for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
@@ -411,7 +390,7 @@ impl NttCopy for NTT4x30Avx512 {
 // Multiply-accumulate
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttMulBbb for NTT4x30Avx512 {
+impl<R: Ring> NttMulBbb for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -419,7 +398,7 @@ impl NttMulBbb for NTT4x30Avx512 {
     }
 }
 
-impl NttMulBbc for NTT4x30Avx512 {
+impl<R: Ring> NttMulBbc for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -431,7 +410,7 @@ impl NttMulBbc for NTT4x30Avx512 {
 // q120b → q120c conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttCFromB for NTT4x30Avx512 {
+impl<R: Ring> NttCFromB for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -443,7 +422,7 @@ impl NttCFromB for NTT4x30Avx512 {
 // VMP x2-block kernels
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttMulBbc1ColX2 for NTT4x30Avx512 {
+impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -457,7 +436,7 @@ impl NttMulBbc1ColX2 for NTT4x30Avx512 {
     }
 }
 
-impl NttMulBbc2ColsX2 for NTT4x30Avx512 {
+impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -465,7 +444,7 @@ impl NttMulBbc2ColsX2 for NTT4x30Avx512 {
     }
 }
 
-impl NttExtract1BlkContiguous for NTT4x30Avx512 {
+impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -473,7 +452,7 @@ impl NttExtract1BlkContiguous for NTT4x30Avx512 {
     }
 }
 
-impl NttPackLeft1BlkX2 for NTT4x30Avx512 {
+impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -481,7 +460,7 @@ impl NttPackLeft1BlkX2 for NTT4x30Avx512 {
     }
 }
 
-impl NttPackRight1BlkX2 for NTT4x30Avx512 {
+impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -489,7 +468,7 @@ impl NttPackRight1BlkX2 for NTT4x30Avx512 {
     }
 }
 
-impl NttPairwisePackLeft1BlkX2 for NTT4x30Avx512 {
+impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -497,7 +476,7 @@ impl NttPairwisePackLeft1BlkX2 for NTT4x30Avx512 {
     }
 }
 
-impl NttPairwisePackRight1BlkX2 for NTT4x30Avx512 {
+impl<R: Ring> NttPairwisePackRight1BlkX2 for NTT4x30Avx512<R> {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.

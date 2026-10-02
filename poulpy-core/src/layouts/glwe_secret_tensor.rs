@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
+use poulpy_hal::layouts::{HostBytesBackend, VecZnxBigToBackendRef};
 use poulpy_hal::layouts::{VecZnxBigToBackendMut, ZnxWord};
 use poulpy_hal::{
     api::{
@@ -176,10 +176,7 @@ impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecretTensor {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(
-                    n.into(),
-                    pairs(rank.into()),
-                )),
+                <HostBytesBackend>::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs(rank.into()))),
                 n.into(),
                 pairs(rank.into()),
             ),

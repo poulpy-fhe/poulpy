@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-    MatZnxToBackendRef, ReaderFrom, WriterTo,
+    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef,
+    MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
 };
 
 use crate::{
@@ -643,7 +643,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
 
         GGLWE {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
+                <HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     rank_in.into(),

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -10,7 +10,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSImagImpl: Backend {
+pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
     fn ckks_mul_i_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
 
     fn ckks_mul_i_into_impl<Dst, Src>(

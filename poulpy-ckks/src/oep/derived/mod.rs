@@ -2,4 +2,6 @@
 pub(crate) mod carry_verb;
 pub(crate) mod dft;
 pub(crate) mod eval_mod;
+pub(crate) mod encoding;
 pub(crate) mod polynomial_evaluation;
+pub(crate) mod rotate;

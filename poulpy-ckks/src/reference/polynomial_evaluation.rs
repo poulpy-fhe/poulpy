@@ -8,8 +8,8 @@ use poulpy_hal::{
         Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-        ZnxWord, vec_znx_backend_ref_from_ref,
+        Backend, Data, Module, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -42,18 +42,18 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes())
 }
 
-struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord> {
+struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
     degree: usize,
-    value: CKKSCiphertext<D, W>,
+    value: CKKSCiphertext<D, W, R>,
 }
 
-impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord>
+impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord, BE::Ring>
 where
     BE: Backend,
-    D: poulpy_hal::layouts::Data,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    D: Data,
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    type Value = CKKSCiphertext<D, BE::ZnxWord>;
+    type Value = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
 
     fn degree(&self) -> usize {
         self.degree

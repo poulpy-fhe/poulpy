@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[cfg(test)]
-use crate::layouts::ZnxViewMut;
+use crate::layouts::{HostBytesBackend, ZnxViewMut};
 #[cfg(test)]
 use poulpy_hal::AlignedBuf;
 
@@ -23,7 +23,7 @@ fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::Vec
     use crate::layouts::VecZnx;
 
     crate::layouts::VecZnx::from_data(
-        crate::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, i64>::bytes_of(n, cols, size)),
+        <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, i64>::bytes_of(n, cols, size)),
         n,
         cols,
         size,

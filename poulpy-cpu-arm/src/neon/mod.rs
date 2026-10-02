@@ -5,6 +5,7 @@ pub(crate) mod fft;
 pub(crate) mod normalization_boundary;
 pub(crate) mod normalize;
 pub(crate) mod ntt4x30_arithmetic;
+pub(crate) mod ntt4x30_conjugate_invariant;
 pub(crate) mod ntt4x30_convert;
 pub(crate) mod ntt4x30_mat_vec;
 pub(crate) mod ntt4x30_ntt;

@@ -329,6 +329,36 @@ fn _keep() {
     let _ = vaddq_f64;
 }
 
+#[target_feature(enable = "neon")]
+pub(crate) unsafe fn reim4_real_convolution_1coeff_neon(
+    k: usize,
+    dst: &mut [f64; 8],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+) {
+    use core::arch::aarch64::{vaddq_f64, vdupq_n_f64, vld1q_f64, vmulq_f64, vst1q_f64};
+    assert!(a_size <= a.len() / 8 && b_size <= b.len() / 8);
+    if a_size == 0 || b_size == 0 || k >= a_size + b_size - 1 {
+        dst.fill(0.0);
+        return;
+    }
+    unsafe {
+        let mut acc = [vdupq_n_f64(0.0); 4];
+        for j in k.saturating_sub(a_size - 1)..(k + 1).min(b_size) {
+            for (lane, acc) in acc.iter_mut().enumerate() {
+                let av = vld1q_f64(a.as_ptr().add(8 * (k - j) + 2 * lane));
+                let bv = vld1q_f64(b.as_ptr().add(8 * j + 2 * lane));
+                *acc = vaddq_f64(*acc, vmulq_f64(av, bv));
+            }
+        }
+        for (lane, value) in acc.into_iter().enumerate() {
+            vst1q_f64(dst.as_mut_ptr().add(2 * lane), value);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

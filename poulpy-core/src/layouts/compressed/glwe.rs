@@ -144,6 +144,13 @@ impl<D: Data, W: ZnxWord> GLWECompressedSeedMut for GLWECompressed<D, W> {
     }
 }
 
+/// Writes the view's copy: the seed of the entry it views is written on its owner.
+impl<BE: Backend> GLWECompressedSeedMut for GLWECompressedViewMut<'_, BE> {
+    fn seed_mut(&mut self) -> &mut [u8; 32] {
+        &mut self.inner.seed
+    }
+}
+
 /// Provides read access to the PRNG seed of a compressed GLWE.
 pub trait GLWECompressedSeed {
     /// Returns a reference to the 32-byte PRNG seed.
@@ -153,6 +160,18 @@ pub trait GLWECompressedSeed {
 impl<D: Data, W: ZnxWord> GLWECompressedSeed for GLWECompressed<D, W> {
     fn seed(&self) -> &[u8; 32] {
         &self.seed
+    }
+}
+
+impl<BE: Backend> GLWECompressedSeed for GLWECompressedViewRef<'_, BE> {
+    fn seed(&self) -> &[u8; 32] {
+        &self.inner.seed
+    }
+}
+
+impl<BE: Backend> GLWECompressedSeed for GLWECompressedViewMut<'_, BE> {
+    fn seed(&self) -> &[u8; 32] {
+        &self.inner.seed
     }
 }
 
@@ -367,6 +386,18 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressed<BE::OwnedBuf
             base2k: self.base2k,
             rank: self.rank,
             data: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
+        }
+    }
+}
+
+impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressedViewMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWECompressedBackendMut<'_, BE> {
+        GLWECompressed {
+            seed: self.inner.seed,
+            k: self.inner.k,
+            base2k: self.inner.base2k,
+            rank: self.inner.rank,
+            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         }
     }
 }

@@ -20,7 +20,12 @@
 //! - `DftWord = CrtWord<Primes30, u32>` — NTT-domain coefficients (4 × u32, 16 bytes/coeff).
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
+use std::marker::PhantomData;
+
+use poulpy_hal::layouts::{Ring, Standard};
+
 pub(crate) mod arithmetic_avx;
+mod conjugate_invariant;
 pub(crate) mod convolution;
 pub(crate) mod mat_vec_avx;
 mod module;
@@ -28,6 +33,7 @@ pub(crate) mod ntt;
 mod prim;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
+mod standard;
 #[cfg(all(feature = "enable-rayon", feature = "enable-ckks"))]
 pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 pub(crate) mod svp;
@@ -59,7 +65,7 @@ mod znx;
 ///
 /// `NTT4x30Avx` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30Avx;
+pub struct NTT4x30Avx<R: Ring = Standard>(PhantomData<R>);
 
 /// Rayon-scheduled AVX2 NTT4x30 backend.
 ///
@@ -67,7 +73,7 @@ pub struct NTT4x30Avx;
 /// scheduling is supplied by this crate's optional Rayon executor.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct NTT4x30AvxRayon;
+pub struct NTT4x30AvxRayon<R: Ring = Standard>(PhantomData<R>);
 
 #[cfg(test)]
 mod tests;

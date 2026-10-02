@@ -10,10 +10,14 @@ use crate::{
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut,
         GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
-        GLWECompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
-        compressed::{GGLWECompressedSeedMut, GGLWECompressedToBackendMut},
-        prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
+        GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
+        SetGaloisElement,
+        compressed::{
+            GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GLWEPublicKeyCompressedSeedMut,
+            GLWEPublicKeyCompressedToBackendMut,
+        },
+        prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 
@@ -103,13 +107,40 @@ pub trait GLWEEncryptSk<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    /// Encrypts `pt` under `sk` over the mask columns already in `res`, which
+    /// are kept: the body becomes `pt - Sum_k mask_k s_k + e`. The masks must be
+    /// uniform, and two encryptions over the same masks under the same secret
+    /// reveal the difference of their plaintexts. `pt` must be normalized.
+    /// Scratch is [`glwe_encrypt_sk_tmp_bytes`](Self::glwe_encrypt_sk_tmp_bytes).
+    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// Public-key encryption under a [`GLWEPublicKeyPrepared`](crate::layouts::GLWEPublicKeyPrepared)
+/// of rank `r`: draws `u_1, .., u_r` in order from `source_xu` under the key's
+/// distribution and outputs `Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)`, one
+/// fresh error per column drawn in column order from `source_xe`, each column
+/// normalized once at the output's `k`.
 pub trait GLWEEncryptPk<BE: Backend> {
-    fn glwe_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
+    /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
+    fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
-        A: GLWEInfos;
+        R: GLWEInfos,
+        K: GLWEInfos;
 
+    /// `pt` must be normalized. Panics if `pk` is less precise than `res`.
     fn glwe_encrypt_pk<R, P, K, E>(
         &self,
         res: &mut R,
@@ -123,8 +154,9 @@ pub trait GLWEEncryptPk<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 
+    /// Same precondition as [`Self::glwe_encrypt_pk`].
     fn glwe_encrypt_zero_pk<R, K, E>(
         &self,
         res: &mut R,
@@ -136,7 +168,26 @@ pub trait GLWEEncryptPk<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+
+    /// [`Self::glwe_encrypt_pk`] with `pt` added to column `col` of the output
+    /// (`0` is the body), under the same precondition and scratch. Panics if
+    /// `col` exceeds the rank.
+    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GLWEPublicKeyGenerate<BE: Backend> {
@@ -147,6 +198,9 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
 
     /// Generate a public key using caller-owned scratch. The arena may contain
     /// arbitrary bytes and must meet [`Self::glwe_public_key_generate_tmp_bytes`].
+    /// The `rank` entries are generated in order, each a normalized encryption of
+    /// zero under `sk` (mask from `source_xa`, error from `source_xe`), and the
+    /// key takes the secret's distribution.
     fn glwe_public_key_generate<R, S, E>(
         &self,
         res: &mut R,
@@ -156,7 +210,31 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
+}
+
+pub trait GLWEPublicKeyCompressedGenerate<BE: Backend> {
+    /// Scratch required to generate a compressed public key with the given layout.
+    fn glwe_public_key_compressed_generate_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    /// Generates the compressed form of [`GLWEPublicKeyGenerate::glwe_public_key_generate`]:
+    /// entry `l` is the body of a normalized encryption of zero under `sk`
+    /// whose mask is drawn from the `l`-th seed derived from `seed`, and the key
+    /// takes the secret's distribution.
+    fn glwe_public_key_compressed_generate<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
@@ -201,6 +279,34 @@ pub trait GGSWEncryptSk<BE: Backend> {
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
+}
+
+/// Public-key GGSW encryption: entry `(row, col)` is
+/// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt` at limb
+/// `(dsize - 1) + row * dsize` into column `col`, entries in row then column
+/// order.
+pub trait GGSWEncryptPk<BE: Backend> {
+    /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
+    fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GGSWInfos,
+        K: GLWEInfos;
+
+    /// Panics if `pk` is less precise than `res`.
+    fn ggsw_encrypt_pk<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWInfos + GGSWAtViewMut<BE>,
+        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
@@ -362,6 +468,22 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
+
+    /// Encrypts zero: the draws and the output of [`Self::glwe_compressed_encrypt_sk`]
+    /// with a zero plaintext, without one. Scratch is
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`].
+    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+        &self,
+        res: &mut R,
+        sk: &S,
+        seed_xa: [u8; 32],
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }

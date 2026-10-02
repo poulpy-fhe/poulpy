@@ -68,7 +68,7 @@ pub fn prepare_blind_rotation_key_ref<BE>(
     if let Distribution::BinaryBlock(_) = other.dist {
         let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
         let mut buf: ScalarZnx<AlignedBuf, i64> = ScalarZnx::from_data(
-            HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)),
+            <HostBytesBackend>::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)),
             n,
             1,
         );

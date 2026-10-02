@@ -22,7 +22,7 @@
 //! Encryption methods follow a consistent pattern with PRNG sources:
 //! - `source_xa`: source for mask/randomness sampling
 //! - `source_xe`: source for error/noise sampling
-//! - `source_xu`: source for uniform sampling (used in public-key encryption)
+//! - `source_xu`: source for the public-key encryption ephemerals, drawn under the key's distribution
 //!
 //! Scratch space requirements for each operation can be queried via companion
 //! `*_tmp_bytes` methods.

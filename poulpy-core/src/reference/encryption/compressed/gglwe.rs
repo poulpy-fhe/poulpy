@@ -178,5 +178,6 @@ where
         };
 
         res.seed_mut().copy_from_slice(&seeds);
+        scratch.wipe(self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
     }
 }

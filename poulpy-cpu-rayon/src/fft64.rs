@@ -99,7 +99,7 @@ macro_rules! rayon_forward_znx_const {
 /// forwards that query along with the arithmetic it preserves.
 #[macro_export]
 macro_rules! impl_fft64_rayon_backend {
-    ($rayon:ty, $base:ty, $dft_automorphism:path) => {
+    ($rayon:ty, $base:ty) => {
         mod fft64_rayon_backend {
             #[allow(unused_imports)]
             use super::*;
@@ -115,11 +115,12 @@ use $crate::__private::poulpy_cpu_ref::{
             convolution::I64Ops,
             module::FFTModuleHandle,
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
+            vec_znx_dft::Fft64AutomorphismPlan,
             reim4::{Reim4BlkMatVec, Reim4Convolution, reim4_gather_sparse_block, reim4_gather_sparse_block_sum},
             vmp::{vmp_prepare as fft64_vmp_prepare, vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes},
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
             ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
             ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
             ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
@@ -190,8 +191,17 @@ impl ZnxMulPowerOfTwoAssign for $rayon {
             .for_each(|res| <$base as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
     }
 }
-$crate::rayon_forward_znx!($rayon, $base, ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
+impl ZnxAutomorphism for $rayon {
+    #[inline(always)]
+    fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
+        <$base as ZnxAutomorphism>::znx_automorphism(p, res, a)
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        <$base as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
+    }
+}
 $crate::rayon_parallel_assign!($rayon, $base, ZnxCopy, znx_copy);
 $crate::rayon_parallel_assign!($rayon, $base, ZnxNegate, znx_negate);
 $crate::rayon_parallel_unary!($rayon, $base, ZnxNegateAssign, znx_negate_assign);
@@ -308,6 +318,18 @@ impl ReimArith for $rayon {
         <$base as ReimArith>::reim_mul_assign(res, a)
     }
     #[inline(always)]
+    fn reim_real_mul(res: &mut [f64], a: &[f64], b: &[f64]) {
+        <$base as ReimArith>::reim_real_mul(res, a, b)
+    }
+    #[inline(always)]
+    fn reim_real_mul_assign(res: &mut [f64], a: &[f64]) {
+        <$base as ReimArith>::reim_real_mul_assign(res, a)
+    }
+    #[inline(always)]
+    fn reim_real_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {
+        <$base as ReimArith>::reim_real_addmul(res, a, b)
+    }
+    #[inline(always)]
     fn reim_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {
         <$base as ReimArith>::reim_addmul(res, a, b)
     }
@@ -318,6 +340,14 @@ impl ReimArith for $rayon {
     #[inline(always)]
     fn reim_zero(res: &mut [f64]) {
         <$base as ReimArith>::reim_zero(res)
+    }
+    #[inline(always)]
+    fn reim_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        <$base as ReimArith>::reim_automorphism(plan, res, a)
+    }
+    #[inline(always)]
+    fn reim_automorphism_add(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        <$base as ReimArith>::reim_automorphism_add(plan, res, a)
     }
 }
 
@@ -350,10 +380,23 @@ impl Reim4BlkMatVec for $rayon {
     fn reim4_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
         <$base as Reim4BlkMatVec>::reim4_mat2cols_2ndcol_prod(nrows, dst, u, v)
     }
+    #[inline(always)]
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        <$base as Reim4BlkMatVec>::reim4_real_mat1col_prod(nrows, dst, u, v)
+    }
+    #[inline(always)]
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        <$base as Reim4BlkMatVec>::reim4_real_mat2cols_prod(nrows, dst, u, v)
+    }
+    #[inline(always)]
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        <$base as Reim4BlkMatVec>::reim4_real_mat2cols_2ndcol_prod(nrows, dst, u, v)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
+    convolution: fn(&mut [f64], usize, usize, &[f64], usize, &[f64], usize),
     m: usize,
     min_size: usize,
     offset: usize,
@@ -405,7 +448,7 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
             } else {
                 &b0[block * 8 * b_size..]
             };
-            <$base as Reim4Convolution>::reim4_convolution(out, min_size, offset, a, a_size, b, b_size);
+            convolution(out, min_size, offset, a, a_size, b, b_size);
             unsafe {
                 let dst = dst_ptr.get();
                 for k in 0..min_size {
@@ -457,6 +500,7 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<false, false>(
+            <$base as Reim4Convolution>::reim4_convolution,
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -480,6 +524,7 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<false, true>(
+            <$base as Reim4Convolution>::reim4_convolution,
             m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
@@ -505,6 +550,93 @@ impl Reim4Convolution for $rayon {
             );
         }
         parallel_reim4_convolution_apply::<true, false>(
+            <$base as Reim4Convolution>::reim4_convolution,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution_1coeff(k, dst, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution_2coeffs(k, dst, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution(dst: &mut [f64], dst_size: usize, offset: usize, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        <$base as Reim4Convolution>::reim4_real_convolution(dst, dst_size, offset, a, a_size, b, b_size)
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_apply(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, false>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_apply_accumulate(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, true>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+        );
+    }
+    #[inline(always)]
+    fn reim4_real_convolution_pairwise_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a0: &[f64],
+        a1: &[f64],
+        a_size: usize,
+        b0: &[f64],
+        b1: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) {
+        if !RayonTaskExecutor::is_parallel() {
+            return <$base as Reim4Convolution>::reim4_real_convolution_pairwise_apply(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<true, false>(
+            <$base as Reim4Convolution>::reim4_real_convolution,
             m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
         );
     }
@@ -608,7 +740,7 @@ unsafe impl HalVmpImpl for $rayon {
             scratch.available(),
         );
         let (tmp, _) = $crate::take_scratch::<Self, f64>(scratch.borrow(), workers * per_worker / core::mem::size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_table_for(n), res, a, tmp);
+        fft64_vmp_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -1097,19 +1229,19 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let a_cols = a.cols();
         let a_size = a.size();
-        let table = module.get_ifft_table_for(n);
-        let divisor = table.m() as f64;
+        let plan = module.get_fft_plan(n);
+        let divisor = plan.divisor();
         // In-place inverse FFT per limb; the buffer becomes `VecZnx` layout.
         if $crate::parallel_limb_tasks(a_size) {
             a.raw_mut().par_chunks_mut(n * a_cols).for_each(|group| {
                 let slot = &mut group[n * a_col..][..n];
-                <$base as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(table, slot);
+                plan.inverse::<$base>(slot);
                 <$base as ReimArith>::reim_to_znx_assign(slot, divisor);
             });
         } else {
             for group in a.raw_mut().chunks_mut(n * a_cols) {
                 let slot = &mut group[n * a_col..][..n];
-                <$base as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(table, slot);
+                plan.inverse::<$base>(slot);
                 <$base as ReimArith>::reim_to_znx_assign(slot, divisor);
             }
         }
@@ -1158,13 +1290,13 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
         let cols = res.cols();
         let a_size = a.size();
-        let table = module.get_fft_table_for(n);
+        let plan = module.get_fft_plan(n);
         res.raw_mut().par_chunks_mut(n * cols).enumerate().for_each(|(j, group)| {
             let dst = &mut group[n * res_col..][..n];
             let limb = offset + j * step;
             if limb < a_size {
                 <$base as ReimArith>::reim_from_znx(dst, a.at(a_col, limb));
-                <$base as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(table, dst);
+                plan.forward::<$base>(dst);
             } else {
                 <$base as ReimArith>::reim_zero(dst);
             }
@@ -1202,15 +1334,15 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
         let a_raw = a.raw();
-        let table = module.get_ifft_table_for(n);
-        let divisor = table.m() as f64;
+        let plan = module.get_fft_plan(n);
+        let divisor = plan.divisor();
         res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each(|(j, group)| {
             let dst = &mut group[n * res_col..][..n];
             if j < min_size {
                 let dst_f64 = $crate::__private::bytemuck::cast_slice_mut(dst);
                 let src = &a_raw[n * (j * a_cols + a_col)..][..n];
                 <$base as ReimArith>::reim_copy(dst_f64, src);
-                <$base as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(table, dst_f64);
+                plan.inverse::<$base>(dst_f64);
                 <$base as ReimArith>::reim_to_znx_assign(dst_f64, divisor);
             } else {
                 <$base as ZnxZero>::znx_zero(dst);
@@ -1243,8 +1375,8 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         let min_size = res.size().min(a.size());
         let active_words = min_size * n * res_cols;
         let (res_active, res_zero) = res.raw_mut().split_at_mut(active_words);
-        let table = module.get_ifft_table_for(n);
-        let divisor = table.m() as f64;
+        let plan = module.get_fft_plan(n);
+        let divisor = plan.divisor();
 
         res_active
             .par_chunks_mut(n * res_cols)
@@ -1252,7 +1384,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
             .for_each(|(res_group, a_group)| {
                 let dst = &mut res_group[n * res_col..][..n];
                 let src = &mut a_group[n * a_col..][..n];
-                <$base as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(table, src);
+                plan.inverse::<$base>(src);
                 <$base as ReimArith>::reim_to_znx(dst, divisor, src);
             });
         res_zero
@@ -1386,7 +1518,14 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        $dft_automorphism(module, plan, res, res_col, a, a_col);
+        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_with_plan(
+            base_module(module),
+            plan,
+            &mut base_dft_mut(res),
+            res_col,
+            &base_dft_ref(a),
+            a_col,
+        );
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(

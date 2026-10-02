@@ -1,6 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+    Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
+    VecZnxToBackendRef, WriterTo,
 };
 
 use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
@@ -287,11 +288,7 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWE {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(
-                    n.into(),
-                    (rank + 1).into(),
-                    size,
-                )),
+                <HostBytesBackend>::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), (rank + 1).into(), size)),
                 n.into(),
                 (rank + 1).into(),
                 size,

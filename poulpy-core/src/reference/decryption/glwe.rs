@@ -69,17 +69,21 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
         scratch.available(),
         glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
     );
-    let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
-    let res = if res.is_canonical() {
-        res.to_backend_ref()
-    } else {
-        module.glwe_normalize(&mut res_tmp, res, &mut scratch.borrow());
-        res_tmp.to_backend_ref()
-    };
-    let mut pt_backend = pt.to_backend_mut();
-    let sk_backend = sk.to_backend_ref();
+    let tmp_bytes: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res);
+    {
+        let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
+        let res = if res.is_canonical() {
+            res.to_backend_ref()
+        } else {
+            module.glwe_normalize(&mut res_tmp, res, &mut scratch.borrow());
+            res_tmp.to_backend_ref()
+        };
+        let mut pt_backend = pt.to_backend_mut();
+        let sk_backend = sk.to_backend_ref();
 
-    glwe_decrypt_backend_inner(module, &res, &mut pt_backend, &sk_backend, &mut scratch);
+        glwe_decrypt_backend_inner(module, &res, &mut pt_backend, &sk_backend, &mut scratch);
+    }
+    scratch.wipe(tmp_bytes);
 }
 
 pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
@@ -100,12 +104,9 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    #[cfg(debug_assertions)]
-    {
-        assert_eq!(res.rank(), sk.rank());
-        assert_eq!(res.n(), sk.n());
-        assert_eq!(pt.n(), sk.n());
-    }
+    debug_assert_eq!(res.rank(), sk.rank());
+    assert_eq!(res.n(), sk.n(), "GLWE ciphertext and secret key degrees must match");
+    assert_eq!(pt.n(), sk.n(), "GLWE plaintext and secret key degrees must match");
     assert!(
         scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),
         "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",

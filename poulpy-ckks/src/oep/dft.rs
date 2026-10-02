@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSEncodingScalar, LtDiagonalScale},
+    api::{CKKSEncodingScalar, LtDiagonalMeta},
     layouts::{DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard},
 };
 
@@ -73,7 +73,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>;
 
@@ -85,7 +85,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
@@ -100,7 +100,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
@@ -117,7 +117,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
@@ -135,7 +135,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
@@ -152,7 +152,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
@@ -169,7 +169,7 @@ pub unsafe trait DFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
@@ -187,7 +187,7 @@ pub unsafe trait DFTImpl:
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
+pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
     fn ckks_new_dft_matrix_impl<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,
@@ -251,7 +251,7 @@ macro_rules! impl_ckks_dft_reference {
             ) -> $crate::CKKSResult<()>
             where
                 P: ::poulpy_core::reference::linear_transformation::DiagonalProd<Self>
-                    + $crate::api::LtDiagonalScale
+                    + $crate::api::LtDiagonalMeta
                     + ::poulpy_core::layouts::IntPolyInfos,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
                     + ::poulpy_core::layouts::GLWEToBackendRef<Self>

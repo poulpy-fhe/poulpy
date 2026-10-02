@@ -1,7 +1,5 @@
 //! Format compositions over the selected CKKS DFT and arithmetic contracts.
-use crate::api::{
-    CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalScale,
-};
+use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
 use crate::layouts::{CKKSModuleAlloc, DFTMatrix, Decode, Encode, Repack, Split, Standard};
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
@@ -18,7 +16,7 @@ pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
@@ -37,7 +35,7 @@ pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
@@ -66,7 +64,7 @@ pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -112,7 +110,7 @@ pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -142,7 +140,7 @@ pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -198,7 +196,7 @@ pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,

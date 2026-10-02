@@ -88,32 +88,35 @@ where
             scratch.available(),
             self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res)
         );
-
-        let scratch = scratch.borrow();
-        let (mut sk_out_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, sk.rank());
-        let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk.rank());
-        sk_out.dist = sk.dist;
+        let tmp_bytes: usize = self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res);
         {
-            let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());
-            let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out.data_mut());
-            for i in 0..sk.rank().into() {
-                self.vec_znx_automorphism(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
+            let scratch = scratch.borrow();
+            let (mut sk_out_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, sk.rank());
+            let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk.rank());
+            sk_out.dist = sk.dist;
+            {
+                let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());
+                let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out.data_mut());
+                for i in 0..sk.rank().into() {
+                    self.vec_znx_automorphism(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
+                }
             }
+            self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
+
+            let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
+            let sk_data_ref = sk.data();
+            self.gglwe_encrypt_sk(
+                res,
+                &sk_data_ref,
+                &sk_out_prepared,
+                enc_infos,
+                source_xe,
+                source_xa,
+                &mut enc_scratch,
+            );
+
+            res.set_p(p);
         }
-        self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
-
-        let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
-        let sk_data_ref = sk.data();
-        self.gglwe_encrypt_sk(
-            res,
-            &sk_data_ref,
-            &sk_out_prepared,
-            enc_infos,
-            source_xe,
-            source_xa,
-            &mut enc_scratch,
-        );
-
-        res.set_p(p);
+        scratch.wipe(tmp_bytes);
     }
 }

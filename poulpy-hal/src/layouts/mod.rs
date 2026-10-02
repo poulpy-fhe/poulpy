@@ -78,7 +78,7 @@ pub use vmp_pmat::*;
 pub use word::*;
 pub use znx_base::*;
 
-use std::ptr::NonNull;
+use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::{AlignedBuf, oep::HalModuleImpl};
 
@@ -159,10 +159,10 @@ where
 {
 }
 
-/// Minimal host-resident backend used as the default backend adapter for
-/// host-visible byte-slice views in generic helper code.
+/// Host-resident, storage-only backend of ring `R` (default [`Standard`](crate::layouts::Standard));
+/// the default instance adapts host byte-slice views in generic helper code.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct HostBytesBackend;
+pub struct HostBytesBackend<R: Ring = Standard>(PhantomData<R>);
 
 // Shared byte-storage implementation for the host adapter and layout test fixtures.
 macro_rules! impl_host_byte_storage {
@@ -301,7 +301,7 @@ macro_rules! impl_host_byte_storage {
 #[cfg(test)]
 pub(crate) use impl_host_byte_storage;
 
-impl Backend for HostBytesBackend {
+impl<R: Ring> Backend for HostBytesBackend<R> {
     // Storage/normalization only; this backend does not perform products.
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
@@ -309,18 +309,18 @@ impl Backend for HostBytesBackend {
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
-    type Ring = crate::layouts::Standard;
+    type Ring = R;
     impl_host_byte_storage!();
 }
 
 // Storage-only backend: no transform arithmetic to model.
-impl MaxBase2k for HostBytesBackend {
+impl<R: Ring> MaxBase2k for HostBytesBackend<R> {
     fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
         None
     }
 }
 
-unsafe impl HalModuleImpl for HostBytesBackend {
+unsafe impl<R: Ring> HalModuleImpl for HostBytesBackend<R> {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { crate::layouts::Module::from_nonnull(NonNull::dangling(), n) }
@@ -519,12 +519,13 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// This is useful for proof or delegating backends that want to remain a
 /// distinct backend type while reusing the same owned buffer, borrowed views,
 /// scalar types, and handle representation as a source backend.
+/// A trailing `; generic R: Ring` forwards every instantiation of a generic marker.
 #[macro_export]
 macro_rules! impl_backend_from {
     (@executor $from:ty, $executor:ty) => { $executor };
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
-    ($be:ty, $from:ty $(, $executor:ty)?) => {
-        impl poulpy_hal::layouts::Backend for $be {
+    ($be:ty, $from:ty $(, $executor:ty)? $(; generic $g:ident: $gb:path)?) => {
+        impl$(<$g: $gb>)? poulpy_hal::layouts::Backend for $be {
             const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
             const DFT_LIMBS_CONTIGUOUS: bool = <$from as poulpy_hal::layouts::Backend>::DFT_LIMBS_CONTIGUOUS;
 
@@ -686,16 +687,16 @@ macro_rules! impl_backend_from {
 
         // A delegating backend forwards all storage behavior verbatim, so every
         // container layout is shared with the source backend by construction.
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
-        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl$(<$g: $gb>)? poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
 }
 

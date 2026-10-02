@@ -1,10 +1,16 @@
 mod automorphism;
+mod conjugate_invariant;
 mod convolution;
 mod module;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
 mod reim;
 mod reim4;
+mod standard;
+
+use std::marker::PhantomData;
+
+use poulpy_hal::layouts::{Ring, Standard};
 
 /// AVX-512F-accelerated CPU backend for Poulpy HAL.
 ///
@@ -54,17 +60,16 @@ mod reim4;
 /// // Use module for FHE operations...
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx512;
+pub struct FFT64Avx512<R: Ring = Standard>(PhantomData<R>);
 
 /// Rayon-scheduled variant of [`FFT64Avx512`].
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx512Rayon;
+pub struct FFT64Avx512Rayon<R: Ring = Standard>(PhantomData<R>);
 
 #[cfg(test)]
 pub mod tests;
 
-pub use automorphism::fft64_vec_znx_dft_automorphism_avx512;
 #[allow(unused_imports)]
 pub use poulpy_cpu_ref::reference::fft64::module::FFTModuleHandle;
 pub use reim::{FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};

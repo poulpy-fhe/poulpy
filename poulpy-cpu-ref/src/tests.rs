@@ -16,6 +16,13 @@ mod delegating_backend;
 mod derived_scratch;
 
 #[test]
+fn conjugate_invariant_max_base2k_has_no_model() {
+    assert_eq!(Module::<crate::FFT64CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<crate::NTT4x30CIRef>::max_base2k(1 << 13, 1, 128, true), None);
+    assert_eq!(Module::<NTT4x30Ref>::max_base2k(1 << 13, 1, 128, true), Some(55));
+}
+
+#[test]
 fn bootstrapping_presets_keep_fixture_radices() {
     use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
     use poulpy_core::layouts::LWEInfos;
@@ -156,6 +163,16 @@ cross_backend_test_suite! {
         test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,
         test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
         test_vec_znx_copy_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_matches_wrapper,
+    }
+}
+cross_backend_test_suite! {
+    mod vec_znx_ci,
+    backend_ref =  crate::FFT64Ref,
+    backend_test = crate::NTT4x30Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
+        test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
     }
 }
 cross_backend_test_suite! {
@@ -470,6 +487,22 @@ poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::
 #[test]
 fn test_hal_serialization_fft64_ref() {
     poulpy_hal::test_suite::serialization::test_serialization(&Module::<FFT64Ref>::new(1024));
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_glwe_public_key_rank1_golden() {
+    use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
+    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
+    const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
+    const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
+    assert_eq!(
+        (
+            glwe_public_key_rank1_digests(&Module::<FFT64Ref>::new(256), 17),
+            glwe_public_key_rank1_digests(&Module::<NTT4x30Ref>::new(256), 52),
+        ),
+        (FFT64, NTT4X30)
+    );
 }
 
 #[cfg(feature = "enable-core")]

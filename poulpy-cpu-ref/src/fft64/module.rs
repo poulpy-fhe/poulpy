@@ -1,8 +1,9 @@
-//! Backend handle and module initialization for [`FFT64Ref`](crate::FFT64Ref).
+//! Backend handle and module initialization for [`FFT64Ref`](super::FFT64Ref).
 //!
 //! This module defines:
 //!
-//! - [`FFT64RefHandle`]: the opaque handle stored inside a `Module<FFT64Ref>`,
+//! - [`FFT64RefHandle`]: the opaque handle stored inside a `Module<FFT64Ref>`
+//!   (and, over the conjugate invariant ring, `Module<FFT64CIRef>`),
 //!   holding precomputed FFT and IFFT twiddle-factor tables.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
@@ -20,24 +21,26 @@ use poulpy_hal::{
 };
 
 use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use poulpy_hal::layouts::{Ring, Standard};
 
 use super::FFT64Ref;
 
-/// Opaque handle for the [`FFT64Ref`](crate::FFT64Ref) backend.
+/// Opaque handle for the FFT64 reference backends over ring `R`
+/// ([`FFT64Ref`](super::FFT64Ref) and [`FFT64CIRef`](crate::FFT64CIRef)).
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
 /// [`Module::new`](poulpy_hal::api::ModuleNew::new).
 ///
 /// This struct is heap-allocated during module creation and freed when the
-/// `Module<FFT64Ref>` is dropped (via [`Backend::destroy`]).
+/// `Module` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct FFT64RefHandle {
-    ring_plans: FFT64PlanSet<f64>,
+pub struct FFT64RefHandle<R: Ring = Standard> {
+    ring_plans: FFT64PlanSet<f64, R>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
-impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
+impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Ref<R> {}
 
 impl poulpy_hal::layouts::MaxBase2k for FFT64Ref {
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
@@ -50,19 +53,27 @@ impl poulpy_hal::layouts::MaxBase2k for FFT64Ref {
     }
 }
 
-impl Backend for FFT64Ref {
+/// No failure model: a square's constant coefficient has a large positive mean on this ring.
+impl poulpy_hal::layouts::MaxBase2k for FFT64Ref<poulpy_hal::layouts::ConjugateInvariant> {
+    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
+        None
+    }
+}
+
+impl<R: Ring> Backend for FFT64Ref<R> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
+    type Ring = R;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64RefHandle;
+    type Handle = FFT64RefHandle<R>;
     type Location = Host;
+
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
@@ -164,7 +175,10 @@ impl Backend for FFT64Ref {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl FFT64HandleFactory for FFT64RefHandle {
+unsafe impl<R: Ring> FFT64HandleFactory for FFT64RefHandle<R>
+where
+    crate::reference::fft64::module::FFT64Plan<f64, R>: crate::reference::fft64::module::FFT64PlanNew,
+{
     fn create_fft64_handle(n: usize) -> Self {
         FFT64RefHandle {
             table_cache: Default::default(),
@@ -173,13 +187,14 @@ unsafe impl FFT64HandleFactory for FFT64RefHandle {
     }
 }
 
-unsafe impl FFTHandleProvider<f64> for FFT64RefHandle {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64RefHandle<R> {
+    type Ring = R;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
         self.ring_plans.for_ring(n)
     }
 }
 
-unsafe impl crate::table_cache::ModuleTableCacheProvider for FFT64RefHandle {
+unsafe impl<R: Ring> crate::table_cache::ModuleTableCacheProvider for FFT64RefHandle<R> {
     fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
         &self.table_cache
     }

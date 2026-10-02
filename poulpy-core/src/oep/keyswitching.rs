@@ -221,7 +221,7 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
 /// # Safety
 /// Implementations must correctly interpret prepared key material for the backend, respect all
 /// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
-pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::ConversionImpl {
+pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
         module: &Module<Self>,
         res_infos: &R,

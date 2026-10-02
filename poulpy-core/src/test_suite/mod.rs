@@ -14,6 +14,8 @@
 //! parity alone cannot tell you the reference is right.
 
 pub mod copy;
+pub mod decryption;
+pub mod encryption;
 pub mod keys;
 pub mod noise;
 pub mod parity;
@@ -33,9 +35,19 @@ macro_rules! core_backend_test_suite {
             params = $params,
             tests = {
                 glwe_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_sk,
+                glwe_encrypt_sk_with_mask => $crate::test_suite::noise::encryption::test_glwe_encrypt_sk_with_mask,
                 glwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk,
                 glwe_encrypt_zero_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_sk,
                 glwe_encrypt_pk => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk,
+                #[should_panic(expected = "invalid public key: less precise than the output")]
+                glwe_encrypt_pk_imprecise_key => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_imprecise_key,
+                glwe_encrypt_pk_replay => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_replay,
+                #[should_panic(expected = "invalid public key: zero ephemeral distribution")]
+                glwe_encrypt_pk_zero_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_zero_ephemeral,
+                #[should_panic(expected = "invalid public key: zero ephemeral distribution")]
+                glwe_encrypt_pk_nan_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_nan_ephemeral,
+                #[should_panic(expected = "invalid public key: rank must be at least 1")]
+                glwe_public_key_rank_zero => $crate::test_suite::noise::encryption::test_glwe_public_key_rank_zero,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
@@ -88,6 +100,9 @@ macro_rules! core_backend_test_suite {
                 gglwe_automorphism_key_automorphism_assign =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
+                ggsw_encrypt_pk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk,
+                ggsw_encrypt_pk_unnormalized_plaintext =>
+                    $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk_unnormalized_plaintext,
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
                 ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
                 ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,
@@ -111,3 +126,20 @@ macro_rules! core_backend_test_suite {
 }
 
 pub use crate::core_backend_test_suite;
+
+/// Runs `op` on exactly `bytes` of poisoned scratch and asserts it left every
+/// byte zero, as an operation that handles a secret must.
+pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
+    bytes: usize,
+    op: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+) {
+    let mut scratch: poulpy_hal::layouts::ScratchOwned<BE> = poulpy_hal::layouts::ScratchOwned {
+        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    };
+    op(&mut scratch.arena());
+    assert!(
+        BE::to_host_bytes(&scratch.data).iter().all(|&b| b == 0),
+        "the operation left data in its scratch"
+    );
+}

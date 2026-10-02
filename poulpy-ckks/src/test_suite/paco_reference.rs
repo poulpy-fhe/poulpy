@@ -10,7 +10,7 @@
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew},
-    layouts::{HostBytesBackend, Module},
+    layouts::{HostBytesBackend, Module, Standard},
     source::Source,
 };
 
@@ -60,7 +60,7 @@ pub fn test_paco_cleartext_reference<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

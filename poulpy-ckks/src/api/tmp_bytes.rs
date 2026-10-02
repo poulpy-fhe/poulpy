@@ -13,7 +13,8 @@ use poulpy_hal::layouts::Backend;
 pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     /// Returns a scratch size large enough for the common CKKS workflow using
     /// ciphertext ops, plaintext ops, encryption/decryption, multiplication,
-    /// and tensor-key setup, including one-shot polynomial input copies.
+    /// and tensor-key setup, including one-shot polynomial input copies. The
+    /// shift and multiplication terms bound the standard-only multiplication by `i`.
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, tsk_infos: &T, pt_prec: &P) -> usize
     where
         C: CKKSCtBounds,
@@ -21,8 +22,9 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         P: CKKSInfos;
 
     /// Returns a scratch size large enough for [`Self::ckks_all_ops_tmp_bytes`]
-    /// plus automorphism-key setup, rotation, conjugation, and prepared or
-    /// streamed homomorphic DFT evaluation.
+    /// plus automorphism-key setup, rotation, and prepared or streamed
+    /// homomorphic DFT evaluation. Rotation also bounds the standard-only
+    /// conjugation.
     fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, tsk_infos: &T, atk_infos: &A, pt_prec: &P) -> usize
     where
         C: CKKSCtBounds,

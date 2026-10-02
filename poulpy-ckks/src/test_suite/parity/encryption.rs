@@ -103,6 +103,11 @@ macro_rules! ckks_encryption_parity_test_suite {
     (mod $name:ident, backend_ref=$reference:ty, backend_test=$tested:ty, params=$params:expr $(,)?) => {
         mod $name {
             #[test]
+            fn encryption_degree_mismatch_error() {
+                $crate::test_suite::encryption::test_encryption_degree_mismatch_error::<$tested>();
+            }
+
+            #[test]
             fn encryption() {
                 let params = $params;
                 ::poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples(

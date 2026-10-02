@@ -41,7 +41,7 @@ use crate::{
         VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl},
     source::Source,
 };
 
@@ -381,7 +381,7 @@ pub fn vec_znx_mul_xp_minus_one_derived<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     BE::vec_znx_rotate(module, p, res, res_col, a, a_col);
     BE::vec_znx_sub_assign(module, res, res_col, a, a_col);
@@ -392,7 +392,7 @@ pub fn vec_znx_mul_xp_minus_one_derived<BE>(
 #[doc(hidden)]
 pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived<BE>(module: &Module<BE>, size: usize) -> usize
 where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     BE::bytes_of_vec_znx(module.n(), 1, size)
 }
@@ -410,7 +410,7 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
     res_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxMonomialImpl,
 {
     let size: usize = ZnxInfos::size(res);
     let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);

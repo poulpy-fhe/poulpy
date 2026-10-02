@@ -12,8 +12,8 @@ mod sealed {
 
 /// Sealed compile-time ring of a backend.
 pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
-    /// Whether coefficients use the conjugate-invariant basis.
-    const IS_CI: bool;
+    /// Ambient cyclotomic order divided by the coefficient dimension.
+    const CYCLOTOMIC_ORDER_FACTOR: i64;
 }
 
 /// The standard negacyclic ring `Z[X]/(X^N + 1)`.
@@ -28,11 +28,11 @@ impl sealed::Sealed for Standard {}
 impl sealed::Sealed for ConjugateInvariant {}
 
 impl Ring for Standard {
-    const IS_CI: bool = false;
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
 }
 
 impl Ring for ConjugateInvariant {
-    const IS_CI: bool = true;
+    const CYCLOTOMIC_ORDER_FACTOR: i64 = 4;
 }
 
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
@@ -104,9 +104,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 
     /// Ring served by this backend.
     type Ring: Ring;
-
-    /// Ambient cyclotomic order divided by the coefficient dimension.
-    const CYCLOTOMIC_ORDER_FACTOR: i64 = if <Self::Ring as Ring>::IS_CI { 4 } else { 2 };
 
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;
@@ -499,7 +496,7 @@ impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
 impl<BE: Backend> CyclotomicOrder for Module<BE> {
     fn cyclotomic_order(&self) -> i64 {
-        BE::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
+        <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
     }
 }
 

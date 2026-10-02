@@ -90,32 +90,6 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault>::vec_znx_lsh_assign_default(module, base2k, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rotate(
-            module: &Module<Self>,
-            k: i64,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            a_col: usize,
-        ) {
-            <Self as HalVecZnxDefault>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
-        }
-
-        fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault>::vec_znx_rotate_assign_tmp_bytes_default(module)
-        }
-
-        fn vec_znx_rotate_assign(
-            module: &Module<Self>,
-            k: i64,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            a_col: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-        ) {
-            let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault>::vec_znx_rotate_assign_default(module, k, a, a_col, &mut scratch);
-        }
-
         fn vec_znx_automorphism(
             module: &Module<Self>,
             k: i64,
@@ -140,21 +114,6 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         ) {
             let mut scratch = scratch.borrow();
             <Self as HalVecZnxDefault>::vec_znx_automorphism_assign_default(module, k, res, res_col, &mut scratch);
-        }
-
-        fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, _size: usize) -> usize {
-            <Self as HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
-        }
-
-        fn vec_znx_mul_xp_minus_one_assign(
-            module: &Module<Self>,
-            k: i64,
-            res: &mut VecZnxBackendMut<'_, Self>,
-            res_col: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-        ) {
-            let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_default(module, k, res, res_col, &mut scratch);
         }
 
         fn vec_znx_switch_ring(
@@ -186,6 +145,85 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             seed: [u8; 32],
         ) {
             <Self as HalVecZnxDefault>::vec_znx_fill_uniform_default(module, base2k, k, res, res_col, seed)
+        }
+    };
+}
+
+/// HAL `VecZnx` maps between the conjugate-invariant and standard rings.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_ci {
+    () => {
+        fn vec_znx_ci_embed(
+            _module: &::poulpy_hal::layouts::Module<Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            $crate::reference::vec_znx::vec_znx_ci_embed::<Self>(res, res_col, a, a_col)
+        }
+
+        fn vec_znx_ci_trace(
+            _module: &::poulpy_hal::layouts::Module<Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            $crate::reference::vec_znx::vec_znx_ci_trace::<Self>(res, res_col, a, a_col)
+        }
+    };
+}
+
+/// HAL `VecZnx` monomial methods (`X^k`).
+#[macro_export]
+macro_rules! hal_impl_vec_znx_monomial {
+    () => {
+        fn vec_znx_rotate(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            k: i64,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
+        }
+
+        fn vec_znx_rotate_assign_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>) -> usize {
+            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_assign_tmp_bytes_default(module)
+        }
+
+        fn vec_znx_rotate_assign(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            k: i64,
+            a: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            a_col: usize,
+            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_assign_default(module, k, a, a_col, &mut scratch);
+        }
+
+        fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, _size: usize) -> usize {
+            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
+        }
+
+        fn vec_znx_mul_xp_minus_one_assign(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            k: i64,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_default(
+                module,
+                k,
+                res,
+                res_col,
+                &mut scratch,
+            );
         }
     };
 }

@@ -96,6 +96,20 @@ test. Data-management methods (`.set_meta_checked()`,
 `.to_host_owned()`) are the exception: they live on the struct because they
 are inherently tied to the type, not to the backend.
 
+The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
+backend (`Backend::Ring`): a module only accepts operands of its own ring, so
+mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
+ciphertext with real slots still belongs to the standard ring; CI encoding
+marks its plaintexts real, and arithmetic and linear transformations
+propagate that claim.
+Compact plaintexts must have a degree that embeds in the module; scalar
+coefficient banks need the same ring kind but may have arbitrary lengths.
+
+Secret and evaluation keys use the Core key types and preparation methods.
+Prepared keys, diagonals, and baby-step caches carry the backend type, so CI
+and standard prepared objects cannot be mixed. Raw key coefficients have no
+ring tag: callers must prepare them with the backend used to generate them.
+
 ## Crate organization
 
 Public calls follow `api → delegates → oep`. A backend's explicit `*Impl`
@@ -315,6 +329,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
 | `CKKSApproximationOps` | interval mapping and evaluation of a prepared `PolynomialApproximation` |
 | `CKKSPolynomialEvaluationOps` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
+| `CKKSComplexPolynomialEvaluationOps` | complex-coefficient polynomial evaluation (standard ring) |
 | `CKKSLinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
 | `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |
 | `CKKSEvalModOps` | homomorphic modular reduction (`EvalMod`) |
@@ -366,19 +381,38 @@ The core leveled evaluator building blocks are now implemented:
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../docs/ship.md))
 
-Planned evaluator work:
-
-- conjugate invariant ring
-
 Higher-level functionality on top of that foundation:
 
 - scheme switching
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-The intent is to keep the low-level API modular and agnostic enough of the encoding
-(for example to easily support the conjugate invariant ring) while progressively adding
-these higher-level features without changing the backend-agnostic programming model.
+## Conjugate invariant CKKS
+
+A CI backend such as `FFT64CIRef` or `NTT4x30CIRef` supports `N` real slots
+at degree `N`, constructed with `Module::<Backend>::new(N)`.
+`CKKSModuleInfos::ckks_max_slots` reports the capacity, and
+`ckks_galois_element` provides the identifiers for rotation keys. On both
+rings, shifts wrap modulo the slot count and negative shifts rotate backwards.
+
+The slot encoder accepts planar real/imaginary buffers, discards imaginary
+inputs, decodes with zero imaginary parts, and marks encoded plaintexts real.
+Compact plaintexts use one coefficient per real slot, subject to the backend's
+minimum degree. Raw coefficient encoding uses the invariant basis directly.
+
+Leveled arithmetic, real polynomial evaluation, and real linear
+transformations use the module's invariant ring. Host-side polynomial coefficients are
+encoded with a `Module<HostBytesBackend<ConjugateInvariant>>`. Conjugation, multiplication by
+`i`, complex polynomial evaluation, DFT, EvalMod, bootstrapping, PaCo and SHIP
+are standard-only: CI backends do not implement them, so using them is a
+compile error. Real linear transformations reject nonzero imaginary diagonals.
+Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
+producing ring and backend.
+
+Standard modules embed CI ciphertexts of degree `N` into the standard ring of degree
+`2N` and map them back by the relative trace (`CKKSCIRingMapOps`), which CI modules do not implement.
+Each map switches between the CI secret and a standard secret with its key,
+`GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
 
 ## Where to look next
 

@@ -15,21 +15,24 @@
 //! |----------|----------------|
 //! | [`test_conjugate_assign`] | in-place conjugation |
 
-use crate::{CKKSInfos, api::CKKSConjugateOps};
+use crate::{
+    CKKSInfos,
+    api::{CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSImagOps},
+};
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
-    assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_conjugate,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta,
+    assert_decrypt_precision, assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_conjugate,
 };
-use poulpy_core::{GLWEAutomorphism, GLWEShift};
+use poulpy_core::{GLWEAutomorphism, GLWEShift, layouts::LWEInfos};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow};
-use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena, Standard};
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 pub fn test_conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
@@ -55,6 +58,14 @@ where
         &im1,
         &mut scratch.borrow(),
     );
+    // The shared scratch budget also covers the standard-only unary operations.
+    let budget = module.ckks_all_ops_with_atk_tmp_bytes(&ct1, &params.tsk_layout(), &params.atk_layout(), &PT_PREC);
+    assert!(module.ckks_conjugate_tmp_bytes(&ct1, &params.atk_layout()) <= budget);
+    assert!(module.ckks_mul_i_tmp_bytes(ct1.max_size()) <= budget);
+    assert!(module.ckks_div_i_tmp_bytes(ct1.max_size()) <= budget);
+    let budget = module.ckks_all_ops_tmp_bytes(&ct1, &params.tsk_layout(), &PT_PREC);
+    assert!(module.ckks_mul_i_tmp_bytes(ct1.max_size()) <= budget);
+    assert!(module.ckks_div_i_tmp_bytes(ct1.max_size()) <= budget);
     let (want_re, want_im) = want_conjugate(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
@@ -79,7 +90,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
@@ -126,7 +137,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
 
 pub fn test_conjugate_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,

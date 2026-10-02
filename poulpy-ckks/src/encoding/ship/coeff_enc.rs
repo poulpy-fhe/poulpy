@@ -8,7 +8,7 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
-use poulpy_hal::layouts::{Backend, HostDataRef, Module};
+use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
 
 use crate::SlotsKind;
 use crate::{
@@ -68,7 +68,7 @@ where
 /// [`CKKSShipCoeffEncodingImpl`](crate::oep::CKKSShipCoeffEncodingImpl).
 pub fn ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D, BE::ZnxWord>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
     plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
@@ -77,7 +77,7 @@ where
     // Host reference encoder: recomposes the ciphertext limbs through the i64
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
     // backends bypass it via the OEP impl.
-    BE: Backend<ZnxWord = i64>,
+    BE: Backend<ZnxWord = i64, Ring = Standard>,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     D: HostDataRef,
     F: ShipScalar,
