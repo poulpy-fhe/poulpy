@@ -13,6 +13,9 @@ use crate::layouts::GLWETensorKeyShareOwned;
 /// under the collective public key, and any party aggregates the shares and
 /// finalizes the tensor key of the ideal secret, the sum of the parties'
 /// secrets.
+///
+/// A share is a `GGLWEPat` laid out as core's `GLWETensorKey`. Its entries are
+/// public-key encryptions, unseeded, so no mask is common across parties.
 pub trait GLWETensorKeyMHEProtocol<BE: Backend> {
     /// `res_infos` is the tensor key layout, `pk_infos` the public key layout.
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
@@ -24,8 +27,13 @@ pub trait GLWETensorKeyMHEProtocol<BE: Backend> {
     /// zero under `pk` with a component of `sk` added to its masks, so that the
     /// aggregate encrypts the pairwise products of the ideal secret's
     /// components.
-    /// `pk` must be at least as precise as the tensor key, build the collective
-    /// public key at the key's precision.
+    ///
+    /// `pk` must be the finalized collective public key of the session: under
+    /// another key, its holder decrypts the share and reads `sk`'s components.
+    /// It must also be at least as precise as the tensor key; build it at the
+    /// key's precision. `source_xu` (ephemerals) and `source_xe` (errors) must
+    /// be private, independently seeded for each party and purpose; never
+    /// replay their streams.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_tensor_key_share_gen<S, K, E>(
         &self,
@@ -48,7 +56,8 @@ pub trait GLWETensorKeyMHEProtocol<BE: Backend> {
     fn mhe_glwe_tensor_key_share_finalize_tmp_bytes(&self) -> usize;
 
     /// Expands the aggregated shares into the canonical tensor key `res`, which
-    /// must have the share's layout.
+    /// must have the share's layout. The masks are sums of the parties'
+    /// encryptions, so every column is normalized.
     fn mhe_glwe_tensor_key_share_finalize<R>(
         &self,
         res: &mut R,

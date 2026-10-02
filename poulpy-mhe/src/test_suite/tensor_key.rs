@@ -57,8 +57,6 @@ where
                 .max(module.mhe_glwe_tensor_key_share_finalize_tmp_bytes())
                 .max(module.gglwe_noise_tmp_bytes(&layout)),
         );
-        let mut share_scratch: ScratchOwned<BE> =
-            ScratchOwned::alloc(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout));
         let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
         module.glwe_secret_tensor_prepare(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
 
@@ -68,14 +66,10 @@ where
             let dst = if i == 0 { &mut acc } else { &mut share };
             let mut source_xu = Source::new([20 + i as u8; 32]);
             let mut source_xe = Source::new([10 + i as u8; 32]);
-            module.mhe_glwe_tensor_key_share_gen(
-                dst,
-                sk,
-                &pk,
-                &enc_infos,
-                &mut source_xu,
-                &mut source_xe,
-                &mut share_scratch.borrow(),
+            // The secret components and their encryptions would be left in the scratch.
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout),
+                |scratch| module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &enc_infos, &mut source_xu, &mut source_xe, scratch),
             );
             if i > 0 {
                 module.mhe_glwe_tensor_key_share_aggregate(&mut acc, &share);

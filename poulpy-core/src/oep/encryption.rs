@@ -102,6 +102,20 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self>,
+        P: GLWEToBackendRef<Self>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<Self>;
+
     fn glwe_encrypt_pk_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -808,6 +822,22 @@ macro_rules! impl_encryption_reference_full {
         E: $crate::api::EncryptionInfos,
         S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkReference<$be>>::glwe_encrypt_zero_sk_reference::<R, E, S>(module, res, sk, enc_infos, source_xe, source_xa, scratch)
+        }
+
+    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+        module: &::poulpy_hal::layouts::Module<$be>,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut ::poulpy_hal::source::Source,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+    ) where
+        R: $crate::layouts::GLWEToBackendMut<$be>,
+        P: $crate::layouts::GLWEToBackendRef<$be>,
+        E: $crate::api::EncryptionInfos,
+        S: $crate::layouts::GLWESecretPreparedToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptSkReference<$be>>::glwe_encrypt_sk_with_mask_reference::<R, P, S, E>(module, res, pt, sk, enc_infos, source_xe, scratch)
         }
 
     fn glwe_encrypt_pk_tmp_bytes<R, K>(module: &::poulpy_hal::layouts::Module<$be>, res_infos: &R, pk_infos: &K) -> usize

@@ -102,6 +102,16 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
         self.end = rem.end;
         res
     }
+    /// Zeroes the first `len` bytes this arena can carve out, at most
+    /// [`available`](Self::available): an operation that handled a secret
+    /// calls it with its own scratch size before returning, so that no
+    /// secret-derived temporary outlives it.
+    pub fn wipe(&mut self, len: usize) {
+        let len: usize = len.min(self.available());
+        let (mut region, _) = self.borrow().take_region(len);
+        B::copy_host_to_view(&mut region, &[]);
+    }
+
     /// Returns the number of aligned bytes that can still be carved out.
     pub fn available(&self) -> usize {
         self.end.saturating_sub(align_up::<B>(self.start))

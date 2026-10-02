@@ -122,5 +122,7 @@ where
                 );
             }
         }
+        drop(tmp_pt);
+        scratch.wipe(self.ggsw_encrypt_sk_tmp_bytes_reference(res));
     }
 }

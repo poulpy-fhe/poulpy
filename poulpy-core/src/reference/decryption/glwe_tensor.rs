@@ -69,30 +69,33 @@ pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data,
         scratch.available(),
         glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
     );
-
-    let rank: usize = sk.rank().as_usize();
-
-    let (mut sk_grouped, mut scratch_1) = scratch
-        .borrow()
-        .take_glwe_secret_prepared_scratch(module, (crate::layouts::pairs(rank) + rank).into());
-
+    let tmp_bytes: usize = glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res);
     {
-        let binding = &mut sk_grouped;
-        let mut grouped_backend = binding.to_backend_mut();
-        let sk_backend = sk.to_backend_ref();
-        let sk_tensor_backend = sk_tensor.to_backend_ref();
+        let rank: usize = sk.rank().as_usize();
 
-        for i in 0..rank {
-            module.svp_ppol_copy(&mut grouped_backend.data, i, &sk_backend.data, i);
+        let (mut sk_grouped, mut scratch_1) = scratch
+            .borrow()
+            .take_glwe_secret_prepared_scratch(module, (crate::layouts::pairs(rank) + rank).into());
+
+        {
+            let binding = &mut sk_grouped;
+            let mut grouped_backend = binding.to_backend_mut();
+            let sk_backend = sk.to_backend_ref();
+            let sk_tensor_backend = sk_tensor.to_backend_ref();
+
+            for i in 0..rank {
+                module.svp_ppol_copy(&mut grouped_backend.data, i, &sk_backend.data, i);
+            }
+
+            for i in 0..(grouped_backend.rank().as_usize() - rank) {
+                module.svp_ppol_copy(&mut grouped_backend.data, i + rank, &sk_tensor_backend.data, i);
+            }
         }
 
-        for i in 0..(grouped_backend.rank().as_usize() - rank) {
-            module.svp_ppol_copy(&mut grouped_backend.data, i + rank, &sk_tensor_backend.data, i);
-        }
+        let res_backend = res.to_backend_ref();
+        let mut pt_backend = pt.to_backend_mut();
+        let sk_grouped_ref = sk_grouped.to_backend_ref();
+        glwe_decrypt_backend_inner(module, &res_backend, &mut pt_backend, &sk_grouped_ref, &mut scratch_1);
     }
-
-    let res_backend = res.to_backend_ref();
-    let mut pt_backend = pt.to_backend_mut();
-    let sk_grouped_ref = sk_grouped.to_backend_ref();
-    glwe_decrypt_backend_inner(module, &res_backend, &mut pt_backend, &sk_grouped_ref, &mut scratch_1);
+    scratch.wipe(tmp_bytes);
 }

@@ -96,27 +96,31 @@ where
             "invalid share: public key needs a samplable distribution"
         );
         let (dnum, dsize): (usize, usize) = (res.dnum().into(), res.dsize().into());
-        let sk = sk.to_backend_ref();
-        let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&*res);
-        let mut res_be = GGLWEToBackendMut::<BE>::to_backend_mut(&mut res.key);
-        for row in 0..dnum {
-            for a in 0..rank {
-                for b in a..rank {
-                    self.vec_znx_zero(pt.data_mut(), 0);
-                    self.vec_znx_add_scalar_assign(pt.data_mut(), 0, (dsize - 1) + row * dsize, sk.data(), b);
-                    // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
-                    self.glwe_encrypt_pk_at_col(
-                        &mut res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2),
-                        &pt,
-                        1 + a,
-                        pk,
-                        enc_infos,
-                        source_xu,
-                        source_xe,
-                        &mut scratch_1.borrow(),
-                    );
+        let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
+        {
+            let sk = sk.to_backend_ref();
+            let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&*res);
+            let mut res_be = GGLWEToBackendMut::<BE>::to_backend_mut(&mut res.key);
+            for row in 0..dnum {
+                for a in 0..rank {
+                    for b in a..rank {
+                        self.vec_znx_zero(pt.data_mut(), 0);
+                        self.vec_znx_add_scalar_assign(pt.data_mut(), 0, (dsize - 1) + row * dsize, sk.data(), b);
+                        // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
+                        self.glwe_encrypt_pk_at_col(
+                            &mut res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2),
+                            &pt,
+                            1 + a,
+                            pk,
+                            enc_infos,
+                            source_xu,
+                            source_xe,
+                            &mut scratch_1.borrow(),
+                        );
+                    }
                 }
             }
         }
+        scratch.wipe(tmp_bytes);
     }
 }

@@ -1,14 +1,17 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,
+    Distribution, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWELayout, GLWELayout, GLWEPublicKey, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
+        GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
+        GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
-    layouts::{Backend, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef, ScratchOwned},
+    layouts::{
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef, ScratchOwned,
+    },
     source::Source,
 };
 
@@ -25,6 +28,9 @@ pub(crate) const PARTIES: usize = 3;
 /// Galois element of the automorphism key tests.
 pub(crate) const P: i64 = -5;
 
+/// Bits of the integer plaintexts of the GGSW tests.
+pub(crate) const LOG_MESSAGE: usize = 10;
+
 pub(crate) type Secret<BE> = (GLWESecret<AlignedBuf, i64>, GLWESecretPrepared<AlignedBuf, BE>);
 
 pub(crate) fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
@@ -40,14 +46,35 @@ pub(crate) fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
     }
 }
 
+/// The GGSW at the rows, digits and precision of [`gglwe_layout`].
+pub(crate) fn ggsw_layout<BE: Backend>(module: &Module<BE>) -> GGSWLayout {
+    let gglwe = gglwe_layout(module);
+    GGSWLayout {
+        n: gglwe.n,
+        base2k: gglwe.base2k,
+        dnum: gglwe.dnum,
+        k_aux: gglwe.k_aux,
+        rank: RANK,
+        dsize: gglwe.dsize,
+    }
+}
+
 pub(crate) fn secret_from_seed<BE>(module: &Module<BE>, seed: [u8; 32]) -> Secret<BE>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
 {
-    let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
+    secret_from_seed_at(module, RANK, seed)
+}
+
+pub(crate) fn secret_from_seed_at<BE>(module: &Module<BE>, rank: Rank, seed: [u8; 32]) -> Secret<BE>
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+{
+    let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(rank);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new(seed));
-    let mut sk_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+    let mut sk_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(rank);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
     (sk, sk_prepared)
 }
@@ -76,9 +103,10 @@ where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: VecZnxAddScalarAssign<BE>,
 {
-    let mut sum: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
+    let rank = parties[0].0.rank();
+    let mut sum: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(rank);
     for (sk, _) in parties {
-        for col in 0..RANK.as_usize() {
+        for col in 0..rank.as_usize() {
             module.vec_znx_add_scalar_assign(
                 &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(sum.data_mut()),
                 col,
@@ -100,7 +128,7 @@ where
 {
     let mut sum: GLWESecret<AlignedBuf, i64> = secret_sum(module, parties);
     *sum.dist_mut() = Distribution::TernaryProb(0.5);
-    let mut sum_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+    let mut sum_prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(sum.rank());
     module.glwe_secret_prepare(&mut sum_prepared, &sum);
     sum_prepared
 }
@@ -143,6 +171,88 @@ where
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
     pk_prepared
+}
+
+pub(crate) fn glwe_layout_at<BE: Backend>(module: &Module<BE>, k: TorusPrecision) -> GLWELayout {
+    GLWELayout {
+        n: module.n().into(),
+        base2k: BASE2K,
+        k,
+        rank: RANK,
+    }
+}
+
+/// Signed integers of `log` bits, one per coefficient.
+pub(crate) fn bounded_integers(n: usize, log: usize, seed: [u8; 32]) -> Vec<i64> {
+    let mut source = Source::new(seed);
+    (0..n).map(|_| source.next_i64() >> (64 - log)).collect()
+}
+
+/// `data` as integers in the top-`k` window of a plaintext at `layout`.
+pub(crate) fn integer_plaintext<BE>(module: &Module<BE>, layout: &GLWELayout, data: &[i64]) -> GLWEPlaintext<AlignedBuf, i64>
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+{
+    let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(layout);
+    pt.encode_vec_i64(data, layout.k);
+    pt
+}
+
+/// The integers in the top-`k` window of `pt`.
+pub(crate) fn plaintext_integers(pt: &GLWEPlaintext<AlignedBuf, i64>) -> Vec<i64> {
+    let mut data = vec![0i64; pt.n().as_usize()];
+    pt.decode_vec_i64(&mut data, pt.k());
+    data
+}
+
+/// The encryption under `sk` of `data` as integers at `layout`.
+pub(crate) fn encrypt_integers<BE>(
+    module: &Module<BE>,
+    layout: &GLWELayout,
+    data: &[i64],
+    sk: &GLWESecretPrepared<AlignedBuf, BE>,
+    scratch: &mut ScratchOwned<BE>,
+) -> GLWE<AlignedBuf, i64>
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWEEncryptSk<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+{
+    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(layout);
+    module.glwe_encrypt_sk(
+        &mut ct,
+        &integer_plaintext(module, layout, data),
+        sk,
+        &enc_infos,
+        &mut Source::new([31u8; 32]),
+        &mut Source::new([32u8; 32]),
+        &mut scratch.borrow(),
+    );
+    ct
+}
+
+/// `ct` decrypts under `sk` to `want`, as integers in its top-`k` window,
+/// within `bound`.
+pub(crate) fn assert_decrypts_to<BE>(
+    module: &Module<BE>,
+    ct: &GLWE<AlignedBuf, i64>,
+    want: &[i64],
+    sk: &GLWESecretPrepared<AlignedBuf, BE>,
+    bound: i64,
+    scratch: &mut ScratchOwned<BE>,
+) where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWEDecrypt<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+{
+    let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(ct);
+    module.glwe_decrypt(ct, &mut pt, sk, &mut scratch.borrow());
+    for (got, want) in plaintext_integers(&pt).iter().zip(want) {
+        assert!((got - want).abs() <= bound, "decrypted {got}, want {want} within {bound}");
+    }
 }
 
 /// Assert a protocol boundary rejects a layout with the exact static message.

@@ -8,7 +8,7 @@ use poulpy_hal::{
     layouts::{
         Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -98,6 +98,20 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
+
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWEEncryptSkReference<BE> for Module<BE>
@@ -173,6 +187,7 @@ where
             source_xe,
             scratch,
         );
+        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 
     fn glwe_encrypt_zero_sk_reference<R, E, S>(
@@ -207,6 +222,49 @@ where
             self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
         }
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
+        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+    }
+
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>,
+    {
+        res.set_canonical(true);
+        let res = &mut res.to_backend_mut();
+        let pt_backend = pt.to_backend_ref();
+        let sk_ref = sk.to_backend_ref();
+
+        assert_eq!(res.rank(), sk_ref.rank());
+        assert_eq!(res.n(), self.n() as u32, "GLWE ciphertext degree must match the module");
+        assert_eq!(sk_ref.n(), self.n() as u32, "GLWE secret key degree must match the module");
+        assert_eq!(pt_backend.n(), self.n() as u32, "GLWE plaintext degree must match the module");
+        assert!(
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+            scratch.available(),
+            self.glwe_encrypt_sk_tmp_bytes_reference(res)
+        );
+
+        self.glwe_encrypt_sk_internal(
+            res.base2k().into(),
+            &mut res.data,
+            Some((pt_backend, 0)),
+            sk,
+            enc_infos,
+            source_xe,
+            scratch,
+        );
+        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 }
 
@@ -289,6 +347,7 @@ where
             source_xe,
             scratch,
         );
+        scratch.wipe(self.glwe_encrypt_pk_tmp_bytes_reference(res, pk));
     }
 }
 
@@ -428,18 +487,6 @@ where
                 );
             }
         }
-
-        // The ephemerals and the products would decrypt the ciphertext from the caller's scratch.
-        for l in 0..rank {
-            self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u), l);
-            self.vec_znx_dft_zero(&mut u_dft.to_backend_mut(), l);
-        }
-        for i in 0..rank + 1 {
-            self.vec_znx_dft_zero(&mut res_dft.to_backend_mut(), i);
-        }
-        let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size_pk, 1, 1, rank, rank + 1, size_pk);
-        let (mut vmp_tmp, _) = scratch_1.take_vec_znx_scratch(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)));
-        self.vec_znx_zero(&mut vmp_tmp, 0);
     }
 }
 

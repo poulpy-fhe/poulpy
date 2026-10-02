@@ -170,6 +170,22 @@ impl_encryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         BE::glwe_encrypt_zero_sk(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+    },
+    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        sk: &S,
+        enc_infos: &E,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<BE>,
+    ) where
+        R: GLWEToBackendMut<BE>,
+        P: GLWEToBackendRef<BE>,
+        E: EncryptionInfos,
+        S: GLWESecretPreparedToBackendRef<BE>,
+    {
+        BE::glwe_encrypt_sk_with_mask(self, res, pt, sk, enc_infos, source_xe, scratch)
     }
 );
 

@@ -49,8 +49,9 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     /// Expands the aggregated shares into the canonical key `res` and tags it
     /// with the shares' distribution, which `glwe_encrypt_pk` draws its
     /// ephemerals from, as core's key takes its secret's. The entries need
-    /// distinct seeds: entries sharing a mask would give ciphertexts whose
-    /// masks are rank 1 in the ephemerals.
+    /// distinct seeds, and finalization rejects shares whose entries share
+    /// one: entries sharing a mask would give ciphertexts whose masks are rank
+    /// 1 in the ephemerals.
     fn mhe_glwe_public_key_share_finalize<R>(
         &self,
         res: &mut R,
