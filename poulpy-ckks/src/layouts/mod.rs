@@ -134,8 +134,8 @@ pub(crate) mod validation;
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
-    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
-    SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
+    EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,

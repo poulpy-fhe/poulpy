@@ -8,7 +8,7 @@
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 
-use poulpy_hal::layouts::CnvPVecLOwned;
+use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut};
 use std::collections::BTreeMap;
 
 use poulpy_hal::layouts::{Backend, CnvPVecR, Data};
@@ -168,16 +168,17 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
     }
 
-    /// Borrows an allocated operand for preparation. Its shape must be preserved.
-    pub fn baby_step_mut(&mut self, rot: i64) -> &mut CnvPVecLOwned<BE> {
+    /// Borrows an allocated operand for preparation, as a view that cannot change its shape.
+    pub fn baby_step_mut(&mut self, rot: i64) -> CnvPVecLBackendMut<'_, BE> {
         self.values
             .get_mut(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
+            .to_backend_mut()
     }
 
-    /// Borrows all allocated operands in rotation order, without changing the cache keys.
-    /// Preparation must preserve each operand's shape.
-    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, &mut CnvPVecLOwned<BE>)> + '_ {
-        self.values.iter_mut().map(|(&rot, operand)| (rot, operand))
+    /// Borrows all allocated operands in rotation order, as views that can change
+    /// neither the cache keys nor the operand shapes.
+    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE>)> + '_ {
+        self.values.iter_mut().map(|(&rot, operand)| (rot, operand.to_backend_mut()))
     }
 }

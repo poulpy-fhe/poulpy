@@ -113,6 +113,43 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
     assert!(DFTMatrix::<FFT64Ref, Encode, Repack, _>::try_from_factor_operands(&module, dense, factors()).is_err());
 }
 
+#[test]
+fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
+    use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTType};
+    use poulpy_core::layouts::{LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep};
+    let module = Module::<FFT64Ref>::new(64);
+    let meta = CoeffsMeta::from_delta_budget(12, 2);
+    let dft_plan = || DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap();
+    // A diagonal of the plan's precision, stored across `storage_k` bits.
+    let diagonal = |baby: i64, storage_k: usize, real: bool| {
+        let mut pt = module.ckks_pt_vec_alloc(16usize.into(), storage_k.into());
+        pt.set_meta(meta.meta);
+        poulpy_core::layouts::SetK::set_k(&mut pt, meta.k);
+        if real {
+            pt.set_slots(poulpy_ckks::SlotsKind::Real);
+        }
+        LinearTransformationDiagonal { baby, plaintext: pt }
+    };
+    let build = |diagonals| {
+        DFTMatrix::<FFT64Ref, Encode, Standard, _>::try_from_factor_operands(
+            &module,
+            dft_plan(),
+            vec![LinearTransformation {
+                baby_steps: vec![0, 1],
+                giant_steps: vec![LinearTransformationGiantStep { rot: 0, diagonals }],
+            }],
+        )
+    };
+    let k = meta.k.as_usize();
+    assert!(build(vec![diagonal(0, k, false), diagonal(1, k, false)]).is_ok());
+    let rejection = |diagonals| build(diagonals).err().unwrap().to_string();
+    // A repeated (giant, baby) pair would overwrite a prepared diagonal.
+    assert!(rejection(vec![diagonal(0, k, false), diagonal(0, k, false)]).contains("repeats the diagonal"));
+    // Storage wider than the precision selects would be truncated by preparation.
+    assert!(rejection(vec![diagonal(0, 32, false), diagonal(1, 32, false)]).contains("is encoded across 32 bits"));
+    assert!(rejection(vec![diagonal(0, k, false), diagonal(1, k, true)]).contains("slot kind"));
+}
+
 use super::OverrideBackend;
 use poulpy_ckks::api::LtDiagonalMeta;
 use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};

@@ -43,7 +43,7 @@ const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 fn downstream_baby_step_preparation_preserves_cache_shape() {
     use poulpy_core::layouts::LinearTransformationBabySteps;
     use poulpy_hal::api::Convolution;
-    use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView};
+    use poulpy_hal::layouts::DataView;
     let module = Module::<FFT64Ref>::new(256);
     let input = sample_glwe();
     let mut normalized = module.glwe_alloc_from_infos(&input);
@@ -53,13 +53,13 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
     let mut expected = LinearTransformationBabySteps::alloc(&module, &[0], &normalized);
     let mut scratch = ScratchOwned::<FFT64Ref>::alloc(module.cnv_prepare_left_tmp_bytes(cache.size(), normalized.size()));
     module.cnv_prepare_left(
-        &mut expected.baby_step_mut(0).to_backend_mut(),
+        &mut expected.baby_step_mut(0),
         GLWEToBackendRef::<FFT64Ref>::to_backend_ref(&normalized).data(),
         &mut scratch.borrow(),
     );
-    for (_, operand) in cache.baby_steps_mut() {
+    for (_, mut operand) in cache.baby_steps_mut() {
         module.cnv_prepare_left(
-            &mut operand.to_backend_mut(),
+            &mut operand,
             GLWEToBackendRef::<FFT64Ref>::to_backend_ref(&normalized).data(),
             &mut scratch.borrow(),
         );

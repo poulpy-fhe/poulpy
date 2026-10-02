@@ -64,7 +64,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - Compressed GGSW encryption no longer requires the unused host-only noise-analysis contract.
 
-- Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation while retaining their rotation keys.
+- Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation, as backend views that keep the rotation keys and operand shapes fixed.
 
 - GLWE decryption rejects ciphertext, plaintext and prepared secret key degrees that differ from the module before backend dispatch, including in release builds.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
@@ -115,11 +115,13 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, and DFT parity uses exact advertised scratch.
+- **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
+
+- `BootstrappingContext::compile_unprepared` and `BootstrappingContextUnprepared::prepare` stage compilation, so preparation can be sized with the selected budget through `prepare_tmp_bytes`. `compile` composes the two stages.
 
 - `oep::defaults` exposes callable DFT format compositions for conditional overrides, retaining selected constituent dispatch.
 
-- DFT matrices expose read-only factor operands and checked construction/replacement, preserving direction, format and diagonal layout contracts.
+- DFT matrices expose read-only factor operands and checked construction/replacement, preserving direction, format and diagonal layout contracts. Checked construction rejects repeated diagonals, diagonals stored wider than their precision, and mixed encoded widths or slot kinds.
 
 - `ckks_encrypt_sk` and `ckks_decrypt` return `EncryptionDegreeMismatch` when the ciphertext or prepared secret key degree differs from the module degree, before backend dispatch or output mutation.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; its reference is the trait `CKKSBootstrappingReference`, implemented for `Module`, in place of the crate-private `BootstrappingReference` driver. `test_bootstrapping_parity` compares it across backends.

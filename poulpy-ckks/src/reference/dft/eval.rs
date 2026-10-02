@@ -308,7 +308,7 @@ where
 }
 
 /// Workspace for the reference DFT chain and all format compositions.
-/// Uses the streamed-RHS bound for both prepared and unprepared factors.
+/// Covers both the prepared and the streamed evaluation of every factor.
 pub fn ckks_dft_tmp_bytes<BE, Dir, Fmt, P, Dst, Src, K>(
     module: &Module<BE>,
     dst: &Dst,
@@ -364,10 +364,13 @@ where
             .flat_map(|giant| &giant.diagonals)
             .map(|diagonal| &diagonal.plaintext)
         {
+            // Prepared and streamed evaluation are selected independently, so
+            // neither query is assumed to cover the other.
             let factor_work = module
                 .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
+                .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, key))
                 .max(module.ckks_copy_tmp_bytes(ct, ct));
-            bytes = bytes.max(module.glwe_bytes_of_from_infos(ct) + factor_work);
+            bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
         }
     }
     bytes

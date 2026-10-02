@@ -228,6 +228,7 @@ let plan = BootstrappingPlan::new(
 
 `BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices and the encoded, uploaded EvalMod.
 It is built once and reused across bootstraps.
+To size the preparation scratch exactly, compile in two stages: `BootstrappingContext::compile_unprepared` generates the matrices, `prepare_tmp_bytes` reports the backend's preparation budget for them, and `prepare` returns the context.
 
 ### Default presets
 

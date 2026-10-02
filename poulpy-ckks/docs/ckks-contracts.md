@@ -75,6 +75,8 @@ workspace policy does not pin execution to the reference budget.
 DFT preparation uses `ckks_prepare_dft_matrix_tmp_bytes`; raw evaluation and
 format wrappers use `ckks_dft_tmp_bytes`. Bootstrap sizing includes the selected
 DFT queries. Their reference budgets include selected Core and CKKS operations.
+Bootstrap compilation is staged for the same reason: the preparation budget depends on the generated matrices, so `BootstrappingContext::compile_unprepared` returns them unprepared, `prepare_tmp_bytes` reports the selected budget, and `prepare` produces the context.
+`compile` runs both stages on one arena, which must then also cover that budget.
 Polynomial evaluation retains the shared `CKKSAllOpsTmpBytes` bounds. PaCo and
 SHIP coefficient-encoding hooks report their own workspace requirements.
 
