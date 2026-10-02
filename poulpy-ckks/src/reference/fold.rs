@@ -518,7 +518,8 @@ fn sparse_split_galois_elements(n: usize, log_g: usize) -> impl Iterator<Item = 
 /// normalized trace of `X^(−u)·part` onto `Z[X^(2^log_g)]`, which is exact on the
 /// torus, unlike a halving at each level. The levels multiply the rounding of the
 /// shift and of every automorphism by up to `2^log_g`, so the tree runs `log_g` bits
-/// wider than `part` and each leaf is normalized back once.
+/// wider than `part` and each leaf is normalized back once. Every node is normalized
+/// at that width after each level, exactly, so digits do not accumulate across levels.
 fn split_sparse<BE, H>(
     module: &Module<BE>,
     part: &CKKSCiphertextOwned<BE>,
@@ -559,10 +560,12 @@ where
         for node in &mut nodes {
             module.glwe_automorphism(&mut image, node, &key, scratch);
             module.glwe_sub(&mut difference, node, &image);
+            module.glwe_normalize_assign(&mut difference, scratch);
             let mut odd = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
             module.glwe_rotate(-(1 << level), &mut odd, &difference);
             odds.push(odd);
             module.glwe_add_assign(node, &image);
+            module.glwe_normalize_assign(node, scratch);
         }
         nodes.extend(odds);
     }
