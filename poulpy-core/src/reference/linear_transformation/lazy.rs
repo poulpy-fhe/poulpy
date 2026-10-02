@@ -114,10 +114,10 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     let mask_small_size = prod_dft.size().min(output_size);
 
     let scratch = scratch.borrow();
-    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), rank, mask_small_size);
+    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(res_dft.n(), rank, mask_small_size);
     {
-        let (mut mask_big, scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(module.n(), 1, prod_dft.size());
-        let (mut col_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(module.n(), 1, mask_small_size);
+        let (mut mask_big, scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(res_dft.n(), 1, prod_dft.size());
+        let (mut col_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(res_dft.n(), 1, mask_small_size);
         for c in 0..rank {
             module.vec_znx_idft_apply(&mut mask_big, 0, prod_dft, c + 1, &mut scratch_3.borrow());
             let mask_big_ref = mask_big.to_backend_ref();
@@ -136,14 +136,14 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
         }
     }
 
-    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, output_size);
+    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(res_dft.n(), cols, output_size);
     module.gglwe_product_dft_reference(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.
     module.vec_znx_dft_add_assign(&mut ks_dft, 0, prod_dft, 0);
 
-    let plan = module.vec_znx_dft_automorphism_plan(module.n(), p);
+    let plan = module.vec_znx_dft_automorphism_plan(ks_dft.n(), p);
     let ks_dft_ref = ks_dft.to_backend_ref();
     for col in 0..cols {
         if accumulate {

@@ -6,6 +6,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
     encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
@@ -60,8 +61,8 @@ where
     where
         A: GLWEInfos,
     {
-        assert_eq!(self.n() as u32, infos.n());
-        let full_ct = self.bytes_of_vec_znx(self.n(), infos.rank().as_usize() + 1, infos.size());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
+        let full_ct = self.bytes_of_vec_znx(n, infos.rank().as_usize() + 1, infos.size());
         full_ct + self.glwe_encrypt_sk_tmp_bytes(infos)
     }
 

@@ -86,7 +86,7 @@ where
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        self.lwe_switching_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.k_aux())
+        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
     }
 
     fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
@@ -100,7 +100,7 @@ where
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        self.lwe_switching_key_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.k_aux())
+        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
     }
 
     fn lwe_switching_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

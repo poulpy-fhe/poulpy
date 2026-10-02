@@ -1,8 +1,9 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, SvpPPolBytesOf, VmpPMatBytesOf},
+    api::{ModuleN, ScratchArenaTakeBasic, VmpPMatBytesOf},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     dist::Distribution,
     layouts::{
@@ -126,12 +127,11 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
     }
 
     /// Allocates a [`GLWESecretPrepared`] (DFT-domain secret key) from scratch space.
-    fn take_glwe_secret_prepared_scratch<M>(self, module: &M, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B>, Self)
+    fn take_glwe_secret_prepared_scratch(self, n: Degree, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B>, Self)
     where
         B: 'a,
-        M: ModuleN + SvpPPolBytesOf,
     {
-        let (data, scratch) = self.take_svp_ppol_scratch(module.n(), rank.into(), PrepareHint::Reuse);
+        let (data, scratch) = self.take_svp_ppol_scratch(n.into(), rank.into(), PrepareHint::Reuse);
         (
             GLWESecretPreparedViewMut::from_inner(GLWESecretPrepared {
                 data: data.into_inner(),
@@ -203,9 +203,9 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         A: GGLWEInfos,
         M: ModuleN + VmpPMatBytesOf,
     {
-        assert_eq!(module.n() as u32, infos.n());
+        let n: usize = operand_degree(module.n(), &[infos.n()]);
         let (data, scratch) = self.take_vmp_pmat_scratch(
-            module.n(),
+            n,
             infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank_out() + 1).into(),
@@ -256,9 +256,9 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         A: GGSWInfos,
         M: ModuleN + VmpPMatBytesOf,
     {
-        assert_eq!(module.n() as u32, infos.n());
+        let n: usize = operand_degree(module.n(), &[infos.n()]);
         let (data, scratch) = self.take_vmp_pmat_scratch(
-            module.n(),
+            n,
             infos.dnum().into(),
             (infos.rank() + 1).into(),
             (infos.rank() + 1).into(),

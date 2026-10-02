@@ -6,12 +6,13 @@ use poulpy_hal::{
     source::Source,
 };
 
+use super::decryption::panic_message;
 use crate::{
     EncryptionLayout, GLWEEncryptSk,
     layouts::{GLWELayout, GLWESecretPreparedFactory, ModuleCoreAlloc},
 };
 
-/// Secret-key encryption rejects operand degrees that differ from the module in all builds.
+/// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_encrypt_degree_mismatch<BE: Backend>()
 where
     Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
@@ -32,11 +33,15 @@ where
     for other_n in [n / 2, n * 2] {
         let other = Module::<BE>::new(other_n as u64);
         for (ct_module, pt_module, sk_module, message) in [
-            (&other, &module, &module, "GLWE ciphertext degree must match the module"),
-            (&module, &other, &module, "GLWE plaintext degree must match the module"),
-            (&module, &module, &other, "GLWE secret key degree must match the module"),
-            (&other, &other, &other, "GLWE ciphertext degree must match the module"),
-        ] {
+            (&other, &module, &module, "operand degrees differ"),
+            (&module, &other, &module, "operand degrees differ"),
+            (&module, &module, &other, "operand degrees differ"),
+            (&other, &other, &other, "operand degree exceeds the module degree"),
+        ]
+        .into_iter()
+        // Operands sharing a smaller degree are valid.
+        .take(if other_n > n { 4 } else { 3 })
+        {
             let mut ct = ct_module.glwe_alloc(8usize.into(), 8usize.into(), 1usize.into());
             let pt = pt_module.glwe_plaintext_alloc(8usize.into(), 8usize.into());
             let sk = sk_module.glwe_secret_prepared_alloc(1usize.into());
@@ -44,14 +49,14 @@ where
                 module.glwe_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena());
             }))
             .expect_err("encryption accepted mismatched degrees");
-            assert!(err.downcast_ref::<String>().is_some_and(|s| s.contains(message)));
+            assert!(panic_message(&*err).contains(message));
 
             if ct_module.n() != n || sk_module.n() != n {
                 let err = catch_unwind(AssertUnwindSafe(|| {
                     module.glwe_encrypt_zero_sk(&mut ct, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena());
                 }))
                 .expect_err("zero encryption accepted mismatched degrees");
-                assert!(err.downcast_ref::<String>().is_some_and(|s| s.contains(message)));
+                assert!(panic_message(&*err).contains(message));
             }
         }
     }

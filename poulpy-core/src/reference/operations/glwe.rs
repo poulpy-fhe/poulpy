@@ -14,6 +14,7 @@ use poulpy_hal::{
     },
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     api::{GLWEBytesOf, GLWENormalize},
@@ -92,13 +93,12 @@ where
         A: GLWEInfos,
         B: GLWEInfos,
     {
-        assert_eq!(self.n() as u32, res.n());
-        assert_eq!(self.n() as u32, a.n());
+        let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
 
         let b_size = b.size();
         // Offset-0 maximum of the runtime BIG span `a.size() + b_size - cnv_offset_hi`.
         let res_dft_size: usize = a.size() + b_size;
-        let lvl_0: usize = self.bytes_of_vec_znx_big(self.n(), 1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
+        let lvl_0: usize = self.bytes_of_vec_znx_big(n, 1, res_dft_size) + BE::bytes_of_vec_znx(n, 1, res.size());
         let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(0, res_dft_size, a.size(), b_size);
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
@@ -146,7 +146,7 @@ where
 
         let res_dft_size = a.size() + b_size - cnv_offset_hi;
 
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_dft_size);
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -209,7 +209,7 @@ where
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
 
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self.n(), 1, res.size());
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res.size());
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -265,11 +265,10 @@ where
         A: GLWEInfos,
         B: GLWEInfos,
     {
-        assert_eq!(self.n() as u32, res.n());
-        assert_eq!(self.n() as u32, a.n());
+        let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
         let b_n: usize = b.n().as_usize();
         assert!(
-            b_n == self.n() || (b_n.is_power_of_two() && b_n >= BE::MIN_DEGREE && self.n().is_multiple_of(b_n)),
+            b_n == n || (b_n.is_power_of_two() && b_n >= BE::MIN_DEGREE && n.is_multiple_of(b_n)),
             "glwe_mul_plain: b.n() does not embed into the module degree"
         );
 
@@ -281,8 +280,8 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::OneShot)
-            + self.bytes_of_cnv_pvec_right(self.n(), 1, b_size, PrepareHint::OneShot);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::OneShot)
+            + self.bytes_of_cnv_pvec_right(n, 1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -290,9 +289,8 @@ where
         let res_dft_size = a_size + b_size;
         let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(0, res_dft_size, a_size, b_size);
 
-        let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(self.n(), 1, res_dft_size);
-        let lvl_2_res_tmp: usize =
-            self.bytes_of_vec_znx_big(self.n(), 1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
+        let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(n, 1, res_dft_size);
+        let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(n, 1, res_dft_size) + BE::bytes_of_vec_znx(n, 1, res.size());
         let lvl_2_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_2: usize = lvl_2_res_tmp + lvl_2_res_dft + lvl_2_cnv_apply.max(lvl_2_norm);
 
@@ -336,7 +334,7 @@ where
         let res_k = res.k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a.size(), PrepareHint::OneShot);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a.size(), PrepareHint::OneShot);
         // A compact right operand is prepared at its own degree; the apply
         // reads it through the sparse right slot of the convolution.
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(b.n().as_usize(), 1, b.size(), PrepareHint::OneShot);
@@ -350,7 +348,7 @@ where
 
         let res_dft_size = a.size() + b.size() - cnv_offset_hi;
         for i in 0..cols {
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), 1, res_dft_size);
+            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(res.n().as_usize(), 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 self.cnv_apply_dft(
@@ -364,7 +362,7 @@ where
                     &mut scratch_3,
                 );
             }
-            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
+            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
@@ -415,7 +413,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, res.size(), PrepareHint::OneShot);
+        let (mut res_prep, scratch) =
+            scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, res.size(), PrepareHint::OneShot);
         // A compact right operand is prepared at its own degree; the apply
         // reads it through the sparse right slot of the convolution.
         let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(a.n().as_usize(), 1, a.size(), PrepareHint::OneShot);
@@ -432,7 +431,7 @@ where
 
         let res_dft_size = a.size() + res.size() - cnv_offset_hi;
         for i in 0..cols {
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), 1, res_dft_size);
+            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(res.n().as_usize(), 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 self.cnv_apply_dft(
@@ -446,7 +445,7 @@ where
                     &mut scratch_3,
                 );
             }
-            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
+            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
@@ -561,33 +560,32 @@ where
         R: GLWEInfos,
         A: GLWEInfos,
     {
-        assert_eq!(self.n() as u32, res.n());
-        assert_eq!(self.n() as u32, a.n());
+        let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
 
         let cols: usize = res.rank().as_usize() + 1;
         let a_size: usize = a.size();
         let res_size: usize = res.size();
         let cnv_offset = a_size;
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(self.n(), cols, a_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(n, cols, a_size, PrepareHint::Reuse);
         let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, a_size);
 
-        let lvl_diag_cache: usize = BE::bytes_of_vec_znx(self.n(), cols, res_size);
+        let lvl_diag_cache: usize = BE::bytes_of_vec_znx(n, cols, res_size);
         let pairwise_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, a_size);
 
-        let lvl_2a: usize = self.bytes_of_vec_znx_dft(self.n(), 1, diag_dft_size)
-            + self.bytes_of_vec_znx_big(self.n(), 1, diag_dft_size)
-            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
+        let lvl_2a: usize = self.bytes_of_vec_znx_dft(n, 1, diag_dft_size)
+            + self.bytes_of_vec_znx_big(n, 1, diag_dft_size)
+            + BE::bytes_of_vec_znx(n, 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2b: usize = self.bytes_of_vec_znx_dft(self.n(), 1, pairwise_dft_size)
-            + self.bytes_of_vec_znx_big(self.n(), 1, pairwise_dft_size)
-            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
+        let lvl_2b: usize = self.bytes_of_vec_znx_dft(n, 1, pairwise_dft_size)
+            + self.bytes_of_vec_znx_big(n, 1, pairwise_dft_size)
+            + BE::bytes_of_vec_znx(n, 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
 
@@ -601,9 +599,7 @@ where
         A: GLWEInfos,
         B: GLWEInfos,
     {
-        assert_eq!(self.n() as u32, res.n());
-        assert_eq!(self.n() as u32, a.n());
-        assert_eq!(self.n() as u32, b.n());
+        let n: usize = operand_degree(self.n(), &[res.n(), a.n(), b.n()]);
 
         let ab_base2k: Base2K = a.base2k();
         assert_eq!(b.base2k(), ab_base2k);
@@ -615,8 +611,8 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size.min(b_size);
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(self.n(), cols, b_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(n, cols, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -627,13 +623,13 @@ where
             normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k.as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);
 
-        let lvl_2a: usize = self.bytes_of_vec_znx_dft(self.n(), 1, diag_dft_size)
-            + self.bytes_of_vec_znx_big(self.n(), 1, diag_dft_size)
-            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
+        let lvl_2a: usize = self.bytes_of_vec_znx_dft(n, 1, diag_dft_size)
+            + self.bytes_of_vec_znx_big(n, 1, diag_dft_size)
+            + BE::bytes_of_vec_znx(n, 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2b: usize = self.bytes_of_vec_znx_dft(self.n(), 1, pairwise_dft_size)
-            + self.bytes_of_vec_znx_big(self.n(), 1, pairwise_dft_size)
-            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
+        let lvl_2b: usize = self.bytes_of_vec_znx_dft(n, 1, pairwise_dft_size)
+            + self.bytes_of_vec_znx_big(n, 1, pairwise_dft_size)
+            + BE::bytes_of_vec_znx(n, 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
 
@@ -648,9 +644,7 @@ where
         A: GLWEInfos,
         B: GGLWEInfos,
     {
-        assert_eq!(self.n() as u32, res.n());
-        assert_eq!(self.n() as u32, a.n());
-        assert_eq!(self.n() as u32, tsk.n());
+        let n: usize = operand_degree(self.n(), &[res.n(), a.n(), tsk.n()]);
 
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();
@@ -665,22 +659,22 @@ where
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
 
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(self.n(), pairs, a_dft_size);
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, a_dft_size);
 
         let lvl_1_pre_conv: usize = if a_base2k != key_base2k {
-            BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
+            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
-        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(self.n(), cols, output_size);
+        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(n, cols, output_size);
         let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, a_dft_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
-            BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
+            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
-        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(self.n(), cols, output_size)
-            + BE::bytes_of_vec_znx(self.n(), 1, res.size())
+        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(n, cols, output_size)
+            + BE::bytes_of_vec_znx(n, 1, res.size())
             + self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_post_conv).max(lvl_1_big_norm);
         let lvl_1: usize = lvl_1_pre_conv.max(lvl_1_main);
@@ -719,14 +713,14 @@ where
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
 
-        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self.n(), pairs, a_dft_size);
+        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, a_dft_size);
 
         if a_base2k == key_base2k {
             for i in 0..pairs {
                 self.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_backend.data, cols + i);
             }
         } else {
-            let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
+            let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
             for i in 0..pairs {
                 let mut scratch_iter = scratch_norm.borrow();
                 self.vec_znx_normalize(
@@ -745,10 +739,12 @@ where
             }
         }
 
-        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), cols, output_size);
+        let (mut res_dft, mut scratch_2) = scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         let a_dft_ref = a_dft.to_backend_ref();
         self.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
-        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), cols, output_size);
+        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
@@ -762,7 +758,7 @@ where
                 self.vec_znx_big_add_small_assign(&mut res_big, i, &a_backend.data, i);
             }
         } else {
-            let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
+            let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
             for i in 0..cols {
                 let mut scratch_iter = scratch_norm.borrow();
                 self.vec_znx_normalize(
@@ -830,8 +826,8 @@ where
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
         self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
@@ -905,8 +901,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, b_size, PrepareHint::Reuse);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, b_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
         self.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
@@ -960,11 +956,13 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
     BP: CnvPVecRToBackendRef<BE>,
 {
     let cols = res.rank().as_usize() + 1;
-    let (mut diag_terms, mut scratch) = scratch.borrow().take_vec_znx_scratch(module.n(), cols, res.size());
+    let (mut diag_terms, mut scratch) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), cols, res.size());
 
     for i in 0..cols {
         let col_i = i * cols - (i * (i + 1) / 2);
-        let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, diag_dft_size);
+        let (mut res_dft, mut cnv_scratch) = scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), 1, diag_dft_size);
         {
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.cnv_apply_dft(
@@ -978,13 +976,13 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                 &mut cnv_scratch,
             );
         }
-        let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module.n(), 1, diag_dft_size);
+        let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, diag_dft_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
         }
-        let (mut tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+        let (mut tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(res.n().as_usize(), 1, res.size());
         module.vec_znx_big_normalize(
             &mut tmp,
             res_base2k,
@@ -1004,7 +1002,10 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
     for i in 0..cols {
         let col_i = i * cols - (i * (i + 1) / 2);
         for j in i + 1..cols {
-            let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, pairwise_dft_size);
+            let (mut res_dft, mut cnv_scratch) =
+                scratch
+                    .borrow()
+                    .take_vec_znx_dft_scratch(res.n().as_usize(), 1, pairwise_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 module.cnv_pairwise_apply_dft(
@@ -1018,13 +1019,13 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                     &mut cnv_scratch,
                 );
             }
-            let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module.n(), 1, pairwise_dft_size);
+            let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, pairwise_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
-            let (mut tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+            let (mut tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(res.n().as_usize(), 1, res.size());
             module.vec_znx_big_normalize(
                 &mut tmp,
                 res_base2k,
@@ -1124,7 +1125,9 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
     for i in 0..cols {
         let col_i: usize = i * cols - (i * (i + 1) / 2);
 
-        let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, diag_dft_size);
+        let (mut res_dft, mut scratch_3) = scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), 1, diag_dft_size);
         {
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.cnv_apply_dft(
@@ -1138,13 +1141,13 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                 &mut scratch_3,
             );
         }
-        let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), 1, diag_dft_size);
+        let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n().as_usize(), 1, diag_dft_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
         }
-        let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(module.n(), 1, res.size());
+        let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(res.n().as_usize(), 1, res.size());
         let res_big_ref = res_big.to_backend_ref();
         let mut scratch_iter = scratch_5.borrow();
         module.vec_znx_big_normalize(
@@ -1189,7 +1192,10 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
         for j in i..cols {
             if j != i {
                 // res_dft = (a[i] + a[j]) * (b[i] + b[j])
-                let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, pairwise_dft_size);
+                let (mut res_dft, mut scratch_3) =
+                    scratch
+                        .borrow()
+                        .take_vec_znx_dft_scratch(res.n().as_usize(), 1, pairwise_dft_size);
                 {
                     let mut res_dft_backend = res_dft.to_backend_mut();
                     module.cnv_pairwise_apply_dft(
@@ -1203,13 +1209,13 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                         &mut scratch_3,
                     );
                 }
-                let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), 1, pairwise_dft_size);
+                let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n().as_usize(), 1, pairwise_dft_size);
                 {
                     let mut res_big_backend = res_big.to_backend_mut();
                     let mut res_dft_backend = res_dft.to_backend_mut();
                     module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
                 }
-                let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(module.n(), 1, res.size());
+                let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(res.n().as_usize(), 1, res.size());
                 let res_big_ref = res_big.to_backend_ref();
                 let mut scratch_iter = scratch_5.borrow();
                 module.vec_znx_big_normalize(
@@ -1342,7 +1348,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
     let cols: usize = res.rank().as_usize() + 1;
 
-    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module.n(), cols, a_size, PrepareHint::Reuse);
+    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
     let mut prep_scratch = scratch.borrow();
     module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
@@ -1462,9 +1468,7 @@ where
         let a = &a.to_backend_ref();
         let b = &b.to_backend_ref();
 
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(b.n(), self.n() as u32);
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[a.n(), b.n(), res.n()]);
         assert_eq!(a.base2k(), b.base2k());
         assert_eq!(res.base2k(), b.base2k());
 
@@ -1508,8 +1512,7 @@ where
         res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() >= a.rank());
 
@@ -1547,9 +1550,7 @@ where
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
         let b = b.to_backend_ref();
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(b.n(), self.n() as u32);
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[a.n(), b.n(), res.n()]);
         assert_eq!(a.base2k(), res.base2k());
         assert_eq!(b.base2k(), res.base2k());
 
@@ -1593,8 +1594,7 @@ where
         res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
@@ -1629,8 +1629,7 @@ where
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[a.n(), res.n()]);
         assert_eq!(a.rank(), res.rank());
         let cols = res.rank().as_usize() + 1;
         for i in 0..cols {
@@ -1645,7 +1644,7 @@ where
     {
         let mut res = res.to_backend_mut();
 
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n()]);
         let cols = res.rank().as_usize() + 1;
         for i in 0..cols {
             self.vec_znx_negate_assign(&mut res.data, i);
@@ -1671,7 +1670,7 @@ where
         res.set_canonical(true);
         let mut res = res.to_backend_mut();
 
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n()]);
         let cols = res.rank().as_usize() + 1;
         for i in 0..cols {
             self.vec_znx_zero(&mut res.data, i);
@@ -1710,8 +1709,7 @@ where
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[a.n(), res.n()]);
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let res_cols = (res.rank() + 1).into();
@@ -1772,8 +1770,7 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.rank(), a.rank());
 
         for i in 0..res.rank().as_usize() + 1 {
@@ -1788,7 +1785,7 @@ where
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
 
-        assert_eq!(res.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n()]);
 
         for i in 0..res.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
@@ -1837,8 +1834,7 @@ where
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
@@ -1960,7 +1956,7 @@ where
         // copy back that zeroes the limbs past it, so the result is canonical
         // at the `k` it reports. `glwe_shift_tmp_bytes` already reserves that
         // temporary.
-        let n: usize = self.n();
+        let n: usize = res.n().as_usize();
         for i in 0..cols {
             let (mut tmp, mut scratch_iter) = scratch.borrow().take_vec_znx_scratch(n, 1, res.size());
             self.vec_znx_normalize(
@@ -2025,8 +2021,7 @@ where
             Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() >= a.rank());
 
@@ -2066,8 +2061,7 @@ where
             Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() >= a.rank());
 
@@ -2093,8 +2087,7 @@ where
             Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.base2k(), a.base2k());
         assert!(res.rank() >= a.rank());
 
@@ -2138,8 +2131,7 @@ where
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
+        operand_degree(self.n(), &[res.n(), a.n()]);
         assert_eq!(res.rank(), a.rank());
         assert!(
             scratch.available() >= Self::glwe_normalize_tmp_bytes_reference(self),

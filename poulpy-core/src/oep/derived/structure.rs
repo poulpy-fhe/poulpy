@@ -19,6 +19,7 @@ mod trace {
     //!
     //! Automorphism keys are indexed by the Galois elements returned from
     //! [`GLWETrace::glwe_trace_galois_elements`](crate::api::GLWETrace::glwe_trace_galois_elements).
+    use crate::layouts::{operand_degree, operand_galois_element};
 
     use crate::api::GLWEBytesOf;
     use poulpy_hal::{
@@ -63,20 +64,19 @@ mod trace {
         H: GetAutomorphismKey<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        let log_n: usize = module.log_n();
-
-        assert_eq!(res.n(), module.n() as u32);
+        operand_degree(module.n(), &[res.n()]);
+        let log_n: usize = res.log_n();
         assert!(skip <= log_n);
         // Keys may differ per rotation, so the radix and the scratch bound are read
         // off the first one the source resolves, as on any path sized from a single
         // key layout.
-        let Some(first) = trace_rotations(module, skip).next() else {
+        let Some(first) = trace_rotations(module, log_n, skip).next() else {
             return;
         };
         let ksk_infos = keys
             .get_automorphism_key(first, res.k())
             .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
-        assert_eq!(ksk_infos.n(), module.n() as u32);
+        operand_degree(module.n(), &[ksk_infos.n()]);
         assert_eq!(ksk_infos.rank_in(), res.rank());
         assert_eq!(ksk_infos.rank_out(), res.rank());
         assert!(
@@ -88,7 +88,7 @@ mod trace {
 
         if res.base2k() != ksk_infos.base2k() {
             let res_conv_layout = GLWELayout {
-                n: module.n().into(),
+                n: res.n(),
                 base2k: ksk_infos.base2k(),
                 k: res.k(),
                 rank: res.rank(),
@@ -111,7 +111,7 @@ mod trace {
             return;
         }
 
-        for p in trace_rotations(module, skip) {
+        for p in trace_rotations(module, log_n, skip) {
             module.glwe_rsh(1, res, scratch);
             let key = keys
                 .get_automorphism_key(p, res.k())
@@ -120,12 +120,19 @@ mod trace {
         }
     }
 
-    /// Rotations the trace loop visits, in order.
-    fn trace_rotations<M>(module: &M, skip: usize) -> impl Iterator<Item = i64> + use<'_, M>
+    /// Rotations the trace of a degree-`2^log_n` operand visits, in order, as Galois
+    /// elements of the operand's ring.
+    fn trace_rotations<M>(module: &M, log_n: usize, skip: usize) -> impl Iterator<Item = i64> + use<'_, M>
     where
-        M: ModuleLogN + GaloisElement + ?Sized,
+        M: GaloisElement + ?Sized,
     {
-        (skip..module.log_n()).map(|i| if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) })
+        (skip..log_n).map(move |i| {
+            if i == 0 {
+                -1
+            } else {
+                operand_galois_element(module, 1 << log_n, 1 << (i - 1))
+            }
+        })
     }
 
     pub(crate) fn glwe_trace_assign_tmp_bytes_derived<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
@@ -143,8 +150,7 @@ mod trace {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        assert_eq!(module.n() as u32, a_infos.n());
-        assert_eq!(module.n() as u32, key_infos.n());
+        operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
 
         if a_infos.base2k() != key_infos.base2k() {
             let a_conv_infos: GLWELayout = GLWELayout {
@@ -188,9 +194,7 @@ mod trace {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        assert_eq!(module.n() as u32, res_infos.n());
-        assert_eq!(module.n() as u32, a_infos.n());
-        assert_eq!(module.n() as u32, key_infos.n());
+        operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
 
         let tmp_infos: GLWELayout = GLWELayout {
             n: res_infos.n(),
@@ -230,10 +234,9 @@ mod trace {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        assert_eq!(res.n(), module.n() as u32);
-        assert_eq!(a.n(), module.n() as u32);
-        assert!(skip <= module.log_n(), "trace skip exceeds log_n");
-        let Some(first) = trace_rotations(module, skip).next() else {
+        operand_degree(module.n(), &[res.n(), a.n()]);
+        assert!(skip <= res.log_n(), "trace skip exceeds log_n");
+        let Some(first) = trace_rotations(module, res.log_n(), skip).next() else {
             module.glwe_copy(res, a, scratch);
             return;
         };
@@ -304,6 +307,7 @@ mod packing {
     //! divisible by `2^log_gap_out`. All inputs must share the same degree, radix,
     //! precision and rank. These conditions are checked before input or destination
     //! mutation. The input ciphertexts are consumed by valid calls.
+    use crate::layouts::{operand_degree, operand_galois_element};
 
     use crate::api::GLWEBytesOf;
     use std::collections::HashMap;
@@ -405,9 +409,7 @@ mod packing {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        assert_eq!(module.n() as u32, res.n());
-        assert_eq!(module.n() as u32, a.n());
-        assert_eq!(module.n() as u32, key.n());
+        operand_degree(module.n(), &[res.n(), a.n(), key.n()]);
 
         // Every merge-tree operation runs on the inputs, not on the destination:
         // the accumulator stays at the input layout until the closing trace.
@@ -445,11 +447,11 @@ mod packing {
         A: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        assert!(log_gap_out <= module.log_n(), "packing log_gap_out exceeds log_n");
+        assert!(log_gap_out <= res.log_n(), "packing log_gap_out exceeds log_n");
         let gap = 1usize << log_gap_out;
         assert!(!a.is_empty(), "packing requires at least one input");
         assert!(
-            a.keys().all(|&index| index < module.n() && index % gap == 0),
+            a.keys().all(|&index| index < res.n().as_usize() && index % gap == 0),
             "packing indices must be below N and divisible by 2^log_gap_out"
         );
         // The merge tree and the closing trace both run at the input layout, which
@@ -474,11 +476,15 @@ mod packing {
         );
 
         let mut scratch_local = scratch.borrow();
-        let log_n: usize = module.log_n();
+        let log_n: usize = res.log_n();
         for i in 0..(log_n - log_gap_out) {
             let t: usize = (1 << log_n).min(1 << (log_n - 1 - i));
 
-            let p: i64 = if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) };
+            let p: i64 = if i == 0 {
+                -1
+            } else {
+                operand_galois_element(module, 1 << log_n, 1 << (i - 1))
+            };
 
             for j in 0..t {
                 let mut lo: Option<&mut A> = a.remove(&j);

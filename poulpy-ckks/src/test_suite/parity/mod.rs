@@ -3,11 +3,13 @@
 //! transferred explicitly; prepared objects and scratch remain backend-owned.
 mod bootstrapping;
 mod dft;
+mod fold;
 pub(crate) mod helpers;
 pub(crate) mod keys;
 mod polynomial_evaluation;
 pub use bootstrapping::*;
 pub use dft::*;
+pub use fold::*;
 pub use polynomial_evaluation::*;
 mod arithmetic;
 mod encryption;

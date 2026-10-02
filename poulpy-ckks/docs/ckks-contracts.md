@@ -32,6 +32,7 @@ operations, so their overrides remain effective.
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs). |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the identity and functional pipelines. |
+| `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_reference!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation

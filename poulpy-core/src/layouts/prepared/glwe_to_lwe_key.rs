@@ -90,7 +90,7 @@ where
             "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
         );
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKeyPrepared");
-        self.glwe_to_lwe_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
+        GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
     }
 
     fn glwe_to_lwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
@@ -107,7 +107,7 @@ where
             "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
         );
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKeyPrepared");
-        self.glwe_to_lwe_key_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
+        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
     }
 
     fn glwe_to_lwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
