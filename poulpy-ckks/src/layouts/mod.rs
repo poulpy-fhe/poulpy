@@ -138,9 +138,10 @@ pub use bootstrapping::{
     EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
+    EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
-pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, ScratchArenaTakeCKKS};
+pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,

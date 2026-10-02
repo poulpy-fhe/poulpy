@@ -73,9 +73,9 @@ fn compare<BR, BT, FR, FT>(
         &mut ScratchOwned<BT>,
     ),
 {
-    assert_eq!(module_ref.n(), module_test.n());
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
 
-    let n = module_ref.n() as u32;
+    let n = params.n as u32;
     let mut source = Source::new([seed; 32]);
 
     for a_infos in layouts(n, params.base2k, shapes) {
@@ -217,7 +217,7 @@ where
     for &rank in &shapes.ranks {
         for plaintext_k in [params.base2k - 1, 3 * params.base2k + 1] {
             let res_infos = GLWELayout {
-                n: (module_ref.n() as u32).into(),
+                n: (params.n as u32).into(),
                 base2k: (params.base2k as u32).into(),
                 k: (2 * params.base2k as u32 + 1).into(),
                 rank: (rank as u32).into(),
@@ -367,7 +367,7 @@ pub fn test_glwe_rotate_parity<BR, BT>(
             move |m, res, a, _, _| m.glwe_rotate(k, res, a),
         );
     }
-    for k in [-5i64, 0, 1, module_ref.n() as i64, 2 * module_ref.n() as i64 + 7] {
+    for k in [-5i64, 0, 1, params.n as i64, 2 * params.n as i64 + 7] {
         compare(
             params,
             shapes,
@@ -398,8 +398,8 @@ pub fn test_glwe_tensor_parity<BR, BT>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    assert_eq!(module_ref.n(), module_test.n());
-    let n = module_ref.n() as u32;
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
+    let n = params.n as u32;
     let base2k = params.base2k;
     let mut source = Source::new([29u8; 32]);
 
@@ -464,8 +464,7 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    assert_eq!(module_ref.n(), module_test.n());
-    assert_eq!(module_ref.n(), a_infos.n.as_usize());
+    assert!(a_infos.n.as_usize() <= module_ref.n() && a_infos.n.as_usize() <= module_test.n());
     let res_infos = GLWELayout {
         n: a_infos.n,
         base2k: a_infos.base2k,
@@ -687,7 +686,7 @@ pub fn test_glwe_shift_parity<BR, BT>(
             },
         );
     }
-    for k in [-5i64, 0, 1, module_ref.n() as i64, 2 * module_ref.n() as i64] {
+    for k in [-5i64, 0, 1, params.n as i64, 2 * params.n as i64] {
         compare(
             params,
             shapes,
@@ -715,7 +714,7 @@ pub fn test_glwe_shift_parity<BR, BT>(
     // layouts label those limbs with different radices. Destination metadata
     // and extension/truncation are checked against a direct polynomial oracle.
     let mut source = Source::new([73; 32]);
-    let n = module_ref.n();
+    let n = params.n;
     for &rank in &shapes.ranks {
         let a_infos = GLWELayout {
             n: (n as u32).into(),
@@ -785,7 +784,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
     for &rank in &shapes.ranks {
         for k in [params.base2k, 3 * params.base2k - 1] {
             let infos = GLWELayout {
-                n: (module_ref.n() as u32).into(),
+                n: (params.n as u32).into(),
                 base2k: (params.base2k as u32).into(),
                 k: (k as u32).into(),
                 rank: (rank as u32).into(),
@@ -793,9 +792,9 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
             let a_ref = ref_glwe(module_ref, &infos, &mut source);
             let mut a_test = module_test.glwe_alloc_from_infos(&infos);
             a_ref.transfer_into(&mut a_test);
-            let mut plain_ref = module_ref.glwe_plaintext_alloc(infos.base2k, infos.k);
+            let mut plain_ref = module_ref.glwe_plaintext_alloc_from_infos(&infos);
             module_ref.fill_glwe_from_source(&mut plain_ref, &mut source);
-            let mut plain_test = module_test.glwe_plaintext_alloc(infos.base2k, infos.k);
+            let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(&infos);
             plain_ref.transfer_into(&mut plain_test);
             for offset in [0, params.base2k - 1, params.base2k] {
                 for variant in 0..4 {
@@ -825,38 +824,19 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
                             module_test.glwe_mul_plain_assign(offset, &mut out_test, &plain_test, &mut st.borrow());
                         }
                         2 => {
-                            module_ref.glwe_mul_const(
-                                offset,
-                                &mut out_ref,
-                                &a_ref,
-                                &plain_ref,
-                                module_ref.n() - 1,
-                                &mut sr.borrow(),
-                            );
+                            module_ref.glwe_mul_const(offset, &mut out_ref, &a_ref, &plain_ref, params.n - 1, &mut sr.borrow());
                             module_test.glwe_mul_const(
                                 offset,
                                 &mut out_test,
                                 &a_test,
                                 &plain_test,
-                                module_test.n() - 1,
+                                params.n - 1,
                                 &mut st.borrow(),
                             );
                         }
                         _ => {
-                            module_ref.glwe_mul_const_assign(
-                                offset,
-                                &mut out_ref,
-                                &plain_ref,
-                                module_ref.n() - 1,
-                                &mut sr.borrow(),
-                            );
-                            module_test.glwe_mul_const_assign(
-                                offset,
-                                &mut out_test,
-                                &plain_test,
-                                module_test.n() - 1,
-                                &mut st.borrow(),
-                            );
+                            module_ref.glwe_mul_const_assign(offset, &mut out_ref, &plain_ref, params.n - 1, &mut sr.borrow());
+                            module_test.glwe_mul_const_assign(offset, &mut out_test, &plain_test, params.n - 1, &mut st.borrow());
                         }
                     }
                     let mut have = module_ref.glwe_alloc_from_infos(&infos);
@@ -874,7 +854,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
                     } else {
                         module_test.glwe_mul_const_tmp_bytes(&out_test, &a_test, &plain_test)
                     });
-                    let last = module_test.n() - 1;
+                    let last = params.n - 1;
                     match variant {
                         0 => module_test.glwe_mul_plain(offset, &mut out_test, &twin, &plain_test, &mut st.borrow()),
                         1 => module_test.glwe_mul_plain_assign(offset, &mut twin, &plain_test, &mut st.borrow()),
@@ -915,7 +895,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
     let mut source = Source::new([61; 32]);
     for &rank in &shapes.ranks {
         let infos = crate::layouts::GGSWLayout {
-            n: (module_ref.n() as u32).into(),
+            n: (params.n as u32).into(),
             base2k: (params.base2k as u32).into(),
             dnum: 3u32.into(),
             dsize: 2u32.into(),
@@ -930,7 +910,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
         }
         let mut a_test = module_test.ggsw_alloc_from_infos(&infos);
         a_ref.transfer_into(&mut a_test);
-        for k in [-5i64, 0, 1, module_ref.n() as i64, 2 * module_ref.n() as i64 + 1] {
+        for k in [-5i64, 0, 1, params.n as i64, 2 * params.n as i64 + 1] {
             let mut out_ref = module_ref.ggsw_alloc_from_infos(&infos);
             let mut out_test = module_test.ggsw_alloc_from_infos(&infos);
             module_ref.ggsw_rotate(k, &mut out_ref, &a_ref);

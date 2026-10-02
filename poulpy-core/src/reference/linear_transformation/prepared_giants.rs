@@ -41,6 +41,7 @@ use crate::{
 };
 
 use super::LinearTransformationBabySteps;
+use crate::layouts::operand_galois_element;
 
 /// Per-giant PROD, provided by the diagonal representation itself.
 ///
@@ -202,7 +203,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         .iter()
         .map(|gs| {
             (gs.rot != 0).then(|| {
-                keys.get_automorphism_key(module.galois_element(gs.rot), res.k())
+                keys.get_automorphism_key(operand_galois_element(module, res.n().as_usize(), gs.rot), res.k())
                     .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
             })
         })
@@ -242,8 +243,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         // Lazy path: PROD, body add, giant automorphism, and cross-giant
         // accumulation all stay in DFT. The only IDFT is the final one before
         // the single BIG -> SMALL normalization.
-        let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module.n(), cols, prod_size);
-        let (mut lazy_acc_dft, mut scratch_phase) = scratch_phase.take_vec_znx_dft_scratch(module.n(), cols, lazy_size);
+        let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), cols, prod_size);
+        let (mut lazy_acc_dft, mut scratch_phase) = scratch_phase.take_vec_znx_dft_scratch(res.n().as_usize(), cols, lazy_size);
         for col in 0..cols {
             module.vec_znx_dft_zero(&mut lazy_acc_dft, col);
         }
@@ -280,7 +281,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                         &mut lazy_acc_dft_backend,
                         &prod_dft_ref,
                         prod_base2k.as_usize(),
-                        module.galois_element(rot),
+                        operand_galois_element(module, res.n().as_usize(), rot),
                         &key.key,
                         key_output_size,
                         nonzero_giant_rotations,
@@ -293,7 +294,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         }
         assert!(res_initialized, "linear transformation has no giant steps");
 
-        let (mut lazy_acc_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module.n(), cols, lazy_size);
+        let (mut lazy_acc_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(res.n().as_usize(), cols, lazy_size);
         {
             let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
             let mut lazy_acc_big_backend = lazy_acc_big.to_backend_mut();
@@ -315,8 +316,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     // Fallback for incompatible bases: PROD is still computed in DFT, then each
     // column is IDFT'd through a one-column BIG scratch only where it is
     // normalized into the temporary SMALL ciphertext.
-    let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module.n(), cols, prod_size);
-    let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module.n(), 1, prod_size);
+    let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), cols, prod_size);
+    let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(res.n().as_usize(), 1, prod_size);
     let mut fallback_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     let mut res_initialized = false;
 

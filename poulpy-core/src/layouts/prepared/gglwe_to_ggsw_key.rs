@@ -130,7 +130,11 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
         );
-        self.gglwe_to_ggsw_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        GGLWEToGGSWKeyPrepared {
+            keys: (0..infos.rank().as_usize())
+                .map(|_| self.gglwe_prepared_alloc_from_infos(infos))
+                .collect(),
+        }
     }
 
     fn gglwe_to_ggsw_key_prepared_alloc(
@@ -157,7 +161,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
         );
-        self.bytes_of_gglwe_to_ggsw(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        infos.rank().as_usize() * self.gglwe_prepared_bytes_of_from_infos(infos)
     }
 
     fn bytes_of_gglwe_to_ggsw(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {

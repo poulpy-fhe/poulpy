@@ -1,3 +1,4 @@
+use crate::layouts::operand_degree;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::VecZnxCopy,
@@ -307,13 +308,7 @@ where
         let other = other.to_backend_ref();
         {
             let res = &mut res.to_backend_mut();
-            assert_eq!(
-                res.n(),
-                self.ring_degree(),
-                "invalid receiver: res.n()={} != other.n()={}",
-                res.n(),
-                self.ring_degree()
-            );
+            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
 
             assert_eq!(res.glwe_layout(), other.glwe_layout());
 

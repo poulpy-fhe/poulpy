@@ -90,9 +90,12 @@ pub(crate) fn source_snapshot(label: &'static str, e: &mut Source, a: &mut Sourc
         bytes: [e.new_seed().as_slice(), a.new_seed().as_slice()].concat(),
     }
 }
-pub(crate) fn secret<B: EncryptionParityBackend>(module: &Module<B>, rank: usize) -> BackendGLWESecret<B> {
-    let mut secret = module.glwe_secret_alloc((rank as u32).into());
-    let data: Vec<i64> = (0..module.n() * rank).map(|i| (i % 3) as i64 - 1).collect();
+pub(crate) fn secret<B: EncryptionParityBackend>(module: &Module<B>, n: usize, rank: usize) -> BackendGLWESecret<B> {
+    let mut secret = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        n: n.into(),
+        rank: (rank as u32).into(),
+    });
+    let data: Vec<i64> = (0..n * rank).map(|i| (i % 3) as i64 - 1).collect();
     let mut view = GLWESecretToBackendMut::<B>::to_backend_mut(&mut secret);
     B::copy_host_to_view(view.data.data_mut(), bytemuck::cast_slice(&data));
     drop(view);
@@ -110,21 +113,25 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
     Module<BR>: GLWEExpandLWEMatrix<BR>,
     Module<BT>: GLWEExpandLWEMatrix<BT>,
 {
-    fn run<B: EncryptionParityBackend>(module: &Module<B>, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot>
+    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot>
     where
         Module<B>: GLWEExpandLWEMatrix<B>,
     {
         let infos = GLWELayout {
-            n: (module.n() as u32).into(),
+            n: (n as u32).into(),
             base2k: (base2k as u32).into(),
             k: (k as u32).into(),
             rank: (rank as u32).into(),
         };
         let enc = EncryptionLayout::new_from_default_sigma(infos).unwrap();
-        let sk = secret(module, rank);
+        let sk = secret(module, n, rank);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
-        let mut pt = module.glwe_plaintext_alloc(infos.base2k, (k as u32 - 1).into());
+        let mut pt = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+            n: infos.n,
+            base2k: infos.base2k,
+            k: (k as u32 - 1).into(),
+        });
         module.vec_znx_fill_uniform_source(
             base2k,
             pt.k().as_usize(),
@@ -148,7 +155,23 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         );
         results.push(snapshot_glwe::<B, _>("encrypt_sk", &out));
         results.push(source_snapshot("encrypt_sk_sources", &mut e, &mut a));
-        let mut have = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        let mut with_mask = module.glwe_alloc_from_infos(&infos);
+        poison_glwe::<B, _>(&mut with_mask);
+        module.fill_glwe_mask_from_seed(&mut with_mask, [73; 32]);
+        module.glwe_encrypt_sk_with_mask(
+            &mut with_mask,
+            &pt,
+            &skp,
+            &enc,
+            &mut Source::new([71; 32]),
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
+        );
+        assert_eq!(
+            snapshot_glwe::<B, _>("encrypt_sk", &with_mask),
+            snapshot_glwe::<B, _>("encrypt_sk", &out),
+            "caller-filled masks must produce the same ciphertext"
+        );
+        let mut have = module.glwe_plaintext_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut have);
         module.glwe_decrypt(
             &out,
@@ -159,7 +182,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(snapshot_glwe::<B, _>("decrypt", &have));
         let mut twin = module.glwe_alloc_from_infos(&infos);
         unnormalized_twin::<B, B>(&out, &mut twin);
-        let mut have_twin = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        let mut have_twin = module.glwe_plaintext_alloc_from_infos(&infos);
         module.glwe_decrypt(
             &twin,
             &mut have_twin,
@@ -183,56 +206,71 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(snapshot_glwe::<B, _>("encrypt_zero_sk", &out));
         results.push(source_snapshot("encrypt_zero_sk_sources", &mut e, &mut a));
 
-        let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
-        for l in 0..pk.rank().as_usize() {
-            poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
+        for compressed in [false, true] {
+            let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
+            for l in 0..pk.rank().as_usize() {
+                poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
+            }
+            if compressed {
+                let mut pk_compressed = module.glwe_public_key_compressed_alloc_from_infos(&infos);
+                module.glwe_public_key_compressed_generate(
+                    &mut pk_compressed,
+                    &skp,
+                    [89; 32],
+                    &enc,
+                    &mut e,
+                    &mut poisoned_scratch::<B>(module.glwe_public_key_compressed_generate_tmp_bytes(&infos)).arena(),
+                );
+                module.decompress_glwe_public_key(&mut pk, &pk_compressed);
+            } else {
+                module.glwe_public_key_generate(
+                    &mut pk,
+                    &skp,
+                    &enc,
+                    &mut e,
+                    &mut a,
+                    &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
+                );
+            }
+            for l in 0..pk.rank().as_usize() {
+                results.push(snapshot_glwe::<B, _>(
+                    "public_key_generate",
+                    &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
+                ));
+            }
+            results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
+            assert_eq!(pk.dist(), sk.dist());
+            let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
+            module.glwe_public_key_prepare(
+                &mut pkp,
+                &pk,
+                &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
+            );
+            assert_eq!(pkp.dist(), pk.dist());
+            poison_glwe::<B, _>(&mut out);
+            module.glwe_encrypt_pk(
+                &mut out,
+                &pt,
+                &pkp,
+                &enc,
+                &mut e,
+                &mut a,
+                &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
+            );
+            results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
+            results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
+            poison_glwe::<B, _>(&mut out);
+            module.glwe_encrypt_zero_pk(
+                &mut out,
+                &pkp,
+                &enc,
+                &mut e,
+                &mut a,
+                &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
+            );
+            results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
+            results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
         }
-        module.glwe_public_key_generate(
-            &mut pk,
-            &skp,
-            &enc,
-            &mut e,
-            &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
-        );
-        for l in 0..pk.rank().as_usize() {
-            results.push(snapshot_glwe::<B, _>(
-                "public_key_generate",
-                &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
-            ));
-        }
-        results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
-        assert_eq!(pk.dist(), sk.dist());
-        let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
-        module.glwe_public_key_prepare(
-            &mut pkp,
-            &pk,
-            &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
-        );
-        assert_eq!(pkp.dist(), pk.dist());
-        poison_glwe::<B, _>(&mut out);
-        module.glwe_encrypt_pk(
-            &mut out,
-            &pt,
-            &pkp,
-            &enc,
-            &mut e,
-            &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
-        );
-        results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
-        results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
-        poison_glwe::<B, _>(&mut out);
-        module.glwe_encrypt_zero_pk(
-            &mut out,
-            &pkp,
-            &enc,
-            &mut e,
-            &mut a,
-            &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
-        );
-        results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
-        results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
 
         let mut compressed = module.glwe_compressed_alloc_from_infos(&infos);
         poison_glwe_compressed::<B, _>(&mut compressed);
@@ -268,17 +306,17 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.fill_glwe_mask_from_source(&mut out, &mut a);
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
-        let mut lsk = module.lwe_secret_alloc((module.n() * rank).into());
-        let data: Vec<i64> = (0..module.n() * rank).map(|i| (i % 3) as i64 - 1).collect();
+        let mut lsk = module.lwe_secret_alloc((n * rank).into());
+        let data: Vec<i64> = (0..n * rank).map(|i| (i % 3) as i64 - 1).collect();
         {
             let mut view = LWESecretToBackendMut::<B>::to_backend_mut(&mut lsk);
             B::copy_host_to_view(view.data.data_mut(), bytemuck::cast_slice(&data));
         }
         *lsk.dist_mut() = *sk.dist();
-        for rows in [1, module.n()] {
+        for rows in [1, n] {
             let layout = LWEMatrixLayout {
                 rows,
-                n: (module.n() * rank).into(),
+                n: (n * rank).into(),
                 base2k: infos.base2k,
                 k: infos.k,
             };
@@ -288,7 +326,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &out,
                 &mut poisoned_scratch::<B>(module.glwe_expand_lwe_matrix_tmp_bytes(&layout, &infos)).arena(),
             );
-            let mut plain = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+            let mut plain = module.glwe_plaintext_alloc_from_infos(&infos);
             poison_glwe::<B, _>(&mut plain);
             module.lwe_matrix_decrypt(
                 &matrix,
@@ -304,8 +342,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
     for &rank in &shapes.ranks {
         for k in [3 * base2k, 4 * base2k - 1, 4 * base2k + 1] {
             assert_eq!(
-                run(reference, base2k, rank, k),
-                run(tested, base2k, rank, k),
+                run(reference, params.n, base2k, rank, k),
+                run(tested, params.n, base2k, rank, k),
                 "GLWE encryption rank={rank} k={k}"
             );
         }

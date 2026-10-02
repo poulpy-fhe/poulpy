@@ -29,8 +29,6 @@
 use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_hal::AlignedBuf;
-use std::time::Instant;
 
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -46,8 +44,7 @@ use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps,
-        CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -63,6 +60,7 @@ use crate::{
             TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, assert_canonical_at_k,
             ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
         },
+        presets::bootstrap_setup_tmp_bytes,
     },
 };
 
@@ -87,6 +85,77 @@ fn meta(log_delta: usize, log_budget: usize) -> CoeffsMeta {
     CoeffsMeta::from_delta_budget(log_delta, log_budget)
 }
 
+/// Shared recipe for the standard, EvalRound+ and S2C-first tests.
+/// Only plain C2S-first uses optimal BSGS; S2C-first uses higher-precision S2C
+/// coefficients at half scale because that transform runs before ModUp.
+fn bootstrap_plan(
+    pipeline: BootstrappingPipeline,
+    eval_round_plus: bool,
+    log_msg_ratio: usize,
+    guard_bits: usize,
+) -> BootstrappingPlan {
+    let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
+    let mut coeffs_to_slots = DFTPlan::new(
+        DFTType::Encode,
+        vec![(2, 4), (2, 4), (3, 4), (3, 4)],
+        DFTOutputFormat::SplitRealAndImag,
+        meta(if eval_round_plus { 29 } else { 58 }, 2),
+    )
+    .unwrap();
+    let mut slots_to_coeffs = DFTPlan::new(
+        DFTType::Decode,
+        vec![(3, 4), (3, 4), (2, 4), (2, 4)],
+        DFTOutputFormat::SplitRealAndImag,
+        meta(if s2c_first { 45 } else { 39 }, 2),
+    )
+    .unwrap()
+    .with_scaling(if s2c_first { 0.5 } else { (log_msg_ratio as f64).exp2() })
+    .unwrap();
+    if !s2c_first && !eval_round_plus {
+        coeffs_to_slots = coeffs_to_slots.with_optimal_bsgs(LOG_SLOTS + 1);
+        slots_to_coeffs = slots_to_coeffs.with_optimal_bsgs(LOG_SLOTS + 1);
+    }
+    let plan = BootstrappingPlan::new(
+        pipeline,
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
+            }),
+            eval_round_plus: eval_round_plus.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan::new(
+                    DFTType::Encode,
+                    vec![(1, 1); LOG_SLOTS],
+                    DFTOutputFormat::SplitRealAndImag,
+                    meta(58, 2),
+                )
+                .unwrap()
+                .with_scaling(1.0)
+                .unwrap(),
+            }),
+        },
+        coeffs_to_slots,
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio,
+            f_mod_degree: 30,
+            f_mod_interval: FMOD_INTERVAL,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: meta(48, 4),
+            f_mod_log_delta: 60,
+        },
+        slots_to_coeffs,
+    )
+    .unwrap();
+    if s2c_first {
+        plan.with_c2s_guard_bits(guard_bits).unwrap()
+    } else {
+        plan
+    }
+}
+
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     params: CKKSTestParams,
@@ -106,48 +175,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let coeffs_to_slots = DFTPlan::new(
-        DFTType::Encode,
-        vec![(2, 4), (2, 4), (3, 4), (3, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(58, 2),
-    )
-    .unwrap()
-    .with_optimal_bsgs(LOG_SLOTS + 1);
-    let slots_to_coeffs = DFTPlan::new(
-        DFTType::Decode,
-        vec![(3, 4), (3, 4), (2, 4), (2, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(39, 2),
-    )
-    .unwrap()
-    .with_optimal_bsgs(LOG_SLOTS + 1)
-    .with_scaling((LOG_MSG_RATIO as f64).exp2())
-    .unwrap();
-    let plan = BootstrappingPlan::new(
-        BootstrappingPipeline::C2SFirst,
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
-            }),
-            eval_round_plus: None,
-        },
-        coeffs_to_slots,
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosHK,
-            log_msg_ratio: LOG_MSG_RATIO,
-            f_mod_degree: 30,
-            f_mod_interval: FMOD_INTERVAL,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: meta(48, 4), //~log_message_ratio+log(f_mod_interval)+log_final_prec
-            f_mod_log_delta: 60,      // ~ log(f_mod_interval) + log_message_ratio + log_delta_in
-        },
-        slots_to_coeffs,
-    )
-    .unwrap();
+    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, false, LOG_MSG_RATIO, 0);
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -179,44 +207,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         rank: 1,
     };
 
-    println!("n     : {}", n);
-    println!("base2k: {}", base2k);
-    println!("log_delta: {}", log_delta);
-    println!("k_boot: {k_boot}");
-    println!("dsize : {}", tp.dsize);
-    println!("plan.consummed_bits(): {}", plan.consumed_bits());
-
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
-    let scratch_size;
-    let mut scratch = {
-        let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        c.set_meta(tp.prec().meta);
-        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(
-            &c,
-            &tp.tsk_layout(),
-            &tp.atk_layout(),
-            &ckks_spec(
-                n,
-                base2k,
-                plan.eval_mod().coeffs_meta.log_delta(),
-                plan.eval_mod().coeffs_meta.log_budget(),
-            ),
-        );
-        ScratchOwned::<BE>::alloc(scratch_size)
-    };
-
-    let now = Instant::now();
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-    println!("BootstrappingContext::compile: {:?}", now.elapsed());
-
-    let now = Instant::now();
-    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-
-    // All evaluation keys via the bootstrapping-context helper: rotations (read off
-    // the compiled DFT matrices), conjugation, EvalMod's tensor key, and — when the
-    // sparse-secret encapsulation trick is enabled — the `denseToSparse` (input
-    // modulus) / `sparseToDense` (bootstrap modulus) key-switching keys.
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
@@ -225,9 +217,19 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             sparse_to_dense: tp.ksk_layout(k_boot).layout,
         }),
     };
-    // Re-size the scratch for the full bootstrap call: `ckks_bootstrap_tmp_bytes`
-    // is the whole memory story for `ckks_bootstrap` (its carved pipeline
-    // intermediates plus the largest nested stage).
+    let scratch_size = bootstrap_setup_tmp_bytes(
+        &module,
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &plan,
+        &keys_layout,
+    );
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
+
+    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
+
+    // The compiled pipeline adds its live intermediates to the setup scratch.
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
@@ -254,31 +256,9 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         )
         .unwrap()
         .prepare(&module, &mut scratch.borrow());
-    println!("KeyGen: {:?}", now.elapsed());
 
     // Encrypt z at the input ("level 0") modulus.
     let (re, im) = test_vector_1::<F>(m);
-
-    // Per-step reference: the message's polynomial coefficients. The homomorphic
-    // DFT shuttles these between the coefficient and slot domains, so `decode_reim`
-    // of a CoeffsToSlots / EvalMod output recovers them in `bitrev` slot order
-    // (real half in `ct_real`, imag half in `ct_imag`). Computed once in cleartext
-    // by encoding `(re, im)` and reading back the coefficients.
-    let (ref_real, ref_imag): (Vec<f64>, Vec<f64>) = {
-        let mut pt = module.ckks_pt_vec_alloc(base2k.into(), meta(log_delta, 8).k);
-        pt.set_meta(meta(log_delta, 8).meta);
-        encoder.encode_reim(&mut pt, &re, &im).unwrap();
-        let mut c = vec![F::zero(); n];
-        pt.decode_host_floats(&mut c).unwrap();
-        let c: Vec<f64> = c.iter().map(|x| x.to_f64().unwrap()).collect();
-        let (mut rr, mut ri) = (vec![0f64; m], vec![0f64; m]);
-        for j in 0..m {
-            let b = bitrev(j, LOG_SLOTS);
-            rr[j] = c[b];
-            ri[j] = c[m + b];
-        }
-        (rr, ri)
-    };
 
     let ct0 = ckks_encrypt_with_prec(
         &tp,
@@ -293,9 +273,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    // Cross-check the one-shot orchestrator (the public API) against the explicit
-    // pipeline below — run first, on the fresh input, since the manual path mutates
-    // `ct0` in place for the encapsulation key-switch.
+    // Compare the public orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
@@ -354,7 +332,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
     }
 
-    let now = Instant::now();
     // 1) The whole raise step: lift to the plan's message ratio, (encapsulate)
     //    denseToSparse / ModUp / sparseToDense so the integer wrap-around `I(X)·q`
     //    is bounded by the *sparse* secret's Hamming weight, and relabel by the
@@ -364,13 +341,12 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     module
         .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
         .unwrap();
-    println!("ckks_bootstrap_mod_up: {:?}", now.elapsed());
 
     let mut log_budget_check = k_boot - ct.log_delta();
 
     assert_eq!(ct.log_budget(), log_budget_check);
+    assert_canonical_at_k::<BE>("ModUp", &ct);
 
-    let now = Instant::now();
     // 2) CoeffsToSlots (split): coefficients → (real, imag) slots.
     let mut ct_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut ct_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -384,39 +360,15 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    println!("ckks_coeffs_to_slots_split: {:?}", now.elapsed());
-    println!("ct: {} {}", ct.k(), ct.size());
-    println!("ct_real: {} {}", ct_real.k(), ct_real.size());
-    println!("ct_imag: {} {}", ct_imag.k(), ct_imag.size());
 
     log_budget_check -= plan.coeffs_to_slots().consumed_bits();
 
     assert_eq!(ct_real.log_budget(), log_budget_check);
     assert_eq!(ct_imag.log_budget(), log_budget_check);
-
-    // C2S accuracy: reference the C2S slot output against the *actual* coefficients
-    // of the modup'd `ct` (integer parts `I_j` included), so this isolates C2S from
-    // EvalMod. `decode_reim(ct_real)[j] = ct_coeffs[bitrev(j)]` (real half / imag half).
-    {
-        let ct_coeffs = decrypt_coeffs(&module, &ct, &sk, &mut scratch.borrow());
-        let (mut cref_re, mut cref_im) = (vec![0f64; m], vec![0f64; m]);
-        for j in 0..m {
-            let b = bitrev(j, LOG_SLOTS);
-            cref_re[j] = ct_coeffs[b];
-            cref_im[j] = ct_coeffs[m + b];
-        }
-        let (re_c, _) = decrypt(&module, &encoder, &ct_real, &sk, &mut scratch.borrow());
-        let (im_c, _) = decrypt(&module, &encoder, &ct_imag, &sk, &mut scratch.borrow());
-        let re_c: Vec<f64> = re_c.iter().map(|x| x.to_f64().unwrap()).collect();
-        let im_c: Vec<f64> = im_c.iter().map(|x| x.to_f64().unwrap()).collect();
-        println!(
-            "C2S-PREC   (re) snr={:.2} (im) snr={:.2} bits",
-            snr_bits(&re_c, &cref_re),
-            snr_bits(&im_c, &cref_im)
-        );
+    for ct in [&ct_real, &ct_imag] {
+        assert_canonical_at_k::<BE>("CoeffsToSlots", ct);
     }
 
-    let now = Instant::now();
     // 3) EvalMod each half. EvalMod raises the ciphertext to its own plan scale
     //    (`f_mod_log_delta`) internally and restores the input scale on the result,
     //    so no manual set_scale is needed here. The results are allocated at
@@ -433,8 +385,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    println!("ckks_eval_mod: {:?}", now.elapsed());
-    let now = Instant::now();
     module
         .ckks_eval_mod(
             &mut res_imag,
@@ -444,29 +394,15 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    println!("ckks_eval_mod: {:?}", now.elapsed());
 
     log_budget_check -= plan.eval_mod().consumed_bits();
 
     assert_eq!(res_real.log_budget(), log_budget_check);
     assert_eq!(res_imag.log_budget(), log_budget_check);
-
-    // After EvalMod the integer parts are removed, so the slots hold the clean
-    // message coefficients: this SNR is a genuine precision of the C2S→EvalMod
-    // chain (vs. the cleartext coefficient reference, scale-aligned).
-    {
-        let (re_e, _) = decrypt(&module, &encoder, &res_real, &sk, &mut scratch.borrow());
-        let (im_e, _) = decrypt(&module, &encoder, &res_imag, &sk, &mut scratch.borrow());
-        let re_e: Vec<f64> = re_e.iter().map(|x| x.to_f64().unwrap()).collect();
-        let im_e: Vec<f64> = im_e.iter().map(|x| x.to_f64().unwrap()).collect();
-        println!(
-            "EVALMOD-PREC (re) snr={:.2} (im) snr={:.2} bits",
-            snr_bits(&re_e, &ref_real),
-            snr_bits(&im_e, &ref_imag)
-        );
+    for ct in [&res_real, &res_imag] {
+        assert_canonical_at_k::<BE>("EvalMod", ct);
     }
 
-    let now = Instant::now();
     // 4) SlotsToCoeffs (split), then restore the message ratio EvalMod divided out.
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
@@ -479,8 +415,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-
-    println!("ckks_slots_to_coeffs_split: {:?}", now.elapsed());
 
     log_budget_check -= plan.slots_to_coeffs().consumed_bits();
 
@@ -546,63 +480,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    // `coeffs_to_slots` here is the LP transform feeding EvalMod: `log_delta = 29`
-    // (half precision) — its error `e` cancels in the round, so it does not reach
-    // the message and the bootstrap modulus shrinks by `num_factors × (58 − 29)`
-    // bits. The HP CoeffsToSlots is compiled separately below.
-    let coeffs_to_slots = DFTPlan::new(
-        DFTType::Encode,
-        vec![(2, 4), (2, 4), (3, 4), (3, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(29, 2),
-    )
-    .unwrap();
-    let bypass = DFTPlan::new(
-        DFTType::Encode,
-        vec![(1, 1); 10],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(58, 2),
-    )
-    .unwrap()
-    .with_scaling(1.0)
-    .unwrap();
-    let slots_to_coeffs = DFTPlan::new(
-        DFTType::Decode,
-        vec![(3, 4), (3, 4), (2, 4), (2, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(39, 2),
-    )
-    .unwrap()
-    // `r1 = IDFT(Δ·m)` at natural scale (the residue scale EvalMod emits);
-    // the standard `2^log_message_ratio` S2C scaling maps it to `m`.
-    .with_scaling((LOG_MSG_RATIO as f64).exp2())
-    .unwrap();
-    let plan = BootstrappingPlan::new(
-        BootstrappingPipeline::C2SFirst,
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
-            }),
-            eval_round_plus: Some(EvalRoundPlus {
-                coeffs_to_slots_bypass: bypass,
-            }),
-        },
-        coeffs_to_slots,
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosHK,
-            log_msg_ratio: LOG_MSG_RATIO,
-            f_mod_degree: 30,
-            f_mod_interval: FMOD_INTERVAL,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: meta(48, 4),
-            f_mod_log_delta: 60,
-        },
-        slots_to_coeffs,
-    )
-    .unwrap();
+    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, true, LOG_MSG_RATIO, 0);
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -633,35 +511,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         rank: 1,
     };
 
-    println!("[evalround] n={n} base2k={base2k} log_delta={log_delta} k_boot={k_boot}");
-    println!("[evalround] plan.consumed_bits()={}", plan.consumed_bits());
-
-    let scratch_size;
-    let mut scratch = {
-        let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        c.set_meta(tp.prec().meta);
-        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(
-            &c,
-            &tp.tsk_layout(),
-            &tp.atk_layout(),
-            &ckks_spec(
-                n,
-                base2k,
-                plan.eval_mod().coeffs_meta.log_delta(),
-                plan.eval_mod().coeffs_meta.log_budget(),
-            ),
-        );
-        ScratchOwned::<BE>::alloc(scratch_size)
-    };
-
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-
-    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-
-    // All evaluation keys via the bootstrapping-context helper. The generator reads
-    // the rotation Galois elements off the compiled DFT matrices — including the
-    // high-precision `coeffs_to_slots_bypass` — so the LP+HP CoeffsToSlots, the
-    // conjugation, EvalMod's tensor key, and the encapsulation keys are all covered.
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
@@ -670,9 +519,19 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             sparse_to_dense: tp.ksk_layout(k_boot).layout,
         }),
     };
-    // Re-size the scratch for the full bootstrap call: `ckks_bootstrap_tmp_bytes`
-    // is the whole memory story for `ckks_bootstrap` (its carved pipeline
-    // intermediates plus the largest nested stage).
+    let scratch_size = bootstrap_setup_tmp_bytes(
+        &module,
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &plan,
+        &keys_layout,
+    );
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
+
+    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
+
+    // The compiled pipeline adds its live intermediates to the setup scratch.
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
@@ -714,9 +573,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    // Cross-check the one-shot EvalRound+ orchestrator (the public API) against the
-    // explicit pipeline below — run first, on the fresh input, since the manual path
-    // mutates `ct0` in place for the encapsulation key-switch.
+    // Compare the public EvalRound+ orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
@@ -784,7 +641,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
 
     // 2) CoeffsToSlots (split): LP (low precision, `1/K` scaling) for the round, and
     //    HP (full precision, natural scaling) for the high-precision `Δm + I·q`.
-    let now = Instant::now();
     let mut r0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut i0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
@@ -809,19 +665,16 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    println!("[evalround] coeffs_to_slots (LP+HP): {:?}", now.elapsed());
 
     // 3) EvalMod each LP half: the residue `Δm + e` at natural scale.
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    let now = Instant::now();
     module
         .ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     module
         .ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
-    println!("[evalround] eval_mod x2: {:?}", now.elapsed());
 
     // 4) r1 = r0_hp − K·r0_lp + EvalMod(r0_lp) = IDFT(Δ·m).
     //    EvalMod emits the residue at natural scale while the LP C2S is at `1/K`, so
@@ -841,7 +694,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     module.ckks_add_assign(&mut i0_hp, &res_imag, &mut scratch.borrow()).unwrap();
 
     // 5) SlotsToCoeffs (split): IDFT(Δ·m) slots → refreshed message coefficients.
-    let now = Instant::now();
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
         .ckks_slots_to_coeffs_split(
@@ -853,7 +705,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    println!("[evalround] slots_to_coeffs: {:?}", now.elapsed());
 
     ct_out.set_log_delta(log_delta);
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
@@ -898,13 +749,14 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    for (eval_round_plus, guard_bits, case) in [
-        (false, 0, "standard"),
-        (false, 6, "guarded"),
-        (true, 0, "evalround+"),
-        (true, 6, "guarded_evalround+"),
+    for (log_delta, log_msg_ratio, eval_round_plus, guard_bits, case) in [
+        (40, 16, false, 0, "standard"),
+        (40, 16, false, 6, "guarded"),
+        (40, 16, true, 0, "evalround+"),
+        (40, 16, true, 6, "guarded_evalround+"),
+        (35, 13, false, 6, "guard_precision"),
     ] {
-        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus, guard_bits);
+        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, log_delta, log_msg_ratio, eval_round_plus, guard_bits);
         for (avg, tag) in [(re, "re"), (im, "im")] {
             println!("[s2c_first/{case}] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
             assert!(
@@ -913,18 +765,12 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
             );
         }
     }
-    let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 35, 13, FMOD_INTERVAL, false, 6);
-    for (avg, tag) in [(re, "re"), (im, "im")] {
-        println!("[s2c_first/guard_precision] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
-        assert!(avg >= 24.0, "S2C guard-bit precision ({tag}): {avg:.1} bits < 24.0");
-    }
 }
 
 fn run_s2c_first_case<BE, F, E>(
     base2k: usize,
     log_delta: usize,
     log_msg_ratio: usize,
-    fmod_interval: usize,
     eval_round_plus: bool,
     guard_bits: usize,
 ) -> (f64, f64)
@@ -942,61 +788,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let coeffs_to_slots = DFTPlan::new(
-        DFTType::Encode,
-        vec![(2, 4), (2, 4), (3, 4), (3, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(if eval_round_plus { 29 } else { 58 }, 2),
-    )
-    .unwrap();
-    let coeffs_to_slots_bypass = eval_round_plus
-        .then(|| {
-            DFTPlan::new(
-                DFTType::Encode,
-                vec![(1, 1); 10],
-                DFTOutputFormat::SplitRealAndImag,
-                meta(58, 2),
-            )
-            .unwrap()
-            .with_scaling(1.0)
-            .unwrap()
-        })
-        .map(|coeffs_to_slots_bypass| EvalRoundPlus { coeffs_to_slots_bypass });
-    let slots_to_coeffs = DFTPlan::new(
-        DFTType::Decode,
-        vec![(3, 4), (3, 4), (2, 4), (2, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(45, 2),
-    )
-    .unwrap()
-    .with_scaling(0.5)
-    .unwrap();
-    let plan = BootstrappingPlan::new(
-        BootstrappingPipeline::S2CFirst,
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
-            }),
-            eval_round_plus: coeffs_to_slots_bypass,
-        },
-        coeffs_to_slots,
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosHK,
-            log_msg_ratio,
-            f_mod_degree: 30,
-            f_mod_interval: fmod_interval,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: meta(48, 4),
-            f_mod_log_delta: 60,
-        },
-        slots_to_coeffs,
-    )
-    .unwrap()
-    .with_c2s_guard_bits(guard_bits)
-    .unwrap();
+    let plan = bootstrap_plan(BootstrappingPipeline::S2CFirst, eval_round_plus, log_msg_ratio, guard_bits);
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -1023,38 +815,6 @@ where
         rank: 1,
     };
 
-    println!(
-        "[s2c_first] n={n} base2k={base2k} log_delta={log_delta} k_in={k_in} k_boot={k_boot} eval_round_plus={eval_round_plus}"
-    );
-    println!(
-        "[s2c_first] S2C={} C2S={} EvalMod={}",
-        plan.slots_to_coeffs().consumed_bits(),
-        plan.coeffs_to_slots().consumed_bits(),
-        plan.eval_mod().consumed_bits()
-    );
-
-    let scratch_size;
-    let mut scratch = {
-        let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        c.set_meta(tp.prec().meta);
-        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(
-            &c,
-            &tp.tsk_layout(),
-            &tp.atk_layout(),
-            &ckks_spec(
-                n,
-                base2k,
-                plan.eval_mod().coeffs_meta.log_delta(),
-                plan.eval_mod().coeffs_meta.log_budget(),
-            ),
-        );
-        ScratchOwned::<BE>::alloc(scratch_size)
-    };
-
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-
-    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
@@ -1063,6 +823,18 @@ where
             sparse_to_dense: tp.ksk_layout(k_boot).layout,
         }),
     };
+    let scratch_size = bootstrap_setup_tmp_bytes(
+        &module,
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &plan,
+        &keys_layout,
+    );
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
+
+    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
+
     {
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(
             &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
@@ -1114,7 +886,7 @@ where
 
     {
         let im_zero = vec![F::zero(); m];
-        let ct_real = ckks_encrypt_with_prec(
+        let mut ct_real = ckks_encrypt_with_prec(
             &tp,
             &module,
             &host_module,
@@ -1127,7 +899,6 @@ where
             &mut scratch.borrow(),
         );
         // Declaring the slots real selects the single-EvalMod pipeline.
-        let mut ct_real = ct_real;
         ct_real.set_slots(SlotsKind::Real);
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -1200,50 +971,6 @@ where
     encoder.decode_reim(&pt_host, &mut re_out, &mut im_out).unwrap();
 
     (re_out, im_out)
-}
-
-/// Decrypts `ct` and returns its raw polynomial coefficients (length `n`).
-fn decrypt_coeffs<BE, S>(
-    module: &Module<BE>,
-    ct: &CKKSCiphertextOwned<BE>,
-    sk: &S,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Vec<f64>
-where
-    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + TestContextBackend,
-    Module<BE>: CKKSDecryptOps<BE>,
-    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
-{
-    assert_canonical_at_k::<BE>("decrypt_coeffs", ct);
-    let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
-    let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k);
-    pt.set_meta(prec.meta);
-    module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
-    let mut c = vec![0f64; ct.n().as_usize()];
-    pt.decode_host_floats(&mut c).unwrap();
-    c
-}
-
-/// Bit-reversal of `j` over `bits` bits (poulpy's slot-map / coefficient order).
-fn bitrev(j: usize, bits: usize) -> usize {
-    ((j as u32).reverse_bits() >> (u32::BITS - bits as u32)) as usize
-}
-
-/// Scale-invariant signal-to-noise ratio in bits: best-fit a global scale `s`
-/// between `got` and `want`, then report `-0.5·log2(||got - s·want||² / ||s·want||²)`.
-/// Robust to the per-step scale bookkeeping (`1/K`, message ratio, eval scale),
-/// so it measures only how well the recovered *shape* matches the reference.
-fn snr_bits(got: &[f64], want: &[f64]) -> f64 {
-    let dot_gw: f64 = got.iter().zip(want).map(|(g, w)| g * w).sum();
-    let dot_ww: f64 = want.iter().map(|w| w * w).sum();
-    let s = if dot_ww > 0.0 { dot_gw / dot_ww } else { 0.0 };
-    let err2: f64 = got.iter().zip(want).map(|(g, w)| (g - s * w).powi(2)).sum();
-    let sig2: f64 = want.iter().map(|w| (s * w).powi(2)).sum();
-    if err2 <= 0.0 || sig2 <= 0.0 {
-        return f64::INFINITY;
-    }
-    -0.5 * (err2 / sig2).log2()
 }
 
 fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKSCiphertextOwned<BE>) {

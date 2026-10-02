@@ -20,12 +20,15 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
         CKKSEncryptOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned,
+    },
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::helpers::{
         PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, assert_canonical_at_k, ckks_spec,
@@ -93,21 +96,7 @@ where
         let keys_layout = *preset.keys_layout();
         let module = Module::<BE>::new(n as u64);
 
-        let scratch_size = {
-            let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
-            ct.set_meta(bootstrap_layout.meta);
-            module.ckks_all_ops_with_atk_tmp_bytes(
-                &ct,
-                &keys_layout.tensor_key,
-                &keys_layout.automorphism_key,
-                &ckks_spec(
-                    n,
-                    base2k,
-                    plan.eval_mod().coeffs_meta.log_delta(),
-                    plan.eval_mod().coeffs_meta.log_budget(),
-                ),
-            )
-        };
+        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
         let context = BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
         let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
@@ -277,4 +266,29 @@ where
             im.min_log2_prec
         );
     }
+}
+
+/// Scratch for context compilation and key preparation, before the compiled
+/// context is available for the bootstrap execution query.
+pub(crate) fn bootstrap_setup_tmp_bytes<BE: Backend>(
+    module: &Module<BE>,
+    layout: &CKKSLayout,
+    plan: &BootstrappingPlan,
+    keys: &BootstrappingKeysLayout,
+) -> usize
+where
+    Module<BE>: CKKSAllOpsTmpBytes<BE>,
+{
+    let coeffs = plan.eval_mod().coeffs_meta;
+    module.ckks_all_ops_with_atk_tmp_bytes(
+        layout,
+        &keys.tensor_key,
+        &keys.automorphism_key,
+        &ckks_spec(
+            layout.n().as_usize(),
+            layout.base2k().as_usize(),
+            coeffs.log_delta(),
+            coeffs.log_budget(),
+        ),
+    )
 }

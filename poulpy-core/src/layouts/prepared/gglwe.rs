@@ -7,6 +7,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
 };
 
+use crate::layouts::operand_degree;
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
 };
@@ -105,23 +106,16 @@ where
         rank_in: Rank,
         rank_out: Rank,
     ) -> GGLWEPrepared<BE::OwnedBuf, BE> {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
-
-        GGLWEPrepared {
-            data: self.vmp_pmat_alloc(
-                self.ring_degree().into(),
-                dnum.into(),
-                rank_in.into(),
-                (rank_out + 1).into(),
-                size,
-                PrepareHint::Reuse,
-            ),
+        self.gglwe_prepared_alloc_from_infos(&GGLWELayout {
+            n: self.ring_degree(),
             base2k,
-            dsize,
-            k_aux,
             dnum,
+            k_aux,
+            rank_in,
+            rank_out,
+            dsize,
             stride: 1,
-        }
+        })
     }
 
     /// Allocates a new [`GGLWEPrepared`] matching the parameters of `infos`.
@@ -129,15 +123,23 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.gglwe_prepared_alloc(
-            infos.base2k(),
-            infos.dnum(),
-            infos.dsize(),
-            infos.k_aux(),
-            infos.rank_in(),
-            infos.rank_out(),
-        )
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        GGLWEPrepared {
+            data: self.vmp_pmat_alloc(
+                n,
+                infos.dnum().into(),
+                infos.rank_in().into(),
+                (infos.rank_out() + 1).into(),
+                size,
+                PrepareHint::Reuse,
+            ),
+            base2k: infos.base2k(),
+            dsize: infos.dsize(),
+            k_aux: infos.k_aux(),
+            dnum: infos.dnum(),
+            stride: 1,
+        }
     }
 
     /// Returns the byte size required to store a [`GGLWEPrepared`] with the given parameters.
@@ -150,16 +152,16 @@ where
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
-
-        self.bytes_of_vmp_pmat(
-            self.ring_degree().into(),
-            dnum.into(),
-            rank_in.into(),
-            (rank_out + 1).into(),
-            size,
-            PrepareHint::Reuse,
-        )
+        self.gglwe_prepared_bytes_of_from_infos(&GGLWELayout {
+            n: self.ring_degree(),
+            base2k,
+            dnum,
+            k_aux,
+            rank_in,
+            rank_out,
+            dsize,
+            stride: 1,
+        })
     }
 
     /// Returns the byte size required to store a [`GGLWEPrepared`] matching `infos`.
@@ -167,14 +169,15 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.gglwe_prepared_bytes_of(
-            infos.base2k(),
-            infos.dnum(),
-            infos.dsize(),
-            infos.k_aux(),
-            infos.rank_in(),
-            infos.rank_out(),
+        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        self.bytes_of_vmp_pmat(
+            n,
+            infos.dnum().into(),
+            infos.rank_in().into(),
+            (infos.rank_out() + 1).into(),
+            size,
+            PrepareHint::Reuse,
         )
     }
 
@@ -203,8 +206,7 @@ where
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
 
-        assert_eq!(res.n(), self.ring_degree());
-        assert_eq!(other.n(), self.ring_degree());
+        operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
         assert_eq!(res.base2k, other.base2k);
         assert_eq!(res.size(), other.size());
         assert_eq!(res.dsize, other.dsize);

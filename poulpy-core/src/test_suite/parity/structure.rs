@@ -4,7 +4,7 @@ use crate::{
     Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretTensorFactory,
+        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
         GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
@@ -35,11 +35,15 @@ where
 {
     let b = params.base2k;
     let mut source = Source::new([131; 32]);
-    assert_eq!(r.glwe_trace_galois_elements(), t.glwe_trace_galois_elements());
-    assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
+    // The key lists name the module's Galois elements; keys for operands of a smaller
+    // degree are those of a module of that degree.
+    if r.n() == t.n() {
+        assert_eq!(r.glwe_trace_galois_elements(), t.glwe_trace_galois_elements());
+        assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
+    }
     for &rank in &shapes.ranks {
         let g = GLWELayout {
-            n: Degree(r.n() as u32),
+            n: Degree(params.n as u32),
             base2k: Base2K(b as u32),
             k: TorusPrecision((2 * b + 1) as u32),
             rank: Rank(rank as u32),
@@ -78,7 +82,7 @@ where
         let a_r = ref_glwe(r, &g, &mut source);
         let mut a_t = t.glwe_alloc_from_infos(&g);
         a_r.transfer_into(&mut a_t);
-        for skip in [0, 1, r.log_n()] {
+        for skip in [0, 1, (params.n.ilog2() as usize)] {
             let mut out_r = ref_glwe(r, &g, &mut source);
             let mut out_t = t.glwe_alloc_from_infos(&g);
             out_r.transfer_into(&mut out_t);
@@ -99,7 +103,7 @@ where
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace rank={rank} skip={skip}");
-            if skip == r.log_n() {
+            if skip == (params.n.ilog2() as usize) {
                 assert_eq!(out_r, a_r, "empty out-of-place trace must copy the input");
             }
             a_r.transfer_into(&mut out_r);
@@ -118,7 +122,7 @@ where
             );
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
-            if skip == r.log_n() {
+            if skip == (params.n.ilog2() as usize) {
                 assert_eq!(out_r, a_r, "empty trace must preserve all input coefficients and metadata");
             }
         }
@@ -134,7 +138,13 @@ where
                 let mut out = $module.glwe_alloc_from_infos(&g);
                 initial.transfer_into(&mut out);
                 let mut scratch = poisoned_scratch::<$be>($module.glwe_trace_tmp_bytes(&g, &g, &k));
-                $module.glwe_trace(&mut out, $module.log_n(), &$a, &empty_keys, &mut scratch.borrow());
+                $module.glwe_trace(
+                    &mut out,
+                    (params.n.ilog2() as usize),
+                    &$a,
+                    &empty_keys,
+                    &mut scratch.borrow(),
+                );
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out.transfer_into(&mut have);
                 assert_eq!(have, a_r, "empty trace without keys");
@@ -142,9 +152,20 @@ where
                     initial.transfer_into(&mut out);
                     let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         if assign {
-                            $module.glwe_trace_assign(&mut out, $module.log_n() + 1, &empty_keys, &mut scratch.borrow());
+                            $module.glwe_trace_assign(
+                                &mut out,
+                                (params.n.ilog2() as usize) + 1,
+                                &empty_keys,
+                                &mut scratch.borrow(),
+                            );
                         } else {
-                            $module.glwe_trace(&mut out, $module.log_n() + 1, &$a, &empty_keys, &mut scratch.borrow());
+                            $module.glwe_trace(
+                                &mut out,
+                                (params.n.ilog2() as usize) + 1,
+                                &$a,
+                                &empty_keys,
+                                &mut scratch.borrow(),
+                            );
                         }
                     }));
                     assert!(rejected.is_err(), "trace accepted skip greater than log_n");
@@ -164,11 +185,11 @@ where
         };
         for (positions, log_gap_out, gi) in [
             (vec![0], 0, &g),
-            (vec![0, r.n() / 2, r.n() - 1], 0, &g),
-            (vec![0, 1, r.n() / 2, r.n() / 2 + 1], 0, &g),
+            (vec![0, params.n / 2, params.n - 1], 0, &g),
+            (vec![0, 1, params.n / 2, params.n / 2 + 1], 0, &g),
             (vec![0, 2, 4], 1, &g),
             (vec![0, 2, 4], 1, &g_wide),
-            (vec![0, r.n() / 2, r.n() - 1], 0, &g_wide),
+            (vec![0, params.n / 2, params.n - 1], 0, &g_wide),
         ] {
             let mut inputs_r: Vec<_> = positions.iter().map(|_| ref_glwe(r, gi, &mut source)).collect();
             let mut inputs_t: Vec<_> = inputs_r
@@ -215,7 +236,11 @@ where
         }
         macro_rules! check_invalid_pack {
             ($be:ty, $module:ident, $keys:ident) => {{
-                for (positions, gap) in [(vec![0, 1], 1), (vec![1], 1), (vec![0], $module.log_n() + 1)] {
+                for (positions, gap) in [
+                    (vec![0, 1], 1),
+                    (vec![1], 1),
+                    (vec![0], (params.n.ilog2() as usize) + 1),
+                ] {
                     let initial = ref_glwe(r, &g, &mut source);
                     let mut out = $module.glwe_alloc_from_infos(&g);
                     initial.transfer_into(&mut out);
@@ -271,7 +296,7 @@ where
                         ..g
                     },
                 ] {
-                    let positions = [0, $module.n() / 2, $module.n() - 1];
+                    let positions = [0, params.n / 2, params.n - 1];
                     for mixed_slot in 0..positions.len() {
                         let initial = ref_glwe(r, &g, &mut source);
                         let mut out = $module.glwe_alloc_from_infos(&g);
@@ -346,21 +371,25 @@ where
     let b = params.base2k;
     let mut source = Source::new([137; 32]);
     for &rank in &shapes.ranks {
-        let mut secret_r = r.glwe_secret_alloc(Rank(rank as u32));
+        let secret_layout = GLWESecretLayout {
+            n: Degree(params.n as u32),
+            rank: Rank(rank as u32),
+        };
+        let mut secret_r = r.glwe_secret_alloc_from_infos(&secret_layout);
         for col in 0..rank {
             for x in secret_r.data.at_mut(col, 0) {
                 *x = (source.next_i64().unsigned_abs() % 3) as i64 - 1;
             }
         }
         secret_r.dist = Distribution::TernaryProb(2.0 / 3.0);
-        let mut secret_t = t.glwe_secret_alloc(Rank(rank as u32));
+        let mut secret_t = t.glwe_secret_alloc_from_infos(&secret_layout);
         secret_r.transfer_into(&mut secret_t);
         let mut secretp_r = r.glwe_secret_prepared_alloc_from_infos(&secret_r);
         r.glwe_secret_prepare(&mut secretp_r, &secret_r);
         let mut secretp_t = t.glwe_secret_prepared_alloc_from_infos(&secret_t);
         t.glwe_secret_prepare(&mut secretp_t, &secret_t);
-        let mut tensor_r = r.glwe_secret_tensor_alloc(Rank(rank as u32));
-        let mut tensor_t = t.glwe_secret_tensor_alloc(Rank(rank as u32));
+        let mut tensor_r = r.glwe_secret_tensor_alloc_from_infos(&secret_layout);
+        let mut tensor_t = t.glwe_secret_tensor_alloc_from_infos(&secret_layout);
         r.glwe_secret_tensor_prepare(
             &mut tensor_r,
             &secret_r,
@@ -378,13 +407,13 @@ where
         );
         assert_eq!(tensor_r.dist(), tensor_t.dist());
         assert_eq!(tensor_r.dist(), secret_r.dist());
-        let mut tensorp_r = r.glwe_secret_tensor_prepared_alloc(Rank(rank as u32));
+        let mut tensorp_r = r.glwe_secret_tensor_prepared_alloc_from_infos(&secret_layout);
         r.glwe_secret_tensor_prepared_prepare(&mut tensorp_r, &tensor_r);
-        let mut tensorp_t = t.glwe_secret_tensor_prepared_alloc(Rank(rank as u32));
+        let mut tensorp_t = t.glwe_secret_tensor_prepared_alloc_from_infos(&secret_layout);
         t.glwe_secret_tensor_prepared_prepare(&mut tensorp_t, &tensor_t);
         for precision in [2 * b, 2 * b + 1] {
             let g = GLWELayout {
-                n: Degree(r.n() as u32),
+                n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 k: TorusPrecision(precision as u32),
                 rank: Rank(rank as u32),

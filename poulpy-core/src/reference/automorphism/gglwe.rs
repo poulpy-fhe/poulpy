@@ -8,6 +8,7 @@ use poulpy_hal::{
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena},
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
@@ -31,9 +32,7 @@ where
     A: GGLWEInfos,
     K: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, res_infos.n());
-    assert_eq!(module.n() as u32, a_infos.n());
-    assert_eq!(module.n() as u32, key_infos.n());
+    operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
 
     let lvl_0: usize = module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos);
     let lvl_1: usize = module.vec_znx_automorphism_assign_tmp_bytes();

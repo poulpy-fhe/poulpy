@@ -1420,6 +1420,17 @@ poulpy_core::core_encryption_parity_test_suite!(
     backend_test = crate::NTT4x30Ref
 );
 
+// Encryption on a module of twice the operand degree samples and computes as a
+// module of the operand degree.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_sub_degree_fft64ref,
+    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<7, n: 1<<7, base2k: 12 },
+    test_size = 1<<8,
+);
+
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
@@ -1427,6 +1438,82 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::NTT4x30Ref,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}
+
+// A module computes every operation of a smaller degree as a module of that
+// degree does.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_sub_degree_fft64,
+    backend_ref = crate::FFT64Ref,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<7, base2k: 12, n: 1<<7 },
+    test_size = 1<<8,
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}
+
+// A module computes every operation of a smaller degree as a module of that
+// degree does.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_sub_degree_ntt4x30,
+    backend_ref = crate::NTT4x30Ref,
+    backend_test = crate::NTT4x30Ref,
+    params = TestParams { size: 1<<7, base2k: 12, n: 1<<7 },
+    test_size = 1<<8,
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,

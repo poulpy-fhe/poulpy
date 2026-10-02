@@ -93,13 +93,13 @@ where
     Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR>,
     Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
 {
-    assert_eq!(r.n(), t.n());
+    assert!(params.n <= r.n() && params.n <= t.n());
     let base = params.base2k.min(12);
     let k = 2 * base + 1;
     let mut source = Source::new([187; 32]);
     let schedule = LinearTransformationLayout {
         indexes: vec![0, 1, 4, 5],
-        slots: r.n() / 2,
+        slots: params.n / 2,
         strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
     };
     let plan = schedule.index();
@@ -108,7 +108,7 @@ where
     for &rank in &shapes.ranks {
         for dsize in shapes.dsizes(k, base) {
             let ct = GLWELayout {
-                n: r.n().into(),
+                n: params.n.into(),
                 base2k: base.into(),
                 k: k.into(),
                 rank: rank.into(),
@@ -125,7 +125,7 @@ where
                     rank: ct.rank,
                     dnum: Dnum(k.div_ceil(base * dsize) as u32),
                     dsize: Dsize(dsize as u32),
-                    k_aux: TorusPrecision((base * dsize + r.log_n()) as u32),
+                    k_aux: TorusPrecision((base * dsize + (params.n.ilog2() as usize)) as u32),
                 };
                 let input_r = ref_glwe(r, &ct, &mut source);
                 let mut input_t = t.glwe_alloc_from_infos(&ct);
@@ -206,7 +206,7 @@ where
                     };
                     let identity_schedule = LinearTransformationLayout {
                         indexes: vec![0],
-                        slots: r.n() / 2,
+                        slots: params.n / 2,
                         strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
                     };
                     let mut one_r = r.glwe_alloc_from_infos(&one_layout);

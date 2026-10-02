@@ -5,6 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
 };
 
+use crate::layouts::{GLWESecretLayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
@@ -86,29 +87,35 @@ where
     Self: GLWESecretPreparedFactory<B>,
 {
     fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B> {
-        GLWESecretTensorPrepared {
-            data: self.svp_ppol_alloc(self.n(), crate::layouts::pairs(rank.into()), PrepareHint::Reuse),
+        self.glwe_secret_tensor_prepared_alloc_from_infos(&GLWESecretLayout {
+            n: self.ring_degree(),
             rank,
-            dist: Distribution::NONE,
-        }
+        })
     }
     fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<B::OwnedBuf, B>
     where
         A: GLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.glwe_secret_tensor_prepared_alloc(infos.rank())
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
+        GLWESecretTensorPrepared {
+            data: self.svp_ppol_alloc(n, crate::layouts::pairs(infos.rank().into()), PrepareHint::Reuse),
+            rank: infos.rank(),
+            dist: Distribution::NONE,
+        }
     }
 
     fn glwe_secret_tensor_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(self.n(), crate::layouts::pairs(rank.into()), PrepareHint::Reuse)
+        self.glwe_secret_tensor_prepared_bytes_of_from_infos(&GLWESecretLayout {
+            n: self.ring_degree(),
+            rank,
+        })
     }
     fn glwe_secret_tensor_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        assert_eq!(self.ring_degree(), infos.n());
-        self.glwe_secret_tensor_prepared_bytes_of(infos.rank())
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
+        self.bytes_of_svp_ppol(n, crate::layouts::pairs(infos.rank().into()), PrepareHint::Reuse)
     }
 
     fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)

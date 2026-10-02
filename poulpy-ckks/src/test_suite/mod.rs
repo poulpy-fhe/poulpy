@@ -876,6 +876,7 @@ macro_rules! ckks_backend_test_suite {
                 bootstrapping_s2c_first_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
             );
+            run_test!(fold_unfold, $crate::test_suite::fold::test_fold_unfold);
             run_test!(
                 functional_bootstrapping_e2e,
                 $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e
@@ -985,6 +986,7 @@ pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod eval_mod;
+pub mod fold;
 pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;

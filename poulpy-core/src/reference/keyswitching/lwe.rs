@@ -8,6 +8,7 @@ use poulpy_hal::{
     layouts::{Backend, ScratchArena, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
@@ -25,17 +26,17 @@ where
     A: LWEInfos,
     K: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, key_infos.n());
+    operand_degree(module.n(), &[key_infos.n()]);
 
     let glwe_a_infos: GLWELayout = GLWELayout {
-        n: module.n().into(),
+        n: key_infos.n(),
         base2k: a_infos.base2k(),
         k: a_infos.k(),
         rank: Rank(1),
     };
 
     let glwe_res_infos: GLWELayout = GLWELayout {
-        n: module.n().into(),
+        n: key_infos.n(),
         base2k: res_infos.base2k(),
         k: res_infos.k(),
         rank: Rank(1),
@@ -60,9 +61,9 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
-    assert!(res.n().as_usize() <= module.n());
-    assert!(a.n().as_usize() <= module.n());
-    assert_eq!(ksk.n(), module.n() as u32);
+    operand_degree(module.n(), &[ksk.n()]);
+    assert!(res.n() <= ksk.n());
+    assert!(a.n() <= ksk.n());
     assert!(
         scratch.available() >= module.lwe_keyswitch_tmp_bytes_reference(res, a, ksk),
         "scratch.available(): {} < LWEKeyswitch::lwe_keyswitch_tmp_bytes: {}",

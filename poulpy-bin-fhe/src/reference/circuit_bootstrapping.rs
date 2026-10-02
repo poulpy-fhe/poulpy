@@ -158,7 +158,9 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     }
 
     {
-        let (mut sk_glwe_prepared, mut op_scratch) = scratch.borrow().take_glwe_secret_prepared_scratch(module, brk_infos.rank());
+        let (mut sk_glwe_prepared, mut op_scratch) = scratch
+            .borrow()
+            .take_glwe_secret_prepared_scratch(sk_glwe.n(), brk_infos.rank());
         module.glwe_secret_prepare(&mut sk_glwe_prepared, sk_glwe);
 
         module.blind_rotation_key_encrypt_sk(

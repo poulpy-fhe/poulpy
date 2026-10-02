@@ -52,9 +52,9 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    assert_eq!(module_ref.n(), module_test.n());
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
 
-    let n = module_ref.n() as u32;
+    let n = params.n as u32;
     let base2k = params.base2k;
     let k = 4 * base2k + 1;
     let mut source = Source::new([31u8; 32]);

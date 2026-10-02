@@ -158,7 +158,8 @@ macro_rules! core_encryption_parity_test_suite {
         mod $name:ident,
         backend_ref = $backend_ref:ty,
         backend_test = $backend_test:ty,
-        params = $params:expr $(,)?
+        params = $params:expr
+        $(, test_size = $test_size:expr)? $(,)?
     ) => {
         mod $name {
             #[test]
@@ -177,7 +178,12 @@ macro_rules! core_encryption_parity_test_suite {
                 use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};
                 let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(params.size as u64),
+                    Module::<$backend_test>::new({
+                        #[allow(unused_mut)]
+                        let mut size = params.size;
+                        $( size = $test_size; )?
+                        size
+                    } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_glwe_encryption_parity(
@@ -195,7 +201,12 @@ macro_rules! core_encryption_parity_test_suite {
                 use $crate::test_suite::parity::{ParityShapes, test_key_encryption_parity};
                 let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(params.size as u64),
+                    Module::<$backend_test>::new({
+                        #[allow(unused_mut)]
+                        let mut size = params.size;
+                        $( size = $test_size; )?
+                        size
+                    } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_key_encryption_parity(
@@ -213,7 +224,12 @@ macro_rules! core_encryption_parity_test_suite {
                 use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};
                 let params: TestParams = $params;
                 $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new(params.size as u64),
+                    Module::<$backend_test>::new({
+                        #[allow(unused_mut)]
+                        let mut size = params.size;
+                        $( size = $test_size; )?
+                        size
+                    } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_lwe_encryption_parity(

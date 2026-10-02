@@ -10,7 +10,7 @@ use crate::{
     layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
 };
 
-/// Decryption rejects operand degrees that differ from the module in all builds.
+/// Decryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_decrypt_degree_mismatch<BE: Backend>()
 where
     Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE> + GLWESecretPreparedFactory<BE>,
@@ -21,11 +21,15 @@ where
     for other_n in [n / 2, n * 2] {
         let other = Module::<BE>::new(other_n as u64);
         for (ct_module, pt_module, sk_module, message) in [
-            (&other, &module, &module, "GLWE ciphertext degree must match the module"),
-            (&module, &other, &module, "GLWE plaintext degree must match the module"),
-            (&module, &module, &other, "GLWE secret key degree must match the module"),
-            (&other, &other, &other, "GLWE ciphertext degree must match the module"),
-        ] {
+            (&other, &module, &module, "operand degrees differ"),
+            (&module, &other, &module, "operand degrees differ"),
+            (&module, &module, &other, "operand degrees differ"),
+            (&other, &other, &other, "operand degree exceeds the module degree"),
+        ]
+        .into_iter()
+        // Operands sharing a smaller degree are valid.
+        .take(if other_n > n { 4 } else { 3 })
+        {
             let ct = ct_module.glwe_alloc(8usize.into(), 8usize.into(), 1usize.into());
             let mut pt = pt_module.glwe_plaintext_alloc(8usize.into(), 8usize.into());
             let sk = sk_module.glwe_secret_prepared_alloc(1usize.into());
@@ -33,7 +37,15 @@ where
                 module.glwe_decrypt(&ct, &mut pt, &sk, &mut scratch.arena());
             }))
             .expect_err("decryption accepted mismatched degrees");
-            assert!(err.downcast_ref::<String>().is_some_and(|s| s.contains(message)));
+            assert!(panic_message(&*err).contains(message));
         }
     }
+}
+
+/// Message of a panic payload, formatted or static.
+pub(crate) fn panic_message(err: &(dyn std::any::Any + Send)) -> &str {
+    err.downcast_ref::<&str>()
+        .copied()
+        .or_else(|| err.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or_default()
 }
