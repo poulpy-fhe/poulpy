@@ -469,7 +469,7 @@ where
             };
             for t in 0..g.min(group.len()) {
                 let mut part = module.ckks_ciphertext_alloc_from_glwe_infos(&layout(n, src.base2k(), src.k()));
-                extract(module, &mut part, &*src, t);
+                extract(module, &mut part, src, t);
                 part.set_meta(meta);
                 let parts = if log_g > 0 {
                     split_sparse(module, &part, log_g, &keys, scratch)?
