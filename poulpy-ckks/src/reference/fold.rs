@@ -50,7 +50,8 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
     /// Metadata of the standard ciphertext that represents an input labeled `meta`.
     fn packed_meta(meta: CKKSMeta) -> CKKSMeta;
 
-    /// Writes `src` into `dst`, a standard ciphertext of the packed degree.
+    /// Writes `src` into `dst`, a standard ciphertext of the packed degree, canonical at
+    /// its width.
     fn to_standard(
         module: &Module<BE>,
         dst: &mut CKKSCiphertextOwned<BE>,
@@ -80,6 +81,7 @@ where
     BE: Backend<Ring = Standard>,
     Module<BE>: ModuleN
         + VecZnxSwitchRing<BE>
+        + GLWENormalize<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
@@ -112,9 +114,11 @@ where
         module: &Module<BE>,
         dst: &mut CKKSCiphertextOwned<BE>,
         src: &CKKSCiphertextOwned<BE>,
-        _scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        switch_ring(module, dst, src);
+        // Normalizing reads every limb of `src`, so non-canonical digits and limbs past
+        // its width are carried into `dst` instead of overflowing the merge.
+        module.glwe_normalize(dst, src, scratch);
         dst.set_meta(src.meta());
         Ok(())
     }
@@ -350,14 +354,17 @@ where
             }
             // The group shares the input secret, so it is merged before one inbound switch.
             let mut packed = module.ckks_ciphertext_alloc_from_glwe_infos(&layout(degree, input.base2k(), input.k()));
-            merge(module, &mut packed, parts.iter().enumerate().map(|(j, ct)| (j as i64, ct)));
+            merge(
+                module,
+                &mut packed,
+                parts.iter().enumerate().map(|(j, ct)| (j as i64, ct)),
+                scratch,
+            );
             packed.set_meta(meta);
             if !imags.is_empty() {
-                // Keep component sums separate: interleaving them can overflow
-                // intermediate limbs at large radices even when each sum fits.
                 let positions = group.iter().enumerate().filter(|(_, u)| u.1.is_some()).map(|(j, _)| j as i64);
                 let mut imag = module.ckks_ciphertext_alloc_from_glwe_infos(&packed);
-                merge(module, &mut imag, positions.zip(&imags));
+                merge(module, &mut imag, positions.zip(&imags), scratch);
                 imag.set_meta(meta);
                 module.ckks_mul_i_assign(&mut imag, scratch)?;
                 module.ckks_add_assign(&mut packed, &imag, scratch)?;
@@ -668,15 +675,21 @@ fn layout(n: usize, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
 }
 
 /// Writes `Σ X^shift·src(X^g)` into `dst`, whose degree is `g` times that of each
-/// `src`; all share the radix of `dst`.
-fn merge<'s, BE, D, S>(module: &Module<BE>, dst: &mut D, srcs: impl IntoIterator<Item = (i64, &'s S)>)
-where
+/// `src`; all share the radix of `dst`. The sum is normalized after each term: sparse
+/// parts overlap on every coefficient of their dense masks.
+fn merge<'s, BE, D, S>(
+    module: &Module<BE>,
+    dst: &mut D,
+    srcs: impl IntoIterator<Item = (i64, &'s S)>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxSwitchRing<BE>
         + GLWERotate<BE>
         + GLWEAdd<BE>
-        + GLWEZero<BE>,
+        + GLWEZero<BE>
+        + GLWENormalize<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     D: GLWEToBackendMut<BE> + GLWEInfos,
     S: GLWEToBackendRef<BE> + 's,
@@ -688,6 +701,7 @@ where
         switch_ring(module, &mut embedded, src);
         module.glwe_rotate(shift, &mut shifted, &embedded);
         module.glwe_add_assign(dst, &shifted);
+        module.glwe_normalize_assign(dst, scratch);
     }
 }
 

@@ -15,7 +15,7 @@ use poulpy_core::{
     GLWEMaskFill,
     layouts::{
         GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWELayout, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+        GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, Standard};
@@ -361,6 +361,82 @@ where
     }
 }
 
+/// Folding sums overlapping parts: sparse inputs share every coefficient of their
+/// dense masks, and pairs add `i·y` to `x`. Uniform digits at the largest radix, and
+/// the same values with non-canonical digits and a limb past their width, fold alike.
+fn check_large_digits<B>(module: &Module<B>)
+where
+    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
+{
+    let (n, b) = (module.n(), (i64::BITS - 2) as usize);
+    let mut input = layout(n, b, 2 * b, 12, SlotsKind::Real);
+    input.meta.log_sparsity = 2;
+    let canonical: Vec<_> = [
+        SlotsKind::Complex,
+        SlotsKind::Real,
+        SlotsKind::Real,
+        SlotsKind::Real,
+        SlotsKind::Real,
+    ]
+    .into_iter()
+    .zip(233u8..)
+    .map(|(slots, seed)| {
+        let meta = CKKSMeta { slots, ..input.meta };
+        fixture_ciphertext(module, &CKKSLayout { meta, ..input }, seed)
+    })
+    .collect();
+    let denormalized: Vec<_> = canonical.iter().map(|ct| denormalize(module, ct)).collect();
+    let fold = |ins: &[CKKSCiphertextOwned<B>]| {
+        let keys = CKKSFoldKeysLayout {
+            ring_switch: None,
+            automorphism: None,
+        };
+        let folded_layout = B::ckks_fold_layout_impl(module, &ins[0], n.into(), &keys);
+        let mut folded: Vec<_> = (0..B::ckks_fold_count_impl(module, ins, n.into()))
+            .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
+            .collect();
+        let bytes = B::ckks_fold_tmp_bytes_impl(module, &ins[0], &ins[0], n.into(), &keys);
+        with_scratch::<B, _>(bytes, |scratch| {
+            B::ckks_fold_impl(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
+        })
+        .unwrap();
+        folded.iter().map(snapshot::<B, _>).collect::<Vec<_>>()
+    };
+    assert_eq!(fold(&denormalized), fold(&canonical), "non-canonical inputs fold differently");
+}
+
+/// `ct` with each digit below its top limb moved by `±2^b` and borrowed from the limb
+/// above, starting from a stored limb past its width: the same value, non-canonical.
+fn denormalize<B>(module: &Module<B>, ct: &CKKSCiphertextOwned<B>) -> CKKSCiphertextOwned<B>
+where
+    B: Backend<ZnxWord = i64, Ring = Standard>,
+    Module<B>: CKKSModuleAlloc<B>,
+{
+    let (n, b, k) = (ct.n().as_usize(), ct.base2k().as_usize(), ct.k());
+    let size = k.as_usize().div_ceil(b);
+    let mut out = module.ckks_ciphertext_alloc_from_infos(&CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: ((size + 1) * b).into(),
+            ..ct.glwe_layout()
+        },
+        meta: ct.meta(),
+    });
+    let mut digits = snapshot::<B, _>(ct).digits;
+    digits.resize(2 * n * (size + 1), 0);
+    for j in (1..=size).rev() {
+        for i in 0..2 * n {
+            let t = if digits[j * 2 * n + i] < 0 { -1 } else { 1 };
+            digits[j * 2 * n + i] -= t << b;
+            digits[(j - 1) * 2 * n + i] += t;
+        }
+    }
+    B::copy_from_host(out.inner.data_mut().data_mut(), bytemuck::cast_slice(&digits));
+    out.set_k(k);
+    out.inner.set_canonical(false);
+    out
+}
+
 /// Compare selected fold implementations on the same fixture inputs and keys:
 /// dense and sparse complex inputs and real pairs at the module degree and below,
 /// under the bootstrap secret and under another secret with ring packing.
@@ -376,5 +452,7 @@ where
     check_mixed_radices(tested);
     check_unfold_errors(reference);
     check_unfold_errors(tested);
+    check_large_digits(reference);
+    check_large_digits(tested);
     assert_eq!(run_fold(params, reference), run_fold(params, tested), "fold differs");
 }
