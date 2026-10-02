@@ -27,10 +27,9 @@ use crate::{
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, RingSwitchKeysLayout,
+        CKKSModuleAlloc, CKKSPlaintextOwned,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
-    test_suite::CKKSTestParams,
     test_suite::helpers::{
         PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, assert_canonical_at_k, ckks_spec,
         precision_stats, test_vector_1,
@@ -292,94 +291,4 @@ where
             coeffs.log_budget(),
         ),
     )
-}
-
-/// Plan, parameters and key layouts of the ring-switched bootstrapping tests.
-pub(crate) struct RingSwitchedSetup {
-    pub(crate) plan: BootstrappingPlan,
-    /// Parameters of the inputs, at the bootstrap width `k`.
-    pub(crate) params: CKKSTestParams,
-    pub(crate) keys_layout: BootstrappingKeysLayout,
-    pub(crate) ring_switch_layout: RingSwitchKeysLayout,
-}
-
-/// Full-slot S2C-first fixture at scale `2^35`, with sparse-secret encapsulation
-/// and six C2S guard bits. Inputs have degree `params.n`; bootstrap keys use `standard_n`.
-pub(crate) fn ring_switched_setup(mut params: CKKSTestParams, standard_n: usize) -> RingSwitchedSetup {
-    use crate::{
-        CoeffsMeta,
-        layouts::{
-            BootstrappingPipeline, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-            EvalModPlan, EvalModType, RingSwitchKeys, SparseSecretEncapsulation,
-        },
-        polynomial::SplitStrategy,
-    };
-    let layers = standard_n.ilog2() as usize - 1;
-    let schedule: Vec<_> = (0..layers).step_by(2).map(|i| ((layers - i).min(2), 2)).collect();
-    let log_delta = 35;
-    let log_msg_ratio = 13;
-    let plan = BootstrappingPlan::new(
-        BootstrappingPipeline::S2CFirst,
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
-            eval_round_plus: None,
-        },
-        DFTPlan::new(
-            DFTType::Encode,
-            schedule.clone(),
-            DFTOutputFormat::SplitRealAndImag,
-            CoeffsMeta::from_delta_budget(48, 3),
-        )
-        .unwrap(),
-        EvalModPlan {
-            eval_mod_type: EvalModType::CosHKEven,
-            log_msg_ratio,
-            f_mod_degree: 30,
-            f_mod_interval: 16,
-            f_mod_log_interval_reduction: 3,
-            f_mod_inv_degree: None,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: CoeffsMeta::from_delta_budget(42, 4),
-            f_mod_log_delta: 58,
-        },
-        DFTPlan::new(
-            DFTType::Decode,
-            schedule,
-            DFTOutputFormat::SplitRealAndImag,
-            CoeffsMeta::from_delta_budget(28, 2),
-        )
-        .unwrap()
-        .with_scaling(0.5)
-        .unwrap(),
-    )
-    .unwrap()
-    .with_c2s_guard_bits(6)
-    .unwrap();
-    let output_k = 4 * params.base2k - 1;
-    let input_k = plan.input_k(log_delta + log_msg_ratio);
-    params.k = plan.bootstrap_k(output_k + 1, log_delta);
-    params.prec_meta.log_delta = log_delta;
-    params.prec_log_budget = 8;
-    params.dsize = if params.base2k < 40 { 7 } else { 3 };
-    params.hw = 128;
-    let standard_params = CKKSTestParams { n: standard_n, ..params };
-    let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: standard_params.atk_layout().layout,
-        tensor_key: standard_params.tsk_layout().layout,
-        encapsulation: Some(EncapsulationKeysLayout {
-            dense_to_sparse: standard_params.ksk_layout(log_delta + log_msg_ratio).layout,
-            sparse_to_dense: standard_params.ksk_layout(params.k).layout,
-        }),
-    };
-    let ring_switch_layout = RingSwitchKeys {
-        inbound: standard_params.ksk_layout(input_k).layout,
-        outbound: standard_params.ksk_layout(output_k + 1).layout,
-    };
-    RingSwitchedSetup {
-        plan,
-        params,
-        keys_layout,
-        ring_switch_layout,
-    }
 }

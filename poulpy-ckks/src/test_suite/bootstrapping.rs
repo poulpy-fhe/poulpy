@@ -26,17 +26,13 @@
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 
-use crate::api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSFoldLayoutOps, CKKSFoldOps};
+use crate::api::CKKSEncodingOps;
+use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
-use crate::layouts::{
-    BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSFoldKeysLayout, RingSwitchKeys, RingSwitchKeysPrepared,
-};
-use std::collections::HashMap;
 
-use poulpy_core::EncryptionLayout;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, GLWESecretPreparedToBackendRef,
-    GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -46,7 +42,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
@@ -61,10 +57,10 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, assert_canonical_at_k,
-            ckks_encrypt_with_prec, ckks_spec, gen_atk, gen_sk_with_raw, precision_stats, test_vector_1,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, assert_canonical_at_k,
+            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
         },
-        presets::{PRECISION_LOG_BUDGET, bootstrap_setup_tmp_bytes, ring_switched_setup},
+        presets::bootstrap_setup_tmp_bytes,
     },
 };
 
@@ -990,300 +986,5 @@ fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKS
                 "bootstrap output col={col} limb={limb}"
             );
         }
-    }
-}
-
-/// Refreshes batches on a module of degree `2n` by folding them ([`CKKSFoldOps`]),
-/// bootstrapping each folded ciphertext and unfolding:
-/// a complex input and two real pairs under the bootstrap secret at its degree,
-/// then the same inputs of degree `n` under their own secret, unpaired and merged
-/// two per bootstrap.
-pub fn test_bootstrapping_fold_e2e<BE, F, E>(
-    mut params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + CKKSBootstrappingOps<BE>
-        + CKKSFoldLayoutOps<BE>
-        + CKKSFoldOps<BE, Standard>
-        + CKKSDFTMatrixOps<BE, f64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    let n = module.n();
-    let bootstrap_module = Module::<BE>::new(2 * n as u64);
-    let bootstrap_host = Module::<HostBytesBackend>::new(2 * n as u64);
-    params.prec_meta = CKKSMeta {
-        log_delta: 0,
-        log_sparsity: 0,
-        slots: SlotsKind::Complex,
-    };
-    let setup = ring_switched_setup(params, 2 * n);
-    let params = setup.params;
-    let bootstrap_params = CKKSTestParams { n: 2 * n, ..params };
-    let mut bootstrap_scratch = alloc_scratch(&bootstrap_params, &bootstrap_module);
-    let ctx = BootstrappingContext::<BE, f64>::compile(
-        &bootstrap_module,
-        params.base2k.into(),
-        &setup.plan,
-        &mut bootstrap_scratch.borrow(),
-    )
-    .unwrap();
-    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
-    let (bootstrap_sk_raw, bootstrap_sk) = gen_sk_with_raw(&bootstrap_params, &bootstrap_module, &bootstrap_host, [32; 32]);
-    let (mut source_xs, mut source_xe, mut source_xa) = (Source::new([33; 32]), Source::new([34; 32]), Source::new([35; 32]));
-    let keys = ctx
-        .generate_keys(
-            &bootstrap_module,
-            &bootstrap_sk_raw,
-            &setup.keys_layout,
-            &mut source_xs,
-            &mut source_xe,
-            &mut source_xa,
-            &mut bootstrap_scratch.borrow(),
-        )
-        .unwrap()
-        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow());
-    let ring_switch = setup
-        .ring_switch_layout
-        .generate(
-            &bootstrap_module,
-            &sk_raw,
-            &bootstrap_sk_raw,
-            &mut source_xe,
-            &mut source_xa,
-            &mut bootstrap_scratch.borrow(),
-        )
-        .unwrap()
-        .prepare(&bootstrap_module, &mut bootstrap_scratch.borrow())
-        .unwrap();
-    let input_k = setup
-        .plan
-        .input_k(params.prec_meta.log_delta + setup.plan.eval_mod().log_msg_ratio);
-    let batch = FoldBootstrapCase {
-        bootstrap_module: &bootstrap_module,
-        ctx: &ctx,
-        keys: &keys,
-        keys_layout: &setup.keys_layout,
-        params,
-        input_k,
-    };
-    batch.check(&bootstrap_module, &bootstrap_sk, None, Some(&keys.rotation_keys), 0);
-    batch.check(module, &sk, Some(&ring_switch), None, 0);
-    // Sparse inputs share each coefficient position of a bootstrap, split back with
-    // automorphism keys of their secret.
-    let sparse_real = CKKSLayout {
-        glwe_layout: GLWELayout {
-            n: (2 * n).into(),
-            base2k: params.base2k.into(),
-            k: input_k.into(),
-            rank: Rank(1),
-        },
-        meta: CKKSMeta {
-            log_sparsity: 1,
-            slots: SlotsKind::Real,
-            ..params.prec_meta
-        },
-    };
-    let automorphisms: HashMap<i64, _> = CKKSFoldOps::<_, Standard>::ckks_unfold_galois_elements(&bootstrap_module, &sparse_real)
-        .into_iter()
-        .map(|p| {
-            let key = gen_atk(
-                &bootstrap_params,
-                &bootstrap_module,
-                p,
-                &bootstrap_sk_raw,
-                &mut bootstrap_scratch.borrow(),
-            );
-            (p, key)
-        })
-        .collect();
-    batch.check(&bootstrap_module, &bootstrap_sk, None, Some(&automorphisms), 1);
-}
-
-struct FoldBootstrapCase<'a, BE: Backend> {
-    bootstrap_module: &'a Module<BE>,
-    ctx: &'a BootstrappingContext<BE, f64>,
-    keys: &'a BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
-    keys_layout: &'a BootstrappingKeysLayout,
-    params: CKKSTestParams,
-    input_k: usize,
-}
-
-impl<BE> FoldBootstrapCase<'_, BE>
-where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + CKKSBootstrappingOps<BE>
-        + CKKSFoldLayoutOps<BE>
-        + CKKSFoldOps<BE, Standard>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    /// Checks a complex input and two real pairs at the requested degree and sparsity.
-    fn check(
-        &self,
-        input_module: &Module<BE>,
-        sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
-        ring_switch: Option<&RingSwitchKeysPrepared<BE::OwnedBuf, BE>>,
-        automorphisms: Option<&HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>>,
-        log_sparsity: usize,
-    ) {
-        let params = CKKSTestParams {
-            n: input_module.n(),
-            prec_meta: CKKSMeta {
-                log_sparsity,
-                ..self.params.prec_meta
-            },
-            ..self.params
-        };
-        let log_delta = params.prec_meta.log_delta;
-        let mut scratch = alloc_scratch(&params, input_module);
-        let (mut source_xe, mut source_xa) = (Source::new([36; 32]), Source::new([37; 32]));
-        let slots = (input_module.n() / 2) >> log_sparsity;
-        let (v0, v1) = test_vector_1::<f64>(slots);
-        let reversed_v0: Vec<_> = v0.iter().rev().copied().collect();
-        let reversed_v1: Vec<_> = v1.iter().rev().copied().collect();
-        let zero = vec![0.0; slots];
-        let wants = [
-            (&v0, &v1, SlotsKind::Complex),
-            (&v1, &zero, SlotsKind::Real),
-            (&reversed_v0, &zero, SlotsKind::Real),
-            (&v0, &zero, SlotsKind::Real),
-            (&reversed_v1, &zero, SlotsKind::Real),
-        ];
-        let inputs: Vec<_> = wants
-            .iter()
-            .map(|(re, im, slots_kind)| {
-                let mut pt = input_module.ckks_pt_vec_alloc_compact(slots, params.base2k.into(), self.input_k.into());
-                pt.set_meta(CKKSMeta {
-                    slots: *slots_kind,
-                    ..params.prec_meta
-                });
-                input_module
-                    .ckks_encode_reim_into(&mut pt, re, im, &mut scratch.borrow())
-                    .unwrap();
-                let mut ct = input_module.ckks_ciphertext_alloc(params.base2k.into(), self.input_k.into());
-                let enc = EncryptionLayout::new_from_default_sigma(ct.glwe_layout()).unwrap();
-                input_module
-                    .ckks_encrypt_sk(&mut ct, &pt, sk, &enc, &mut source_xe, &mut source_xa, &mut scratch.borrow())
-                    .unwrap();
-                ct
-            })
-            .collect();
-        let outputs = self.refresh(input_module, &inputs, ring_switch, automorphisms);
-        for (index, (ct, (re, im, slots_kind))) in outputs.iter().zip(&wants).enumerate() {
-            assert_eq!((ct.slots(), ct.log_delta()), (*slots_kind, log_delta), "output {index}");
-            let mut pt = input_module.ckks_pt_vec_alloc(ct.base2k(), (log_delta + PRECISION_LOG_BUDGET).into());
-            pt.set_meta(ct.meta());
-            input_module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
-            let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
-            input_module
-                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.borrow())
-                .unwrap();
-            for (got, want) in [(&got_re, *re), (&got_im, *im)] {
-                let stats = precision_stats(got, want, log_delta);
-                assert!(
-                    stats.min_log2_prec > 17.0,
-                    "batch output {index} of degree {}: {stats:?}",
-                    params.n
-                );
-            }
-        }
-    }
-
-    /// Composes fold, per-ciphertext bootstrap, and unfold with layout-sized scratch.
-    fn refresh(
-        &self,
-        input_module: &Module<BE>,
-        inputs: &[CKKSCiphertextOwned<BE>],
-        ring_switch: Option<&RingSwitchKeysPrepared<BE::OwnedBuf, BE>>,
-        automorphisms: Option<&HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>>,
-    ) -> Vec<CKKSCiphertextOwned<BE>> {
-        let module = self.bootstrap_module;
-        let input = CKKSLayout {
-            glwe_layout: inputs[0].glwe_layout(),
-            meta: inputs[0].meta(),
-        };
-        let output = CKKSLayout {
-            glwe_layout: GLWELayout {
-                k: self.params.k.into(),
-                ..input.glwe_layout
-            },
-            ..input
-        };
-        let keys_layout = CKKSFoldKeysLayout {
-            ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
-            automorphism: automorphisms
-                .and_then(|keys| keys.values().next())
-                .map(|key| key.gglwe_layout()),
-        };
-        let degree = module.n().into();
-        let folded_layout = module.ckks_fold_layout(&input, degree, &keys_layout);
-        let refreshed_layout = GLWELayout {
-            k: output.k(),
-            ..folded_layout
-        };
-        let fold_bytes = module.ckks_fold_tmp_bytes(&output, &input, degree, &keys_layout);
-        let mut scratch = ScratchOwned::<BE>::alloc(fold_bytes);
-        let mut folded: Vec<_> = (0..module.ckks_fold_count(inputs, degree))
-            .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
-            .collect();
-        module
-            .ckks_fold(
-                &mut folded,
-                inputs,
-                ring_switch.map(|keys| &keys.inbound),
-                &mut scratch.borrow(),
-            )
-            .unwrap();
-        let bytes = folded.iter().fold(fold_bytes, |bytes, ct| {
-            let input = CKKSLayout {
-                glwe_layout: folded_layout,
-                meta: ct.meta(),
-            };
-            let output = CKKSLayout {
-                glwe_layout: refreshed_layout,
-                ..input
-            };
-            bytes.max(module.ckks_bootstrap_tmp_bytes(&output, &input, self.ctx, self.keys_layout))
-        });
-        if bytes > fold_bytes {
-            scratch = ScratchOwned::<BE>::alloc(bytes);
-        }
-        let mut refreshed: Vec<_> = folded
-            .iter()
-            .map(|ct| {
-                let mut out = module.ckks_ciphertext_alloc_from_glwe_infos(&refreshed_layout);
-                out.set_meta(ct.meta());
-                module
-                    .ckks_bootstrap(&mut out, ct, self.ctx, self.keys, &mut scratch.borrow())
-                    .unwrap();
-                out
-            })
-            .collect();
-        // Unfolding reads the batch from outputs labeled like the inputs.
-        let mut outputs: Vec<_> = inputs
-            .iter()
-            .map(|ct| {
-                let mut out = input_module.ckks_ciphertext_alloc_from_glwe_infos(&output);
-                out.set_meta(ct.meta());
-                out
-            })
-            .collect();
-        module
-            .ckks_unfold(
-                &mut outputs,
-                &mut refreshed,
-                ring_switch.map(|keys| &keys.outbound),
-                automorphisms,
-                &mut scratch.borrow(),
-            )
-            .unwrap();
-        outputs
     }
 }
