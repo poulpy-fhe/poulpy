@@ -156,10 +156,9 @@ padding below the sampling precision contributes zero. Adding two bounded
 balanced digits leaves enough headroom for normalization; the result is
 unnormalized and callers must normalize before another smudging addition.
 
-`SmudgingNoise` distinguishes an exact conditional discrete Gaussian from an
-exact contiguous uniform distribution. Ordinary encryption's `SamplingImpl`
-and `NoiseInfos` retain their existing contract. CPU backends select the new
-hook through `impl_smudging_host!`, included by `impl_cpu_core_defaults!`.
+Ordinary encryption's `SamplingImpl` and `NoiseInfos` retain their existing
+contract. CPU backends select the new hook through `impl_smudging_host!`,
+included by `impl_cpu_core_defaults!`.
 The CPU implementation allocates scalar big integers and requires no arena
 scratch. Its rejection algorithm is variable time; distributional exactness
 assumes uniform private bits and does not assert timing independence.
