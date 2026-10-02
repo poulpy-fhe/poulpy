@@ -134,6 +134,7 @@ pub(crate) use gglwe::*;
 
 mod ggsw {
     use crate::api::GLWEZero;
+    use crate::layouts::operand_degree;
 
     use poulpy_hal::{
         api::ModuleN,
@@ -216,8 +217,7 @@ mod ggsw {
         M: GLWEExternalProduct<BE> + ModuleN,
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
-        assert_eq!(res.n(), module.n() as u32);
-        assert_eq!(a.n(), module.n() as u32);
+        operand_degree(module.n(), &[res.n(), a.n()]);
         assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
         assert!(
             scratch.available() >= ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, res, a),

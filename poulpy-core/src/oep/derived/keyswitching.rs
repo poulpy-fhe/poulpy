@@ -119,6 +119,7 @@ pub(crate) use gglwe::*;
 
 mod ggsw {
     use crate::api::GLWEKeyswitch;
+    use crate::layouts::operand_degree;
 
     use poulpy_hal::{
         api::ModuleN,
@@ -151,10 +152,7 @@ mod ggsw {
         assert_eq!(key_infos.rank_in(), key_infos.rank_out());
         assert_eq!(tsk_infos.rank_in(), tsk_infos.rank_out());
         assert_eq!(key_infos.rank_in(), tsk_infos.rank_in());
-        assert_eq!(module.n() as u32, res_infos.n());
-        assert_eq!(module.n() as u32, a_infos.n());
-        assert_eq!(module.n() as u32, key_infos.n());
-        assert_eq!(module.n() as u32, tsk_infos.n());
+        operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n(), tsk_infos.n()]);
 
         module
             .glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)

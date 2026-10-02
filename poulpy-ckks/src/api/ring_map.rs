@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// The embedding of conjugate-invariant ciphertexts of degree `N` into standard
 /// ciphertexts of degree `2N` and the relative trace back, on a standard module
-/// of degree `2N`.
+/// of degree at least `2N`.
 ///
 /// Each map switches between the conjugate-invariant secret and a standard secret
 /// with its key, [`GLWECIEmbedKey`](poulpy_core::layouts::GLWECIEmbedKey) or

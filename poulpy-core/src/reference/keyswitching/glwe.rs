@@ -168,7 +168,7 @@ where
         let key_size: usize = key.size();
         scratch.scope(|scratch_phase| {
             let (mut dense, mut scratch_1) =
-                scratch_phase.take_vmp_pmat_scratch(self.n(), rows, cols_in, cols_out, key_size, key.data.hint());
+                scratch_phase.take_vmp_pmat_scratch(res.n(), rows, cols_in, cols_out, key_size, key.data.hint());
             self.vmp_extract_selected_rows(&mut dense, &key.data, stride - 1, stride);
             gglwe_product_pmat(
                 self,
@@ -305,7 +305,7 @@ pub fn gglwe_product_digits_strided_reference<BE: Backend>(
     let dnum = pmat.rows();
     for di in 0..dsize {
         let digit_size = ((a_size + di) / dsize).min(dnum);
-        let (mut digit, mut digit_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, digit_size);
+        let (mut digit, mut digit_scratch) = scratch.borrow().take_vec_znx_dft_scratch(res.n(), cols, digit_size);
         for col in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
         }
@@ -332,6 +332,7 @@ use poulpy_hal::{
     layouts::{VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     layouts::{GLWELayout, GLWEToBackendMut},
     oep::GLWEKeyswitchReference,
@@ -360,7 +361,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     let mask_cols = a.rank().as_usize();
     let a_size: usize = a.size();
     scratch.scope(|scratch_phase| {
-        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module.n(), mask_cols, a_size);
+        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(res.n(), mask_cols, a_size);
         for col_i in 0..mask_cols {
             let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
@@ -450,9 +451,7 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    assert_eq!(module.n() as u32, res_infos.n());
-    assert_eq!(module.n() as u32, a_infos.n());
-    assert_eq!(module.n() as u32, key_infos.n());
+    operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
 
     let output_cols = res_infos.rank().as_usize() + 1;
     let mask_cols = a_infos.rank().as_usize();
@@ -529,9 +528,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         key.rank_out()
     );
 
-    assert_eq!(res.n(), module.n() as u32);
-    assert_eq!(a.n(), module.n() as u32);
-    assert_eq!(key.n(), module.n() as u32);
+    operand_degree(module.n(), &[res.n(), a.n(), key.n()]);
 
     assert!(
         scratch.available() >= module.glwe_keyswitch_tmp_bytes_reference(res, a, key),
@@ -548,7 +545,9 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
     let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
 
-    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
+    let (mut res_dft, scratch_1) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
 
     if a_base2k != key_base2k {
         let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
@@ -562,7 +561,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
 
         res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
-        let (mut res_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(module.n(), 1, output_size);
+        let (mut res_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(a.n().as_usize(), 1, output_size);
         module.vec_znx_normalize(
             &mut res_small,
             key_base2k,
@@ -654,8 +653,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
         key.rank_out()
     );
 
-    assert_eq!(res.n(), module.n() as u32);
-    assert_eq!(key.n(), module.n() as u32);
+    operand_degree(module.n(), &[res.n(), key.n()]);
 
     assert!(
         scratch.available() >= module.glwe_keyswitch_tmp_bytes_reference(res, res, key),
@@ -673,7 +671,9 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
         module.glwe_normalize_assign(res, scratch);
     }
     let cols: usize = (res.rank() + 1).into();
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
+    let (mut res_dft, mut scratch_1) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
 
     let (res_big, mut scratch) = if res_base2k != key_base2k {
         let (mut res_conv, mut scratch_3) = scratch_1.take_glwe_scratch(&GLWELayout {
@@ -686,12 +686,12 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
 
         module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_3);
 
-        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module.n(), cols, output_size);
+        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);
         }
-        let (mut res_small, mut scratch_2) = scratch.take_vec_znx_scratch(module.n(), 1, output_size);
+        let (mut res_small, mut scratch_2) = scratch.take_vec_znx_scratch(res.n().as_usize(), 1, output_size);
         module.vec_znx_normalize(
             &mut res_small,
             key_base2k,
@@ -712,7 +712,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
             module.glwe_keyswitch_internal(&mut res_dft, res, key, &mut ks_scratch);
         }
         let res_ref = GLWEToBackendRef::<BE>::to_backend_ref(res);
-        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module.n(), cols, output_size);
+        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);

@@ -71,7 +71,7 @@ where
 {
     let (cols_in, cols_out, rows, size) = (mat.cols_in(), mat.cols_out(), mat.rows(), mat.size());
     let input = upload_vec_znx::<BE>(a);
-    let mut input_dft = module.vec_znx_dft_alloc(module.n(), cols_in, a.size());
+    let mut input_dft = module.vec_znx_dft_alloc(a.n(), cols_in, a.size());
     for col in 0..cols_in {
         module.vec_znx_dft_apply(
             1,
@@ -83,16 +83,16 @@ where
         );
     }
     let mat = upload_mat_znx::<BE>(mat);
-    let mut key = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
+    let mut key = module.vmp_pmat_alloc(a.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
     module.vmp_prepare(
         &mut key.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
         &mut poisoned_scratch::<BE>(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)).arena(),
     );
-    let mut result = module.vec_znx_dft_alloc(module.n(), cols_out, size);
+    let mut result = module.vec_znx_dft_alloc(a.n(), cols_out, size);
     let bytes = BE::len_bytes(&result.data);
     BE::copy_from_host(&mut result.data, &vec![0x55; bytes]);
-    let terms = module.n() * rows * dsize * cols_in;
+    let terms = a.n() * rows * dsize * cols_in;
     let limbs = gadget_product_limbs(Base2K(base2k as u32), terms);
     let tmp = BE::gglwe_product_digits_strided_tmp_bytes(module, size, cols_in, a.size(), dsize, rows, cols_in, cols_out, size);
     BE::gglwe_product_digits_strided(
@@ -104,7 +104,7 @@ where
         &key.to_backend_ref(),
         &mut poisoned_scratch::<BE>(tmp).arena(),
     );
-    let mut output = module.vec_znx_alloc(module.n(), cols_out, size);
+    let mut output = module.vec_znx_alloc(a.n(), cols_out, size);
     for col in 0..cols_out {
         module.vec_znx_idft_normalize_consume(
             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut output),
@@ -138,7 +138,7 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
     let mut source = Source::new([127; 32]);
     for (dsize, cols_in, cols_out, size) in [(1usize, 1, 1, 1), (2, 1, 2, 5), (3, 2, 1, 8), (7, 1, 2, 15)] {
         for sparse in [false, true] {
-            let mut a = r.vec_znx_alloc(r.n(), cols_in, size);
+            let mut a = r.vec_znx_alloc(params.n, cols_in, size);
             r.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
             let mut a = download_vec_znx::<BR>(&a);
             if sparse {
@@ -148,7 +148,7 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
                     }
                 }
             }
-            let mut matrix = r.mat_znx_alloc(r.n(), size.div_ceil(dsize), cols_in, cols_out, size);
+            let mut matrix = r.mat_znx_alloc(params.n, size.div_ceil(dsize), cols_in, cols_out, size);
             for row in 0..size.div_ceil(dsize) {
                 for col in 0..cols_in {
                     let mut view = MatZnxAtBackendMut::<BR>::at_backend_mut(&mut matrix, row, col);

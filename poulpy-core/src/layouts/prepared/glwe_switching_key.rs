@@ -112,14 +112,11 @@ where
     where
         A: GGLWEInfos,
     {
-        self.glwe_switching_key_prepared_alloc(
-            infos.base2k(),
-            infos.dnum(),
-            infos.dsize(),
-            infos.k_aux(),
-            infos.rank_in(),
-            infos.rank_out(),
-        )
+        GLWESwitchingKeyPrepared::<B::OwnedBuf, B> {
+            key: self.gglwe_prepared_alloc_from_infos(infos),
+            input_degree: Degree(0),
+            output_degree: Degree(0),
+        }
     }
 
     fn bytes_of_glwe_key_prepared(
@@ -138,14 +135,7 @@ where
     where
         A: GGLWEInfos,
     {
-        self.bytes_of_glwe_key_prepared(
-            infos.base2k(),
-            infos.dnum(),
-            infos.dsize(),
-            infos.k_aux(),
-            infos.rank_in(),
-            infos.rank_out(),
-        )
+        self.gglwe_prepared_bytes_of_from_infos(infos)
     }
 
     fn glwe_switching_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

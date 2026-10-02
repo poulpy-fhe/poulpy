@@ -6,6 +6,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, ScratchArena},
 };
 
+use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     decryption::{glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
@@ -28,7 +29,7 @@ where
         + GLWESecretPreparedFactory<BE>,
     A: GLWEInfos,
 {
-    assert_eq!(module.n() as u32, infos.n());
+    operand_degree(module.n(), &[infos.n()]);
 
     let rank: usize = infos.rank().into();
     let lvl_0: usize = module.glwe_secret_prepared_bytes_of((crate::layouts::pairs(rank) + rank).into());
@@ -75,7 +76,7 @@ pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data,
 
         let (mut sk_grouped, mut scratch_1) = scratch
             .borrow()
-            .take_glwe_secret_prepared_scratch(module, (crate::layouts::pairs(rank) + rank).into());
+            .take_glwe_secret_prepared_scratch(sk.n(), (crate::layouts::pairs(rank) + rank).into());
 
         {
             let binding = &mut sk_grouped;

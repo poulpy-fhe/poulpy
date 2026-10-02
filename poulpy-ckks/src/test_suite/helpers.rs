@@ -881,7 +881,7 @@ where
 }
 
 /// Encrypts a real **coefficient** vector directly (no slot/FFT encoding), at the
-/// given `k` and `prec`. `coeffs` has length `n` (the ring degree) and is placed
+/// given `k` and `prec`. `coeffs` has length `params.n` (the ring degree) and is placed
 /// into the polynomial coefficients. This is the input form for the homomorphic
 /// `CoeffsToSlots` test pipeline, which encrypts `bitReverse(vReal)||bitReverse(vImag)`
 /// coefficient-wise.
@@ -903,7 +903,7 @@ where
     F: TestScalar,
     CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
-    let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc(params.n.into(), params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
     host_pt.encode_host_floats(coeffs).unwrap();
     let pt = upload_pt(module, &host_pt);
@@ -1063,7 +1063,7 @@ where
     Module<BE>: TestContextSharedModule<BE>,
 {
     assert_canonical_at_k::<BE>("decrypt", ct);
-    let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k());
+    let mut pt = module.ckks_plaintext_alloc(ct.n(), ct.base2k(), prec.k());
     pt.set_meta(prec.meta());
     module.ckks_decrypt(&mut pt, ct, sk, scratch)?;
     Ok(download_pt::<BE>(&pt))

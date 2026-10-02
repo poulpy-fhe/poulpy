@@ -37,9 +37,9 @@ pub(crate) type Unit = (usize, Option<usize>);
 /// Per-ring step of the fold around ring packing, for inputs of this ring
 /// refreshed on the standard backend `BE`.
 pub(crate) trait FoldRing<BE: Backend>: Ring {
-    /// Groups `ins`, or outputs labeled like them, into units for a bootstrap on
-    /// `module`; a pair shares one packed ciphertext as `re + i·im`.
-    fn units(module: &Module<BE>, ins: &[CKKSRingCiphertext<BE, Self>]) -> Vec<Unit>;
+    /// Groups `ins`, or outputs labeled like them, into units; a pair shares one
+    /// packed ciphertext as `re + i·im`.
+    fn units(ins: &[CKKSRingCiphertext<BE, Self>]) -> Vec<Unit>;
 
     /// Whether real pairs split with the conjugation key of the input secret.
     const CONJUGATE_PAIRS: bool;
@@ -72,9 +72,9 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
         H: GetAutomorphismKey<BE>;
 }
 
-/// Standard inputs: complex ones alone, and consecutive real ones of the bootstrap
-/// degree in pairs, split back with the conjugation keys of the input secret as
-/// `z + conj(z)` and `(z − conj(z))/i`. Halving drops one bit of the paired outputs.
+/// Standard inputs: complex ones alone, consecutive real ones in pairs, split back
+/// with the conjugation keys of the input secret as `z + conj(z)` and
+/// `(z − conj(z))/i`. Halving drops one bit of the paired outputs.
 impl<BE> FoldRing<BE> for Standard
 where
     BE: Backend<Ring = Standard>,
@@ -87,12 +87,11 @@ where
         + CKKSModuleAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    fn units(module: &Module<BE>, ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
-        let pairs = ins.first().is_some_and(|ct| ct.n().as_usize() == module.n());
+    fn units(ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
         let mut units = Vec::new();
         let mut i = 0;
         while i < ins.len() {
-            let paired = pairs && i + 1 < ins.len() && ins[i].slots() == SlotsKind::Real && ins[i + 1].slots() == SlotsKind::Real;
+            let paired = i + 1 < ins.len() && ins[i].slots() == SlotsKind::Real && ins[i + 1].slots() == SlotsKind::Real;
             units.push((i, paired.then_some(i + 1)));
             i += 1 + usize::from(paired);
         }
@@ -205,8 +204,14 @@ where
                 ..ct_out.meta()
             },
         };
-        let split = keys.automorphism.filter(|key| key.n() == degree).map_or(0, |key| {
-            let wide = layout(degree.as_usize(), part.base2k(), part.k() + part.log_sparsity() as u32);
+        // Pair and sparse splitting uses keys at the input degree, which may be
+        // smaller than the fold degree.
+        let split = keys.automorphism.map_or(0, |key| {
+            let part = CKKSLayout {
+                glwe_layout: layout(key.n().as_usize(), part.base2k(), part.k()),
+                meta: part.meta,
+            };
+            let wide = layout(key.n().as_usize(), part.base2k(), part.k() + part.log_sparsity() as u32);
             self.ckks_conjugate_tmp_bytes(&part, &key)
                 .max(self.glwe_automorphism_tmp_bytes(&wide, &wide, &key))
                 .max(self.glwe_shift_tmp_bytes(wide.size()))
@@ -280,23 +285,18 @@ where
             return 0;
         };
         let g = degree.as_usize() / R::packed_degree(input.n().as_usize());
-        R::units(self, ins)
-            .len()
-            .div_ceil((g << sparse_log::<BE, R>(self, input)).max(1))
+        R::units(ins).len().div_ceil((g << sparse_log::<BE, R>(input)).max(1))
     }
 
     /// `−1` when real inputs pair and split with the conjugation key, and one element
-    /// per level of sparsity, at the degree of the packed parts. Pairs and sparse parts
-    /// form at the module degree.
+    /// per level of sparsity, at the degree of the packed parts.
     fn ckks_unfold_galois_elements_reference<C: CKKSCtBounds>(&self, ct_in: &C) -> Vec<i64> {
-        let n = R::packed_degree(ct_in.n().as_usize());
-        let full = n == self.n();
-        let pairs = R::CONJUGATE_PAIRS && full && ct_in.slots() == SlotsKind::Real;
-        let log_g = if full { R::packed_meta(ct_in.meta()).log_sparsity } else { 0 };
+        let pairs = R::CONJUGATE_PAIRS && ct_in.slots() == SlotsKind::Real;
+        let log_g = R::packed_meta(ct_in.meta()).log_sparsity;
         pairs
             .then_some(-1)
             .into_iter()
-            .chain(sparse_split_galois_elements(n, log_g))
+            .chain(sparse_split_galois_elements(R::packed_degree(ct_in.n().as_usize()), log_g))
             .collect()
     }
 
@@ -317,10 +317,10 @@ where
         if let Some(inbound) = inbound {
             validate_ring_switch_key("inbound ring-switch key", inbound, degree, input.k().as_usize())?;
         }
-        let units = R::units(module, ins);
+        let units = R::units(ins);
         // A group fills every coefficient: `g` positions of the bootstrap degree, each
         // holding `2^log_g` sparse parts.
-        let span = g << sparse_log::<BE, R>(module, input);
+        let span = g << sparse_log::<BE, R>(input);
         crate::ckks_ensure!(
             folded.len() == units.len().div_ceil(span),
             "the batch folds into {} ciphertexts, got {}",
@@ -389,8 +389,8 @@ where
         let module = self;
         let degree = folded_degree(folded)?;
         let g = validate_fold(module, outs, degree, outbound.is_some())?;
-        let units = R::units(module, outs);
-        let log_g = sparse_log::<BE, R>(module, &outs[0]);
+        let units = R::units(outs);
+        let log_g = sparse_log::<BE, R>(&outs[0]);
         let (n, log_delta, log_sparsity) = (
             R::packed_degree(outs[0].n().as_usize()),
             outs[0].log_delta(),
@@ -451,8 +451,8 @@ where
             if let Some(outbound) = outbound {
                 module.glwe_keyswitch_assign(src, &outbound.to_backend_ref(), scratch);
             }
-            // Convert before extraction: normalization runs at the bootstrap degree,
-            // while the extracted components may belong to a smaller ring.
+            // Normalize and convert once before extraction so every component is
+            // canonical at the output radix.
             module.glwe_normalize_assign(src, scratch);
             let mut converted;
             let src = if src.base2k() == outs[0].base2k() {
@@ -490,18 +490,13 @@ where
 }
 
 /// Log of the number of sparse parts merged per position: the sparsity of the
-/// packed parts, at the bootstrap degree.
-fn sparse_log<BE, R>(module: &Module<BE>, input: &CKKSRingCiphertext<BE, R>) -> usize
+/// packed parts.
+fn sparse_log<BE, R>(input: &CKKSRingCiphertext<BE, R>) -> usize
 where
     BE: Backend,
     R: FoldRing<BE>,
-    Module<BE>: ModuleN,
 {
-    if R::packed_degree(input.n().as_usize()) == module.n() {
-        R::packed_meta(input.meta()).log_sparsity
-    } else {
-        0
-    }
+    R::packed_meta(input.meta()).log_sparsity
 }
 
 /// Elements that split sparse parts of degree `n` merged `2^log_g` at a time, from
@@ -603,8 +598,8 @@ where
         "a batch must share its layout, scale and sparsity"
     );
     crate::ckks_ensure!(
-        degree == module.n(),
-        "the fold degree {degree} must be the module degree {}",
+        degree <= module.n(),
+        "the fold degree {degree} exceeds the module degree {}",
         module.n()
     );
     let n = R::packed_degree(head.n().as_usize());

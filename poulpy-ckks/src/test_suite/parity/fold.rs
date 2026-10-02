@@ -40,11 +40,12 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
     }
 }
 
-/// Folds `ins` and unfolds fixture refreshed ciphertexts of width `k_refreshed`
-/// into outputs of the layout of `out` labeled like `ins`, each within its exact
-/// guarded scratch.
+/// Folds `ins` into ciphertexts of `degree` and unfolds fixture refreshed ciphertexts
+/// of width `k_refreshed` into outputs of the layout of `out` labeled like `ins`, each
+/// within its exact guarded scratch.
 fn run_case<B>(
     module: &Module<B>,
+    degree: usize,
     ins: &[CKKSCiphertextOwned<B>],
     out: &CKKSLayout,
     k_refreshed: usize,
@@ -55,7 +56,6 @@ where
     B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
 {
-    let degree = module.n();
     let keys_layout = CKKSFoldKeysLayout {
         ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
         automorphism: automorphisms
@@ -122,39 +122,38 @@ where
         SlotsKind::Real,
         SlotsKind::Real,
     ];
-    let conjugation = HashMap::from([(
-        -1,
-        prepared_automorphism_key(module, &key_layout(n, b, k_out, 2, 1, 1), -1, 61),
-    )]);
-    let mut sparse_layout = layout(n, b, k_in, log_delta, SlotsKind::Real);
-    sparse_layout.meta.log_sparsity = 1;
-    let sparse_keys = <B as CKKSFoldImpl<Standard>>::ckks_unfold_galois_elements_impl(module, &sparse_layout)
-        .into_iter()
-        .zip(65u8..)
-        .map(|(p, seed)| {
-            (
-                p,
-                prepared_automorphism_key(module, &key_layout(n, b, k_out, 2, 1, 1), p, seed),
-            )
-        })
-        .collect();
     let ring_switch = RingSwitchKeys {
         inbound: prepared_gglwe(module, &key_layout(n, b, k_in, 2, 1, 1), 107),
         outbound: prepared_gglwe(module, &key_layout(n, b, k_refreshed, 1, 1, 1), 109),
     };
-    let own_conjugation = HashMap::from([(
-        -1,
-        prepared_automorphism_key(module, &key_layout(n, b, k_out, 2, 1, 1), -1, 63),
-    )]);
-    // Dense and sparse inputs under the bootstrap secret, then inputs under
-    // another secret at the full degree (paired) and half degree (ring-packed).
+    let half_ring_switch = RingSwitchKeys {
+        inbound: prepared_gglwe(module, &key_layout(n / 2, b, k_in, 2, 1, 1), 113),
+        outbound: prepared_gglwe(module, &key_layout(n / 2, b, k_refreshed, 1, 1, 1), 127),
+    };
+    // Dense and sparse inputs under the bootstrap secret, then paired and packed
+    // inputs under another secret. Both the input and fold degree may be smaller
+    // than the module degree.
     let mut outcomes = Vec::new();
-    for (degree, log_sparsity, ring_switch, automorphisms) in [
-        (n, 0, None, Some(&conjugation)),
-        (n, 1, None, Some(&sparse_keys)),
-        (n, 0, Some(&ring_switch), Some(&own_conjugation)),
-        (n / 2, 0, Some(&ring_switch), None),
+    for (fold_degree, degree, log_sparsity, ring_switch, key_seed) in [
+        (n, n, 0, None, 61u8),
+        (n, n, 1, None, 65),
+        (n, n, 0, Some(&ring_switch), 63),
+        (n, n / 2, 0, Some(&ring_switch), 67),
+        (n, n / 2, 1, Some(&ring_switch), 71),
+        (n / 2, n / 4, 0, Some(&half_ring_switch), 131),
     ] {
+        let mut key_input = layout(degree, b, k_in, log_delta, SlotsKind::Real);
+        key_input.meta.log_sparsity = log_sparsity;
+        let automorphisms = <B as CKKSFoldImpl<Standard>>::ckks_unfold_galois_elements_impl(module, &key_input)
+            .into_iter()
+            .zip(key_seed..)
+            .map(|(p, seed)| {
+                (
+                    p,
+                    prepared_automorphism_key(module, &key_layout(degree, b, k_out, 2, 1, 1), p, seed),
+                )
+            })
+            .collect();
         let seeds = if log_sparsity == 0 {
             [111u8, 113, 127, 131, 137]
         } else {
@@ -171,7 +170,15 @@ where
             .collect();
         let mut out = layout(degree, b, k_out, log_delta, SlotsKind::Complex);
         out.meta.log_sparsity = log_sparsity;
-        outcomes.push(run_case(module, &ins, &out, k_refreshed, ring_switch, automorphisms));
+        outcomes.push(run_case(
+            module,
+            fold_degree,
+            &ins,
+            &out,
+            k_refreshed,
+            ring_switch,
+            Some(&automorphisms),
+        ));
     }
     outcomes
 }
@@ -228,15 +235,15 @@ where
         inbound: prepared_gglwe(module, &key_layout(n, 15, 60, 2, 1, 1), 201),
         outbound: prepared_gglwe(module, &key_layout(n, 17, 60, 2, 1, 1), 203),
     };
-    let automorphisms = HashMap::from([(
-        -1,
-        prepared_automorphism_key(module, &key_layout(n, 13, 60, 2, 1, 1), -1, 205),
-    )]);
-    let keys_layout = CKKSFoldKeysLayout {
-        ring_switch: Some(ring_switch.gglwe_layout()),
-        automorphism: Some(automorphisms[&-1].gglwe_layout()),
-    };
     for degree in [n, n / 2] {
+        let automorphisms = HashMap::from([(
+            -1,
+            prepared_automorphism_key(module, &key_layout(degree, 13, 60, 2, 1, 1), -1, 205),
+        )]);
+        let keys_layout = CKKSFoldKeysLayout {
+            ring_switch: Some(ring_switch.gglwe_layout()),
+            automorphism: Some(automorphisms[&-1].gglwe_layout()),
+        };
         let ins: Vec<_> = [SlotsKind::Complex, SlotsKind::Real, SlotsKind::Real]
             .into_iter()
             .enumerate()
@@ -264,9 +271,9 @@ where
             )
             .unwrap();
         });
-        assert_eq!(once.1.get(), degree == n, "only real pairs require the key");
+        assert!(once.1.get(), "real pairs require the key at every input degree");
         for (i, out) in outs.iter().enumerate() {
-            let paired = degree == n && i > 0;
+            let paired = i > 0;
             let mut expected = transparent(module, &layout(degree, 19, 80, 12, ins[i].slots()), i as i64 + 1);
             expected.set_k((60 - usize::from(paired)).into());
             let mut expected = snapshot::<B, _>(&expected);
@@ -355,8 +362,8 @@ where
 }
 
 /// Compare selected fold implementations on the same fixture inputs and keys:
-/// a complex input and real pairs under the bootstrap secret at its degree, and
-/// the same inputs under their own secret at that degree and merged from half of it.
+/// dense and sparse complex inputs and real pairs at the module degree and below,
+/// under the bootstrap secret and under another secret with ring packing.
 pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,

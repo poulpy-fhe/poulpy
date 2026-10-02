@@ -431,7 +431,10 @@ where
             let mut pat = module.ggsw_share_alloc_from_infos(&layout);
             if case == 4 {
                 let key_layout = ephemeral_key_layout(module, &layout);
-                let key = small_module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
+                let key = module.glwe_switching_key_prepared_alloc_from_infos(&GGLWELayout {
+                    n: (module.n() / 2).into(),
+                    ..key_layout
+                });
                 let mut res = module.ggsw_alloc_from_infos(&layout);
                 let mut scratch: ScratchOwned<BE> =
                     ScratchOwned::alloc(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout));

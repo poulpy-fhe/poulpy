@@ -30,7 +30,7 @@ type AutomorphismKeys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Back
 /// Folds a complex input and two real pairs at the input width, decrypts and checks
 /// the folded messages, re-encrypts them wider as a bootstrap would, then unfolds and
 /// checks the inputs return: under the fold secret at its degree, dense and sparse,
-/// and under their own secret at half of it, merged two per folded ciphertext.
+/// and under their own secret at half of it, paired then merged two per folded ciphertext.
 pub fn test_fold_unfold<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -41,8 +41,6 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let n = module.n();
-    let half = Module::<BE>::new(n as u64 / 2);
-    let half_host = Module::<HostBytesBackend>::new(n as u64 / 2);
     let half_params = CKKSTestParams {
         n: n / 2,
         hw: params.hw.min(n / 2),
@@ -52,7 +50,7 @@ where
     let k_out = 2 * k_in;
     let mut scratch = alloc_scratch(&params, module);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
-    let (half_sk_raw, half_sk) = gen_sk_with_raw(&half_params, &half, &half_host, [32; 32]);
+    let (half_sk_raw, half_sk) = gen_sk_with_raw(&half_params, module, host_module, [32; 32]);
     let ring_switch = RingSwitchKeys {
         inbound: params.ksk_layout(k_in).layout,
         outbound: params.ksk_layout(k_out).layout,
@@ -81,15 +79,16 @@ where
         .into_iter()
         .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
         .collect();
-    for (input_module, input_host, input_params, input_sk, ring_switch, automorphisms, log_sparsity) in [
-        (module, host_module, &params, &sk, None, Some(&automorphisms), 0),
-        (module, host_module, &params, &sk, None, Some(&automorphisms), 2),
-        (&half, &half_host, &half_params, &half_sk, Some(&ring_switch), None, 0),
+    let half_automorphisms = HashMap::from([(-1, gen_atk(&half_params, module, -1, &half_sk_raw, &mut scratch.borrow()))]);
+    for (input_params, input_sk, ring_switch, automorphisms, log_sparsity) in [
+        (&params, &sk, None, Some(&automorphisms), 0),
+        (&params, &sk, None, Some(&automorphisms), 2),
+        (&half_params, &half_sk, Some(&ring_switch), Some(&half_automorphisms), 0),
     ] {
-        let n_in = input_module.n();
+        let n_in = input_params.n;
         let log_delta = params.prec_meta.log_delta;
         let label = format!("degree {n_in}, sparsity {log_sparsity}");
-        let mut scratch = alloc_scratch(input_params, input_module);
+        let mut scratch = alloc_scratch(input_params, module);
         let slots = [
             SlotsKind::Complex,
             SlotsKind::Real,
@@ -116,8 +115,8 @@ where
                 };
                 ckks_encrypt_coeffs(
                     input_params,
-                    input_module,
-                    input_host,
+                    module,
+                    host_module,
                     input_sk,
                     k_in,
                     msg,
@@ -127,13 +126,9 @@ where
             })
             .collect();
 
-        // Real inputs pair only at the fold degree; a folded ciphertext holds
+        // Real inputs pair at either degree; a folded ciphertext holds
         // `g = n / n_in` positions, with four sparse parts in the same-ring sparse case.
-        let units: Vec<(usize, Option<usize>)> = if n_in == n {
-            vec![(0, None), (1, Some(2)), (3, Some(4))]
-        } else {
-            (0..slots.len()).map(|i| (i, None)).collect()
-        };
+        let units = [(0, None), (1, Some(2)), (3, Some(4))];
         let g = n / n_in;
         let span = g << log_sparsity;
         let degree = n.into();
@@ -209,7 +204,7 @@ where
         let mut outs: Vec<_> = ins
             .iter()
             .map(|ct| {
-                let mut out = input_module.ckks_ciphertext_alloc_from_glwe_infos(&output);
+                let mut out = module.ckks_ciphertext_alloc_from_glwe_infos(&output);
                 out.set_meta(ct.meta());
                 out
             })
@@ -225,7 +220,7 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
-            let got = decrypt_coeffs::<BE, F>(input_module, input_params, out, input_sk, &mut scratch);
+            let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);
         }
     }
@@ -285,7 +280,7 @@ where
         ..params.prec()
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, &mut scratch.borrow()).unwrap();
-    let mut coeffs = vec![F::zero(); module.n()];
+    let mut coeffs = vec![F::zero(); ct.n().as_usize()];
     pt.decode_host_floats(&mut coeffs).unwrap();
     coeffs
 }

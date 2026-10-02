@@ -8,6 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWEBytesOf;
+use crate::layouts::operand_degree;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
@@ -48,11 +49,11 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(self.n() as u32, infos.n());
+        let n: usize = operand_degree(self.n(), &[infos.n()]);
 
         let lvl_0: usize = self.glwe_secret_prepared_bytes_of(infos.rank_in());
-        let lvl_1_sk_lwe_as_glwe_src: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
-        let lvl_2_sk_lwe_as_glwe: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
+        let lvl_1_sk_lwe_as_glwe_src: usize = self.glwe_secret_bytes_of(n.into(), Rank(1));
+        let lvl_2_sk_lwe_as_glwe: usize = self.glwe_secret_bytes_of(n.into(), Rank(1));
         let lvl_3_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1_sk_lwe_as_glwe_src + lvl_2_sk_lwe_as_glwe + lvl_3_encrypt
@@ -77,7 +78,7 @@ where
         let sk_lwe = sk_lwe.to_backend_ref();
         let sk_glwe = sk_glwe.to_backend_ref();
 
-        assert!(sk_lwe.n().0 <= self.n() as u32);
+        assert!(sk_lwe.n().0 <= res.n().0);
         assert!(
             scratch.available() >= self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEToLWESwitchingKeyEncryptSk::glwe_to_lwe_key_encrypt_sk_tmp_bytes: {}",
@@ -87,9 +88,9 @@ where
         let tmp_bytes: usize = self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res);
         {
             let scratch = scratch.borrow();
-            let (mut sk_lwe_as_glwe_prep, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, Rank(1));
-            let (mut sk_lwe_as_glwe_src, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), Rank(1));
-            let (mut sk_lwe_as_glwe, scratch_3) = scratch_2.take_glwe_secret_scratch(self.n().into(), Rank(1));
+            let (mut sk_lwe_as_glwe_prep, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), Rank(1));
+            let (mut sk_lwe_as_glwe_src, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), Rank(1));
+            let (mut sk_lwe_as_glwe, scratch_3) = scratch_2.take_glwe_secret_scratch(res.n().as_usize().into(), Rank(1));
 
             sk_lwe_as_glwe_src.dist = sk_lwe.dist;
             sk_lwe_as_glwe.dist = sk_lwe.dist;

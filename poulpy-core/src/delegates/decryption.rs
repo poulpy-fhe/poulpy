@@ -36,9 +36,6 @@ impl_decryption_delegate!(
         P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        assert_eq!(res.n().as_usize(), self.n(), "GLWE ciphertext degree must match the module");
-        assert_eq!(pt.n().as_usize(), self.n(), "GLWE plaintext degree must match the module");
-        assert_eq!(sk.n().as_usize(), self.n(), "GLWE secret key degree must match the module");
         BE::glwe_decrypt(self, res, pt, sk, scratch)
     }
 );

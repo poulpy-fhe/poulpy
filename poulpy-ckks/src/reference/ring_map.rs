@@ -45,10 +45,6 @@ where
         GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
     {
         crate::ckks_ensure!(key.n() == dst.n(), "the embed key has the standard degree");
-        crate::ckks_ensure!(
-            dst.n().as_usize() == self.n(),
-            "the keyed maps run on a module of the standard degree"
-        );
         ckks_ci_embed_keyless(self, dst, src)?;
         self.glwe_keyswitch_assign(dst, &key.to_backend_ref(), scratch);
         Ok(())
@@ -82,10 +78,6 @@ where
     {
         validate_ring_map(self, dst, src)?;
         crate::ckks_ensure!(key.n() == src.n(), "the trace key has the standard degree");
-        crate::ckks_ensure!(
-            src.n().as_usize() == self.n(),
-            "the keyed maps run on a module of the standard degree"
-        );
         let (mut switched, mut scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(src, src.meta());
         self.glwe_keyswitch(&mut switched, src, &key.to_backend_ref(), &mut scratch_1);
         ckks_ci_trace_keyless(self, dst, &switched, &mut scratch_1)

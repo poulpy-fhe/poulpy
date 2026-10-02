@@ -32,7 +32,7 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 /// degree is the degree of the folded ciphertexts, at most the module's.
 ///
 /// The reference implementation supports `Standard` inputs: complex inputs are
-/// packed alone, and real inputs of the bootstrap degree in pairs `x + i·y`.
+/// packed alone, and consecutive real inputs in pairs `x + i·y`, at any input degree.
 /// Conjugate-invariant inputs can first be embedded with
 /// [`ckks_ci_embed`](crate::api::CKKSCIRingMapOps::ckks_ci_embed), then folded as
 /// standard inputs; after unfolding,
