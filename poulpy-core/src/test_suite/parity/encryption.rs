@@ -9,7 +9,13 @@ use crate::{
     layouts::*,
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
 };
-use poulpy_hal::{api::VecZnxFillUniformSource, layouts::*, oep::*, source::Source, test_suite::TestParams};
+use poulpy_hal::{
+    api::{VecZnxAddAssign, VecZnxCopy, VecZnxFillUniformSource},
+    layouts::*,
+    oep::*,
+    source::Source,
+    test_suite::TestParams,
+};
 
 /// Capabilities needed by the complete encryption/decryption composition suite.
 pub trait EncryptionParityBackend:
@@ -193,6 +199,50 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             snapshot_glwe::<B, _>("decrypt", &have_twin).bytes,
             results.last().unwrap().bytes,
             "glwe_decrypt, unnormalized operand"
+        );
+        // The mask phase is the decryption without the body: of the ciphertext's
+        // mask in place, of an allocated copy, and of the unnormalized twin's.
+        let mut phase = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        poison_glwe::<B, _>(&mut phase);
+        let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_decrypt_tmp_bytes(&infos));
+        module.glwe_mask_decrypt(&out, &mut phase, &skp, &mut mask_scratch().arena());
+        results.push(snapshot_glwe::<B, _>("mask_decrypt", &phase));
+        let mut mask = module.glwe_mask_alloc_from_infos(&infos);
+        for j in 0..rank {
+            module.vec_znx_copy(
+                &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(mask.data_mut()),
+                j,
+                &poulpy_hal::test_suite::vec_znx_backend_ref::<B>(out.data()),
+                j + 1,
+            );
+        }
+        let mut other = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        module.glwe_mask_decrypt(&mask, &mut other, &skp, &mut mask_scratch().arena());
+        assert_eq!(
+            snapshot_glwe::<B, _>("mask_decrypt", &other).bytes,
+            results.last().unwrap().bytes,
+            "glwe_mask_decrypt, allocated mask"
+        );
+        module.glwe_mask_decrypt(&twin, &mut other, &skp, &mut mask_scratch().arena());
+        assert_eq!(
+            snapshot_glwe::<B, _>("mask_decrypt", &other).bytes,
+            results.last().unwrap().bytes,
+            "glwe_mask_decrypt, unnormalized operand"
+        );
+        module.vec_znx_add_assign(
+            &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(&mut phase.data),
+            0,
+            &poulpy_hal::test_suite::vec_znx_backend_ref::<B>(out.data()),
+            0,
+        );
+        module.glwe_normalize_assign(
+            &mut phase,
+            &mut poisoned_scratch::<B>(module.glwe_normalize_tmp_bytes()).arena(),
+        );
+        assert_eq!(
+            snapshot_glwe::<B, _>("decrypt", &phase).bytes,
+            snapshot_glwe::<B, _>("decrypt", &have).bytes,
+            "glwe_mask_decrypt plus the body"
         );
         poison_glwe::<B, _>(&mut out);
         module.glwe_encrypt_zero_sk(

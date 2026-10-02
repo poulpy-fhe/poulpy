@@ -1,7 +1,10 @@
 use crate::layouts::{GLWEKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     EncryptionInfos, SmudgingNoise,
-    layouts::{GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{
+        GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
+        GLWEToBackendRef,
+    },
 };
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
@@ -14,36 +17,37 @@ use poulpy_hal::{
 /// parties' output secrets.
 ///
 /// A share is a rank-0 core `GLWE`, the party's part of the new body: the
-/// inner product of the masks of `ct` with `sk_in - sk_out`, plus its `flood`,
-/// sampled at the share's precision. The inner product is exact, so the flood
+/// inner product of the mask of `ct` with `sk_in - sk_out`, plus its `flood`,
+/// sampled at the share's precision. Share generation reads the mask alone, a
+/// core `GLWEMask` or the mask of the `GLWE` itself. The inner product is exact, so the flood
 /// alone hides the secrets; size it as the smudging section of
 /// `docs/mhe-contracts.md` describes. Aggregation adds the shares;
 /// finalization adds them to the body of `ct` and normalizes.
 ///
-/// `ct` must be the session's honest ciphertext: a crafted mask, such as a
+/// The mask must be the session's honest ciphertext's: a crafted mask, such as a
 /// large constant in one column, reveals that component of every party's
 /// secret above the flood.
 pub trait GLWEKeyswitchMHEProtocol<BE: Backend> {
-    /// `infos` is the ciphertext layout; the share has that layout at rank 0.
+    /// `infos` is the layout of the ciphertext or its mask; the share has that layout at rank 0.
     fn mhe_glwe_keyswitch_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     /// Writes this party's share into `res`, a rank-0 GLWE: the inner product
-    /// of the masks of `ct` with `sk_in - sk_out`, plus smudging noise drawn
-    /// with `flood`.
+    /// of `mask`, the mask of the ciphertext, with `sk_in - sk_out`, plus
+    /// smudging noise drawn with `flood`.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_keyswitch_share_gen<C, S1, S2>(
         &self,
         res: &mut GLWEKeyswitchShareOwned<BE>,
-        ct: &C,
+        mask: &C,
         sk_in: &S1,
         sk_out: &S2,
         flood: SmudgingNoise,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        C: GLWEToBackendRef<BE> + GLWEInfos,
+        C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
@@ -70,14 +74,15 @@ pub trait GLWEKeyswitchMHEProtocol<BE: Backend> {
 /// encrypted under `pk_out`, at its rank.
 ///
 /// A share is a core `GLWE` at the rank of `pk_out`: the public-key encryption
-/// of the inner product of the masks of `ct` with `sk_in`, plus the party's
-/// `flood`, sampled at the precision of `ct`. Public-key encryption noise does
+/// of the inner product of the mask of `ct` with `sk_in`, plus the party's
+/// `flood`, sampled at the precision of `ct`. Share generation reads the mask
+/// alone, as for [`GLWEKeyswitchMHEProtocol`]. Public-key encryption noise does
 /// not replace the flood, which is sized as for [`GLWEKeyswitchMHEProtocol`].
 /// `pk_out` must be at least as precise as the share. Aggregation adds the
 /// shares; finalization normalizes their sum and adds the body of `ct`, which
 /// must be honest as for [`GLWEKeyswitchMHEProtocol`].
 pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
-    /// `ct_infos` is the ciphertext layout, `res_infos` the share layout and
+    /// `ct_infos` is the layout of the ciphertext or its mask, `res_infos` the share layout and
     /// `pk_infos` the public key layout.
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
@@ -86,13 +91,13 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
         P: GLWEInfos;
 
     /// Writes this party's share into `res`: the encryption under `pk_out` of
-    /// the inner product of the masks of `ct` with `sk_in`, plus smudging
-    /// noise drawn with `flood`.
+    /// the inner product of `mask`, the mask of the ciphertext, with `sk_in`,
+    /// plus smudging noise drawn with `flood`.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        ct: &C,
+        mask: &C,
         sk_in: &S,
         pk_out: &K,
         flood: SmudgingNoise,
@@ -101,7 +106,7 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        C: GLWEToBackendRef<BE> + GLWEInfos,
+        C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;

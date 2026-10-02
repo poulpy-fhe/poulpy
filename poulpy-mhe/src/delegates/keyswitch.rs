@@ -1,7 +1,10 @@
 use crate::layouts::{GLWEKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     EncryptionInfos, SmudgingNoise,
-    layouts::{GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{
+        GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
+        GLWEToBackendRef,
+    },
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
@@ -24,18 +27,18 @@ impl<BE: Backend + GLWEKeyswitchMHEProtocolImpl> GLWEKeyswitchMHEProtocol<BE> fo
     fn mhe_glwe_keyswitch_share_gen<C, S1, S2>(
         &self,
         res: &mut GLWEKeyswitchShareOwned<BE>,
-        ct: &C,
+        mask: &C,
         sk_in: &S1,
         sk_out: &S2,
         flood: SmudgingNoise,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        C: GLWEToBackendRef<BE> + GLWEInfos,
+        C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_keyswitch_share_gen(self, res, ct, sk_in, sk_out, flood, source_xe, scratch)
+        BE::mhe_glwe_keyswitch_share_gen(self, res, mask, sk_in, sk_out, flood, source_xe, scratch)
     }
 
     fn mhe_glwe_keyswitch_share_aggregate(&self, res: &mut GLWEKeyswitchShareOwned<BE>, a: &GLWEKeyswitchShareOwned<BE>) {
@@ -73,7 +76,7 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
     fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        ct: &C,
+        mask: &C,
         sk_in: &S,
         pk_out: &K,
         flood: SmudgingNoise,
@@ -82,12 +85,14 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        C: GLWEToBackendRef<BE> + GLWEInfos,
+        C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::mhe_glwe_public_keyswitch_share_gen(self, res, ct, sk_in, pk_out, flood, enc_infos, source_xu, source_xe, scratch)
+        BE::mhe_glwe_public_keyswitch_share_gen(
+            self, res, mask, sk_in, pk_out, flood, enc_infos, source_xu, source_xe, scratch,
+        )
     }
 
     fn mhe_glwe_public_keyswitch_share_aggregate(

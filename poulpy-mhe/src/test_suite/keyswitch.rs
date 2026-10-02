@@ -5,16 +5,16 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, SmudgingNoise,
     layouts::{
-        Base2K, GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
-        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxCopy, VecZnxFillUniformSource},
     layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
     source::Source,
-    test_suite::vec_znx_backend_mut,
+    test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
 use super::fixtures::{
@@ -47,6 +47,7 @@ where
         + GLWENormalize<BE>
         + GLWENoise<BE>
         + VecZnxAddScalarAssign<BE>
+        + VecZnxCopy<BE>
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -64,6 +65,7 @@ where
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
+    let mask = ciphertext_mask(module, &ct);
 
     let mut acc = module.glwe_keyswitch_share_alloc_from_infos(&layout);
     let mut share = module.glwe_keyswitch_share_alloc_from_infos(&layout);
@@ -73,7 +75,7 @@ where
         let mut source_xe = Source::new([10 + i as u8; 32]);
         // The decryptions under both secrets would be left in the scratch.
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(module.mhe_glwe_keyswitch_share_gen_tmp_bytes(&layout), |scratch| {
-            module.mhe_glwe_keyswitch_share_gen(dst, &ct, sk_in, sk_out_i, FLOOD, &mut source_xe, scratch)
+            module.mhe_glwe_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_xe, scratch)
         });
         assert!(dst.inner.is_canonical());
         if i > 0 {
@@ -104,6 +106,7 @@ where
         + GLWENormalize<BE>
         + GLWENoise<BE>
         + VecZnxAddScalarAssign<BE>
+        + VecZnxCopy<BE>
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -138,6 +141,7 @@ where
         let pk_out = collective_public_key(module, &parties_out, &pk_layout);
 
         let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
+        let mask = ciphertext_mask(module, &ct);
 
         let mut acc = module.glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
         let mut share = module.glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
@@ -150,7 +154,7 @@ where
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(share_bytes, |scratch| {
                 module.mhe_glwe_public_keyswitch_share_gen(
                     dst,
-                    &ct,
+                    &mask,
                     sk_in,
                     &pk_out,
                     FLOOD,
@@ -267,19 +271,19 @@ where
             },
             RANK,
             RANK,
-            "invalid share: share and ciphertext layouts differ",
+            "invalid share: share and mask layouts differ",
         ),
         (
             body,
             Rank(1),
             RANK,
-            "invalid share: input secret rank differs from the ciphertext's",
+            "invalid share: input secret rank differs from the mask's",
         ),
         (
             body,
             RANK,
             Rank(1),
-            "invalid share: output secret rank differs from the ciphertext's",
+            "invalid share: output secret rank differs from the mask's",
         ),
     ] {
         let mut res = GLWEKeyswitchShare {
@@ -321,13 +325,13 @@ where
             },
             RANK,
             layout,
-            "invalid share: share and ciphertext layouts differ",
+            "invalid share: share and mask layouts differ",
         ),
         (
             layout,
             Rank(1),
             layout,
-            "invalid share: input secret rank differs from the ciphertext's",
+            "invalid share: input secret rank differs from the mask's",
         ),
         (
             layout,
@@ -554,4 +558,24 @@ fn assert_flooded_noise<BE>(
     let upper = 0.5 * (DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE + flood + other).log2() - k + 0.5;
     let noise: f64 = module.glwe_noise(ct, pt, sk, &mut scratch.borrow()).std().log2();
     assert!(noise >= lower && noise <= upper, "noise {noise} outside [{lower}, {upper}]");
+}
+
+/// The mask of `ct` alone, as the parties of a key switch receive it.
+fn ciphertext_mask<BE>(module: &Module<BE>, ct: &GLWE<AlignedBuf, i64>) -> GLWEMask<AlignedBuf, i64>
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: VecZnxCopy<BE>,
+{
+    let mut mask = module.glwe_mask_alloc_from_infos(ct);
+    for j in 0..ct.rank().as_usize() {
+        module.vec_znx_copy(
+            &mut vec_znx_backend_mut::<BE>(mask.data_mut()),
+            j,
+            &vec_znx_backend_ref::<BE>(ct.data()),
+            j + 1,
+        );
+    }
+    mask
 }

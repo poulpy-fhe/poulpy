@@ -1,11 +1,11 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
-    api::{GLWEDecrypt, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
+    api::{GLWEDecrypt, GLWEMaskDecrypt, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
     layouts::{
-        GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef,
-        SetBase2k,
+        GLWEInfos, GLWEMaskToBackendRef, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut,
+        LWESecretToBackendRef, LWEToBackendRef, SetBase2k,
         prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
     },
     oep::DecryptionImpl,
@@ -37,6 +37,24 @@ impl_decryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch)
+    }
+);
+
+impl_decryption_delegate!(
+    GLWEMaskDecrypt<BE>,
+    fn glwe_mask_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::glwe_mask_decrypt_tmp_bytes(self, infos)
+    },
+    fn glwe_mask_decrypt<A, P, S>(&self, mask: &A, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        A: GLWEMaskToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_mask_decrypt(self, mask, pt, sk, scratch)
     }
 );
 

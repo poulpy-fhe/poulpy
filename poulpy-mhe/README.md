@@ -45,7 +45,8 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   or `GGSW` of the ideal secrets. The GGSW finalizes with an ephemeral key, in
   one round.
 - `GLWEKeyswitchMHEProtocol`, `GLWEPublicKeyswitchMHEProtocol`: collective key
-  switching of a ciphertext to the ideal output secret or to a public key.
+  switching of a ciphertext to the ideal output secret or to a public key; shares
+  are generated from the ciphertext's mask alone, a core `GLWEMask`.
 
 ## Smudging
 
