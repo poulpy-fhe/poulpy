@@ -11,6 +11,25 @@ use crate::layouts::{
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and reference external-product layers.
 pub unsafe trait GLWEExternalProductImpl: Backend {
+    /// Workspace for the selected DFT-domain external product.
+    fn glwe_external_product_internal_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos;
+
+    /// Fills the full DFT output at the key radix, normalizing a noncanonical input.
+    /// The input radix must match the key; integer output after inverse transform
+    /// and rounding must agree with the public external product.
+    fn glwe_external_product_dft<'r, A>(
+        module: &Module<Self>,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
+        a: &A,
+        ggsw: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self>;
+
     fn glwe_external_product_tmp_bytes<R, A, G>(module: &Module<Self>, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
@@ -125,6 +144,36 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
 macro_rules! impl_glwe_external_product_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEExternalProductImpl for $be {
+            fn glwe_external_product_internal_tmp_bytes<R, A, B>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res_infos: &R,
+                a_infos: &A,
+                b_infos: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GGSWInfos,
+            {
+                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_internal_tmp_bytes_reference(
+                    module, res_infos, a_infos, b_infos,
+                )
+            }
+
+            fn glwe_external_product_dft<'r, A>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res_dft: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
+                a: &A,
+                ggsw: &$crate::layouts::GGSWPreparedBackendRef<'_, Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) where
+                A: $crate::layouts::GLWEToBackendRef<Self>,
+            {
+                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_reference(
+                    module, res_dft, a, ggsw, scratch,
+                )
+            }
+
             fn glwe_external_product_tmp_bytes<R, A, G>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
