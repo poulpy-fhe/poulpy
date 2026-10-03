@@ -94,3 +94,27 @@ macro_rules! impl_sampling_host {
         }
     };
 }
+
+/// Implements exact integer smudging for a host backend with `i64` torus limbs.
+/// The sampler has variable running time and uses the private seed supplied by
+/// the Core sampling delegate.
+#[macro_export]
+macro_rules! impl_smudging_host {
+    ($be:ty) => {
+        unsafe impl ::poulpy_core::oep::SmudgingSamplingImpl for $be {
+            fn vec_znx_add_smudging(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                base2k: usize,
+                k: usize,
+                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
+                res_col: usize,
+                noise: ::poulpy_core::SmudgingNoise,
+                seed: [u8; 32],
+            ) {
+                assert!(res.n() == module.n(), "invalid smudging: degree mismatch");
+                let mut source = ::poulpy_hal::source::Source::new(seed);
+                $crate::reference::smudging::vec_znx_add_smudging_ref::<$be>(base2k, k, res, res_col, noise, &mut source);
+            }
+        }
+    };
+}

@@ -33,10 +33,9 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 ///
 /// The reference implementation supports `Standard` inputs: complex inputs are
 /// packed alone, and consecutive real inputs in pairs `x + i·y`, at any input degree.
-/// Conjugate-invariant inputs can first be embedded with
-/// [`ckks_ci_embed`](crate::api::CKKSCIRingMapOps::ckks_ci_embed), then folded as
-/// standard inputs; after unfolding,
-/// [`ckks_ci_trace`](crate::api::CKKSCIRingMapOps::ckks_ci_trace) maps them back.
+/// It also supports `ConjugateInvariant` inputs of degree `n`: each is embedded into
+/// the standard ring of degree `2n` and paired, and unfolding takes the relative
+/// trace back, at one bit of budget; their keys are those of the embedded secret.
 /// Ring packing merges `g = N/n` of the resulting ciphertexts of degree `n` as
 /// `Σ_j X^j·ct_j(X^g)` and
 /// switches them to the bootstrap secret with an inbound ring-switch key; unfolding

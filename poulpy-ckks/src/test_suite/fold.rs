@@ -19,8 +19,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_precision, ckks_decrypt_with_prec,
-            ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch, assert_precision,
+            ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw,
         },
     },
 };
@@ -228,7 +228,7 @@ where
 
 /// Coefficients of a message of degree `n` in `Z[X^(2^log_sparsity)]`; real slots
 /// are self-conjugate, `c_(n−i) = −c_i`.
-fn message<F: TestScalar>(n: usize, slots: SlotsKind, log_sparsity: usize, seed: usize) -> Vec<F> {
+pub(crate) fn message<F: TestScalar>(n: usize, slots: SlotsKind, log_sparsity: usize, seed: usize) -> Vec<F> {
     let mut c: Vec<f64> = (0..n)
         .map(|i| {
             if i.is_multiple_of(1 << log_sparsity) {
@@ -248,7 +248,7 @@ fn message<F: TestScalar>(n: usize, slots: SlotsKind, log_sparsity: usize, seed:
 }
 
 /// `Σ_j X^j·(re_j + X^(n/2)·im_j)(X^g)` of degree `n`, over the units of `group`.
-fn folded_message<F: TestScalar>(msgs: &[Vec<F>], group: &[(usize, Option<usize>)], g: usize, n: usize) -> Vec<F> {
+pub(crate) fn folded_message<F: TestScalar>(msgs: &[Vec<F>], group: &[(usize, Option<usize>)], g: usize, n: usize) -> Vec<F> {
     let mut want = vec![F::zero(); n];
     for (j, &(re, im)) in group.iter().enumerate() {
         for (offset, part) in [(0, Some(re)), (n / 2, im)] {
@@ -262,7 +262,7 @@ fn folded_message<F: TestScalar>(msgs: &[Vec<F>], group: &[(usize, Option<usize>
     want
 }
 
-fn decrypt_coeffs<BE, F>(
+pub(crate) fn decrypt_coeffs<BE, F>(
     module: &Module<BE>,
     params: &CKKSTestParams,
     ct: &CKKSCiphertextOwned<BE>,
@@ -271,9 +271,9 @@ fn decrypt_coeffs<BE, F>(
 ) -> Vec<F>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
     let prec = CKKSLayout {
         meta: ct.meta(),

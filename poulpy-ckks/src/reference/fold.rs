@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWEAdd, GLWEAutomorphism, GLWEKeyswitch, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWEZero,
+    GLWEAdd, GLWEAutomorphism, GLWECIEmbed, GLWECITrace, GLWEKeyswitch, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWEZero,
     layouts::{
         Base2K, Degree, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
         GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
@@ -19,7 +19,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleN, VecZnxSwitchRing},
-    layouts::{Backend, Module, Ring, ScratchArena, Standard, ZnxWord, galois_element},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard, ZnxWord, galois_element},
 };
 
 use crate::{
@@ -29,6 +29,7 @@ use crate::{
         CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
+    reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless, ckks_ci_trace_keyless_tmp_bytes},
 };
 
 /// Batch positions: an input alone, or a real pair `(re, im)`.
@@ -158,6 +159,85 @@ where
     }
 }
 
+/// Conjugate-invariant inputs of degree `n`: embedded in the standard ring of degree
+/// `2n` and paired, then traced back. The embedded secret is invariant under
+/// conjugation, so the split is keyless: the outputs are the traces of the real part
+/// at `X^j` and of the imaginary part at `X^(j + N/2)`. The trace's factor of two
+/// costs one bit of every output. Sparse inputs keep their sparsity, so their pairs
+/// fill and split at degree `2n`, with automorphism keys of the embedded secret.
+impl<BE> FoldRing<BE> for ConjugateInvariant
+where
+    BE: Backend<Ring = Standard>,
+    Module<BE>: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + VecZnxSwitchRing<BE>
+        + GLWERotate<BE>
+        + GLWENormalize<BE>
+        + GLWECIEmbed<BE>
+        + GLWECITrace<BE>
+        + CKKSModuleAlloc<BE>,
+    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    const CONJUGATE_PAIRS: bool = false;
+
+    fn units(ins: &[CKKSRingCiphertext<BE, Self>]) -> Vec<Unit> {
+        (0..ins.len())
+            .step_by(2)
+            .map(|i| (i, (i + 1 < ins.len()).then_some(i + 1)))
+            .collect()
+    }
+
+    fn packed_degree(n: usize) -> usize {
+        2 * n
+    }
+
+    fn packed_meta(meta: CKKSMeta) -> CKKSMeta {
+        CKKSMeta {
+            slots: SlotsKind::Real,
+            ..meta
+        }
+    }
+
+    fn to_standard(
+        module: &Module<BE>,
+        dst: &mut CKKSCiphertextOwned<BE>,
+        src: &CKKSRingCiphertext<BE, Self>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        // Embedding copies the stored limbs as they are, so the input is normalized at
+        // its degree first: non-canonical digits and limbs past its width carry in.
+        let mut canonical = CKKSRingCiphertext::<BE, Self>::from_inner(module.glwe_alloc_from_infos(src), src.meta());
+        module.glwe_normalize(&mut canonical.inner, &src.inner, scratch);
+        ckks_ci_embed_keyless(module, dst, &canonical)?;
+        dst.set_meta(<Self as FoldRing<BE>>::packed_meta(src.meta()));
+        Ok(())
+    }
+
+    fn from_standard<H>(
+        module: &Module<BE>,
+        outs: &mut [CKKSRingCiphertext<BE, Self>],
+        part: &CKKSCiphertextOwned<BE>,
+        _automorphisms: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        H: GetAutomorphismKey<BE>,
+    {
+        let log_delta = outs[0].log_delta();
+        // The imaginary part is the real part of `−i·part`, `X^(−n)·part` at degree `2n`.
+        let mut rotated = module.ckks_ciphertext_alloc_from_glwe_infos(part);
+        module.glwe_rotate(-((part.n().as_usize() / 2) as i64), &mut rotated, part);
+        rotated.set_meta(part.meta());
+        for (out, src) in outs.iter_mut().zip([part, &rotated]) {
+            ckks_ci_trace_keyless(module, out, src, scratch)?;
+            // Labeled at the input scale like standard outputs, keeping the trace's width.
+            out.set_meta(CKKSMeta { log_delta, ..out.meta() });
+        }
+        Ok(())
+    }
+}
+
 /// Reference planning queries of [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
 pub trait CKKSFoldLayoutReference<BE: Backend> {
     fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout;
@@ -175,6 +255,7 @@ where
         + GLWENormalize<BE>
         + GLWEAutomorphism<BE>
         + GLWEShift<BE>
+        + GLWECITrace<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
@@ -200,7 +281,8 @@ where
                 .max(self.glwe_keyswitch_tmp_bytes(&refreshed, &refreshed, &keys.outbound))
         });
         // Unfold converts to the output radix before splitting. Sparse parts need
-        // log_sparsity guard bits; real pairs also need conjugation and division by i.
+        // log_sparsity guard bits; real pairs also need conjugation and division by i,
+        // conjugate-invariant ones a trace.
         let part = CKKSLayout {
             glwe_layout: layout(degree.as_usize(), ct_out.base2k(), ct_out.k()),
             meta: CKKSMeta {
@@ -228,6 +310,7 @@ where
             .max(self.ckks_add_tmp_bytes(part.size()))
             .max(self.ckks_sub_tmp_bytes(part.size()))
             .max(self.ckks_div_i_tmp_bytes(part.size()))
+            .max(ckks_ci_trace_keyless_tmp_bytes(self, ct_out, &part))
     }
 }
 
