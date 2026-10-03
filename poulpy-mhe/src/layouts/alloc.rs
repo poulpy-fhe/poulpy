@@ -6,8 +6,10 @@ use poulpy_hal::layouts::{Backend, Module};
 
 use crate::layouts::{
     GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
-    GLWEAutomorphismKeyShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
-    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
+    GLWEAutomorphismKeyShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPrivateKeyswitchShare,
+    GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned, GLWEPublicKeyswitchShare,
+    GLWEPublicKeyswitchShareOwned, GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare,
+    GLWETensorKeyShareOwned, ggsw_share_part_layout,
 };
 
 /// PAT and share allocation on a backend module.
@@ -179,6 +181,35 @@ pub trait MHEModuleAlloc<BE: Backend>:
             col0: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, Rank(1), rank),
             circ_u: circ(),
             circ_s: circ(),
+        }
+    }
+
+    /// A key switching share of `infos`, the ciphertext layout, at rank 0.
+    fn glwe_private_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPrivateKeyswitchShareOwned<BE> {
+        self.glwe_private_keyswitch_share_alloc(infos.base2k(), infos.k())
+    }
+
+    fn glwe_private_keyswitch_share_alloc(&self, base2k: Base2K, k: TorusPrecision) -> GLWEPrivateKeyswitchShareOwned<BE> {
+        GLWEPrivateKeyswitchShare {
+            inner: self.glwe_alloc(base2k, k, Rank(0)),
+        }
+    }
+
+    /// A public key switching share of `infos`, the share layout.
+    fn glwe_public_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyswitchShareOwned<BE> {
+        GLWEPublicKeyswitchShare {
+            inner: self.glwe_alloc_from_infos(infos),
+        }
+    }
+
+    fn glwe_public_keyswitch_share_alloc(
+        &self,
+        base2k: Base2K,
+        k: TorusPrecision,
+        rank: Rank,
+    ) -> GLWEPublicKeyswitchShareOwned<BE> {
+        GLWEPublicKeyswitchShare {
+            inner: self.glwe_alloc(base2k, k, rank),
         }
     }
 }

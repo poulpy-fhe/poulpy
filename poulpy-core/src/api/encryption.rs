@@ -281,6 +281,37 @@ pub trait GGSWEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
+/// [`GLWEEncryptPk`] whose body error is a flood: outputs
+/// `Sum_l u_l pk_l + (m + f, e_1, .., e_r)`, where `f` is drawn from `flood` at
+/// the output's precision with `source_smudge` and replaces the body's encryption
+/// error. `u` and `e_1, .., e_r` are drawn as [`GLWEEncryptPk`] draws them.
+pub trait GLWEEncryptPkSmudged<BE: Backend> {
+    fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        K: GLWEInfos;
+
+    /// `pt` must be normalized. Panics if `pk` is less precise than `res` or if
+    /// `flood` does not fit the precision of `res`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_encrypt_pk_smudged<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        flood: crate::SmudgingNoise,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        source_smudge: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+}
+
 /// Public-key GGSW encryption: entry `(row, col)` is
 /// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt` at limb
 /// `(dsize - 1) + row * dsize` into column `col`, entries in row then column

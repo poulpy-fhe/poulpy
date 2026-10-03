@@ -7,7 +7,8 @@
 
 use crate::layouts::operand_degree;
 use crate::{
-    Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore, SmudgingNoise,
+    VecZnxAddSmudging,
     api::GLWEBytesOf,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos, GLWEInfos,
@@ -161,7 +162,61 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K, E>(
     E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), pk, enc_infos, source_xu, source_xe, scratch);
+    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, enc_infos, source_xu, source_xe, scratch);
+}
+
+pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: GLWEInfos, K: GLWEInfos>(
+    module: &Module<BE>,
+    res_infos: &R,
+    pk_infos: &K,
+) -> usize
+where
+    Module<BE>: VecZnxNormalizeTmpBytes,
+{
+    BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
+}
+
+/// Public-key encryption without a body error, then the flood on the canonical
+/// body at the output's precision, normalized once more.
+pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K, E>(
+    module: &Module<BE>,
+    res: &mut R,
+    pt: &P,
+    pk: &K,
+    flood: SmudgingNoise,
+    enc_infos: &E,
+    source_xu: &mut Source,
+    source_xe: &mut Source,
+    source_smudge: &mut Source,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: EncryptionImpl,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + GLWEInfos,
+    E: EncryptionInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    Module<BE>: VecZnxAddSmudging<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
+{
+    let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
+    flood.assert_valid_for(base2k, k);
+    assert!(
+        scratch.available() >= glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res, pk),
+        "insufficient scratch for smudged GLWE public-key encryption"
+    );
+    BE::glwe_encrypt_pk_at_col(
+        module,
+        res,
+        Some((pt, 0)),
+        false,
+        pk,
+        enc_infos,
+        source_xu,
+        source_xe,
+        scratch,
+    );
+    let mut res = res.to_backend_mut();
+    module.vec_znx_add_smudging(base2k, k, &mut res.data, 0, flood, source_smudge);
+    module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, 0, scratch);
 }
 
 pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K, E>(
@@ -179,7 +234,7 @@ pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K, E>(
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
     BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K, E>(
-        module, res, None, pk, enc_infos, source_xu, source_xe, scratch,
+        module, res, None, true, pk, enc_infos, source_xu, source_xe, scratch,
     );
 }
 
@@ -240,6 +295,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
                     module,
                     &mut res.at_view_mut(row, col),
                     Some((&tmp_pt, col)),
+                    true,
                     pk,
                     enc_infos,
                     source_xu,

@@ -1,8 +1,9 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k,
+    GLWEInfos, GLWEMaskToBackendRef, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef,
+    LWEToBackendRef, SetBase2k,
     prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
@@ -21,6 +22,21 @@ pub unsafe trait DecryptionImpl: Backend {
     where
         R: GLWEToBackendRef<Self> + GLWEInfos,
         P: GLWEToBackendMut<Self> + GLWEInfos + SetBase2k,
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
+
+    fn glwe_mask_inner_product_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    fn glwe_mask_inner_product<R, A, S>(
+        module: &Module<Self>,
+        res: &mut R,
+        mask: &A,
+        sk: &S,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos + SetBase2k,
+        A: GLWEMaskToBackendRef<Self> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
     fn lwe_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -85,6 +101,27 @@ macro_rules! impl_decryption_reference_full {
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::decryption::glwe::glwe_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, pt, sk, scratch)
+            }
+
+            fn glwe_mask_inner_product_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
+            where
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::reference::decryption::glwe::glwe_mask_inner_product_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, _>(module, infos)
+            }
+
+            fn glwe_mask_inner_product<R, A, S>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut R,
+                mask: &A,
+                sk: &S,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
+                A: $crate::layouts::GLWEMaskToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::reference::decryption::glwe::glwe_mask_inner_product_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, mask, sk, scratch)
             }
 
             fn lwe_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
