@@ -202,7 +202,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         );
         // The mask phase is the decryption without the body: of the ciphertext's
         // mask in place and of an allocated copy; the unnormalized twin's is rejected.
-        let mut phase = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        let mut phase = module.glwe_plaintext_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut phase);
         let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_inner_product_tmp_bytes(&infos));
         module.glwe_mask_inner_product(&mut phase, &out, &skp, &mut mask_scratch().arena());
@@ -216,7 +216,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 j + 1,
             );
         }
-        let mut other = module.glwe_plaintext_alloc(infos.base2k, infos.k);
+        let mut other = module.glwe_plaintext_alloc_from_infos(&infos);
         module.glwe_mask_inner_product(&mut other, &mask, &skp, &mut mask_scratch().arena());
         assert_eq!(
             snapshot_glwe::<B, _>("mask_inner_product", &other).bytes,
