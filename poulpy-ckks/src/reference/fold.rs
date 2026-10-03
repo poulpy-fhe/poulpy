@@ -172,6 +172,7 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxSwitchRing<BE>
         + GLWERotate<BE>
+        + GLWENormalize<BE>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
         + CKKSModuleAlloc<BE>,
@@ -202,9 +203,13 @@ where
         module: &Module<BE>,
         dst: &mut CKKSCiphertextOwned<BE>,
         src: &CKKSRingCiphertext<BE, Self>,
-        _scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        ckks_ci_embed_keyless(module, dst, src)?;
+        // Embedding copies the stored limbs as they are, so the input is normalized at
+        // its degree first: non-canonical digits and limbs past its width carry in.
+        let mut canonical = CKKSRingCiphertext::<BE, Self>::from_inner(module.glwe_alloc_from_infos(src), src.meta());
+        module.glwe_normalize(&mut canonical.inner, &src.inner, scratch);
+        ckks_ci_embed_keyless(module, dst, &canonical)?;
         dst.set_meta(<Self as FoldRing<BE>>::packed_meta(src.meta()));
         Ok(())
     }
@@ -226,8 +231,8 @@ where
         rotated.set_meta(part.meta());
         for (out, src) in outs.iter_mut().zip([part, &rotated]) {
             ckks_ci_trace_keyless(module, out, src, scratch)?;
-            // Relabel at the input scale, keeping the budget.
-            out.set_log_delta(log_delta);
+            // Labeled at the input scale like standard outputs, keeping the trace's width.
+            out.set_meta(CKKSMeta { log_delta, ..out.meta() });
         }
         Ok(())
     }

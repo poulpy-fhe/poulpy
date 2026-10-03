@@ -443,47 +443,106 @@ where
 
 /// Folding sums overlapping parts: sparse inputs share every coefficient of their
 /// dense masks, and pairs add `i·y` to `x`. Uniform digits at the largest radix, and
-/// the same values with non-canonical digits and a limb past their width, fold alike.
+/// the same values with non-canonical digits and a limb past their width, fold alike,
+/// standard and conjugate-invariant.
 fn check_large_digits<B>(module: &Module<B>)
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
 {
     let (n, b) = (module.n(), (i64::BITS - 2) as usize);
-    let mut input = layout(n, b, 2 * b, 12, SlotsKind::Real);
-    input.meta.log_sparsity = 2;
-    let canonical: Vec<_> = [
-        SlotsKind::Complex,
-        SlotsKind::Real,
-        SlotsKind::Real,
-        SlotsKind::Real,
-        SlotsKind::Real,
-    ]
-    .into_iter()
-    .zip(233u8..)
-    .map(|(slots, seed)| {
-        let meta = CKKSMeta { slots, ..input.meta };
-        fixture_ciphertext(module, &CKKSLayout { meta, ..input }, seed)
-    })
-    .collect();
-    let denormalized: Vec<_> = canonical.iter().map(|ct| denormalize(module, ct)).collect();
-    let fold = |ins: &[CKKSCiphertextOwned<B>]| {
-        let keys = CKKSFoldKeysLayout {
-            ring_switch: None,
-            automorphism: None,
-        };
-        let folded_layout = B::ckks_fold_layout_impl(module, &ins[0], n.into(), &keys);
-        let mut folded: Vec<_> = (0..B::ckks_fold_count_impl(module, ins, n.into()))
-            .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
-            .collect();
-        let bytes = B::ckks_fold_tmp_bytes_impl(module, &ins[0], &ins[0], n.into(), &keys);
-        with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_fold_impl(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
+    for degree in [n, n / 2] {
+        let mut input = layout(degree, b, 2 * b, 12, SlotsKind::Real);
+        input.meta.log_sparsity = 2;
+        let canonical: Vec<_> = [
+            SlotsKind::Complex,
+            SlotsKind::Real,
+            SlotsKind::Real,
+            SlotsKind::Real,
+            SlotsKind::Real,
+        ]
+        .into_iter()
+        .zip(233u8..)
+        .map(|(slots, seed)| {
+            let meta = CKKSMeta { slots, ..input.meta };
+            fixture_ciphertext(module, &CKKSLayout { meta, ..input }, seed)
         })
-        .unwrap();
-        folded.iter().map(snapshot::<B, _>).collect::<Vec<_>>()
+        .collect();
+        let denormalized: Vec<_> = canonical.iter().map(|ct| denormalize(module, ct)).collect();
+        let (want, have) = if degree == n {
+            (fold_snapshots(module, &canonical), fold_snapshots(module, &denormalized))
+        } else {
+            let ci = |cts: Vec<CKKSCiphertextOwned<B>>| -> Vec<CKKSRingCiphertext<B, ConjugateInvariant>> {
+                cts.into_iter().skip(1).map(relabel).collect()
+            };
+            (
+                fold_snapshots(module, &ci(canonical)),
+                fold_snapshots(module, &ci(denormalized)),
+            )
+        };
+        assert_eq!(have, want, "non-canonical inputs of degree {degree} fold differently");
+    }
+}
+
+/// Folds `ins` into ciphertexts of the module degree, under the bootstrap secret.
+fn fold_snapshots<B, R>(module: &Module<B>, ins: &[CKKSRingCiphertext<B, R>]) -> Vec<Snapshot>
+where
+    B: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
+    R: Ring,
+    Module<B>: CKKSModuleAlloc<B>,
+{
+    let n = module.n();
+    let keys = CKKSFoldKeysLayout {
+        ring_switch: None,
+        automorphism: None,
     };
-    assert_eq!(fold(&denormalized), fold(&canonical), "non-canonical inputs fold differently");
+    let folded_layout = B::ckks_fold_layout_impl(module, &ins[0], n.into(), &keys);
+    let mut folded: Vec<_> = (0..B::ckks_fold_count_impl(module, ins, n.into()))
+        .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
+        .collect();
+    let bytes = B::ckks_fold_tmp_bytes_impl(module, &ins[0], &ins[0], n.into(), &keys);
+    with_scratch::<B, _>(bytes, |scratch| {
+        B::ckks_fold_impl(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
+    })
+    .unwrap();
+    folded.iter().map(snapshot::<B, _>).collect()
+}
+
+/// Unfolding conjugate-invariant outputs at a larger scale than the refreshed
+/// ciphertext relabels them without widening them past their storage.
+fn check_ci_unfold_width<B>(module: &Module<B>)
+where
+    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<ConjugateInvariant>,
+    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
+{
+    let n = module.n();
+    let mut refreshed = vec![fixture_ciphertext(module, &layout(n, 12, 48, 8, SlotsKind::Complex), 241)];
+    let mut outs: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = [243u8, 244]
+        .map(|seed| relabel(fixture_ciphertext(module, &layout(n / 2, 12, 48, 12, SlotsKind::Real), seed)))
+        .into();
+    let keys = CKKSFoldKeysLayout {
+        ring_switch: None,
+        automorphism: None,
+    };
+    let bytes = B::ckks_fold_tmp_bytes_impl(module, &outs[0], &outs[0], n.into(), &keys);
+    with_scratch::<B, _>(bytes, |scratch| {
+        B::ckks_unfold_impl(
+            module,
+            &mut outs,
+            &mut refreshed,
+            None::<&GGLWEPrepared<B::OwnedBuf, B>>,
+            None::<&AutomorphismKeys<B>>,
+            scratch,
+        )
+    })
+    .expect("unfold");
+    for out in &outs {
+        assert_eq!(
+            (out.k().as_usize(), out.log_delta()),
+            (47, 12),
+            "unfold output width and scale"
+        );
+    }
 }
 
 /// `ct` with each digit below its top limb moved by `±2^b` and borrowed from the limb
@@ -535,5 +594,7 @@ where
     check_unfold_errors(tested);
     check_large_digits(reference);
     check_large_digits(tested);
+    check_ci_unfold_width(reference);
+    check_ci_unfold_width(tested);
     assert_eq!(run_fold(params, reference), run_fold(params, tested), "fold differs");
 }
