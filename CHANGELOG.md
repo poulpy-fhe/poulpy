@@ -62,6 +62,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - GLWE decryption rejects ciphertext, plaintext and prepared secret key degrees that differ or exceed the module degree, including in release builds.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
+- Add `SmudgingNoise`, `VecZnxAddSmudging` and the optional `SmudgingSamplingImpl` backend hook for full-width integer noise, placed at the destination's precision `k` so that it always reaches the bottom bit of the value it hides. Ordinary encryption sampling is unchanged.
 - **Breaking:** the GGSW methods of `ConversionImpl` and `ConversionReference` move to `GGSWConversionImpl` (registered by `impl_ggsw_conversion_reference_full!`) and `GGSWConversionReference`; `AutomorphismImpl` requires `GLWEKeyswitchImpl` and `GGSWConversionImpl`, and `GGSWKeyswitchImpl` requires `GGSWConversionImpl`, instead of `ConversionImpl`; `impl_core_reference_full!` and `impl_operations_reference_full!` no longer register LWE conversion, packing, GLWE/GGSW rotate, or `mul_xp_minus_one`, and `impl_core_reference_full!` no longer registers the GLWE trace, whose Galois elements are the standard ring's.
 - **Breaking:** `glwe_public_key_generate` takes caller-owned scratch, sized by `glwe_public_key_generate_tmp_bytes`; its derived default dispatches through the selected secret-key encryption implementation.
 - Packing uses its reserved arena temporary instead of allocating a GLWE at every merge, and rejects mixed input layouts before mutation. Removed unused HAL scratch-query bounds from the automorphism reference.
@@ -189,6 +190,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `impl_smudging_host!`, included by `impl_cpu_core_defaults!`, implements `SmudgingSamplingImpl` with `dashu-int`: an exact conditional discrete Gaussian with power-of-two scale and an exact signed uniform distribution, preserving low bits across multiple limbs. Gaussian sampling uses variable-time integer rejection.
 - Shared `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` registration macros, with tensoring, strided digit products, encoding transforms, and encapsulated ModUp selected explicitly by each backend, and the standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate, `mul_xp_minus_one`, GLWE trace) and CKKS families (conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP coefficient encodings) by each standard-ring backend.
 
 - **Breaking:** the FFT64 reference kernels (`vec_znx_dft_apply`, `vec_znx_idft_apply*`, `svp_prepare`, `vmp_prepare`, `convolution_prepare_*`) take the ring-typed `&FFT64Plan` instead of `ReimFFTTable`/`ReimIFFTTable`, and the NTT4x30 reference kernels take `&Module<BE>` instead of `&impl NttModuleHandle`.

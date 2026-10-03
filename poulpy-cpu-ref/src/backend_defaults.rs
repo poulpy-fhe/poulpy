@@ -18,6 +18,7 @@ macro_rules! impl_cpu_core_defaults {
         ::poulpy_core::impl_operations_reference_full!($be);
         ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
         $crate::impl_sampling_host!($be, $word_family);
+        $crate::impl_smudging_host!($be);
     };
 }
 
