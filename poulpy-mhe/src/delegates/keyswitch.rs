@@ -1,4 +1,4 @@
-use crate::layouts::{GLWEKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     EncryptionInfos, SmudgingNoise,
     layouts::{
@@ -12,54 +12,58 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEKeyswitchMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
-    oep::{GLWEKeyswitchMHEProtocolImpl, GLWEPublicKeyswitchMHEProtocolImpl},
+    api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
+    oep::{GLWEPrivateKeyswitchMHEProtocolImpl, GLWEPublicKeyswitchMHEProtocolImpl},
 };
 
-impl<BE: Backend + GLWEKeyswitchMHEProtocolImpl> GLWEKeyswitchMHEProtocol<BE> for Module<BE> {
-    fn mhe_glwe_keyswitch_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
+impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEProtocol<BE> for Module<BE> {
+    fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        BE::mhe_glwe_keyswitch_share_gen_tmp_bytes(self, infos)
+        BE::mhe_glwe_private_keyswitch_share_gen_tmp_bytes(self, infos)
     }
 
-    fn mhe_glwe_keyswitch_share_gen<C, S1, S2>(
+    fn mhe_glwe_private_keyswitch_share_gen<C, S1, S2>(
         &self,
-        res: &mut GLWEKeyswitchShareOwned<BE>,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
         flood: SmudgingNoise,
-        source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_keyswitch_share_gen(self, res, mask, sk_in, sk_out, flood, source_xe, scratch)
+        BE::mhe_glwe_private_keyswitch_share_gen(self, res, mask, sk_in, sk_out, flood, source_smudge, scratch)
     }
 
-    fn mhe_glwe_keyswitch_share_aggregate(&self, res: &mut GLWEKeyswitchShareOwned<BE>, a: &GLWEKeyswitchShareOwned<BE>) {
-        BE::mhe_glwe_keyswitch_share_aggregate(self, res, a)
+    fn mhe_glwe_private_keyswitch_share_aggregate(
+        &self,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        a: &GLWEPrivateKeyswitchShareOwned<BE>,
+    ) {
+        BE::mhe_glwe_private_keyswitch_share_aggregate(self, res, a)
     }
 
-    fn mhe_glwe_keyswitch_share_finalize_tmp_bytes(&self) -> usize {
-        BE::mhe_glwe_keyswitch_share_finalize_tmp_bytes(self)
+    fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(&self) -> usize {
+        BE::mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(self)
     }
 
-    fn mhe_glwe_keyswitch_share_finalize<R, C>(
+    fn mhe_glwe_private_keyswitch_share_finalize<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEKeyswitchShareOwned<BE>,
+        share: &GLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_keyswitch_share_finalize(self, res, ct, share, scratch)
+        BE::mhe_glwe_private_keyswitch_share_finalize(self, res, ct, share, scratch)
     }
 }
 
@@ -83,6 +87,7 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -91,7 +96,17 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         E: EncryptionInfos,
     {
         BE::mhe_glwe_public_keyswitch_share_gen(
-            self, res, mask, sk_in, pk_out, flood, enc_infos, source_xu, source_xe, scratch,
+            self,
+            res,
+            mask,
+            sk_in,
+            pk_out,
+            flood,
+            enc_infos,
+            source_xu,
+            source_xe,
+            source_smudge,
+            scratch,
         )
     }
 

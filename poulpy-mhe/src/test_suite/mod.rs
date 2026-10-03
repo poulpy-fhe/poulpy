@@ -168,19 +168,21 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_keyswitch_flood_bound_guards() {
-                $crate::test_suite::keyswitch::test_glwe_keyswitch_flood_bound_guards(&Module::<$backend>::new(64));
+            fn glwe_private_keyswitch_flood_bound_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_flood_bound_guards(&Module::<$backend>::new(64));
             }
 
             #[test]
             #[should_panic(expected = "invalid aggregation: layouts differ")]
-            fn glwe_keyswitch_aggregate_layout_mismatch() {
-                $crate::test_suite::keyswitch::test_glwe_keyswitch_aggregate_layout_mismatch(&Module::<$backend>::new(64));
+            fn glwe_private_keyswitch_aggregate_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_aggregate_layout_mismatch(&Module::<$backend>::new(
+                    64,
+                ));
             }
 
             #[test]
-            fn glwe_keyswitch() {
-                $crate::test_suite::keyswitch::test_glwe_keyswitch(&Module::<$backend>::new(256));
+            fn glwe_private_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch(&Module::<$backend>::new(256));
             }
 
             #[test]
@@ -221,8 +223,8 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_keyswitch_share_layout_guards() {
-                $crate::test_suite::keyswitch::test_glwe_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            fn glwe_private_keyswitch_share_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -231,8 +233,8 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_keyswitch_finalize_layout_guards() {
-                $crate::test_suite::keyswitch::test_glwe_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
+            fn glwe_private_keyswitch_finalize_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
             }
 
             #[test]

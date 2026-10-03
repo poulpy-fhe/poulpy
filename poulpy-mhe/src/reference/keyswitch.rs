@@ -1,7 +1,7 @@
-use crate::layouts::{GLWEKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWEEncryptPk, GLWEMaskDecrypt, GLWENormalize, GLWESub, ScratchArenaTakeCore,
-    SmudgingNoise, VecZnxAddSmudging,
+    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
+    ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos,
@@ -13,50 +13,50 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub trait GLWEKeyswitchMHEProtocolReference<BE: Backend> {
-    fn mhe_glwe_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
+    fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_keyswitch_share_gen_reference<C, S1, S2>(
+    fn mhe_glwe_private_keyswitch_share_gen_reference<C, S1, S2>(
         &self,
-        res: &mut GLWEKeyswitchShareOwned<BE>,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
         flood: SmudgingNoise,
-        source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
-    fn mhe_glwe_keyswitch_share_aggregate_reference(
+    fn mhe_glwe_private_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEKeyswitchShareOwned<BE>,
-        a: &GLWEKeyswitchShareOwned<BE>,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        a: &GLWEPrivateKeyswitchShareOwned<BE>,
     );
 
-    fn mhe_glwe_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize;
+    fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize;
 
-    fn mhe_glwe_keyswitch_share_finalize_reference<R, C>(
+    fn mhe_glwe_private_keyswitch_share_finalize_reference<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEKeyswitchShareOwned<BE>,
+        share: &GLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEKeyswitchMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> GLWEPrivateKeyswitchMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEMaskDecrypt<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEBytesOf<BE> + VecZnxAddSmudging<BE>,
+    Self: GLWEMaskInnerProduct<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEBytesOf<BE> + VecZnxAddSmudging<BE>,
 {
-    fn mhe_glwe_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -65,17 +65,19 @@ where
             "invalid layout: degree differs from the module's"
         );
         2 * BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(infos))
-            + self.glwe_mask_decrypt_tmp_bytes(infos).max(self.glwe_normalize_tmp_bytes())
+            + self
+                .glwe_mask_inner_product_tmp_bytes(infos)
+                .max(self.glwe_normalize_tmp_bytes())
     }
 
-    fn mhe_glwe_keyswitch_share_gen_reference<C, S1, S2>(
+    fn mhe_glwe_private_keyswitch_share_gen_reference<C, S1, S2>(
         &self,
-        res: &mut GLWEKeyswitchShareOwned<BE>,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
         flood: SmudgingNoise,
-        source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -110,12 +112,12 @@ where
         );
         let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
         flood.assert_valid_for(base2k, k);
-        let tmp_bytes = self.mhe_glwe_keyswitch_share_gen_tmp_bytes_reference(mask);
+        let tmp_bytes = self.mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference(mask);
         {
             let (mut pt_in, scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             let (mut pt_out, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(mask);
-            self.glwe_mask_decrypt(mask, &mut pt_in, sk_in, &mut scratch_2);
-            self.glwe_mask_decrypt(mask, &mut pt_out, sk_out, &mut scratch_2);
+            self.glwe_mask_inner_product(&mut pt_in, mask, sk_in, &mut scratch_2);
+            self.glwe_mask_inner_product(&mut pt_out, mask, sk_out, &mut scratch_2);
             self.glwe_sub(res, &pt_in, &pt_out);
             self.glwe_normalize_assign(res, &mut scratch_2);
             self.vec_znx_add_smudging(
@@ -124,31 +126,31 @@ where
                 GLWEToBackendMut::<BE>::to_backend_mut(res).data_mut(),
                 0,
                 flood,
-                source_xe,
+                source_smudge,
             );
             self.glwe_normalize_assign(res, &mut scratch_2);
         }
         scratch.wipe(tmp_bytes);
     }
 
-    fn mhe_glwe_keyswitch_share_aggregate_reference(
+    fn mhe_glwe_private_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEKeyswitchShareOwned<BE>,
-        a: &GLWEKeyswitchShareOwned<BE>,
+        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        a: &GLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         self.glwe_add_assign(&mut res.inner, &a.inner);
     }
 
-    fn mhe_glwe_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {
+    fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {
         self.glwe_normalize_tmp_bytes()
     }
 
-    fn mhe_glwe_keyswitch_share_finalize_reference<R, C>(
+    fn mhe_glwe_private_keyswitch_share_finalize_reference<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEKeyswitchShareOwned<BE>,
+        share: &GLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -195,6 +197,7 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -223,12 +226,11 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
 
 impl<BE: Backend> GLWEPublicKeyswitchMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEMaskDecrypt<BE>
+    Self: GLWEMaskInnerProduct<BE>
         + GLWEAdd<BE>
-        + GLWEEncryptPk<BE>
+        + GLWEEncryptPkSmudged<BE>
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
-        + VecZnxAddSmudging<BE>
         + VecZnxAddAssign<BE>,
 {
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
@@ -243,9 +245,8 @@ where
         );
         BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(ct_infos))
             + self
-                .glwe_mask_decrypt_tmp_bytes(ct_infos)
-                .max(self.glwe_normalize_tmp_bytes())
-                .max(self.glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos))
+                .glwe_mask_inner_product_tmp_bytes(ct_infos)
+                .max(self.glwe_encrypt_pk_smudged_tmp_bytes(res_infos, pk_infos))
     }
 
     fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K, E>(
@@ -258,6 +259,7 @@ where
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
+        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -287,15 +289,22 @@ where
             "invalid share: public key and share layouts differ"
         );
         assert!(pk_out.k() >= res.k(), "invalid share: public key less precise than the share");
-        let (base2k, k) = (mask.base2k().as_usize(), mask.k().as_usize());
-        flood.assert_valid_for(base2k, k);
+        flood.assert_valid_for(res.base2k().as_usize(), res.k().as_usize());
         let tmp_bytes = self.mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(mask, &*res, pk_out);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
-            self.glwe_mask_decrypt(mask, &mut pt, sk_in, &mut scratch_1);
-            self.vec_znx_add_smudging(base2k, k, pt.data_mut(), 0, flood, source_xe);
-            self.glwe_normalize_assign(&mut pt, &mut scratch_1);
-            self.glwe_encrypt_pk(res, &pt, pk_out, enc_infos, source_xu, source_xe, &mut scratch_1);
+            self.glwe_mask_inner_product(&mut pt, mask, sk_in, &mut scratch_1);
+            self.glwe_encrypt_pk_smudged(
+                res,
+                &pt,
+                pk_out,
+                flood,
+                enc_infos,
+                source_xu,
+                source_xe,
+                source_smudge,
+                &mut scratch_1,
+            );
         }
         scratch.wipe(tmp_bytes);
     }

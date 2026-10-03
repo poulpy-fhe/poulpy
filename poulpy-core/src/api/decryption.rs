@@ -24,24 +24,25 @@ pub trait GLWEDecrypt<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-/// Inner product of a GLWE mask with a secret, `Σ_j a_j·s_j`: the decryption of a
-/// ciphertext of that mask with a zero body.
-pub trait GLWEMaskDecrypt<BE: Backend> {
-    fn glwe_mask_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+/// Inner product of a GLWE mask with a secret, `Σ_j a_j·s_j`: the phase of a
+/// ciphertext without its body.
+pub trait GLWEMaskInnerProduct<BE: Backend> {
+    fn glwe_mask_inner_product_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    /// Writes into `pt` the inner product of `mask`, a [`GLWEMask`](crate::layouts::GLWEMask)
+    /// Writes into `res` the inner product of `mask`, a [`GLWEMask`](crate::layouts::GLWEMask)
     /// or the mask of a [`GLWE`](crate::layouts::GLWE), with `sk`, normalized at the
-    /// precision of `pt`.
+    /// precision of `res`.
     ///
     /// # Panics
-    /// Panics if the mask, plaintext and secret degrees differ or exceed the module
-    /// degree, or if the mask rank is zero or differs from the secret's.
-    fn glwe_mask_decrypt<A, P, S>(&self, mask: &A, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    /// Panics if the mask is not canonical, if the output, mask and secret degrees
+    /// differ or exceed the module degree, or if the mask rank is zero or differs
+    /// from the secret's.
+    fn glwe_mask_inner_product<R, A, S>(&self, res: &mut R, mask: &A, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
+        R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         A: GLWEMaskToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 

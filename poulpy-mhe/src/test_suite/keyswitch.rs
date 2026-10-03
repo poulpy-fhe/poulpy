@@ -22,9 +22,9 @@ use super::fixtures::{
     secret_from_seed_at,
 };
 use crate::{
-    api::{GLWEKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
+    api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
     layouts::MHEModuleAlloc,
-    layouts::{GLWEKeyswitchShare, GLWEPublicKeyswitchShare},
+    layouts::{GLWEPrivateKeyswitchShare, GLWEPublicKeyswitchShare},
 };
 
 /// Smudging noise sigma of every party, well above the fresh noise.
@@ -34,12 +34,12 @@ const FLOOD: SmudgingNoise = SmudgingNoise::Gaussian {
     cutoff: 6,
 };
 
-pub fn test_glwe_keyswitch<BE>(module: &Module<BE>)
+pub fn test_glwe_private_keyswitch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEKeyswitchMHEProtocol<BE>
+    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
@@ -59,35 +59,38 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_sk_tmp_bytes(&layout)
-            .max(module.mhe_glwe_keyswitch_share_gen_tmp_bytes(&layout))
-            .max(module.mhe_glwe_keyswitch_share_finalize_tmp_bytes())
+            .max(module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout))
+            .max(module.mhe_glwe_private_keyswitch_share_finalize_tmp_bytes())
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
     let mask = ciphertext_mask(module, &ct);
 
-    let mut acc = module.glwe_keyswitch_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_keyswitch_share_alloc_from_infos(&layout);
+    let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
+    let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
     for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         dst.inner.set_canonical(false);
-        let mut source_xe = Source::new([10 + i as u8; 32]);
-        // The decryptions under both secrets would be left in the scratch.
-        poulpy_core::test_suite::assert_wipes_scratch::<BE>(module.mhe_glwe_keyswitch_share_gen_tmp_bytes(&layout), |scratch| {
-            module.mhe_glwe_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_xe, scratch)
-        });
+        let mut source_smudge = Source::new([10 + i as u8; 32]);
+        // The inner products with both secrets would be left in the scratch.
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+            module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
+            |scratch| {
+                module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
+            },
+        );
         assert!(dst.inner.is_canonical());
         if i > 0 {
-            module.mhe_glwe_keyswitch_share_aggregate(&mut acc, &share);
+            module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
         }
     }
     assert!(!acc.inner.is_canonical());
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.mhe_glwe_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
+    module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
     assert!(res.is_canonical());
-    assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, &mut scratch);
+    assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, layout.k, &mut scratch);
 }
 
 pub fn test_glwe_public_keyswitch<BE>(module: &Module<BE>)
@@ -150,7 +153,8 @@ where
             dst.inner.set_canonical(false);
             let mut source_xu = Source::new([20 + i as u8; 32]);
             let mut source_xe = Source::new([10 + i as u8; 32]);
-            // The decryption under the input secret would be left in the scratch.
+            let mut source_smudge = Source::new([30 + i as u8; 32]);
+            // The inner product with the input secret would be left in the scratch.
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(share_bytes, |scratch| {
                 module.mhe_glwe_public_keyswitch_share_gen(
                     dst,
@@ -161,9 +165,19 @@ where
                     &enc_infos,
                     &mut source_xu,
                     &mut source_xe,
+                    &mut source_smudge,
                     scratch,
                 )
             });
+            // The flood is the body's only error: one encryption error per mask column, one flood.
+            let mut want_xe = Source::new([10 + i as u8; 32]);
+            (0..rank_out.as_usize()).for_each(|_| {
+                want_xe.new_seed();
+            });
+            assert_eq!(source_xe.new_seed(), want_xe.new_seed());
+            let mut want_smudge = Source::new([30 + i as u8; 32]);
+            want_smudge.new_seed();
+            assert_eq!(source_smudge.new_seed(), want_smudge.new_seed());
             assert!(dst.inner.is_canonical());
             if i > 0 {
                 module.mhe_glwe_public_keyswitch_share_aggregate(&mut acc, &share);
@@ -178,7 +192,7 @@ where
         let n = module.n() as f64;
         let rank = rank_out.as_usize() as f64;
         let pk_noise = PARTIES as f64 * 2.0 * rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-        assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, &mut scratch);
+        assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, share_layout.k, &mut scratch);
     }
 }
 
@@ -204,14 +218,14 @@ where
 }
 
 /// Aggregating key switching shares of different layouts panics.
-pub fn test_glwe_keyswitch_aggregate_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_private_keyswitch_aggregate_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEKeyswitchMHEProtocol<BE>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEPrivateKeyswitchMHEProtocol<BE>,
 {
-    let mut a = module.glwe_keyswitch_share_alloc(BASE2K, K);
-    let b = module.glwe_keyswitch_share_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0));
-    module.mhe_glwe_keyswitch_share_aggregate(&mut a, &b);
+    let mut a = module.glwe_private_keyswitch_share_alloc(BASE2K, K);
+    let b = module.glwe_private_keyswitch_share_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0));
+    module.mhe_glwe_private_keyswitch_share_aggregate(&mut a, &b);
 }
 
 /// Sharing under a public key less precise than the share panics.
@@ -247,21 +261,22 @@ where
         &enc_infos,
         &mut Source::new([20u8; 32]),
         &mut Source::new([10u8; 32]),
+        &mut Source::new([30u8; 32]),
         &mut scratch.borrow(),
     );
 }
 
 /// Invalid result and secret layouts are rejected with exact static messages.
-pub fn test_glwe_keyswitch_share_layout_guards<BE>(module: &Module<BE>)
+pub fn test_glwe_private_keyswitch_share_layout_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
     let body = GLWELayout { rank: Rank(0), ..layout };
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_keyswitch_share_gen_tmp_bytes(&layout));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout));
     for (res_layout, rank_in, rank_out, expected) in [
         (layout, RANK, RANK, "invalid share: share rank differs from 0"),
         (
@@ -286,13 +301,13 @@ where
             "invalid share: output secret rank differs from the mask's",
         ),
     ] {
-        let mut res = GLWEKeyswitchShare {
+        let mut res = GLWEPrivateKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&res_layout),
         };
         let sk_in: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(rank_in);
         let sk_out: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(rank_out);
         assert_panics_with(expected, || {
-            module.mhe_glwe_keyswitch_share_gen(
+            module.mhe_glwe_private_keyswitch_share_gen(
                 &mut res,
                 &ct,
                 &sk_in,
@@ -355,6 +370,7 @@ where
                 &enc_infos,
                 &mut Source::new([20u8; 32]),
                 &mut Source::new([10u8; 32]),
+                &mut Source::new([30u8; 32]),
                 &mut scratch.borrow(),
             );
         });
@@ -362,10 +378,10 @@ where
 }
 
 /// Finalization rejects mismatched body/output layouts with static messages.
-pub fn test_glwe_keyswitch_finalize_layout_guards<BE>(module: &Module<BE>)
+pub fn test_glwe_private_keyswitch_finalize_layout_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEKeyswitchMHEProtocol<BE> + GLWEPublicKeyswitchMHEProtocol<BE>,
+    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWEPublicKeyswitchMHEProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -378,7 +394,7 @@ where
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .mhe_glwe_keyswitch_share_finalize_tmp_bytes()
+            .mhe_glwe_private_keyswitch_share_finalize_tmp_bytes()
             .max(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes()),
     );
     for (res_layout, share_layout, expected) in [
@@ -390,11 +406,11 @@ where
         ),
     ] {
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&res_layout);
-        let share = GLWEKeyswitchShare {
+        let share = GLWEPrivateKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&share_layout),
         };
         assert_panics_with(expected, || {
-            module.mhe_glwe_keyswitch_share_finalize(&mut res, &ct, &share, &mut scratch.borrow());
+            module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &share, &mut scratch.borrow());
         });
     }
     for share_layout in [wrong_rank, wrong_degree] {
@@ -410,10 +426,10 @@ where
 
 /// The flood is sized against the precision it is sampled at, and a flood too
 /// wide for it is rejected before randomness is consumed.
-pub fn test_glwe_keyswitch_flood_bound_guards<BE>(module: &Module<BE>)
+pub fn test_glwe_private_keyswitch_flood_bound_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEKeyswitchMHEProtocol<BE>
+    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE>
         + GLWEPublicKeyswitchMHEProtocol<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
@@ -435,7 +451,7 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(public_layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .mhe_glwe_keyswitch_share_gen_tmp_bytes(&layout)
+            .mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout)
             .max(module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &public_layout, &public_layout)),
     );
     let expected = "invalid smudging: Gaussian bound outside the precision";
@@ -445,43 +461,46 @@ where
         cutoff: 6,
     };
     // CKS samples into the narrower result.
-    let mut res = GLWEKeyswitchShare {
+    let mut res = GLWEPrivateKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&body_layout),
     };
-    let mut source_xe = Source::new([10u8; 32]);
+    let mut source_smudge = Source::new([30u8; 32]);
     assert_panics_with(expected, || {
-        module.mhe_glwe_keyswitch_share_gen(
+        module.mhe_glwe_private_keyswitch_share_gen(
             &mut res,
             &ct,
             &sk,
             &sk,
             too_wide(body_layout.k),
-            &mut source_xe,
+            &mut source_smudge,
             &mut scratch.borrow(),
         );
     });
-    assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
-    // PCKS samples into a ct-sized temporary, even when the destination key is wider.
+    assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
+    // PCKS samples into its wider share, not the ciphertext's precision.
     let mut res = GLWEPublicKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&public_layout),
     };
     let mut source_xu = Source::new([20u8; 32]);
     let mut source_xe = Source::new([10u8; 32]);
+    let mut source_smudge = Source::new([30u8; 32]);
     assert_panics_with(expected, || {
         module.mhe_glwe_public_keyswitch_share_gen(
             &mut res,
             &ct,
             &sk,
             &pk,
-            too_wide(layout.k),
+            too_wide(public_layout.k),
             &enc_infos,
             &mut source_xu,
             &mut source_xe,
+            &mut source_smudge,
             &mut scratch.borrow(),
         );
     });
     assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
     assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+    assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
 }
 
 fn glwe_layout<BE: poulpy_hal::layouts::Backend>(module: &Module<BE>) -> GLWELayout {
@@ -536,14 +555,15 @@ where
     (pt, ct)
 }
 
-/// The noise of `ct` lies between the parties' flood noise and the sum of the
-/// fresh, flood and `other` variances.
+/// The noise of `ct` lies between the parties' flood noise, sampled at
+/// `k_flood`, and the sum of the fresh, flood and `other` variances.
 fn assert_flooded_noise<BE>(
     module: &Module<BE>,
     ct: &GLWE<AlignedBuf, i64>,
     pt: &GLWEPlaintext<AlignedBuf, i64>,
     sk: &GLWESecretPrepared<AlignedBuf, BE>,
     other: f64,
+    k_flood: TorusPrecision,
     scratch: &mut ScratchOwned<BE>,
 ) where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -552,10 +572,11 @@ fn assert_flooded_noise<BE>(
     Module<BE>: GLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
-    let k = K.as_usize() as f64;
-    let flood = PARTIES as f64 * SIGMA_FLOOD * SIGMA_FLOOD;
-    let lower = 0.5 * flood.log2() - k - 0.5;
-    let upper = 0.5 * (DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE + flood + other).log2() - k + 0.5;
+    let (k, k_flood) = (K.as_usize() as f64, k_flood.as_usize() as f64);
+    let flood = PARTIES as f64 * SIGMA_FLOOD * SIGMA_FLOOD * (-2.0 * k_flood).exp2();
+    let rest = (DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE + other) * (-2.0 * k).exp2();
+    let lower = 0.5 * flood.log2() - 0.5;
+    let upper = 0.5 * (flood + rest).log2() + 0.5;
     let noise: f64 = module.glwe_noise(ct, pt, sk, &mut scratch.borrow()).std().log2();
     assert!(noise >= lower && noise <= upper, "noise {noise} outside [{lower}, {upper}]");
 }

@@ -1,13 +1,9 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalize,
-        VecZnxNormalizeTmpBytes,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
-    layouts::{
-        Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
-        VecZnxToBackendMut, VecZnxToBackendRef,
-    },
+    layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut},
 };
 
 pub use crate::api::GLWEDecrypt;
@@ -208,21 +204,19 @@ fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
     });
 }
 
-pub fn glwe_mask_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn glwe_mask_inner_product_tmp_bytes_reference<M, A>(module: &M, infos: &A) -> usize
 where
-    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
+    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: GLWEInfos,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(infos.n().into(), infos.rank().into(), infos.size()))
-        + glwe_decrypt_body_tmp_bytes::<M, _>(module, infos).max(module.vec_znx_normalize_tmp_bytes())
+    glwe_decrypt_body_tmp_bytes::<M, _>(module, infos)
 }
 
-/// Writes into `pt` the inner product of `mask` with `sk`: the decryption of a
-/// ciphertext of that mask with a zero body. A flag-clear mask is normalized first.
-pub fn glwe_mask_decrypt_reference<M, BE: Backend, A, P, S>(
+/// Writes into `res` the inner product of the canonical `mask` with `sk`.
+pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
     module: &M,
+    res: &mut R,
     mask: &A,
-    pt: &mut P,
     sk: &S,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -235,68 +229,37 @@ pub fn glwe_mask_decrypt_reference<M, BE: Backend, A, P, S>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalize<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes,
+    R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
     A: GLWEMaskToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
-    let n: usize = operand_degree(module.n(), &[mask.n(), pt.n(), sk.n()]);
+    operand_degree(module.n(), &[res.n(), mask.n(), sk.n()]);
     assert!(mask.rank().as_usize() > 0, "GLWE mask rank must be positive");
     assert_eq!(mask.rank(), sk.rank(), "GLWE mask and secret key ranks must match");
-    let tmp_bytes: usize = glwe_mask_decrypt_tmp_bytes_reference::<M, BE, _>(module, mask);
+    let tmp_bytes: usize = glwe_mask_inner_product_tmp_bytes_reference::<M, _>(module, mask);
     assert!(
         scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWEMaskDecrypt::glwe_mask_decrypt_tmp_bytes: {}",
+        "scratch.available(): {} < GLWEMaskInnerProduct::glwe_mask_inner_product_tmp_bytes: {}",
         scratch.available(),
         tmp_bytes
     );
     {
         let mask = mask.to_mask_backend_ref();
-        let (rank, base2k, size) = (mask.rank().as_usize(), mask.base2k(), mask.size());
-        let (mut tmp, mut scratch) = scratch.borrow().take_vec_znx_scratch(n, rank, size);
-        let (mut pt, sk) = (pt.to_backend_mut(), sk.to_backend_ref());
-        if mask.is_canonical() {
-            phase_backend_inner(
-                module,
-                &mask.data,
-                None,
-                mask.col(0),
-                rank,
-                base2k,
-                size,
-                &mut pt,
-                &sk,
-                &mut scratch,
-            );
-        } else {
-            for j in 0..rank {
-                module.vec_znx_normalize(
-                    &mut tmp.to_backend_mut(),
-                    base2k.into(),
-                    mask.k().as_usize(),
-                    0,
-                    j,
-                    &mask.data,
-                    base2k.into(),
-                    mask.col(j),
-                    &mut scratch.borrow(),
-                );
-            }
-            phase_backend_inner(
-                module,
-                &tmp.to_backend_ref(),
-                None,
-                0,
-                rank,
-                base2k,
-                size,
-                &mut pt,
-                &sk,
-                &mut scratch,
-            );
-        }
+        assert!(mask.is_canonical(), "GLWE mask must be canonical");
+        let (mut res, sk) = (res.to_backend_mut(), sk.to_backend_ref());
+        phase_backend_inner(
+            module,
+            &mask.data,
+            None,
+            mask.col(0),
+            mask.rank().as_usize(),
+            mask.base2k(),
+            mask.size(),
+            &mut res,
+            &sk,
+            scratch,
+        );
     }
     scratch.wipe(tmp_bytes);
 }

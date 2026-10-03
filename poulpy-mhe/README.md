@@ -22,7 +22,7 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GGSWShare`: seeded `GGLWEPatCompressed`s for column 0 and the two halves of
   the circular product of every other column, over one `r x r` mask matrix
   per gadget row.
-- `GLWEKeyswitchShare`, `GLWEPublicKeyswitchShare`: a core `GLWE`, the share of
+- `GLWEPrivateKeyswitchShare`, `GLWEPublicKeyswitchShare`: a core `GLWE`, the share of
   a collective key switch to a secret key (rank 0) or to a public key.
 
 Finalization produces canonical output without changing the PAT or share.
@@ -44,7 +44,7 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   `GLWEPublicKey`, `GLWESwitchingKey`, `GLWEAutomorphismKey`, `GLWETensorKey`
   or `GGSW` of the ideal secrets. The GGSW finalizes with an ephemeral key, in
   one round.
-- `GLWEKeyswitchMHEProtocol`, `GLWEPublicKeyswitchMHEProtocol`: collective key
+- `GLWEPrivateKeyswitchMHEProtocol`, `GLWEPublicKeyswitchMHEProtocol`: collective key
   switching of a ciphertext to the ideal output secret or to a public key; shares
   are generated from the ciphertext's mask alone, a core `GLWEMask`.
 

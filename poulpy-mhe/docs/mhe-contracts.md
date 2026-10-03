@@ -32,7 +32,7 @@ same trait.
 | `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
 | `GLWETensorKeyMHEProtocol` | `GLWETensorKeyMHEProtocolImpl` | `reference::GLWETensorKeyMHEProtocolReference`; aggregation and finalization are derived defaults over `GGLWEPatImpl` |
 | `GGSWMHEProtocol` | `GGSWMHEProtocolImpl` | `reference::GGSWMHEProtocolReference`; aggregation is a derived default over `GGLWEPatCompressedImpl` |
-| `GLWEKeyswitchMHEProtocol` | `GLWEKeyswitchMHEProtocolImpl` | `reference::GLWEKeyswitchMHEProtocolReference` |
+| `GLWEPrivateKeyswitchMHEProtocol` | `GLWEPrivateKeyswitchMHEProtocolImpl` | `reference::GLWEPrivateKeyswitchMHEProtocolReference` |
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
 
 ## Normalization
@@ -57,10 +57,10 @@ from the CRS for a key set. Each protocol trait states what its seed derives
 and what reusing it reveals. Choosing the secret distribution, which public-key
 encryption also draws its ephemerals from, is the caller's responsibility too.
 
-Private `source_xe` and `source_xu` streams must be independently seeded for
-each party and purpose, kept secret and consumed without replay. Never
-initialize a private stream from a public mask seed. An advancing error stream
-can supply successive fresh samples.
+Private `source_xe`, `source_xu` and `source_smudge` streams must be
+independently seeded for each party and purpose, kept secret and consumed
+without replay. Never initialize a private stream from a public mask seed. An
+advancing error stream can supply successive fresh samples.
 
 ## Threat model
 

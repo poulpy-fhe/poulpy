@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
-    api::{GLWEDecrypt, GLWEMaskDecrypt, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
+    api::{GLWEDecrypt, GLWEMaskInnerProduct, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut,
@@ -41,20 +41,20 @@ impl_decryption_delegate!(
 );
 
 impl_decryption_delegate!(
-    GLWEMaskDecrypt<BE>,
-    fn glwe_mask_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    GLWEMaskInnerProduct<BE>,
+    fn glwe_mask_inner_product_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        BE::glwe_mask_decrypt_tmp_bytes(self, infos)
+        BE::glwe_mask_inner_product_tmp_bytes(self, infos)
     },
-    fn glwe_mask_decrypt<A, P, S>(&self, mask: &A, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mask_inner_product<R, A, S>(&self, res: &mut R, mask: &A, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
+        R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         A: GLWEMaskToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_mask_decrypt(self, mask, pt, sk, scratch)
+        BE::glwe_mask_inner_product(self, res, mask, sk, scratch)
     }
 );
 
