@@ -1,28 +1,33 @@
 use std::collections::HashMap;
 
 use crate::{
-    CKKSInfos, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
-        CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
+        CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
+        CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
-    layouts::CKKSModuleAlloc,
+    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys},
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
-    layouts::{GLWEAutomorphismKeyPrepared, LWEInfos},
+    layouts::{
+        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretCIEmbed, GLWESecretPreparedFactory, LWEInfos,
+    },
 };
 use poulpy_hal::{
-    api::ScratchOwnedBorrow,
-    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    source::Source,
 };
 
 use super::{
     CKKSTestParams,
+    fold::{decrypt_coeffs, folded_message, message},
     helpers::{
-        TestContextBackend, TestContextHostModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_precision,
-        ckks_decrypt_with_prec, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk, precision_at,
+        TestContextBackend, TestContextHostModule, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch,
+        assert_precision, ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw,
+        gen_tsk, precision_at,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -463,6 +468,15 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_fold() {
+                let params = $params;
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_fold(
+                    params,
+                    Module::<$backend>::new(params.n as u64),
+                    Module::<$standard>::new((4 * params.n) as u64),
+                );
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
@@ -560,4 +574,191 @@ where
             .ckks_ci_embed(&mut wrong_degree, &ct, &embed_key, &mut standard_scratch.borrow())
             .is_err()
     );
+}
+
+/// Folds five CI inputs on a standard module of four times their degree at the input
+/// width, checks the folded messages against the embedded inputs, re-encrypts them
+/// wider as a bootstrap would, then unfolds and checks the inputs return: under the
+/// embedded CI secret at twice the CI degree, dense and sparse, and switched to a
+/// standard secret at four times it, two pairs per folded ciphertext.
+pub fn test_conjugate_invariant_fold<BE, STD>(params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>)
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    STD: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    for<'a> STD::BufRef<'a>: HostDataRef,
+    for<'a> STD::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE>,
+    Module<STD>: TestContextModule<STD> + GLWESecretCIEmbed<STD> + CKKSFoldLayoutOps<STD> + CKKSFoldOps<STD, ConjugateInvariant>,
+{
+    let n = ci.n();
+    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(n as u64);
+    let std_host = Module::<HostBytesBackend>::new(standard.n() as u64);
+    let ci_params = CKKSTestParams { n, ..params };
+    let embedded_params = CKKSTestParams { n: 2 * n, ..params };
+    let std_params = CKKSTestParams {
+        n: standard.n(),
+        ..params
+    };
+    let k_in = params.prec().k().as_usize();
+    let k_out = 2 * k_in;
+    let log_delta = params.prec_meta.log_delta;
+    let mut ci_scratch = alloc_scratch(&ci_params, &ci);
+    let mut scratch = alloc_scratch(&std_params, &standard);
+    let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&ci_params, &ci, &ci_host, [41; 32]);
+    let embedded = standard.glwe_secret_ci_embed(&ci_sk_raw);
+    let mut embedded_sk = standard.glwe_secret_prepared_alloc_from_infos(&embedded);
+    standard.glwe_secret_prepare(&mut embedded_sk, &embedded);
+    let (std_sk_raw, std_sk) = gen_sk_with_raw(&std_params, &standard, &std_host, [42; 32]);
+    let ring_switch = RingSwitchKeys {
+        inbound: std_params.ksk_layout(k_in).layout,
+        outbound: std_params.ksk_layout(k_out).layout,
+    }
+    .generate(
+        &standard,
+        &embedded,
+        &std_sk_raw,
+        &mut Source::new([43; 32]),
+        &mut Source::new([44; 32]),
+        &mut scratch.borrow(),
+    )
+    .unwrap()
+    .prepare(&standard, &mut scratch.borrow())
+    .unwrap();
+    // Pairs split keylessly; two sparse elements of the embedded secret exercise both split levels.
+    let sparse = CKKSLayout {
+        meta: CKKSMeta {
+            log_sparsity: 2,
+            slots: SlotsKind::Real,
+            ..params.prec_meta
+        },
+        ..ci_params.prec()
+    };
+    let automorphisms: HashMap<i64, _> = CKKSFoldOps::<_, ConjugateInvariant>::ckks_unfold_galois_elements(&standard, &sparse)
+        .into_iter()
+        .map(|p| (p, gen_atk(&embedded_params, &standard, p, &embedded, &mut scratch.borrow())))
+        .collect();
+    for (fold_params, fold_sk, ring_switch, automorphisms, log_sparsity) in [
+        (&embedded_params, &embedded_sk, None, None, 0),
+        (&embedded_params, &embedded_sk, None, Some(&automorphisms), 2),
+        (&std_params, &std_sk, Some(&ring_switch), None, 0),
+    ] {
+        let label = format!("degree {}, sparsity {log_sparsity}", fold_params.n);
+        // Any CI polynomial: the embedding makes it self-conjugate.
+        let msgs: Vec<Vec<f64>> = (0..5)
+            .map(|seed| message(n, SlotsKind::Complex, log_sparsity, seed))
+            .collect();
+        let prec = CKKSLayout {
+            meta: CKKSMeta {
+                log_sparsity,
+                slots: SlotsKind::Real,
+                ..params.prec_meta
+            },
+            ..ci_params.prec()
+        };
+        let ins: Vec<_> = msgs
+            .iter()
+            .map(|msg| ckks_encrypt_coeffs(&ci_params, &ci, &ci_host, &ci_sk, k_in, msg, prec, &mut ci_scratch.borrow()))
+            .collect();
+
+        // CI inputs pair in order; a folded ciphertext holds `g` positions of
+        // `2^log_sparsity` pairs each.
+        let units = [(0, Some(1)), (2, Some(3)), (4, None)];
+        let g = fold_params.n / (2 * n);
+        let span = g << log_sparsity;
+        let degree = fold_params.n.into();
+        let count = standard.ckks_fold_count(&ins, degree);
+        assert_eq!(count, units.len().div_ceil(span), "folded count, {label}");
+        let keys_layout = CKKSFoldKeysLayout {
+            ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
+            automorphism: automorphisms
+                .and_then(|keys: &HashMap<i64, _>| keys.values().next())
+                .map(|key| key.gglwe_layout()),
+        };
+        let output = CKKSLayout {
+            glwe_layout: GLWELayout {
+                k: k_out.into(),
+                ..ins[0].glwe_layout()
+            },
+            meta: ins[0].meta(),
+        };
+        let folded_layout = standard.ckks_fold_layout(&ins[0], degree, &keys_layout);
+        let mut fold_scratch = ScratchOwned::<STD>::alloc(standard.ckks_fold_tmp_bytes(&output, &ins[0], degree, &keys_layout));
+        let mut folded: Vec<_> = (0..count)
+            .map(|_| standard.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
+            .collect();
+        standard
+            .ckks_fold(
+                &mut folded,
+                &ins,
+                ring_switch.map(|keys| &keys.inbound),
+                &mut fold_scratch.borrow(),
+            )
+            .unwrap();
+
+        let embedded_msgs: Vec<Vec<f64>> = msgs.iter().map(|msg| embed(msg)).collect();
+        let mut refreshed: Vec<_> = folded
+            .iter()
+            .zip(units.chunks(span))
+            .map(|(ct, group)| {
+                let got = decrypt_coeffs::<STD, f64>(&standard, fold_params, ct, fold_sk, &mut scratch);
+                assert_precision(
+                    &format!("folded, {label}"),
+                    &got,
+                    &folded_message(&embedded_msgs, group, g, fold_params.n),
+                    log_delta,
+                    fold_params.n,
+                );
+                let prec = CKKSLayout {
+                    meta: ct.meta(),
+                    ..fold_params.prec()
+                };
+                ckks_encrypt_coeffs(
+                    fold_params,
+                    &standard,
+                    &std_host,
+                    fold_sk,
+                    k_out,
+                    &got,
+                    prec,
+                    &mut scratch.borrow(),
+                )
+            })
+            .collect();
+
+        let mut outs: Vec<_> = ins
+            .iter()
+            .map(|ct| {
+                let mut out = ci.ckks_ciphertext_alloc_from_glwe_infos(&output);
+                out.set_meta(ct.meta());
+                out
+            })
+            .collect();
+        standard
+            .ckks_unfold(
+                &mut outs,
+                &mut refreshed,
+                ring_switch.map(|keys| &keys.outbound),
+                automorphisms,
+                &mut fold_scratch.borrow(),
+            )
+            .unwrap();
+        for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
+            assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            let got = decrypt_coeffs::<BE, f64>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
+            assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n);
+        }
+    }
+}
+
+/// `c_0 + Σ c_i (X^i + X^(−i))` of twice the degree of `c`, with `X^(−i) = −X^(2n−i)`.
+fn embed(c: &[f64]) -> Vec<f64> {
+    let n = c.len();
+    let mut e = vec![0.0; 2 * n];
+    e[..n].copy_from_slice(c);
+    for i in 1..n {
+        e[2 * n - i] = -c[i];
+    }
+    e
 }
