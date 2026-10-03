@@ -18,7 +18,7 @@
 //! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
 //!
 //! `n16_d35_k600_p21_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
-//! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
+//! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 21 bits of precision.
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
@@ -258,9 +258,9 @@ impl BootstrappingPreset {
 /// C2S-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
 /// producing 600-bit ciphertexts at scale `2^35` with at least 21 bits of precision.
 ///
-/// Uses an optimized Han–Ki EvalMod. The input and raised widths are 40 and
-/// 1427 bits. The output has 560 usable bits (16 levels) before reaching the
-/// 40-bit input width; the bootstrap restores scale `2^35` automatically.
+/// Uses an optimized Han–Ki EvalMod. The input and raised widths are 42 and
+/// 1452 bits. The output has 558 usable bits (15 levels) before reaching the
+/// 42-bit input width; the bootstrap restores scale `2^35` automatically.
 pub fn n16_d35_k600_p21_c2s() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d35_k600_p21_c2s",
@@ -290,21 +290,21 @@ pub fn n16_d35_k600_p21_c2s() -> Result<BootstrappingPreset> {
 }
 
 /// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
-/// producing 720-bit ciphertexts with at least 19 bits of precision.
+/// producing 735-bit ciphertexts with at least 21 bits of precision.
 ///
 /// Uses an optimized Han–Ki EvalMod. The initial S2C is evaluated below ModUp,
-/// so the input width is 160 bits (the 48-bit ModUp modulus plus 112 bits of
-/// SlotsToCoeffs) and the raised width 1382 bits, including six C2S guard bits.
-/// The application must hand the ciphertext back at 160 bits: 560 bits (16 rescales at the input
-/// scale) are usable, the same budget as the C2S-first preset despite the larger `k`.
-pub fn n16_d35_k720_p21_s2c() -> Result<BootstrappingPreset> {
+/// so the input width is 189 bits (the 49-bit ModUp modulus plus 140 bits of
+/// SlotsToCoeffs) and the raised width 1414 bits, including six C2S guard bits.
+/// The application must hand the ciphertext back at 189 bits: 531 bits (15 rescales at the input
+/// scale) are usable, as many levels as the C2S-first preset despite the larger `k`.
+pub fn n16_d35_k735_p21_s2c() -> Result<BootstrappingPreset> {
     build(PresetSpec {
-        name: "n16_d35_k720_p21_s2c",
+        name: "n16_d35_k735_p21_s2c",
         log_n: 16,
         base2k: 52,
         rank: 1,
         log_delta: 35,
-        output_k: 720,
+        output_k: 735,
         log2_precision: 21,
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
@@ -316,10 +316,10 @@ pub fn n16_d35_k720_p21_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 14,
         c2s_schedule: &C2S_SCHEDULE_15,
         c2s_guard_bits: 6,
-        c2s_log_delta: 54,
+        c2s_log_delta: 50,
         c2s_log_budget: 2,
         s2c_schedule: &S2C_SCHEDULE_15,
-        s2c_log_delta: 35,
+        s2c_log_delta: 33,
         s2c_log_budget: 2,
         eval_mod: optimized_han_ki(59, 49),
     })
@@ -343,7 +343,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 854,
-        max_sparse_modulus: 120,
+        max_sparse_modulus: 164,
         key_dsize: 1,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::C2SFirst,
@@ -355,13 +355,16 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         s2c_schedule: &[(7, 16), (7, 2048)],
         s2c_log_delta: 30,
         s2c_log_budget: 2,
-        eval_mod: optimized_han_ki(53, 49),
+        eval_mod: EvalModSpec {
+            coeffs_log_budget: 4,
+            ..optimized_han_ki(53, 42)
+        },
     })
 }
 
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p21_c2s, n16_d35_k720_p21_s2c, n15_d35_k180_p18_c2s];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p21_c2s, n16_d35_k735_p21_s2c, n15_d35_k180_p18_c2s];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -618,38 +621,32 @@ mod tests {
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::C2SFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
-        assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 200);
+        assert_eq!(preset.plan().eval_mod().consumed_bits(), 472);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 216);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 140);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 600, 1427));
-        assert_eq!(preset.log2_precision(), 19);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (42, 600, 1452));
+        assert_eq!(preset.log2_precision(), 21);
         assert_eq!(preset.output_layout().log_delta(), 35);
         assert_eq!(preset.input_layout().meta(), preset.output_layout().meta());
-        // 16 rescales at the input scale before the next bootstrap.
-        assert_eq!(
-            preset.output_layout().log_budget() - preset.input_layout().log_budget(),
-            16 * preset.log_delta()
-        );
+        // 15 rescales at the input scale before the next bootstrap.
+        assert_eq!(preset.output_layout().log_budget() - preset.input_layout().log_budget(), 558);
 
         assert_layouts_within_bounds(&preset);
     }
 
     #[test]
-    fn n16_d35_k720_p21_s2c_is_composable_and_within_bounds() {
-        let preset = n16_d35_k720_p21_s2c().unwrap();
+    fn n16_d35_k735_p21_s2c_is_composable_and_within_bounds() {
+        let preset = n16_d35_k735_p21_s2c().unwrap();
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::S2CFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
-        assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 192);
+        assert_eq!(preset.plan().eval_mod().consumed_bits(), 472);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 216);
         assert_eq!(preset.plan().c2s_guard_bits(), 6);
-        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 720, 1382));
-        assert_eq!(preset.log2_precision(), 19);
-        assert_eq!(
-            preset.output_layout().log_budget() - preset.input_layout().log_budget(),
-            16 * preset.log_delta()
-        );
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 140);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (189, 720, 1414));
+        assert_eq!(preset.log2_precision(), 21);
+        assert_eq!(preset.output_layout().log_budget() - preset.input_layout().log_budget(), 531);
 
         assert_layouts_within_bounds(&preset);
     }
@@ -678,7 +675,7 @@ mod tests {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
         assert_eq!(
             names,
-            ["n16_d35_k600_p21_c2s", "n16_d35_k720_p21_s2c", "n15_d35_k180_p18_c2s"]
+            ["n16_d35_k600_p21_c2s", "n16_d35_k735_p21_s2c", "n15_d35_k180_p18_c2s"]
         );
     }
 
@@ -686,7 +683,7 @@ mod tests {
     fn rederived_key_shape_keeps_widths_and_revalidates() {
         for (preset, fft_dsize) in [
             (n16_d35_k600_p21_c2s().unwrap(), 7),
-            (n16_d35_k720_p21_s2c().unwrap(), 7),
+            (n16_d35_k735_p21_s2c().unwrap(), 7),
             (n15_d35_k180_p18_c2s().unwrap(), 2),
         ] {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());

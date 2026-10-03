@@ -289,7 +289,7 @@ Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-s
 
 ### `poulpy-ckks`
 
-- Add `presets::bootstrapping` with the `LogN=16` bundles `n16_d35_k600_p21_c2s` and `n16_d35_k720_p21_s2c` (plan, widths, secret weights and key layouts), re-derivable at another radix or digit size with `with_base2k` and `with_dsizes`. See `docs/bootstrapping.md`.
+- Add `presets::bootstrapping` with the `LogN=16` bundles `n16_d35_k600_p21_c2s` and `n16_d35_k735_p21_s2c` (plan, widths, secret weights and key layouts), re-derivable at another radix or digit size with `with_base2k` and `with_dsizes`. See `docs/bootstrapping.md`.
 - `EncodedLut::general` accepts any nonempty table length, zero-padded to the next power of two; LUTs with the same padded length share a batch.
 - Add `EvalModType::CosHKEven`, a centred Han–Ki approximation folded through `T₂` when it lowers multiplication cost within the same modulus budget.
 - **Breaking:** `BootstrappingPlan::new` validates the EvalMod plan and derives the CoeffsToSlots input scaling from it.
