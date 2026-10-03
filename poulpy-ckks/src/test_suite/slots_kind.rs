@@ -10,8 +10,8 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch,
-    ckks_encrypt, gen_sk_with_raw, gen_tsk,
+    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, ckks_encrypt, gen_sk_with_raw,
+    gen_tsk,
 };
 use crate::{
     CKKSInfos, SetCKKSInfos, SlotsKind,
@@ -25,7 +25,6 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {

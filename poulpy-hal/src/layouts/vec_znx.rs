@@ -7,8 +7,8 @@ use std::{
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, HostBytesBackend, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
-        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ToOwnedDeep,
+        VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
 };
 
@@ -258,7 +258,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     {
         crate::layouts::assert_dense(self, "VecZnx::to_host_owned");
         let shape = self.shape();
-        VecZnx::from_shape(<HostBytesBackend>::from_bytes(BE::to_host_bytes(&self.data)), shape)
+        VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(&self.data)), shape)
     }
 
     /// Formats this backend-owned vector through the existing host [`fmt::Display`] implementation.
@@ -662,24 +662,6 @@ impl VecZnxToBackendMut<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], 
 /// Reborrow an already backend-borrowed `VecZnx` as a mutable backend-native view.
 pub trait VecZnxReborrowBackendMut<B: Backend = crate::layouts::HostBytesBackend> {
     fn reborrow_backend_mut(&mut self) -> VecZnxBackendMut<'_, B>;
-}
-
-pub fn vec_znx_host_backend_ref<D: HostDataRef>(vec: &VecZnx<D, i64>) -> VecZnxBackendRef<'_, crate::layouts::HostBytesBackend> {
-    VecZnx {
-        data: vec.data.as_ref(),
-        shape: vec.shape,
-        _phantom: PhantomData,
-    }
-}
-
-pub fn vec_znx_host_backend_mut<D: HostDataMut>(
-    vec: &mut VecZnx<D, i64>,
-) -> VecZnxBackendMut<'_, crate::layouts::HostBytesBackend> {
-    VecZnx {
-        data: vec.data.as_mut(),
-        shape: vec.shape,
-        _phantom: PhantomData,
-    }
 }
 
 pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(

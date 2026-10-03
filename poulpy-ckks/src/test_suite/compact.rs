@@ -48,7 +48,6 @@ fn encode_dense_and_compact<BE, F, E>(
 ) -> (CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<HostBytesBackend>: CKKSModuleAlloc<HostBytesBackend>,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {

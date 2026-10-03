@@ -39,8 +39,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_spec, gen_atk, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec,
+            gen_atk, gen_tsk,
         },
         paco_ops::assert_slots,
         paco_reference_model::seq_paco_reference,
@@ -62,7 +62,6 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + PaCoScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -92,7 +91,6 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + PaCoScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -133,7 +131,6 @@ fn seq_bootstrap_case<BE, F, E>(
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar + PaCoScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
