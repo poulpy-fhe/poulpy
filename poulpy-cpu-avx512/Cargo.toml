@@ -76,3 +76,7 @@ required-features = ["enable-avx512f"]
 name = "encrypt_pk"
 harness = false
 required-features = ["enable-avx512f"]
+
+[[example]]
+name = "ckks_bootstrapping_presets"
+required-features = ["enable-ifma", "enable-ckks"]

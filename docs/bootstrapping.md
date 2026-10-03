@@ -235,9 +235,9 @@ It is built once and reused across bootstraps.
 A preset includes its circuit plan, composable input/output/bootstrap widths, secret weights, ciphertext allocation layouts, and physical evaluation-key layouts:
 
 ```rust
-use poulpy_ckks::presets::bootstrapping::n16_d35_k600_p19_c2s;
+use poulpy_ckks::presets::bootstrapping::n16_d35_k600_p21_c2s;
 
-let preset = n16_d35_k600_p19_c2s()?;
+let preset = n16_d35_k600_p21_c2s()?;
 let plan = preset.plan();
 let keys_layout = preset.keys_layout();
 let input_layout = preset.input_layout();
@@ -252,8 +252,8 @@ The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 | Constructor | Pipeline | Input `k` | Output `k` | Minimum precision | Net usable bits (levels) | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `n15_d35_k180_p18_c2s` | C2S-first | 40 | 180 | 18 bits | 140 (4) | 780 |
-| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 19 bits | 560 (16) | 1427 |
-| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | 19 bits | 560 (16) | 1382 |
+| `n16_d35_k600_p21_c2s` | C2S-first | 40 | 600 | 19 bits | 560 (16) | 1427 |
+| `n16_d35_k720_p21_s2c` | S2C-first | 160 | 720 | 19 bits | 560 (16) | 1382 |
 
 The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^49`, and S2C uses the reversed schedule at scale `2^30`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 98, 424, and 60 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 98 - 424 - 60 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
 
