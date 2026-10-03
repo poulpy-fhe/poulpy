@@ -1,3 +1,14 @@
+use std::{
+    fmt,
+    io::{self, Read, Write},
+};
+
+use poulpy_core::layouts::{
+    Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    TorusPrecision,
+};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
+
 use crate::layouts::glwe_share::glwe_share;
 
 glwe_share!(
