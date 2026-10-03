@@ -54,7 +54,8 @@ chooses the order of those calls.
 derived defaults, except sampling and the monomial families (LWE conversion,
 packing, GLWE/GGSW rotate, `mul_xp_minus_one`). Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
-`SamplingImpl`. Preparation and decompression helpers reuse selected operations;
+`SamplingImpl`; wide smudging uses the optional `SmudgingSamplingImpl`.
+Preparation and decompression helpers reuse selected operations;
 see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
 ## Matching the result
@@ -147,3 +148,26 @@ Check public documentation with:
 ```sh
 RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-core
 ```
+
+## Full-precision smudging
+
+`VecZnxAddSmudging` dispatches to the optional `SmudgingSamplingImpl`. It adds
+one independent integer sample per coefficient, scaled by `2^-k` at the
+destination's precision `k`, to a canonical input column. Each sample is
+decomposed across all necessary balanced limbs; drawing independent Gaussian
+limbs or shifting a small machine-word sample is not equivalent. Other columns
+remain untouched, and padding below the sampling precision contributes zero. Adding two bounded
+balanced digits leaves enough headroom for normalization; the result is
+unnormalized and callers must normalize before another smudging addition.
+
+Ordinary encryption's `SamplingImpl` and `NoiseInfos` retain their existing
+contract. `SmudgingSamplingImpl` takes no scratch arena, and sampling need not
+run in constant time; distributional exactness assumes uniform private bits.
+
+The delegate only derives a private child seed and dispatches. Backend
+implementations validate their input before drawing randomness or mutating
+the destination. Same-backend seeds reproduce samples; different
+backends may select different exact sampling algorithms. Tests for replacements
+must reconstruct complete integers, exercise widths beyond 128 bits, and check
+low bits and partial-limb padding. A variance or histogram check alone is not a
+proof of negligible statistical error.

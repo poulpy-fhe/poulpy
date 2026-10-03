@@ -55,3 +55,20 @@ where
         BE::vec_znx_big_add_normal(self, base2k, res, res_col, noise, source.new_seed());
     }
 }
+
+impl<BE> crate::VecZnxAddSmudging<BE> for Module<BE>
+where
+    BE: Backend + crate::oep::SmudgingSamplingImpl,
+{
+    fn vec_znx_add_smudging(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        noise: crate::SmudgingNoise,
+        source: &mut Source,
+    ) {
+        BE::vec_znx_add_smudging(self, base2k, k, res, res_col, noise, source.new_seed());
+    }
+}
