@@ -36,8 +36,8 @@ pub trait GLWEMaskDecrypt<BE: Backend> {
     /// precision of `pt`.
     ///
     /// # Panics
-    /// Panics if the mask, plaintext or secret degree differs from the module degree,
-    /// or if the mask rank is zero or differs from the secret's.
+    /// Panics if the mask, plaintext and secret degrees differ or exceed the module
+    /// degree, or if the mask rank is zero or differs from the secret's.
     fn glwe_mask_decrypt<A, P, S>(&self, mask: &A, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         A: GLWEMaskToBackendRef<BE> + GLWEInfos,
