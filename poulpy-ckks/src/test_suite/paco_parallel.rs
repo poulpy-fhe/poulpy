@@ -33,8 +33,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_spec, gen_atk, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec,
+            gen_atk, gen_tsk,
         },
     },
 };
@@ -126,7 +126,6 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    Module<HostBytesBackend>: TestContextHostModule + Sync,
     F: TestScalar + PaCoScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
 {
@@ -440,7 +439,6 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    Module<HostBytesBackend>: TestContextHostModule + Sync,
     F: TestScalar + PaCoScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
 {

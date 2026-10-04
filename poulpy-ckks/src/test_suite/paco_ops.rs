@@ -31,8 +31,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk,
-            gen_sk_with_raw, gen_tsk, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw, gen_tsk,
+            test_vector_1,
         },
         paco_reference_model::{conjugate, product_slots, rotate_left, trace_slots},
     },
@@ -91,7 +91,6 @@ pub(crate) fn assert_slots<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
@@ -155,7 +154,6 @@ pub fn test_paco_slot_trace<BE, F, E>(params: CKKSTestParams, module: &Module<BE
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -209,7 +207,6 @@ pub fn test_paco_slot_product<BE, F, E>(params: CKKSTestParams, _module: &Module
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -278,7 +275,6 @@ pub fn test_paco_conj_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<B
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {

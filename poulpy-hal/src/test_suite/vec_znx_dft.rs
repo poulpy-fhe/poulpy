@@ -12,9 +12,7 @@ use crate::{
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
-    layouts::{
-        HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
-    },
+    layouts::{Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -125,7 +123,6 @@ where
 
 pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -167,7 +164,7 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
             let b_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&b)), 1, 0);
 
             for res_size in [1, 2, 3, 4] {
-                let res_init = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let res_init = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
 
@@ -200,7 +197,6 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
 
 pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -283,7 +279,6 @@ where
 
 pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -322,7 +317,7 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
             for step_offset in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let steps = step_offset[0];
                 let offset = step_offset[1];
-                let mut res_init = poisoned_host(module_host, params.n, cols, res_size);
+                let mut res_init = poisoned_host(params.n, cols, res_size);
                 let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
 
@@ -393,8 +388,8 @@ fn assert_idft_integer_limbs<BE>(
     }
 }
 
-fn poisoned_host(module: &Module<HostBytesBackend>, n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
-    let mut host = module.vec_znx_alloc(n, cols, size);
+fn poisoned_host(n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
+    let mut host = VecZnxOwned::<i64>::alloc(n, cols, size);
     for col in 0..cols {
         for limb in 0..size {
             host.at_mut(col, limb).fill(17 + col as i64);
@@ -429,7 +424,6 @@ fn set_expected_idft_column(expected: &mut VecZnxOwned<i64>, col: usize, a: &Vec
 
 pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -475,7 +469,7 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
             for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
                 let dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&a_host), step, offset);
-                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
+                let mut expected = poisoned_host(params.n, cols, res_size);
                 let mut big_ref = poison_idft_destination(module_ref, &expected);
                 let mut big_test = poison_idft_destination(module_test, &expected);
                 // Repeating the immutable operation also checks source preservation.
@@ -507,7 +501,6 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
 
 pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -543,7 +536,7 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
             for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let mut dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
                 let mut dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&a_host), step, offset);
-                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
+                let mut expected = poisoned_host(params.n, cols, res_size);
                 let mut big_ref = poison_idft_destination(module_ref, &expected);
                 let mut big_test = poison_idft_destination(module_test, &expected);
                 for col in 0..cols {
@@ -562,7 +555,6 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
 
 pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -604,7 +596,7 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
             let b_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&b)), 1, 0);
 
             for res_size in [1, 2, 3, 4] {
-                let res_init = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let res_init = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
 
@@ -637,7 +629,6 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
 
 pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -693,7 +684,6 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
 
 pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -753,7 +743,6 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 fn contract_check_one_backend<BE>(
     base2k: usize,
     n: usize,
-    module_host: &Module<HostBytesBackend>,
     module: &Module<BE>,
     scratch: &mut ScratchOwned<BE>,
     cols: usize,
@@ -789,7 +778,7 @@ fn contract_check_one_backend<BE>(
             let _ = idft_tmpa_to_host(module, base2k, &mut a_dft, scratch);
 
             // Pipeline B: coefficient-domain automorphism on the same backend.
-            let res_coeff_backend_host = module_host.vec_znx_alloc(n, cols, size);
+            let res_coeff_backend_host = VecZnxOwned::<i64>::alloc(n, cols, size);
             let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
             for j in 0..cols {
                 module.vec_znx_automorphism(
@@ -815,7 +804,6 @@ fn contract_check_one_backend<BE>(
 /// on both `module_ref` and `module_test`.
 pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -848,8 +836,8 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     // of the floating-point FFT plan and a range of orbits under odd-p multiplication.
     let p_values: &[i64] = &[1, 5, 9, 13, 3, 7, 11, 15, -1, -5];
 
-    contract_check_one_backend::<BR>(base2k, params.n, module_host, module_ref, &mut scratch_ref, cols, p_values);
-    contract_check_one_backend::<BT>(base2k, params.n, module_host, module_test, &mut scratch_test, cols, p_values);
+    contract_check_one_backend::<BR>(base2k, params.n, module_ref, &mut scratch_ref, cols, p_values);
+    contract_check_one_backend::<BT>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
 }
 
 /// Runs the fused-accumulation check `automorphism_add(res, a) ==
@@ -928,7 +916,6 @@ fn automorphism_add_check_one_backend<BE>(
 /// both `module_ref` and `module_test`.
 pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1062,7 +1049,6 @@ where
 /// `vec_znx_big_normalize`, on both `module_ref` and `module_test`.
 pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1102,7 +1088,6 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
 /// past the input is zero. Checked against a host oracle and across backends.
 pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1163,7 +1148,7 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                 let got_test = idft_tmpa_to_host(module_test, base2k, &mut res_test, &mut scratch_test);
                 assert_eq!(got_ref, got_test, "step {step} offset {offset}");
 
-                let mut want = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 for col in 0..cols {
                     set_expected_idft_column(&mut want, col, &a, step, offset);
                 }
@@ -1177,7 +1162,6 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
 /// transform, and the other columns are untouched.
 pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1221,7 +1205,7 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
         let got_test = idft_tmpa_to_host(module_test, base2k, &mut dft_test, &mut scratch_test);
         assert_eq!(got_ref, got_test);
 
-        let mut want = module_host.vec_znx_alloc(params.n, cols, size);
+        let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, size);
         for limb in 0..size {
             want.at_mut(0, limb).fill(0);
             for j in 1..cols {

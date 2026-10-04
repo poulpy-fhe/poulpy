@@ -7,9 +7,7 @@ use poulpy_hal::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes,
     },
-    layouts::{
-        Backend, Data, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut, vec_znx_host_backend_mut,
-    },
+    layouts::{Backend, Data, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut},
 };
 
 /// Specifies in which direction the LUT is rotated by the LWE constant term
@@ -330,7 +328,7 @@ where
             let mut tmp: Vec<i64> = vec![0i64; domain_size];
 
             for i in 0..res.extension_factor() {
-                let mut res_at = vec_znx_host_backend_mut(res.data[i].data_mut());
+                let res_at = res.data[i].data_mut();
                 for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
                     znx_switch_ring(res_at.at_mut(0, limb), limb_data);
                 }
@@ -342,7 +340,7 @@ where
                 }
             }
         } else {
-            let mut res_at = vec_znx_host_backend_mut(res.data[0].data_mut());
+            let res_at = res.data[0].data_mut();
             for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
                 res_at.at_mut(0, limb).copy_from_slice(limb_data);
             }
