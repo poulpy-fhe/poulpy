@@ -37,6 +37,7 @@ mod ggsw;
 mod glwe;
 mod glwe_automorphism_key;
 mod glwe_ci_key;
+mod glwe_mask;
 mod glwe_plaintext;
 mod glwe_public_key;
 mod glwe_secret;
@@ -78,6 +79,7 @@ pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;
 pub use glwe_ci_key::*;
+pub use glwe_mask::*;
 pub use glwe_plaintext::*;
 pub use glwe_public_key::*;
 pub use glwe_secret::*;
@@ -209,6 +211,9 @@ pub trait ModuleCoreAlloc {
     fn glwe_plaintext_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPlaintext<Self::OwnedBuf, Self::ZnxWord>;
     fn glwe_plaintext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> GLWEPlaintext<Self::OwnedBuf, Self::ZnxWord>;
 
+    fn glwe_mask_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEMask<Self::OwnedBuf, Self::ZnxWord>;
+    fn glwe_mask_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEMask<Self::OwnedBuf, Self::ZnxWord>;
+
     fn glwe_secret_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWESecret<Self::OwnedBuf, Self::ZnxWord>;
     fn glwe_secret_alloc(&self, rank: Rank) -> GLWESecret<Self::OwnedBuf, Self::ZnxWord>;
 
@@ -334,6 +339,25 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     }
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<B::OwnedBuf, B::ZnxWord> {
         self.glwe_alloc_from_infos(&GLWELayout {
+            n: self.ring_degree(),
+            base2k,
+            k,
+            rank,
+        })
+    }
+
+    fn glwe_mask_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEMask<B::OwnedBuf, B::ZnxWord> {
+        let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
+        GLWEMask {
+            data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), infos.rank().as_usize(), size),
+            offset: 0,
+            k: infos.k(),
+            base2k: infos.base2k(),
+            canonical: true,
+        }
+    }
+    fn glwe_mask_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEMask<B::OwnedBuf, B::ZnxWord> {
+        self.glwe_mask_alloc_from_infos(&GLWELayout {
             n: self.ring_degree(),
             base2k,
             k,

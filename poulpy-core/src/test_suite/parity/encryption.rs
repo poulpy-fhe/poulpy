@@ -9,7 +9,13 @@ use crate::{
     layouts::*,
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
 };
-use poulpy_hal::{api::VecZnxFillUniformSource, layouts::*, oep::*, source::Source, test_suite::TestParams};
+use poulpy_hal::{
+    api::{VecZnxAddAssign, VecZnxCopy, VecZnxFillUniformSource},
+    layouts::*,
+    oep::*,
+    source::Source,
+    test_suite::TestParams,
+};
 
 /// Capabilities needed by the complete encryption/decryption composition suite.
 pub trait EncryptionParityBackend:
@@ -193,6 +199,48 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             snapshot_glwe::<B, _>("decrypt", &have_twin).bytes,
             results.last().unwrap().bytes,
             "glwe_decrypt, unnormalized operand"
+        );
+        // The mask phase is the decryption without the body: of the ciphertext's
+        // mask in place and of an allocated copy; the unnormalized twin's is rejected.
+        let mut phase = module.glwe_plaintext_alloc_from_infos(&infos);
+        poison_glwe::<B, _>(&mut phase);
+        let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_inner_product_tmp_bytes(&infos));
+        module.glwe_mask_inner_product(&mut phase, &out, &skp, &mut mask_scratch().arena());
+        results.push(snapshot_glwe::<B, _>("mask_inner_product", &phase));
+        let mut mask = module.glwe_mask_alloc_from_infos(&infos);
+        for j in 0..rank {
+            module.vec_znx_copy(
+                &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(mask.data_mut()),
+                j,
+                &poulpy_hal::test_suite::vec_znx_backend_ref::<B>(out.data()),
+                j + 1,
+            );
+        }
+        let mut other = module.glwe_plaintext_alloc_from_infos(&infos);
+        module.glwe_mask_inner_product(&mut other, &mask, &skp, &mut mask_scratch().arena());
+        assert_eq!(
+            snapshot_glwe::<B, _>("mask_inner_product", &other).bytes,
+            results.last().unwrap().bytes,
+            "glwe_mask_inner_product, allocated mask"
+        );
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_mask_inner_product(&mut other, &twin, &skp, &mut mask_scratch().arena());
+        }));
+        assert!(rejected.is_err(), "glwe_mask_inner_product accepted an unnormalized mask");
+        module.vec_znx_add_assign(
+            &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(&mut phase.data),
+            0,
+            &poulpy_hal::test_suite::vec_znx_backend_ref::<B>(out.data()),
+            0,
+        );
+        module.glwe_normalize_assign(
+            &mut phase,
+            &mut poisoned_scratch::<B>(module.glwe_normalize_tmp_bytes()).arena(),
+        );
+        assert_eq!(
+            snapshot_glwe::<B, _>("decrypt", &phase).bytes,
+            snapshot_glwe::<B, _>("decrypt", &have).bytes,
+            "glwe_mask_inner_product plus the body"
         );
         poison_glwe::<B, _>(&mut out);
         module.glwe_encrypt_zero_sk(

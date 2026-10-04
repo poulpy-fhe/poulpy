@@ -157,11 +157,13 @@ pub unsafe trait EncryptionImpl: Backend {
 
     /// Encrypts under `pk` with `pt.0` added to column `pt.1` (`0` is the
     /// body), or zero when `pt` is `None`: every public-key encryption derives
-    /// from it.
+    /// from it. Without `body_noise`, the body gets no encryption error: the
+    /// caller floods it, see [`Self::glwe_encrypt_pk_smudged`].
     fn glwe_encrypt_pk_at_col<R, P, K, E>(
         module: &Module<Self>,
         res: &mut R,
         pt: Option<(&P, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -172,6 +174,49 @@ pub unsafe trait EncryptionImpl: Backend {
         P: GLWEToBackendRef<Self> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
+
+    fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        K: GLWEInfos,
+        Module<Self>: VecZnxNormalizeTmpBytes,
+    {
+        super::derived::encryption::glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res_infos, pk_infos)
+    }
+
+    /// [`Self::glwe_encrypt_pk_at_col`] of `pt` into the body without its error,
+    /// then `flood` on the body at the output's precision, drawn from `source_smudge`.
+    fn glwe_encrypt_pk_smudged<R, P, K, E>(
+        module: &Module<Self>,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        flood: crate::SmudgingNoise,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        source_smudge: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        P: GLWEToBackendRef<Self> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
+        Module<Self>: crate::VecZnxAddSmudging<Self> + VecZnxNormalizeAssign<Self> + VecZnxNormalizeTmpBytes,
+    {
+        super::derived::encryption::glwe_encrypt_pk_smudged_derived(
+            module,
+            res,
+            pt,
+            pk,
+            flood,
+            enc_infos,
+            source_xu,
+            source_xe,
+            source_smudge,
+            scratch,
+        )
+    }
 
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -851,6 +896,7 @@ macro_rules! impl_encryption_reference_full {
         module: &::poulpy_hal::layouts::Module<$be>,
         res: &mut R,
         pt: Option<(&P, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut ::poulpy_hal::source::Source,
@@ -861,7 +907,7 @@ macro_rules! impl_encryption_reference_full {
         P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
         E: $crate::api::EncryptionInfos,
         K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K, E>(module, res, pt, body_noise, pk, enc_infos, source_xu, source_xe, scratch)
         }
 
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

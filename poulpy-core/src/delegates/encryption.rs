@@ -8,7 +8,7 @@ use crate::{
     api::{
         EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
         GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill,
+        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEMaskFill,
         GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
         GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
         LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
@@ -41,6 +41,17 @@ macro_rules! impl_encryption_delegate {
             BE: Backend + EncryptionImpl,
             Module<BE>: poulpy_hal::api::VecZnxZero<BE>
                 + poulpy_hal::api::VecZnxAddScalarAssign<BE>
+                + poulpy_hal::api::VecZnxNormalizeAssign<BE>
+                + poulpy_hal::api::VecZnxNormalizeTmpBytes,
+        {
+            $($body)+
+        }
+    };
+    (smudge $trait:ty, $($body:item),+ $(,)?) => {
+        impl<BE> $trait for Module<BE>
+        where
+            BE: Backend + EncryptionImpl,
+            Module<BE>: crate::VecZnxAddSmudging<BE>
                 + poulpy_hal::api::VecZnxNormalizeAssign<BE>
                 + poulpy_hal::api::VecZnxNormalizeTmpBytes,
         {
@@ -246,7 +257,48 @@ impl_encryption_delegate!(
         E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), pk, enc_infos, source_xu, source_xe, scratch)
+        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, enc_infos, source_xu, source_xe, scratch)
+    }
+);
+
+impl_encryption_delegate!(
+    smudge GLWEEncryptPkSmudged<BE>,
+    fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        K: GLWEInfos,
+    {
+        BE::glwe_encrypt_pk_smudged_tmp_bytes(self, res_infos, pk_infos)
+    },
+    fn glwe_encrypt_pk_smudged<R, P, K, E>(
+        &self,
+        res: &mut R,
+        pt: &P,
+        pk: &K,
+        flood: crate::SmudgingNoise,
+        enc_infos: &E,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        source_smudge: &mut Source,
+        scratch: &mut ScratchArena<BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_encrypt_pk_smudged(
+            self,
+            res,
+            pt,
+            pk,
+            flood,
+            enc_infos,
+            source_xu,
+            source_xe,
+            source_smudge,
+            scratch,
+        )
     }
 );
 
