@@ -126,6 +126,7 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
         let mut stats = Vec::new();
         for (i, ggsw) in self.bits.iter().enumerate() {
             use poulpy_hal::layouts::ZnxViewMut;
+            // `alloc_aligned` zero-fills, so only the constant coefficient is set.
             let mut pt_want: ScalarZnx<AlignedBuf, i64> = ScalarZnx::from_data(
                 alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(usize::from(self.n()), 1)),
                 usize::from(self.n()),
