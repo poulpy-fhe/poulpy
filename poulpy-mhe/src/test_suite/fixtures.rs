@@ -31,9 +31,6 @@ pub(crate) const P: i64 = -5;
 
 /// Bits of the integer plaintexts of the sharing tests.
 pub(crate) const LOG_MESSAGE: usize = 10;
-/// Bits of the masks: `LOG_MESSAGE` plus a hiding margin, with room for the
-/// parties' sum below `K`.
-pub(crate) const LOG_BOUND: usize = 28;
 /// Output precision of the shares-to-encryption tests.
 pub(crate) const K_OUT: TorusPrecision = TorusPrecision(K.0 + 2 * BASE2K.0);
 

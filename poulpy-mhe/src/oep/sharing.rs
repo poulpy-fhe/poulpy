@@ -27,7 +27,6 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        log_bound: usize,
         flood: SmudgingNoise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
@@ -122,7 +121,6 @@ macro_rules! impl_mhe_sharing_reference {
                 secret: &mut P,
                 mask: &C,
                 sk: &S,
-                log_bound: usize,
                 flood: ::poulpy_core::SmudgingNoise,
                 source_xm: &mut ::poulpy_hal::source::Source,
                 source_smudge: &mut ::poulpy_hal::source::Source,
@@ -132,7 +130,7 @@ macro_rules! impl_mhe_sharing_reference {
                 C: ::poulpy_core::layouts::GLWEMaskToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEEncToShareMHEProtocolReference<$be>>::mhe_glwe_enc_to_share_share_gen_reference(module, public, secret, mask, sk, log_bound, flood, source_xm, source_smudge, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEEncToShareMHEProtocolReference<$be>>::mhe_glwe_enc_to_share_share_gen_reference(module, public, secret, mask, sk, flood, source_xm, source_smudge, scratch)
             }
 
             fn mhe_glwe_enc_to_share_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::GLWEEncToShareShareOwned<$be>, a: &$crate::layouts::GLWEEncToShareShareOwned<$be>) {

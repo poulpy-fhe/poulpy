@@ -52,7 +52,7 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   switching of a ciphertext to the ideal output secret or to a public key; shares
   are generated from the ciphertext's mask alone, a core `GLWEMask`.
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
-  a ciphertext and additive shares of its plaintext, read as bounded integers.
+  a ciphertext and additive shares of its plaintext on the torus.
 
 ## Smudging
 

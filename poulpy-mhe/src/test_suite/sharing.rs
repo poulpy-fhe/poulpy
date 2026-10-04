@@ -16,9 +16,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, K_OUT, LOG_BOUND, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_decrypts_to, assert_flooded_integers,
-    bounded_integers, encrypt_integers, glwe_layout_at, ideal_secret, integer_flood_infos, integer_plaintext, party_secrets,
-    plaintext_integers, secret_from_seed,
+    BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, bounded_integers, encrypt_integers,
+    glwe_layout_at, ideal_secret, integer_flood_infos, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
 };
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
@@ -74,7 +73,6 @@ where
                             secret,
                             &ct,
                             sk,
-                            LOG_BOUND,
                             flood,
                             &mut source_xm,
                             &mut source_smudge,
@@ -87,10 +85,11 @@ where
                     module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
                 }
             }
+            // The masks span the whole torus at the share's precision, top bits and bottom bit.
             for secret in &secrets[1..] {
                 let mask = plaintext_integers(secret);
-                assert!(mask.iter().all(|x| x.abs() < 1 << LOG_BOUND));
-                assert!(mask.iter().any(|x| x.abs() >= 1 << (LOG_BOUND - 2)));
+                assert!(mask.iter().any(|x| x.abs() >= 1 << (k.as_usize() - 3)));
+                assert!(mask.iter().any(|x| x & 1 == 1));
             }
 
             // Normalization can leave carries depending on the private share in scratch.
@@ -101,7 +100,7 @@ where
             let mut sum = vec![0i64; module.n()];
             for secret in &secrets {
                 for (s, x) in sum.iter_mut().zip(plaintext_integers(secret)) {
-                    *s += x;
+                    *s = wrap(*s + x, k.as_usize());
                 }
             }
             let bound = (DEFAULT_BOUND_XE + PARTIES as f64 * 6.0 * sigma).ceil() as i64 + PARTIES as i64;
@@ -136,7 +135,7 @@ where
                 .max(module.glwe_decrypt_tmp_bytes(&out_layout)),
         );
         let shares: Vec<Vec<i64>> = (0..PARTIES)
-            .map(|i| bounded_integers(module.n(), LOG_BOUND, [70 + i as u8; 32]))
+            .map(|i| bounded_integers(module.n(), K.as_usize(), [70 + i as u8; 32]))
             .collect();
 
         let mut acc = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
@@ -157,38 +156,16 @@ where
 
         let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
         module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
-        let want: Vec<i64> = (0..module.n()).map(|j| shares.iter().map(|s| s[j]).sum()).collect();
-        let bound = (PARTIES as f64 * DEFAULT_BOUND_XE).ceil() as i64 + 1;
-        assert_decrypts_to(module, &ct, &want, &ideal_secret(module, &parties), bound, &mut scratch);
+        // The shares add up modulo 1; the output's extra precision only carries the noise.
+        let want: Vec<i64> = (0..module.n())
+            .map(|j| shares.iter().fold(0, |sum, s| wrap(sum + s[j], K.as_usize())))
+            .collect();
+        let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&in_layout);
+        module.glwe_decrypt(&ct, &mut pt, &ideal_secret(module, &parties), &mut scratch.borrow());
+        for (got, want) in plaintext_integers(&pt).iter().zip(&want) {
+            assert!(wrap(got - want, K.as_usize()).abs() <= 1, "decrypted {got}, want {want}");
+        }
     }
-}
-
-/// A mask as precise as the ciphertext panics.
-pub fn test_glwe_enc_to_share_bound<BE>(module: &Module<BE>)
-where
-    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-{
-    let layout = glwe_layout_at(module, K);
-    let (_, sk) = secret_from_seed(module, [100u8; 32]);
-    let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut public = GLWEEncToShareShare {
-        inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
-    };
-    let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
-    module.mhe_glwe_enc_to_share_share_gen(
-        &mut public,
-        &mut secret,
-        &ct,
-        &sk,
-        K.as_usize(),
-        integer_flood_infos(1024.0),
-        &mut Source::new([60u8; 32]),
-        &mut Source::new(SEED_XE),
-        &mut scratch.borrow(),
-    );
 }
 
 /// A share more precise than the output panics.
@@ -241,7 +218,6 @@ where
         &mut secret,
         &ct,
         &sk,
-        LOG_BOUND,
         integer_flood_infos(1024.0),
         &mut Source::new([60u8; 32]),
         &mut Source::new(SEED_XE),
@@ -300,7 +276,6 @@ where
             &mut secret,
             &ct,
             &sk,
-            LOG_BOUND,
             integer_flood_infos(1024.0),
             &mut Source::new([60u8; 32]),
             &mut Source::new(SEED_XE),
@@ -367,7 +342,6 @@ where
                 &mut secret,
                 &ct,
                 &sk,
-                LOG_BOUND,
                 noise,
                 &mut source_xm,
                 &mut source_smudge,
@@ -377,4 +351,10 @@ where
         assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
         assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
     }
+}
+
+/// `x` reduced modulo `2^k` into `[-2^(k-1), 2^(k-1))`.
+fn wrap(x: i64, k: usize) -> i64 {
+    let shift = 64 - k as u32;
+    (x << shift) >> shift
 }

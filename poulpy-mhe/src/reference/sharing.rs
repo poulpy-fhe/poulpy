@@ -1,6 +1,6 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWEShift,
-    GLWESub, ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
+    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
+    ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -23,7 +23,6 @@ pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        log_bound: usize,
         flood: SmudgingNoise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
@@ -57,7 +56,6 @@ where
     Self: GLWEMaskInnerProduct<BE>
         + GLWESub<BE>
         + GLWEAdd<BE>
-        + GLWEShift<BE>
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
         + VecZnxFillUniformSource<BE>
@@ -71,7 +69,6 @@ where
         BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(ct_infos))
             + self
                 .glwe_mask_inner_product_tmp_bytes(ct_infos)
-                .max(self.glwe_shift_tmp_bytes(ct_infos.size()))
                 .max(self.glwe_normalize_tmp_bytes())
     }
 
@@ -81,7 +78,6 @@ where
         secret: &mut P,
         mask: &C,
         sk: &S,
-        log_bound: usize,
         flood: SmudgingNoise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
@@ -102,10 +98,6 @@ where
             "invalid share: additive shares must have rank zero"
         );
         assert!(
-            log_bound > 0 && log_bound < k,
-            "invalid share: mask bound outside the ciphertext precision"
-        );
-        assert!(
             secret.n() == mask.n()
                 && secret.base2k() == mask.base2k()
                 && secret.k() == mask.k()
@@ -120,8 +112,8 @@ where
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk, &mut scratch_1);
-            self.vec_znx_fill_uniform_source(base2k, log_bound, secret.to_backend_mut().data_mut(), 0, source_xm);
-            self.glwe_rsh(k - log_bound, secret, &mut scratch_1);
+            self.vec_znx_fill_uniform_source(base2k, k, secret.to_backend_mut().data_mut(), 0, source_xm);
+            secret.set_canonical(true);
             self.glwe_sub(public, &pt, secret);
             self.glwe_normalize_assign(public, &mut scratch_1);
             self.vec_znx_add_smudging(
@@ -206,7 +198,7 @@ pub trait GLWEShareToEncMHEProtocolReference<BE: Backend> {
 
 impl<BE: Backend> GLWEShareToEncMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWECopy<BE> + GLWEShift<BE> + GLWECompressedEncryptSk<BE> + GLWEBytesOf<BE>,
+    Self: GLWECopy<BE> + GLWECompressedEncryptSk<BE> + GLWEBytesOf<BE>,
 {
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, secret_infos: &B) -> usize
     where
@@ -216,7 +208,6 @@ where
         BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(res_infos))
             + self
                 .glwe_copy_tmp_bytes(res_infos, secret_infos)
-                .max(self.glwe_shift_tmp_bytes(res_infos.size()))
                 .max(self.glwe_compressed_encrypt_sk_tmp_bytes(res_infos))
     }
 
@@ -249,13 +240,12 @@ where
         );
         let infos = res.glwe_layout();
         let mut noise_infos = enc_infos.noise_infos();
-        // The raised share needs noise on the output's grid, including its low bits.
+        // The share needs noise on the output's grid, down to its low bits.
         noise_infos.k = infos.k().as_usize();
         let tmp_bytes = self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(&infos, secret);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
             self.glwe_copy(&mut pt, secret, &mut scratch_1);
-            self.glwe_rsh(res.k().as_usize() - secret.k().as_usize(), &mut pt, &mut scratch_1);
             self.glwe_compressed_encrypt_sk(res, &pt, sk, seed, &noise_infos, source_xe, &mut scratch_1);
         }
         scratch.wipe(tmp_bytes);

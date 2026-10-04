@@ -27,7 +27,6 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
         secret: &mut P,
         mask: &C,
         sk: &S,
-        log_bound: usize,
         flood: SmudgingNoise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
@@ -37,18 +36,7 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_enc_to_share_share_gen(
-            self,
-            public,
-            secret,
-            mask,
-            sk,
-            log_bound,
-            flood,
-            source_xm,
-            source_smudge,
-            scratch,
-        )
+        BE::mhe_glwe_enc_to_share_share_gen(self, public, secret, mask, sk, flood, source_xm, source_smudge, scratch)
     }
 
     fn mhe_glwe_enc_to_share_share_aggregate(&self, res: &mut GLWEEncToShareShareOwned<BE>, a: &GLWEEncToShareShareOwned<BE>) {

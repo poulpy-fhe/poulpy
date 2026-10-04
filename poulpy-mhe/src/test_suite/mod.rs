@@ -259,12 +259,6 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: mask bound outside the ciphertext precision")]
-            fn glwe_enc_to_share_bound() {
-                $crate::test_suite::sharing::test_glwe_enc_to_share_bound(&Module::<$backend>::new(64));
-            }
-
-            #[test]
             #[should_panic(expected = "invalid share: secret share more precise than the output")]
             fn glwe_share_to_enc_precision() {
                 $crate::test_suite::sharing::test_glwe_share_to_enc_precision(&Module::<$backend>::new(64));

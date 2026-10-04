@@ -16,14 +16,10 @@ use crate::layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned};
 /// its mask, so that the shares sum to the plaintext plus the input noise and
 /// the floods.
 ///
-/// A share is a plaintext read as a signed integer in its top-`k` window, the
-/// torus value `M * 2^-k`. A mask is a uniform integer of `log_bound` bits. The
-/// masks hide the noisy plaintext, of magnitude `B` with the input noise and
-/// the aggregate flood, in the finalizing party's share: over `n`
-/// coefficients, a shift by it moves the masks by at most `n * B / 2^log_bound`
-/// in statistical distance, so `log_bound >= log2(B) + log2(n) + lambda`. The
-/// reconstruction must not wrap: `B + parties * 2^log_bound < 2^(k - 1)`
-/// coefficientwise.
+/// A share is a torus value at the ciphertext's precision, and the shares add
+/// up modulo 1. A mask is uniform over the torus at that precision, so it hides
+/// the plaintext in the finalizing party's share perfectly, wrapping around as
+/// any torus value does.
 ///
 /// The public share is a rank-0 core `GLWE`. Its `flood`, drawn from
 /// `source_smudge` at the share's precision, hides the party's secret and the
@@ -50,7 +46,6 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        log_bound: usize,
         flood: SmudgingNoise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
@@ -85,9 +80,8 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
 /// finalizes the encryption of their sum under the ideal secret.
 ///
 /// A share is a [`GLWEPatCompressed`](crate::layouts::GLWEPatCompressed), the
-/// seeded encryption of the party's additive share raised to the output's
-/// precision: the same integer in the top-`k` window, by `glwe_copy` into the
-/// wider layout then `glwe_rsh` by the precision difference.
+/// seeded encryption of the party's additive share, a torus value, at the
+/// output's precision.
 pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
     /// `res_infos` is the output layout, `secret_infos` the share layout.
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(&self, res_infos: &A, secret_infos: &B) -> usize
@@ -96,8 +90,8 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
         B: GLWEInfos;
 
     /// Writes into `res` the encryption under `sk`, with its uniform components
-    /// drawn from `seed`, of `secret` raised to the precision of `res`: the
-    /// same integer in its top-`k` window. `seed` must be fresh for every
+    /// drawn from `seed`, of `secret` at the precision of `res`, which is at
+    /// least the share's. `seed` must be fresh for every
     /// conversion: two encryptions under one secret and one seed reveal the
     /// difference of their plaintexts.
     ///
