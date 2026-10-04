@@ -4,4 +4,5 @@ mod ggsw;
 mod keyswitch;
 mod pat;
 mod public_key;
+mod sharing;
 mod tensor_key;

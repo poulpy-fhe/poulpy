@@ -11,8 +11,9 @@ defaults in `oep::derived`.
 `api::pat` holds one trait per PAT type with its operations, `api::public_key`
 the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
-switching protocols, `api::tensor_key` the collective tensor key protocol and
-`api::ggsw` the collective GGSW protocol. A protocol
+switching protocols, `api::tensor_key` the collective tensor key protocol,
+`api::ggsw` the collective GGSW protocol and `api::sharing` the
+encryption-to-shares and shares-to-encryption protocols. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -34,6 +35,8 @@ same trait.
 | `GGSWMHEProtocol` | `GGSWMHEProtocolImpl` | `reference::GGSWMHEProtocolReference`; aggregation is a derived default over `GGLWEPatCompressedImpl` |
 | `GLWEPrivateKeyswitchMHEProtocol` | `GLWEPrivateKeyswitchMHEProtocolImpl` | `reference::GLWEPrivateKeyswitchMHEProtocolReference` |
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
+| `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
+| `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
 
 ## Normalization
 
@@ -57,8 +60,8 @@ from the CRS for a key set. Each protocol trait states what its seed derives
 and what reusing it reveals. Choosing the secret distribution, which public-key
 encryption also draws its ephemerals from, is the caller's responsibility too.
 
-Private `source_xe`, `source_xu` and `source_smudge` streams must be
-independently seeded for each party and purpose, kept secret and consumed
+Private `source_xe`, `source_xu`, `source_xm` and `source_smudge` streams must
+be independently seeded for each party and purpose, kept secret and consumed
 without replay. Never initialize a private stream from a public mask seed. An
 advancing error stream can supply successive fresh samples.
 
@@ -77,7 +80,8 @@ authenticated:
   under another key reveals its secret part to that key's holder.
 - `read_from` checks a share's layout, not its provenance.
 - Share generation zeroes the scratch it was given before returning, as
-  core's secret-handling operations do.
+  core's secret-handling operations do. Encryption-to-shares finalization
+  also zeroes its scratch after normalizing the private additive share.
 
 Active security requires commitments or proofs on the shares, outside this
 crate.
@@ -119,8 +123,8 @@ parity suite arrives with the first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!` or
-`impl_mhe_keyswitch_reference!` alone when replacing another one. The
+`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!` or
+`impl_mhe_sharing_reference!` alone when replacing another one. The
 reference traits stay callable from an override.
 
 ## Workspace
