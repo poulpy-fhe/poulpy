@@ -277,6 +277,7 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -315,6 +316,7 @@ where
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -336,6 +338,7 @@ where
         self.glwe_encrypt_pk_internal(
             res,
             pt.map(|(pt, col)| (pt.to_backend_ref(), col)),
+            body_noise,
             pk,
             enc_infos,
             source_xu,
@@ -352,6 +355,7 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -382,6 +386,7 @@ where
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
+        body_noise: bool,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
@@ -461,7 +466,9 @@ where
             let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
             for i in 0..rank + 1 {
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
-                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
+                if i > 0 || body_noise {
+                    self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
+                }
 
                 if let Some((pt, col)) = &pt
                     && *col == i

@@ -4,8 +4,10 @@
 pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod ggsw;
+pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
+pub mod sharing;
 pub mod tensor_key;
 
 /// Runs every `poulpy-mhe` test against `$backend`.
@@ -167,6 +169,41 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn glwe_private_keyswitch_flood_bound_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_flood_bound_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid aggregation: layouts differ")]
+            fn glwe_private_keyswitch_aggregate_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_aggregate_layout_mismatch(&Module::<$backend>::new(
+                    64,
+                ));
+            }
+
+            #[test]
+            fn glwe_private_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_public_keyswitch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext and output layouts differ")]
+            fn glwe_public_keyswitch_finalize_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: public key less precise than the share")]
+            fn glwe_public_keyswitch_pk_precision() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_pk_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_public_key_gen_shape_guards() {
                 $crate::test_suite::public_key::test_glwe_public_key_gen_shape_guards(&Module::<$backend>::new(64));
             }
@@ -184,6 +221,59 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_evaluation_key_share_shape_guards() {
                 $crate::test_suite::evaluation_key::test_glwe_evaluation_key_share_shape_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_private_keyswitch_share_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_public_keyswitch_share_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_private_keyswitch_finalize_layout_guards() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_enc_to_share_flood_guards() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_flood_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_sharing_layout_guards() {
+                $crate::test_suite::sharing::test_glwe_sharing_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_enc_to_share() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            fn glwe_share_to_enc() {
+                $crate::test_suite::sharing::test_glwe_share_to_enc(&Module::<$backend>::new(256));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: secret share more precise than the output")]
+            fn glwe_share_to_enc_precision() {
+                $crate::test_suite::sharing::test_glwe_share_to_enc_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: share and mask layouts differ")]
+            fn glwe_enc_to_share_precision() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext and share layouts differ")]
+            fn glwe_enc_to_share_finalize_layout_mismatch() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_finalize_layout_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
