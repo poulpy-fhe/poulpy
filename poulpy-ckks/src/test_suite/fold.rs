@@ -13,9 +13,7 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
-    layouts::{
-        CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, RingSwitchKeys,
-    },
+    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, RingSwitchKeys},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -36,7 +34,6 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSFoldLayoutOps<BE> + CKKSFoldOps<BE, Standard>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -273,7 +270,6 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>: CKKSPlaintextVecHostCodec<F>,
 {
     let prec = CKKSLayout {
         meta: ct.meta(),

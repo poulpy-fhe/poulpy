@@ -55,7 +55,6 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst,
-        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(table.len() >= 2, "LUT length must be at least two");
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
@@ -86,7 +85,6 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst,
-        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
         let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;

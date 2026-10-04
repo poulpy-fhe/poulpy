@@ -15,7 +15,7 @@ use crate::{
         VecZnxFillUniformSourceAll, VecZnxScalarProduct, VecZnxSubNegateAssign,
     },
     layouts::{
-        DigestU64, HostBytesBackend, HostDataRef, Module, ScalarZnx, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut,
+        DigestU64, HostDataRef, Module, ScalarZnx, ScalarZnxOwned, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut,
         ZnxView, ZnxViewMut,
     },
     source::Source,
@@ -142,7 +142,6 @@ fn fill_ternary(a: &mut ScalarZnx<impl crate::layouts::HostDataMut, i64>, source
 
 pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -221,7 +220,6 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
 
 pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -276,7 +274,6 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
 
 pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -346,7 +343,6 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
 
 pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -414,7 +410,6 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
 
 pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -469,7 +464,6 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
 
 pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -523,7 +517,6 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
 
 pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -570,7 +563,6 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
 
 pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -619,7 +611,6 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
 
 pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -737,7 +728,6 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
 
 pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -806,7 +796,6 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
 
 pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -861,7 +850,6 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
 
 pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -916,7 +904,6 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 
 pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -990,7 +977,6 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
 
 pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1064,7 +1050,6 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
 
 pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1132,7 +1117,6 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
 
 pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1212,7 +1196,6 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
 /// limb and zeroes the limbs past it, so normalizing it back returns the input.
 pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1261,7 +1244,7 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
             // The input is canonical, so with room to hold it the round trip is
             // the identity and the limbs past it are zero.
             if res_size >= a_size {
-                let mut want = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 for j in 0..cols {
                     for limb in 0..res_size {
                         if limb < a_size {
@@ -1281,7 +1264,6 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
 /// the sum of that limb's coefficients, and nothing else is written.
 pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1314,7 +1296,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
                 continue;
             }
             for res_coeff in [0, 1, n - 1] {
-                let zeros = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let zeros = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 let mut res_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&zeros));
                 let mut res_test = big_from_small(module_test, &upload_vec_znx::<BT>(&zeros));
 
@@ -1327,7 +1309,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
                 let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
                 assert_eq!(got_ref, got_test);
 
-                let mut want_host = module_host.vec_znx_alloc(params.n, cols, res_size);
+                let mut want_host = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 for j in 0..cols {
                     for limb in 0..res_size {
                         let slice = want_host.at_mut(j, limb);
@@ -1347,7 +1329,6 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
 /// `coeffs` is the weighted sum over the selected columns, and the rest is zero.
 pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1373,7 +1354,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut weights = module_host.scalar_znx_alloc(params.n, 2);
+    let mut weights = ScalarZnxOwned::<i64>::alloc(params.n, 2);
     fill_ternary(&mut weights, &mut source);
     let weights_ref = upload_scalar_znx::<BR>(&weights);
     let weights_test = upload_scalar_znx::<BT>(&weights);
@@ -1391,7 +1372,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
             for weights_col in [0, 1] {
                 for coeffs in [1, n / 2, n] {
                     let take: usize = 2;
-                    let zeros = module_host.vec_znx_alloc(params.n, 1, res_size);
+                    let zeros = VecZnxOwned::<i64>::alloc(params.n, 1, res_size);
                     let mut res_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&zeros));
                     let mut res_test = big_from_small(module_test, &upload_vec_znx::<BT>(&zeros));
 
@@ -1418,7 +1399,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
                     let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
                     assert_eq!(got_ref, got_test);
 
-                    let mut want_host = module_host.vec_znx_alloc(params.n, 1, res_size);
+                    let mut want_host = VecZnxOwned::<i64>::alloc(params.n, 1, res_size);
                     for limb in 0..res_size {
                         let mut acc: Vec<i64> = vec![0; n];
                         for col in 0..take {
@@ -1442,7 +1423,6 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
 /// limb with a `ScalarZnx`, widened to big words.
 pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
@@ -1468,7 +1448,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
-    let mut b = module_host.scalar_znx_alloc(params.n, cols);
+    let mut b = ScalarZnxOwned::<i64>::alloc(params.n, cols);
     fill_ternary(&mut b, &mut source);
     let b_ref = upload_scalar_znx::<BR>(&b);
     let b_test = upload_scalar_znx::<BT>(&b);
@@ -1483,7 +1463,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             if res_size > a_size {
                 continue;
             }
-            let zeros = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let zeros = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
             let mut res_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&zeros));
             let mut res_test = big_from_small(module_test, &upload_vec_znx::<BT>(&zeros));
 
@@ -1510,7 +1490,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
             assert_eq!(got_ref, got_test);
 
-            let mut want_host = module_host.vec_znx_alloc(params.n, cols, res_size);
+            let mut want_host = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
             for j in 0..cols {
                 for limb in 0..res_size {
                     let product: Vec<i64> = (0..n).map(|k| a.at(j, limb)[k] * b.at(j, 0)[k]).collect();

@@ -8,8 +8,8 @@
 
 use crate::AlignedBuf;
 use crate::layouts::{
-    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
-    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
+    Backend, DataView, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef, ScalarZnxToBackendMut,
+    ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
 use crate::oep::HalVecZnxImpl;
 
@@ -116,8 +116,7 @@ pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::Znx
 
 pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
-    let host_bytes = BE::to_host_bytes(&backend.data);
-    ScalarZnx::from_data(<HostBytesBackend>::from_host_bytes(&host_bytes), shape.n(), shape.cols())
+    ScalarZnx::from_data(AlignedBuf::from(BE::to_host_bytes(&backend.data)), shape.n(), shape.cols())
 }
 
 pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -127,8 +126,7 @@ pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>)
 
 pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
-    let host_bytes = BE::to_host_bytes(backend.data());
-    VecZnx::from_shape(<HostBytesBackend>::from_host_bytes(&host_bytes), shape)
+    VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(backend.data())), shape)
 }
 
 pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -145,9 +143,8 @@ pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>)
 
 pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
-    let host_bytes = BE::to_host_bytes(backend.data());
     MatZnx::from_data(
-        <HostBytesBackend>::from_host_bytes(&host_bytes),
+        AlignedBuf::from(BE::to_host_bytes(backend.data())),
         shape.n(),
         shape.rows(),
         shape.cols_in(),
@@ -201,13 +198,11 @@ macro_rules! cross_backend_test_suite {
         }
     ) => {
         mod $modname {
-            use poulpy_hal::{api::ModuleNew, layouts::{HostBytesBackend, Module}, test_suite::TestParams};
+            use poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
 
             use once_cell::sync::Lazy;
 
             static PARAMS: Lazy<TestParams> = Lazy::new(|| $params);
-            static MODULE_HOST: Lazy<Module<HostBytesBackend>> =
-                Lazy::new(|| Module::<HostBytesBackend>::new(PARAMS.size as u64));
             static MODULE_REF: Lazy<Module<$backend_ref>> =
                 Lazy::new(|| Module::<$backend_ref>::new(PARAMS.size as u64));
             static MODULE_TEST: Lazy<Module<$backend_test>> =
@@ -219,7 +214,7 @@ macro_rules! cross_backend_test_suite {
                 fn $test_name() {
                     for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
                         let params = TestParams { n, ..*PARAMS };
-                        ($impl)(&params, &*MODULE_HOST, &*MODULE_REF, &*MODULE_TEST);
+                        ($impl)(&params, &*MODULE_REF, &*MODULE_TEST);
                     }
                 }
             )+

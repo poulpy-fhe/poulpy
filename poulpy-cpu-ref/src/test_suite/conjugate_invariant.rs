@@ -325,17 +325,16 @@ macro_rules! conjugate_invariant_test_suite {
             fn conjugate_invariant_products_parity() {
                 let module = module(256);
                 let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(256);
-                let host = Module::<HostBytesBackend>::new(256);
                 for n in [8, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
                     let params = poulpy_hal::test_suite::TestParams {
                         size: 256,
                         n,
                         base2k: 10,
                     };
-                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &host, &reference, &module);
-                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign(&params, &host, &reference, &module);
-                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft(&params, &host, &reference, &module);
-                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &host, &reference, &module);
+                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &reference, &module);
+                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign(&params, &reference, &module);
+                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft(&params, &reference, &module);
+                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &reference, &module);
                 }
             }
 
@@ -417,14 +416,13 @@ macro_rules! conjugate_invariant_test_suite {
             fn conjugate_invariant_large_radix_products() {
                 let module = module(8192);
                 let reference = Module::<$crate::NTT4x30CIRef>::new(8192);
-                let host = Module::<HostBytesBackend>::new(8192);
                 let params = poulpy_hal::test_suite::TestParams {
                     size: 8192,
                     n: 8192,
                     base2k: 19,
                 };
-                poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &host, &reference, &module);
-                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &host, &reference, &module);
+                poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &reference, &module);
+                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &reference, &module);
             }
         }
     };

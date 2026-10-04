@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, ScratchOwned, ZnxView},
+    layouts::{Backend, HostDataMut, HostDataRef, ScratchOwned, ZnxView},
     source::Source,
 };
 
@@ -162,7 +162,7 @@ where
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
 
-    mod_switch_2n::<HostBytesBackend, _>(2 * lut.domain_size(), &mut lwe_2n, &lwe, lut.rotation_direction());
+    mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, &lwe, lut.rotation_direction());
 
     let pt_want: i64 =
         (lwe_2n[0] + lwe_2n[1..].iter().zip(sk_lwe.raw()).map(|(x, y)| x * y).sum::<i64>()) & (2 * lut.domain_size() - 1) as i64;
