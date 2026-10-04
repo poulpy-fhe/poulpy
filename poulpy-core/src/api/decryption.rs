@@ -1,8 +1,9 @@
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{
-    GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k,
+    GLWEInfos, GLWEMaskToBackendRef, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef,
+    LWEToBackendRef, SetBase2k,
     prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
@@ -20,6 +21,28 @@ pub trait GLWEDecrypt<BE: Backend> {
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
+}
+
+/// Inner product of a GLWE mask with a secret, `Σ_j a_j·s_j`: the phase of a
+/// ciphertext without its body.
+pub trait GLWEMaskInnerProduct<BE: Backend> {
+    fn glwe_mask_inner_product_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    /// Writes into `res` the inner product of `mask`, a [`GLWEMask`](crate::layouts::GLWEMask)
+    /// or the mask of a [`GLWE`](crate::layouts::GLWE), with `sk`, normalized at the
+    /// precision of `res`.
+    ///
+    /// # Panics
+    /// Panics if the mask is not canonical, if the output, mask and secret degrees
+    /// differ or exceed the module degree, or if the mask rank is zero or differs
+    /// from the secret's.
+    fn glwe_mask_inner_product<R, A, S>(&self, res: &mut R, mask: &A, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        A: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
