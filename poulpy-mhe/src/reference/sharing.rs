@@ -178,6 +178,7 @@ where
         self.glwe_add_assign(secret, public);
         self.vec_znx_add_assign(secret.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(secret, scratch);
+        scratch.wipe(self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference());
     }
 }
 
@@ -247,12 +248,15 @@ where
             "invalid share: additive share must have rank zero"
         );
         let infos = res.glwe_layout();
+        let mut noise_infos = enc_infos.noise_infos();
+        // The raised share needs noise on the output's grid, including its low bits.
+        noise_infos.k = infos.k().as_usize();
         let tmp_bytes = self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(&infos, secret);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
             self.glwe_copy(&mut pt, secret, &mut scratch_1);
             self.glwe_rsh(res.k().as_usize() - secret.k().as_usize(), &mut pt, &mut scratch_1);
-            self.glwe_compressed_encrypt_sk(res, &pt, sk, seed, enc_infos, source_xe, &mut scratch_1);
+            self.glwe_compressed_encrypt_sk(res, &pt, sk, seed, &noise_infos, source_xe, &mut scratch_1);
         }
         scratch.wipe(tmp_bytes);
     }

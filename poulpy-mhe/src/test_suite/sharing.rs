@@ -4,7 +4,9 @@
 
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize,
-    layouts::{GLWE, GLWELayout, GLWEPlaintext, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank},
+    layouts::{
+        GLWE, GLWELayout, GLWEPlaintext, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+    },
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -14,9 +16,9 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    K, K_OUT, LOG_BOUND, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_decrypts_to, assert_flooded_integers, bounded_integers,
-    encrypt_integers, glwe_layout_at, ideal_secret, integer_flood_infos, integer_plaintext, party_secrets, plaintext_integers,
-    secret_from_seed,
+    BASE2K, K, K_OUT, LOG_BOUND, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_decrypts_to, assert_flooded_integers,
+    bounded_integers, encrypt_integers, glwe_layout_at, ideal_secret, integer_flood_infos, integer_plaintext, party_secrets,
+    plaintext_integers, secret_from_seed,
 };
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
@@ -38,66 +40,73 @@ where
         + VecZnxAddScalarAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    for sigma in [1024.0, 4096.0] {
-        let layout = glwe_layout_at(module, K);
-        let flood = integer_flood_infos(sigma);
-        let parties = party_secrets(module);
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .glwe_encrypt_sk_tmp_bytes(&layout)
-                .max(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout))
-                .max(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes()),
-        );
-        let m = bounded_integers(module.n(), LOG_MESSAGE, [30u8; 32]);
-        let ct = encrypt_integers(module, &layout, &m, &ideal_secret(module, &parties), &mut scratch);
-
-        let mut secrets: Vec<GLWEPlaintext<AlignedBuf, i64>> = (0..PARTIES)
-            .map(|_| module.glwe_plaintext_alloc_from_infos(&layout))
-            .collect();
-        let mut acc = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
-        let mut public = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
-        for (i, ((_, sk), secret)) in parties.iter().zip(secrets.iter_mut()).enumerate() {
-            let dst = if i == 0 { &mut acc } else { &mut public };
-            dst.inner.set_canonical(false);
-            let mut source_xm = Source::new([60 + i as u8; 32]);
-            let mut source_smudge = Source::new([90 + i as u8; 32]);
-            // The inner product with the party's secret would be left in the scratch.
-            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout),
-                |scratch| {
-                    module.mhe_glwe_enc_to_share_share_gen(
-                        dst,
-                        secret,
-                        &ct,
-                        sk,
-                        LOG_BOUND,
-                        flood,
-                        &mut source_xm,
-                        &mut source_smudge,
-                        scratch,
-                    )
-                },
+    // Include a limb-aligned precision so normalization leaves nonzero carries.
+    for k in [K, TorusPrecision(3 * BASE2K.0)] {
+        for sigma in [1024.0, 4096.0] {
+            let layout = glwe_layout_at(module, k);
+            let flood = integer_flood_infos(sigma);
+            let parties = party_secrets(module);
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .glwe_encrypt_sk_tmp_bytes(&layout)
+                    .max(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout))
+                    .max(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes()),
             );
-            assert!(dst.inner.is_canonical());
-            if i > 0 {
-                module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
-            }
-        }
-        for secret in &secrets[1..] {
-            let mask = plaintext_integers(secret);
-            assert!(mask.iter().all(|x| x.abs() < 1 << LOG_BOUND));
-            assert!(mask.iter().any(|x| x.abs() >= 1 << (LOG_BOUND - 2)));
-        }
+            let m = bounded_integers(module.n(), LOG_MESSAGE, [30u8; 32]);
+            let ct = encrypt_integers(module, &layout, &m, &ideal_secret(module, &parties), &mut scratch);
 
-        module.mhe_glwe_enc_to_share_share_finalize(&mut secrets[0], &ct, &acc, &mut scratch.borrow());
-        let mut sum = vec![0i64; module.n()];
-        for secret in &secrets {
-            for (s, x) in sum.iter_mut().zip(plaintext_integers(secret)) {
-                *s += x;
+            let mut secrets: Vec<GLWEPlaintext<AlignedBuf, i64>> = (0..PARTIES)
+                .map(|_| module.glwe_plaintext_alloc_from_infos(&layout))
+                .collect();
+            let mut acc = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
+            let mut public = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
+            for (i, ((_, sk), secret)) in parties.iter().zip(secrets.iter_mut()).enumerate() {
+                let dst = if i == 0 { &mut acc } else { &mut public };
+                dst.inner.set_canonical(false);
+                let mut source_xm = Source::new([60 + i as u8; 32]);
+                let mut source_smudge = Source::new([90 + i as u8; 32]);
+                // The inner product with the party's secret would be left in the scratch.
+                poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                    module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout),
+                    |scratch| {
+                        module.mhe_glwe_enc_to_share_share_gen(
+                            dst,
+                            secret,
+                            &ct,
+                            sk,
+                            LOG_BOUND,
+                            flood,
+                            &mut source_xm,
+                            &mut source_smudge,
+                            scratch,
+                        )
+                    },
+                );
+                assert!(dst.inner.is_canonical());
+                if i > 0 {
+                    module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
+                }
             }
+            for secret in &secrets[1..] {
+                let mask = plaintext_integers(secret);
+                assert!(mask.iter().all(|x| x.abs() < 1 << LOG_BOUND));
+                assert!(mask.iter().any(|x| x.abs() >= 1 << (LOG_BOUND - 2)));
+            }
+
+            // Normalization can leave carries depending on the private share in scratch.
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(),
+                |scratch| module.mhe_glwe_enc_to_share_share_finalize(&mut secrets[0], &ct, &acc, scratch),
+            );
+            let mut sum = vec![0i64; module.n()];
+            for secret in &secrets {
+                for (s, x) in sum.iter_mut().zip(plaintext_integers(secret)) {
+                    *s += x;
+                }
+            }
+            let bound = (DEFAULT_BOUND_XE + PARTIES as f64 * 6.0 * sigma).ceil() as i64 + PARTIES as i64;
+            assert_flooded_integers(&sum, &m, sigma, DEFAULT_SIGMA_XE.powi(2), bound);
         }
-        let bound = (DEFAULT_BOUND_XE + PARTIES as f64 * 6.0 * sigma).ceil() as i64 + PARTIES as i64;
-        assert_flooded_integers(&sum, &m, sigma, DEFAULT_SIGMA_XE.powi(2), bound);
     }
 }
 
@@ -116,39 +125,42 @@ where
 {
     let in_layout = glwe_layout_at(module, K);
     let out_layout = glwe_layout_at(module, K_OUT);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(out_layout).unwrap();
-    let parties = party_secrets(module);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout)
-            .max(module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes())
-            .max(module.glwe_decrypt_tmp_bytes(&out_layout)),
-    );
-    let shares: Vec<Vec<i64>> = (0..PARTIES)
-        .map(|i| bounded_integers(module.n(), LOG_BOUND, [70 + i as u8; 32]))
-        .collect();
-
-    let mut acc = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
-    let mut share = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
-    for (i, ((_, sk), data)) in parties.iter().zip(&shares).enumerate() {
-        let dst = if i == 0 { &mut acc } else { &mut share };
-        let secret = integer_plaintext(module, &in_layout, data);
-        let mut source_xe = Source::new([80 + i as u8; 32]);
-        // The party's raised share would be left in the scratch.
-        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-            module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout),
-            |scratch| module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &enc_infos, &mut source_xe, scratch),
+    // The output precision must determine the noise scale even with an input-layout descriptor.
+    for noise_layout in [in_layout, out_layout] {
+        let enc_infos = EncryptionLayout::new_from_default_sigma(noise_layout).unwrap();
+        let parties = party_secrets(module);
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout)
+                .max(module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes())
+                .max(module.glwe_decrypt_tmp_bytes(&out_layout)),
         );
-        if i > 0 {
-            module.mhe_glwe_share_to_enc_share_aggregate(&mut acc, &share);
-        }
-    }
+        let shares: Vec<Vec<i64>> = (0..PARTIES)
+            .map(|i| bounded_integers(module.n(), LOG_BOUND, [70 + i as u8; 32]))
+            .collect();
 
-    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
-    module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
-    let want: Vec<i64> = (0..module.n()).map(|j| shares.iter().map(|s| s[j]).sum()).collect();
-    let bound = (PARTIES as f64 * DEFAULT_BOUND_XE).ceil() as i64 + 1;
-    assert_decrypts_to(module, &ct, &want, &ideal_secret(module, &parties), bound, &mut scratch);
+        let mut acc = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
+        let mut share = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
+        for (i, ((_, sk), data)) in parties.iter().zip(&shares).enumerate() {
+            let dst = if i == 0 { &mut acc } else { &mut share };
+            let secret = integer_plaintext(module, &in_layout, data);
+            let mut source_xe = Source::new([80 + i as u8; 32]);
+            // The party's raised share would be left in the scratch.
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout),
+                |scratch| module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &enc_infos, &mut source_xe, scratch),
+            );
+            if i > 0 {
+                module.mhe_glwe_share_to_enc_share_aggregate(&mut acc, &share);
+            }
+        }
+
+        let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
+        module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
+        let want: Vec<i64> = (0..module.n()).map(|j| shares.iter().map(|s| s[j]).sum()).collect();
+        let bound = (PARTIES as f64 * DEFAULT_BOUND_XE).ceil() as i64 + 1;
+        assert_decrypts_to(module, &ct, &want, &ideal_secret(module, &parties), bound, &mut scratch);
+    }
 }
 
 /// A mask as precise as the ciphertext panics.

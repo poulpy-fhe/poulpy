@@ -80,7 +80,8 @@ authenticated:
   under another key reveals its secret part to that key's holder.
 - `read_from` checks a share's layout, not its provenance.
 - Share generation zeroes the scratch it was given before returning, as
-  core's secret-handling operations do.
+  core's secret-handling operations do. Encryption-to-shares finalization
+  also zeroes its scratch after normalizing the private additive share.
 
 Active security requires commitments or proofs on the shares, outside this
 crate.

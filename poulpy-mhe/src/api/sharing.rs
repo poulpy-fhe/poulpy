@@ -67,7 +67,8 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes(&self) -> usize;
 
     /// Adds the body of `ct` and the aggregated public shares to `secret`, the
-    /// finalizing party's share. The other parties keep their masks.
+    /// finalizing party's share. The other parties keep their masks. Wipes the
+    /// scratch used to normalize the private share before returning.
     fn mhe_glwe_enc_to_share_share_finalize<P, C>(
         &self,
         secret: &mut P,
@@ -99,6 +100,9 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
     /// same integer in its top-`k` window. `seed` must be fresh for every
     /// conversion: two encryptions under one secret and one seed reveal the
     /// difference of their plaintexts.
+    ///
+    /// The error uses the `sigma` and `bound` from `enc_infos`, sampled at
+    /// `res.k()` regardless of the precision in `enc_infos`.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_share_to_enc_share_gen<P, S, E>(
         &self,
