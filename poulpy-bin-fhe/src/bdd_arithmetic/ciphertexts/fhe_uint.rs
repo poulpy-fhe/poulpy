@@ -82,30 +82,6 @@ where
     }
 }
 
-impl<'a, T: UnsignedInteger> FheUint<&'a mut [u8], T, i64> {
-    pub fn from_glwe_to_mut<G>(glwe: &'a mut G) -> Self
-    where
-        G: GLWEToBackendMut<poulpy_hal::layouts::HostBytesBackend>,
-    {
-        FheUint {
-            bits: glwe.to_backend_mut(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, T: UnsignedInteger> FheUint<&'a [u8], T, i64> {
-    pub fn from_glwe_to_ref<G>(glwe: &'a G) -> Self
-    where
-        G: GLWEToBackendRef<poulpy_hal::layouts::HostBytesBackend>,
-    {
-        FheUint {
-            bits: glwe.to_backend_ref(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, W> {
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits.base2k()

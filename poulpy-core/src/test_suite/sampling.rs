@@ -10,14 +10,14 @@
 //! to a suite that runs at degree 4096, which is where the bound bites; the
 //! parity suite runs them again at its own, narrower degree.
 
-use poulpy_hal::AlignedBuf;
+use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::f64::consts::SQRT_2;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
     layouts::{
-        Backend, HostBytesBackend, Module, ScalarZnx, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxOwned, ZnxView, ZnxViewMut, ZnxWord,
+        Backend, Module, ScalarZnx, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
+        ZnxView, ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{
@@ -44,7 +44,7 @@ where
     Module<BE>: ScalarZnxFillDistribution<BE>,
 {
     let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-        <HostBytesBackend>::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+        alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
         module.n(),
         COLS,
     );

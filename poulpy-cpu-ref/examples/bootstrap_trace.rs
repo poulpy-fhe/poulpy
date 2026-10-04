@@ -26,18 +26,8 @@
 //!   (SVG, open in any browser).
 
 use poulpy_ckks::test_suite::{BASE52_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
-use poulpy_cpu_ref::{
-    FFT64ReimTable, NTT4x30Ref,
-    layouts::{HostBytesBackend, Module},
-};
+use poulpy_cpu_ref::{FFT64ReimTable, NTT4x30Ref};
 
 fn main() {
-    let params = BASE52_PARAMS_F64;
-
-    // `test_bootstrapping_e2e` builds its own modules internally; these only
-    // satisfy the signature (they are ignored by the test body).
-    let module = Module::<NTT4x30Ref>::new(params.n as u64);
-    let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-
-    test_bootstrapping_standard_e2e::<NTT4x30Ref, f64, FFT64ReimTable<f64>>(params, &module, &host_module);
+    test_bootstrapping_standard_e2e::<NTT4x30Ref, f64, FFT64ReimTable<f64>>(BASE52_PARAMS_F64);
 }

@@ -10,8 +10,8 @@ use poulpy_hal::{
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint,
-        ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMat, VmpPMatToBackendMut,
+        Backend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
+        VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMat, VmpPMatToBackendMut,
         VmpPMatToBackendRef,
     },
     source::Source,
@@ -446,9 +446,6 @@ where
 {
     let mut source = Source::new([3u8; 32]);
     let n: u32 = module.n() as u32;
-    // The oracle is built here and uploaded, so the test does not require the
-    // backend's own buffers to be host-resident.
-    let host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
     // (stored dsize, stored dnum, coarsening factor, input limbs).
     let cases: [(u32, u32, u32, usize); 9] = [
         (1, 8, 1, 4),
@@ -518,8 +515,9 @@ where
         };
         poison(&mut mat, i64::MIN + 1);
 
-        // Oracle: a key holding exactly the selected rows, used natively.
-        let mut sel = host.mat_znx_alloc(host.n(), sel_rows, cols_in, cols_out, size);
+        // Oracle: a key holding exactly the selected rows, used natively. It is built
+        // on the host and uploaded, so the backend's buffers need not be host-resident.
+        let mut sel = download_mat_znx::<BE>(&module.mat_znx_alloc(module.n(), sel_rows, cols_in, cols_out, size));
         for (i, &src_row) in selected.iter().enumerate() {
             for c in 0..cols_in {
                 let (src, dst) = ((src_row * cols_in + c) * row_len, (i * cols_in + c) * row_len);

@@ -1,7 +1,6 @@
-use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned},
+    layouts::{Module, ScalarZnx, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -193,16 +192,7 @@ where
             for row in 0..ggsw_out.dnum().as_usize() {
                 for col in 0..ggsw_out.rank().as_usize() + 1 {
                     let noise = ggsw_out
-                        .noise(
-                            module,
-                            row,
-                            col,
-                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
-                                &pt_scalar,
-                            ),
-                            &sk_out_prepared,
-                            &mut scratch.borrow(),
-                        )
+                        .noise(module, row, col, &pt_scalar.to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
@@ -375,16 +365,7 @@ where
             for row in 0..ggsw_out.dnum().as_usize() {
                 for col in 0..ggsw_out.rank().as_usize() + 1 {
                     let noise = ggsw_out
-                        .noise(
-                            module,
-                            row,
-                            col,
-                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
-                                &pt_scalar,
-                            ),
-                            &sk_out_prepared,
-                            &mut scratch.borrow(),
-                        )
+                        .noise(module, row, col, &pt_scalar.to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     let max_noise = max_noise(col);

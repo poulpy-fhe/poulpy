@@ -40,10 +40,7 @@ fn encode_affine_const<F: TestScalar>(
     offset: F,
     scale: F,
     prec: CKKSLayout,
-) -> CKKSPlaintextOwned<HostBytesBackend>
-where
-    Module<HostBytesBackend>: CKKSModuleAlloc<HostBytesBackend>,
-{
+) -> CKKSPlaintextOwned<HostBytesBackend> {
     let mut pt = host_module.ckks_pt_coeffs_alloc(2, base2k, prec.k());
     pt.set_meta(prec.meta());
     pt.encode_host_floats(&[offset, scale]).unwrap();

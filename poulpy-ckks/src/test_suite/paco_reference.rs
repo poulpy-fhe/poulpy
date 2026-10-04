@@ -23,7 +23,7 @@ use crate::{
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextHostModule, TestContextModule, TestScalar},
+        helpers::{TestContextBackend, TestContextModule, TestScalar},
         paco_reference_model::{fabricate_ciphertext, monomial_mul, seq_paco_reference},
     },
 };
@@ -62,7 +62,6 @@ pub fn test_paco_cleartext_reference<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
