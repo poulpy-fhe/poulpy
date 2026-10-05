@@ -87,7 +87,7 @@ finalization still contribute to its actual output and are not tracked here.
 
 When private key switching generates a share narrower than the received mask,
 subtracting the two cropped inner products and normalizing also introduces
-conversion error. Its estimate adds the squared one-ulp bound at the share's
+conversion error. Its effective model adds one unit of variance at the share's
 precision to the flood variance. Equal or wider shares add no conversion term.
 
 As in core's noise models, precision reduction adds a modeled half-ulp variance

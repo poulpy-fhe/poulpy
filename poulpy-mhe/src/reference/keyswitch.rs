@@ -130,9 +130,9 @@ where
             );
             self.glwe_normalize_assign(res, &mut scratch_2);
         }
-        // Cropping two inner products before normalization contributes at
-        // most one output-grid ulp. Keep its squared bound in the effective
-        // variance model when the protocol narrows the mask precision.
+        // Model the conversion of two cropped inner products followed by
+        // normalization as one output-grid ulp when the share is narrower.
+        // As for other rounding terms, this is an effective estimate.
         let rounding = if res.k() < mask.k() { 1.0 } else { 0.0 };
         GLWEToBackendMut::<BE>::set_encryption_metadata(
             res,
