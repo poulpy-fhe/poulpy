@@ -121,6 +121,10 @@ pub trait GLWEEncryptSk<BE: Backend> {
 /// distribution and outputs `Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)`, one
 /// fresh error per column drawn in column order from `source_xe`, each column
 /// normalized once at the output's `k`.
+///
+/// Fresh body and mask errors are sampled at the output's `k`, including when
+/// the public key has extra precision. Normalization attenuates inherited key
+/// error and adds rounding error; it preserves those fresh output-grid errors.
 pub trait GLWEEncryptPk<BE: Backend> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize

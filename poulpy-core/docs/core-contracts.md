@@ -132,22 +132,40 @@ historical estimate on another precision grid without adding rounding error.
 Positive infinity denotes an unbounded estimate, including numeric overflow.
 
 Fresh ciphertexts derive their own phase-error estimate from the encryption
-path. For rank `r`, degree `n`, equal key/ciphertext precision, and a centered
-base secret with coefficient variance `v`, the default noise parameter `sigma`
-gives:
+path and both precisions. Let the output precision be `k`, public-key precision
+be `k + a`, rank be `r`, and degree be `n`. Write `V_pk` for a public-key entry's
+variance on the key's grid, `q_u = E[u^2]` for the ephemeral second moment, and
+`q_S = E[S^2]` for the destination secret's second moment. Ordinary public-key
+encryption records the model, in output-grid coefficient units:
 
-| Encryption path | Fresh ciphertext variance |
+`V_ct = r*n*q_u*V_pk*2^(-2*a) + (1 + r*n*q_S)*sigma_fresh^2 + R`.
+
+The first term is inherited key error. Extra key precision attenuates it before
+normalization to `k`. The implementation samples fresh body and mask errors at
+the output precision `k`, even though its accumulator has the key's precision.
+Those fresh terms survive normalization. `R` models the new rounding error:
+zero when `a = 0`, otherwise `(1 + r*n*q_S)/4`. Adding this half-ulp term as an
+independent variance is a noise-model approximation.
+
+For a centered base secret with coefficient variance `v`, a public key built
+from `P` independent shares has `V_pk = P*sigma_fresh^2` and `q_S = P*v`;
+its ephemeral still has `q_u = v`. Thus:
+
+| Encryption path | Fresh ciphertext variance at output precision `k` |
 | --- | --- |
-| Secret key | `sigma^2` |
-| Single-party public key | `(1 + 2*r*n*v) * sigma^2` |
-| Public key aggregated from `P` parties | `(1 + 2*r*n*P*v) * sigma^2` |
+| Secret key | `sigma_fresh^2` |
+| Single-party public key at `k + a` | `(1 + r*n*v*(1 + 2^(-2*a))) * sigma_fresh^2 + R` |
+| `P`-party public key at `k + a` | `(1 + r*n*P*v*(1 + 2^(-2*a))) * sigma_fresh^2 + R` |
 
-The public-key paths include both inherited key error and fresh mask error
-multiplied by the destination secret. Their body contributes one fresh error,
-even for a collective key. Noncentered secrets use their second moments;
-different precisions rescale inherited key error and account for new rounding.
-Smudging replaces the fresh body variance with the chosen flood's variance.
-Re-encrypting an existing ciphertext replaces its previous metadata.
+The equal-precision formulas follow by setting `a = 0` and `R = 0`. For binary
+secrets, use the second moments in the general formula, including the squared
+collective mean. Smudging replaces only the fresh body variance with the chosen
+flood's variance. Re-encryption replaces the ciphertext's previous metadata.
+
+Encrypting entirely at `k + a` and then truncating would instead attenuate all
+of that encryption's phase error by `2^(-2*a)` and introduce rounding at `k`.
+That construction requires sampling the fresh body and mask errors at `k + a`.
+The current public-key encryption API samples them at its destination's `k`.
 
 The estimate accounts for inherited public-key error and amplification during
 key generation or protocol finalization. It is a variance model, not an exact

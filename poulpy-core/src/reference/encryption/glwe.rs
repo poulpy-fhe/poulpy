@@ -474,6 +474,8 @@ where
             for i in 0..rank + 1 {
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
                 if i > 0 || body_noise {
+                    // Fresh errors use the output grid even in this higher-precision
+                    // accumulator, so the final normalization does not attenuate them.
                     self.vec_znx_big_add_noise(base2k, res_k, &mut ci_big, 0, Noise::ENCRYPTION, source_xe);
                 }
 
