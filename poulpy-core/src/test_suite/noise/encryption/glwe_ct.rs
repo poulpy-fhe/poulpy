@@ -7,7 +7,7 @@ use poulpy_hal::{
     },
     layouts::{
         Module, PrepareHint, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, ToOwnedDeep, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, WriterTo, ZnxView, ZnxViewMut,
     },
     source::Source,
     test_suite::{TestParams, scalar_znx_backend_mut, scalar_znx_backend_ref, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -597,11 +597,11 @@ where
                     .powi(2);
             }
             let noise_have = (noise_variance / TRIALS as f64).sqrt().log2();
-            // Sum_l u_l e_l and Sum_j e_j s_j each have rank * n terms with
-            // secret variance 0.5; the independent body error adds one more
-            // sigma^2. A more precise public key only lowers the first term.
-            let noise_want =
-                (((2.0 * rank as f64 * n as f64 * 0.5 + 1.0) * DEFAULT_SIGMA_XE.powi(2)).sqrt()).log2() - k_ct as f64;
+            // Independently account for inherited key error, the selected
+            // fresh-error grid, and final rounding. The high-precision cases
+            // must meet their reduced bound, not the equal-precision bound.
+            let (_, expected_variance) = expected_public_key_noise(rank, n, base2k, k_ct, k_pk);
+            let noise_want = expected_variance.sqrt().log2() - k_ct as f64;
             let noise_want_tol: f64 = noise_want + 1.05_f64.log2();
             assert!(
                 noise_have <= noise_want_tol,
@@ -641,6 +641,43 @@ where
         &mut Source::new([0u8; 32]),
         &mut scratch.borrow(),
     );
+}
+
+// Independent test calculation for the ternary probability-1/2 fixtures.
+// Repeated quartering deliberately differs from the planner's integer search.
+fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_pk: usize) -> (usize, f64) {
+    let fold = rank as f64 * n as f64 * 0.5;
+    let inherited = (DEFAULT_SIGMA_XE.powi(2) * (-2.0 * (k_pk - k) as f64).exp2()) * fold;
+    let rounding = (1.0 + fold) / 4.0;
+    let tail = 0.5 / (1.0 - (-(base2k as f64)).exp2());
+    let prefix_variance = fold * (1.0 + fold) * tail.powi(2);
+    let mut fresh = DEFAULT_SIGMA_XE.powi(2) * (1.0 + fold);
+    let mut sample_k = k;
+    let (combined, work_k) = loop {
+        let work_k = (sample_k.div_ceil(base2k) * base2k).min(k_pk);
+        let cut = if work_k == k_pk {
+            0.0
+        } else {
+            prefix_variance * (-2.0 * (work_k - k) as f64).exp2()
+        };
+        let combined = if cut == 0.0 {
+            inherited
+        } else {
+            (inherited.sqrt() + cut.sqrt()).powi(2)
+        };
+        if sample_k == k_pk || combined + fresh <= rounding {
+            break (combined, work_k);
+        }
+        fresh *= 0.25;
+        sample_k += 1;
+    };
+    let scale = (-2.0 * (sample_k - k) as f64).exp2();
+    // Preserve the existing addition order, including exact serialized bits.
+    let variance = combined
+        + DEFAULT_SIGMA_XE.powi(2) * fold * scale
+        + DEFAULT_SIGMA_XE.powi(2) * scale
+        + if work_k > k { rounding } else { 0.0 };
+    (sample_k, variance)
 }
 
 /// `glwe_public_key_generate` and `glwe_encrypt_pk` equal their per-entry formulas replayed from the same sources.
@@ -687,153 +724,210 @@ where
             rank: rank.into(),
         };
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .glwe_encrypt_pk_tmp_bytes(&infos, &infos)
-                .max(module.glwe_public_key_generate_tmp_bytes(&infos))
-                .max(module.glwe_public_key_prepare_tmp_bytes(&infos))
-                .max(module.glwe_prepare_tmp_bytes(&infos))
-                .max(module.vec_znx_big_normalize_tmp_bytes()),
-        );
+        for extra in [0, 1, base2k, 3 * base2k] {
+            let pk_infos = GLWELayout {
+                k: (k + extra).into(),
+                ..infos
+            };
+            let (sample_k, expected_variance) = expected_public_key_noise(rank, n, base2k, k, k + extra);
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .glwe_encrypt_pk_tmp_bytes(&infos, &pk_infos)
+                    .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
+                    .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos))
+                    .max(module.glwe_prepare_tmp_bytes(&pk_infos))
+                    .max(module.vec_znx_big_normalize_tmp_bytes()),
+            );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&infos);
-        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([1u8; 32]));
-        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
-        module.glwe_secret_prepare(&mut sk_prepared, &sk);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&infos);
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([1u8; 32]));
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&infos);
-        module.glwe_public_key_generate(
-            &mut pk,
-            &sk_prepared,
-            &mut Source::new([2u8; 32]),
-            &mut Source::new([3u8; 32]),
-            &mut scratch.borrow(),
-        );
+            let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
+            module.glwe_public_key_generate(
+                &mut pk,
+                &sk_prepared,
+                &mut Source::new([2u8; 32]),
+                &mut Source::new([3u8; 32]),
+                &mut scratch.borrow(),
+            );
 
-        let (mut xe, mut xa) = (Source::new([2u8; 32]), Source::new([3u8; 32]));
-        let keys_want: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = (0..rank)
-            .map(|_| {
-                let mut key: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-                module.glwe_encrypt_zero_sk(&mut key, &sk_prepared, &mut xe, &mut xa, &mut scratch.borrow());
-                module.glwe_normalize_assign(&mut key, &mut scratch.borrow());
-                key
-            })
-            .collect();
-        for (l, key) in keys_want.iter().enumerate() {
-            assert_eq!(pk.at(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
-        }
+            let (mut xe, mut xa) = (Source::new([2u8; 32]), Source::new([3u8; 32]));
+            let keys_want: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = (0..rank)
+                .map(|_| {
+                    let mut key: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pk_infos);
+                    module.glwe_encrypt_zero_sk(&mut key, &sk_prepared, &mut xe, &mut xa, &mut scratch.borrow());
+                    module.glwe_normalize_assign(&mut key, &mut scratch.borrow());
+                    key
+                })
+                .collect();
+            for (l, key) in keys_want.iter().enumerate() {
+                assert_eq!(pk.at(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
+            }
 
-        let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
-        module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+            let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
+                module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
+            module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
 
-        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
-        module.vec_znx_fill_uniform_source(
-            base2k,
-            pt.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt.data),
-            0,
-            &mut Source::new([4u8; 32]),
-        );
+            let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&pk_infos);
+            module.vec_znx_fill_uniform_source(
+                base2k,
+                pt.k().as_usize(),
+                &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+                0,
+                &mut Source::new([4u8; 32]),
+            );
 
-        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-        module.glwe_encrypt_pk(
-            &mut ct,
-            &pt,
-            &pk_prepared,
-            &mut Source::new([5u8; 32]),
-            &mut Source::new([6u8; 32]),
-            &mut scratch.borrow(),
-        );
+            let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
 
-        let mut source_xu: Source = Source::new([5u8; 32]);
-        let mut source_xe: Source = Source::new([6u8; 32]);
-        let entries: Vec<GLWEPrepared<BE::OwnedBuf, BE>> = keys_want
-            .iter()
-            .map(|entry| {
-                let mut prepared: GLWEPrepared<BE::OwnedBuf, BE> = module.glwe_prepared_alloc_from_infos(entry);
-                module.glwe_prepare(&mut prepared, entry, &mut scratch.borrow());
-                prepared
-            })
-            .collect();
-        let mut u = module.scalar_znx_alloc(n, rank);
-        let mut u_prepared = module.svp_ppol_alloc(n, rank, PrepareHint::Reuse);
-        for l in 0..rank {
-            module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut u), l, *pk.dist(), &mut source_xu);
-            module.svp_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
-        }
+            let mut source_xu: Source = Source::new([5u8; 32]);
+            let mut source_xe: Source = Source::new([6u8; 32]);
+            let entries: Vec<GLWEPrepared<BE::OwnedBuf, BE>> = keys_want
+                .iter()
+                .map(|entry| {
+                    let mut prepared: GLWEPrepared<BE::OwnedBuf, BE> = module.glwe_prepared_alloc_from_infos(entry);
+                    module.glwe_prepare(&mut prepared, entry, &mut scratch.borrow());
+                    prepared
+                })
+                .collect();
+            let mut u = module.scalar_znx_alloc(n, rank);
+            let mut u_prepared = module.svp_ppol_alloc(n, rank, PrepareHint::Reuse);
+            for l in 0..rank {
+                module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut u), l, *pk.dist(), &mut source_xu);
+                module.svp_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
+            }
 
-        let size: usize = pk.size();
-        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-        let mut acc = module.vec_znx_dft_alloc(n, 1, size);
-        let mut prod = module.vec_znx_dft_alloc(n, 1, size);
-        let mut big = module.vec_znx_big_alloc(n, 1, size);
-        for col in 0..rank + 1 {
-            module.vec_znx_dft_zero(&mut acc.to_backend_mut(), 0);
-            for (l, key) in entries.iter().enumerate() {
-                module.svp_apply_dft_to_dft(
-                    &mut prod.to_backend_mut(),
+            // Independent scalar products consume only the leading key limbs,
+            // exercising the narrower matrix product without using its planner.
+            let size: usize = sample_k.div_ceil(base2k);
+            if extra >= base2k {
+                assert!(size < pk.size(), "high-precision replay must discard PK limbs");
+            }
+            let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+            let mut acc = module.vec_znx_dft_alloc(n, 1, size);
+            let mut prod = module.vec_znx_dft_alloc(n, 1, size);
+            // The plaintext retains full PK precision, including discarded
+            // product limbs, so its rounding tail must survive the addition.
+            let mut big = module.vec_znx_big_alloc(n, 1, pk.size());
+            for col in 0..rank + 1 {
+                module.vec_znx_dft_zero(&mut acc.to_backend_mut(), 0);
+                for (l, key) in entries.iter().enumerate() {
+                    module.svp_apply_dft_to_dft(
+                        &mut prod.to_backend_mut(),
+                        0,
+                        &u_prepared.to_backend_ref(),
+                        l,
+                        &key.data.to_backend_ref(),
+                        col,
+                    );
+                    module.vec_znx_dft_add_assign(&mut acc.to_backend_mut(), 0, &prod.to_backend_ref(), 0);
+                }
+                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut acc.to_backend_mut(), 0);
+                module.vec_znx_big_add_noise(
+                    base2k,
+                    sample_k,
+                    &mut big.to_backend_mut(),
                     0,
-                    &u_prepared.to_backend_ref(),
-                    l,
-                    &key.data.to_backend_ref(),
-                    col,
+                    Noise::ENCRYPTION,
+                    &mut source_xe,
                 );
-                module.vec_znx_dft_add_assign(&mut acc.to_backend_mut(), 0, &prod.to_backend_ref(), 0);
+                if col == 0 {
+                    if size < pk.size() {
+                        // Force a rounding boundary: cancel the product and
+                        // fresh error, add half an output ulp, then a negative
+                        // tail beyond the chosen product prefix. Losing that
+                        // plaintext tail changes the encrypted coefficient.
+                        module.vec_znx_big_normalize(
+                            &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+                            base2k,
+                            pk.k().as_usize(),
+                            0,
+                            0,
+                            &big.to_backend_ref(),
+                            base2k,
+                            0,
+                            &mut scratch.borrow(),
+                        );
+                        for limb in 0..pt.size() {
+                            for coefficient in pt.data.at_mut(0, limb) {
+                                *coefficient = -*coefficient;
+                            }
+                        }
+                        pt.data.at_mut(0, k / base2k)[0] += 1i64 << (base2k - k % base2k - 1);
+                        pt.data.at_mut(0, size)[0] -= 1i64 << (base2k - 1);
+                        module.glwe_normalize_assign(&mut pt, &mut scratch.borrow());
+                    }
+                    module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&pt.data), 0);
+                }
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut want.data),
+                    base2k,
+                    k,
+                    0,
+                    col,
+                    &big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
             }
-            module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut acc.to_backend_mut(), 0);
-            module.vec_znx_big_add_noise(base2k, k, &mut big.to_backend_mut(), 0, Noise::ENCRYPTION, &mut source_xe);
-            if col == 0 {
-                module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&pt.data), 0);
+            if size < pk.size() {
+                for limb in 0..want.size() {
+                    assert_eq!(
+                        want.data.at(0, limb)[0],
+                        0,
+                        "negative plaintext tail must round below the half ulp"
+                    );
+                }
             }
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut want.data),
-                base2k,
-                k,
-                0,
-                col,
-                &big.to_backend_ref(),
-                base2k,
-                0,
+            module.glwe_encrypt_pk(
+                &mut ct,
+                &pt,
+                &pk_prepared,
+                &mut Source::new([5u8; 32]),
+                &mut Source::new([6u8; 32]),
                 &mut scratch.borrow(),
             );
+            want.metadata = Some(
+                crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k)
+                    .with_fresh_noise(crate::FreshNoiseEstimate::new(expected_variance, infos.k)),
+            );
+            assert_eq!(
+                ct, want,
+                "rank={rank}, pk extra precision={extra}, sample precision={sample_k}"
+            );
+
+            // Changing the ephemeral law would invalidate the recorded collective
+            // secret/noise model. Reject it before changing coefficients or provenance.
+            *pk_prepared.dist_mut() = Distribution::BinaryProb(0.5);
+            let before = ct.to_owned_deep();
+            let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                module.glwe_encrypt_pk(
+                    &mut ct,
+                    &pt,
+                    &pk_prepared,
+                    &mut Source::new([5u8; 32]),
+                    &mut Source::new([6u8; 32]),
+                    &mut scratch.borrow(),
+                );
+            }));
+            assert!(rejected.is_err());
+            assert_eq!(ct, before, "invalid public-key provenance must not mutate the destination");
+            *pk_prepared.dist_mut() = *sk.dist();
+
+            // The ephemerals and their products would decrypt `ct` from the scratch.
+            crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pk_infos), |scratch| {
+                module.glwe_encrypt_pk(
+                    &mut ct,
+                    &pt,
+                    &pk_prepared,
+                    &mut Source::new([5u8; 32]),
+                    &mut Source::new([6u8; 32]),
+                    scratch,
+                )
+            });
         }
-        want.metadata = Some(
-            crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k).with_fresh_noise(crate::FreshNoiseEstimate::new(
-                (rank as f64 * n as f64 + 1.0) * DEFAULT_SIGMA_XE.powi(2),
-                infos.k,
-            )),
-        );
-        assert_eq!(ct, want, "rank={rank}");
-
-        // Changing the ephemeral law would invalidate the recorded collective
-        // secret/noise model. Reject it before changing coefficients or provenance.
-        *pk_prepared.dist_mut() = Distribution::BinaryProb(0.5);
-        let before = ct.to_owned_deep();
-        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            module.glwe_encrypt_pk(
-                &mut ct,
-                &pt,
-                &pk_prepared,
-                &mut Source::new([5u8; 32]),
-                &mut Source::new([6u8; 32]),
-                &mut scratch.borrow(),
-            );
-        }));
-        assert!(rejected.is_err());
-        assert_eq!(ct, before, "invalid public-key provenance must not mutate the destination");
-        *pk_prepared.dist_mut() = *sk.dist();
-
-        // The ephemerals and their products would decrypt `ct` from the scratch.
-        crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos), |scratch| {
-            module.glwe_encrypt_pk(
-                &mut ct,
-                &pt,
-                &pk_prepared,
-                &mut Source::new([5u8; 32]),
-                &mut Source::new([6u8; 32]),
-                scratch,
-            )
-        });
     }
 }
 

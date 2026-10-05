@@ -123,10 +123,11 @@ where
         + GLWEEncryptPkSmudged<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
+    let key_k = TorusPrecision(K.0 + 2 * BASE2K.0);
     let key_layout = GLWELayout {
         n: module.n().into(),
         base2k: BASE2K,
-        k: K,
+        k: key_k,
         rank: RANK,
     };
     let sigma2 = DEFAULT_SIGMA_XE.powi(2);
@@ -167,7 +168,7 @@ where
             if i > 0 {
                 module.mhe_glwe_public_key_share_aggregate(&mut aggregate, &share);
             }
-            assert_noise_tag(&aggregate, base, i + 1, (i + 1) as f64 * sigma2, K);
+            assert_noise_tag(&aggregate, base, i + 1, (i + 1) as f64 * sigma2, key_k);
             secrets.push(prepared);
         }
 
@@ -178,11 +179,11 @@ where
         assert!(decoded == aggregate);
         let mut collective: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
         module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, &mut scratch.borrow());
-        assert_noise_tag(&collective, base, PARTIES, PARTIES as f64 * sigma2, K);
+        assert_noise_tag(&collective, base, PARTIES, PARTIES as f64 * sigma2, key_k);
         let mut collective_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&key_layout);
         module.glwe_public_key_prepare(&mut collective_prepared, &collective, &mut scratch.borrow());
-        assert_noise_tag(&collective_prepared, base, PARTIES, PARTIES as f64 * sigma2, K);
+        assert_noise_tag(&collective_prepared, base, PARTIES, PARTIES as f64 * sigma2, key_k);
 
         let mut single: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
         module.glwe_public_key_generate(
@@ -195,9 +196,9 @@ where
         let mut single_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&key_layout);
         module.glwe_public_key_prepare(&mut single_prepared, &single, &mut scratch.borrow());
-        assert_noise_tag(&single_prepared, base, 1, sigma2, K);
+        assert_noise_tag(&single_prepared, base, 1, sigma2, key_k);
 
-        for k in [K, TorusPrecision(K.0 - BASE2K.0)] {
+        for k in [key_k, TorusPrecision(key_k.0 - 1), TorusPrecision(K.0 - BASE2K.0)] {
             let layout = GLWELayout { k, ..key_layout };
             let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
             let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
@@ -227,12 +228,55 @@ where
                     0.0
                 };
                 let secret_second = count * 0.5 + count * (count - 1.0) * mean * mean;
-                let key_grid_scale = (2.0 * (k.as_usize() as f64 - K.as_usize() as f64)).exp2();
+                let key_grid_scale = (2.0 * (k.as_usize() as f64 - key_k.as_usize() as f64)).exp2();
                 let inherited = rank_n * 0.5 * count * sigma2 * key_grid_scale;
                 let mask_error = rank_n * secret_second * sigma2;
-                let rounding = if k < K { (1.0 + rank_n * secret_second) / 4.0 } else { 0.0 };
-                let without_body = inherited + mask_error + rounding;
-                let ordinary = without_body + sigma2;
+                let phase_fold = 1.0 + rank_n * secret_second;
+                let rounding = phase_fold / 4.0;
+                let extra_bits = (key_k.0 - k.0) as usize;
+                let prefix_amplification = if mean == 0.0 {
+                    rank_n * 0.5 * phase_fold
+                } else {
+                    (rank_n * 0.5_f64.sqrt() * (1.0 + rank_n * secret_second.sqrt())).powi(2)
+                };
+                let expected = |fresh| {
+                    super::fixtures::expected_pk_variance(
+                        inherited,
+                        fresh,
+                        phase_fold,
+                        prefix_amplification,
+                        BASE2K.as_usize(),
+                        k.as_usize(),
+                        key_k.as_usize(),
+                    )
+                };
+                let (ordinary_delta, ordinary) = expected(mask_error + sigma2);
+                let (smudged_delta, without_body) = expected(mask_error);
+                if extra_bits > BASE2K.as_usize() {
+                    // The three-bit candidate omits too much of the PK. One
+                    // more bit crosses the limb boundary and meets the target
+                    // while still omitting two of the five available limbs.
+                    assert_eq!(ordinary_delta, 4);
+                    assert_eq!(smudged_delta, 4);
+                    let work_limbs = (k.as_usize() + ordinary_delta).div_ceil(BASE2K.as_usize());
+                    assert_eq!(work_limbs, 3);
+                    assert_eq!(key_k.as_usize().div_ceil(BASE2K.as_usize()), 5);
+                    assert!(ordinary - rounding <= rounding);
+                    let tail = 0.5 / (1.0 - (-(BASE2K.as_usize() as f64)).exp2());
+                    let previous_work_k = (k.as_usize() + 3).div_ceil(BASE2K.as_usize()) * BASE2K.as_usize();
+                    let previous_tail =
+                        prefix_amplification * tail.powi(2) * (-2.0 * (previous_work_k - k.as_usize()) as f64).exp2();
+                    assert!((inherited.sqrt() + previous_tail.sqrt()).powi(2) + (mask_error + sigma2) / 64.0 > rounding);
+                } else {
+                    assert_eq!(ordinary_delta, extra_bits);
+                    assert_eq!(smudged_delta, extra_bits);
+                    if extra_bits == 1 {
+                        // The inherited key error alone already exceeds the
+                        // target, so the selector must stop at the key's cap.
+                        assert!(inherited > rounding);
+                        assert!(ordinary - rounding > rounding);
+                    }
+                }
                 assert!(ordinary > sigma2);
                 module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
@@ -249,6 +293,9 @@ where
                 module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 for (flood, variance) in [
+                    // Even the default Gaussian is an output-grid flood here,
+                    // rather than the ordinary intermediate-grid body error.
+                    (Noise::ENCRYPTION, sigma2),
                     (Noise::Uniform { bits: 4 }, 21.25),
                     (
                         Noise::Gaussian {

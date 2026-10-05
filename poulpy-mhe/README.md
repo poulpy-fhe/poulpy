@@ -58,7 +58,7 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 
 Keys and ciphertexts expose derived provenance through `encryption_metadata()`.
 The secret's base distribution and party count are separate from `fresh_noise()`,
-an effective phase-error variance estimate tied to its sampling precision.
+an effective phase-error variance estimate tied to its creation precision.
 `variance_at(k)` and `std_dev_at(k)` convert that estimate to another precision.
 Compression, preparation and serialization preserve both parts.
 

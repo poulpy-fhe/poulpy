@@ -89,8 +89,17 @@ where
         let secret_second = parties_f * 0.5;
         let inherited =
             rank_n * 0.5 * parties_f * sigma2 * (2.0 * (layout.k().as_usize() as f64 - pk_layout.k.as_usize() as f64)).exp2();
-        let expected_fresh =
-            parties_f * (inherited + (1.0 + rank_n * secret_second) * sigma2 + (1.0 + rank_n * secret_second) / 4.0);
+        let (sample_delta, per_share) = super::fixtures::expected_pk_variance(
+            inherited,
+            (1.0 + rank_n * secret_second) * sigma2,
+            1.0 + rank_n * secret_second,
+            rank_n * 0.5 * (1.0 + rank_n * secret_second),
+            BASE2K.as_usize(),
+            layout.k().as_usize(),
+            pk_layout.k.as_usize(),
+        );
+        assert!(sample_delta > 0 && sample_delta < BASE2K.as_usize());
+        let expected_fresh = parties_f * per_share;
         super::fixtures::assert_fresh_noise(&res, expected_fresh, layout.k());
         assert!(expected_fresh > parties_f * sigma2);
         let bound = 0.5 * variance.log2() - layout.k().as_usize() as f64 + 0.5;

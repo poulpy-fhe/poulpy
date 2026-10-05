@@ -332,3 +332,38 @@ pub(crate) fn assert_fresh_noise<A: poulpy_core::layouts::LWEInfos>(
         estimate.variance()
     );
 }
+
+/// Independently enumerate the small test precisions. Sampling error quarters
+/// per bit, while the omitted balanced PK tail changes at limb boundaries.
+pub(crate) fn expected_pk_variance(
+    inherited: f64,
+    mut fresh: f64,
+    phase_fold: f64,
+    prefix_amplification: f64,
+    base2k: usize,
+    k: usize,
+    k_pk: usize,
+) -> (usize, f64) {
+    let rounding = phase_fold / 4.0;
+    let tail = 0.5 / (1.0 - (-(base2k as f64)).exp2());
+    for extra_bits in 0..=k_pk - k {
+        let work_limbs = (k + extra_bits).div_ceil(base2k);
+        let work_precision = (work_limbs * base2k).min(k_pk);
+        let truncation = if work_limbs < k_pk.div_ceil(base2k) {
+            prefix_amplification * tail * tail * (-2.0 * (work_precision - k) as f64).exp2()
+        } else {
+            0.0
+        };
+        let inherited_and_truncation = if truncation == 0.0 {
+            inherited
+        } else {
+            (inherited.sqrt() + truncation.sqrt()).powi(2)
+        };
+        let pre_round = inherited_and_truncation + fresh;
+        if pre_round <= rounding || k + extra_bits == k_pk {
+            return (extra_bits, pre_round + if work_precision > k { rounding } else { 0.0 });
+        }
+        fresh *= 0.25;
+    }
+    unreachable!()
+}
