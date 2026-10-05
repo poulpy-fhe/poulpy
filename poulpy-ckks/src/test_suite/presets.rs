@@ -96,9 +96,15 @@ where
 
         let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
-        let context = BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
+        let unprepared =
+            BootstrappingContext::<BE, f64>::compile_unprepared(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
+        let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
+        if prepare_scratch > BE::len_bytes(&scratch.data) {
+            scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
+        }
+        let context = unprepared.prepare(&module, &mut scratch.borrow());
         let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
-        if boot_scratch > scratch_size {
+        if boot_scratch > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_scratch);
         }
 
@@ -265,8 +271,8 @@ where
     }
 }
 
-/// Scratch for context compilation and key preparation, before the compiled
-/// context is available for the bootstrap execution query.
+/// Scratch for unprepared context generation and key preparation.
+/// Query DFT preparation on the unprepared context, then bootstrap execution on the prepared context.
 pub(crate) fn bootstrap_setup_tmp_bytes<BE: Backend>(
     module: &Module<BE>,
     layout: &CKKSLayout,

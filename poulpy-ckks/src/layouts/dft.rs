@@ -833,10 +833,10 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
                         && pt.lt_log_scale() == plan.coeffs_meta().log_delta(),
                     "DFT diagonal layout does not match its plan"
                 );
-                // Preparation reads `size()` limbs, which follows `k`. A diagonal
-                // encoded across more limbs than that would be truncated.
+                // Preparation stores `size()` whole limbs and reports their full bit width.
+                // Preserve the exact encoded width so convolution offsets cannot change.
                 crate::ckks_ensure!(
-                    pt.encoded_k().as_usize().div_ceil(expected_base2k.as_usize()) == pt.size(),
+                    pt.encoded_k().as_usize() == pt.size() * expected_base2k.as_usize(),
                     "DFT diagonal is encoded across {} bits but its precision {} selects {} limbs",
                     pt.encoded_k().as_usize(),
                     pt.k().as_usize(),

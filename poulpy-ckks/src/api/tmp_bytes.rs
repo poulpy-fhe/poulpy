@@ -6,10 +6,11 @@ use poulpy_hal::layouts::Backend;
 /// operation sets, including the selected copy implementation.
 ///
 /// Pass layouts covering the widest live ciphertext and plaintext operands in
-/// the intended pipeline. These are shared bounds for polynomial evaluation
-/// and homomorphic DFT compositions; specialized implementations of those
-/// contracts must fit the same bound. EvalMod has its own selected query because
-/// its working precision depends on the compiled plan.
+/// the intended pipeline. These are shared bounds for polynomial evaluation.
+/// DFT preparation and evaluation require their selected matrix-specific queries,
+/// [`crate::api::CKKSDFTOps::ckks_prepare_dft_matrix_tmp_bytes`] and
+/// [`crate::api::CKKSDFTOps::ckks_dft_tmp_bytes`], including format wrappers.
+/// EvalMod has its own selected query because its working precision depends on the compiled plan.
 pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     /// Returns a scratch size large enough for the common CKKS workflow using
     /// ciphertext ops, plaintext ops, encryption/decryption, multiplication,
@@ -22,9 +23,9 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         P: CKKSInfos;
 
     /// Returns a scratch size large enough for [`Self::ckks_all_ops_tmp_bytes`]
-    /// plus automorphism-key setup, rotation, and prepared or streamed
-    /// homomorphic DFT evaluation. Rotation also bounds the standard-only
-    /// conjugation.
+    /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations.
+    /// Rotation also bounds the standard-only conjugation.
+    /// Query DFT preparation and evaluation separately for the selected backend implementation.
     fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, tsk_infos: &T, atk_infos: &A, pt_prec: &P) -> usize
     where
         C: CKKSCtBounds,

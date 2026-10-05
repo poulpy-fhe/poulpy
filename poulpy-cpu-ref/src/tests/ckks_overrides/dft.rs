@@ -150,6 +150,76 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
     assert!(rejection(vec![diagonal(0, k, false), diagonal(1, k, true)]).contains("slot kind"));
 }
 
+#[test]
+fn checked_dft_construction_preserves_exact_encoded_width() {
+    use poulpy_ckks::api::{Diagonal, GiantStep};
+    use poulpy_ckks::layouts::DFTType;
+    use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank, TorusPrecision};
+
+    // A downstream operand may declare a width narrower than its one-limb allocation.
+    struct DiagonalWidth(usize);
+    impl LWEInfos for DiagonalWidth {
+        fn n(&self) -> Degree {
+            64usize.into()
+        }
+        fn base2k(&self) -> Base2K {
+            16usize.into()
+        }
+        fn k(&self) -> TorusPrecision {
+            14usize.into()
+        }
+        fn max_size(&self) -> usize {
+            1
+        }
+    }
+    impl GLWEInfos for DiagonalWidth {
+        fn rank(&self) -> Rank {
+            0usize.into()
+        }
+    }
+    impl IntPolyInfos for DiagonalWidth {
+        fn encoded_k(&self) -> TorusPrecision {
+            self.0.into()
+        }
+    }
+    impl LtDiagonalMeta for DiagonalWidth {
+        fn lt_log_scale(&self) -> usize {
+            12
+        }
+        fn lt_slots(&self) -> poulpy_ckks::SlotsKind {
+            poulpy_ckks::SlotsKind::Complex
+        }
+    }
+    let module = Module::<FFT64Ref>::new(64);
+    let plan = DFTPlan::new(
+        DFTType::Encode,
+        vec![(1, 1)],
+        DFTOutputFormat::Standard,
+        CoeffsMeta::from_delta_budget(12, 2),
+    )
+    .unwrap();
+    let factors = |width| {
+        vec![LinearTransformation {
+            baby_steps: vec![0],
+            giant_steps: vec![GiantStep {
+                rot: 0,
+                diagonals: vec![Diagonal {
+                    baby: 0,
+                    plaintext: DiagonalWidth(width),
+                }],
+            }],
+        }]
+    };
+    let matrix =
+        DFTMatrix::<FFT64Ref, Encode, Standard, _>::try_from_factor_operands(&module, plan.clone(), factors(16)).unwrap();
+    let error = DFTMatrix::<FFT64Ref, Encode, Standard, _>::try_from_factor_operands(&module, plan, factors(14))
+        .err()
+        .expect("preparation would change the encoded width from 14 to 16 bits");
+    assert!(error.to_string().contains("is encoded across 14 bits"));
+    assert!(matrix.try_with_factor_operands(&module, factors(14)).is_err());
+    assert!(matrix.try_with_factor_operands(&module, factors(16)).is_ok());
+}
+
 use super::OverrideBackend;
 use poulpy_ckks::api::LtDiagonalMeta;
 use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
@@ -348,13 +418,16 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         plan(poulpy_ckks::layouts::DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
     )
     .unwrap();
-    let context = BootstrappingContext::<OverrideBackend, f64>::compile(
+    let unprepared = BootstrappingContext::<OverrideBackend, f64>::compile_unprepared(
         &module,
         16usize.into(),
         &plan,
         &mut ScratchOwned::<OverrideBackend>::alloc(1 << 20).borrow(),
     )
     .unwrap();
+    let prepare_bytes = unprepared.prepare_tmp_bytes(&module);
+    assert!(prepare_bytes >= DFT_PREPARE_SCRATCH);
+    let context = unprepared.prepare(&module, &mut ScratchOwned::<OverrideBackend>::alloc(prepare_bytes).borrow());
     let key = poulpy_core::layouts::GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
