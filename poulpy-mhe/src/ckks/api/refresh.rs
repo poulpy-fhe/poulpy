@@ -26,7 +26,9 @@ use crate::ckks::layouts::CKKSRefreshShareOwned;
 /// of magnitude `B` with the input noise and the aggregate flood: over `n`
 /// coefficients, a shift by it moves `M_i` by at most `n * B / 2^log_bound` in
 /// statistical distance, so `log_bound >= log2(B) + log2(n) + lambda`. No wrap
-/// needs `B + parties * 2^log_bound < 2^(k - 1)` coefficientwise.
+/// needs `B + parties * 2^log_bound < 2^(k - 1)` coefficientwise. The caller
+/// sizes `log_bound`; neither bound is checked, as `B` and the party count are
+/// unknown here.
 ///
 /// The `flood`, drawn from `source_smudge` at the ciphertext's precision, is
 /// added to the encryption-to-shares part alone, so it survives the
