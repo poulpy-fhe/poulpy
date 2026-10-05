@@ -22,8 +22,8 @@ use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
 };
 
 use poulpy_core::{GLWENoise, layouts::LWEInfos};
@@ -33,15 +33,15 @@ use crate::{
     CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan,
-        DFTType, Decode, DftFormat, Encode, Repack, Split, Standard,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
+        DFTOutputFormat, DFTPlan, DFTType, Decode, DftFormat, Encode, Repack, Split, Standard,
     },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
-            ckks_encrypt_pt, gen_atk, gen_sk_with_raw, test_vector_1,
+            ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
         },
     },
 };
@@ -112,6 +112,36 @@ fn factor_meta(log_delta: usize) -> CoeffsMeta {
 /// (no merging), BSGS width 2.
 fn plan(log_slots: usize, kind: DFTType, format: DFTOutputFormat, log_delta: usize) -> DFTPlan {
     DFTPlan::new(kind, vec![(1usize, 2usize); log_slots], format, factor_meta(log_delta)).unwrap()
+}
+
+/// Prepares a test matrix and grows scratch for the selected preparation and evaluation implementations.
+fn prepare_dft<BE, Dir, Fmt>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    matrix: &DFTMatrix<BE, Dir, Fmt>,
+    scratch: &mut ScratchOwned<BE>,
+) -> DFTMatrixPrepared<BE, Dir, Fmt>
+where
+    BE: TestContextBackend,
+    Module<BE>: CKKSDFTOps<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let prepare_bytes = module.ckks_prepare_dft_matrix_tmp_bytes(matrix);
+    if prepare_bytes > BE::len_bytes(&scratch.data) {
+        *scratch = ScratchOwned::<BE>::alloc(prepare_bytes);
+    }
+    let prepared = module.ckks_prepare_dft_matrix(matrix, &mut scratch.borrow());
+    let layout = ckks_spec(
+        params.n,
+        params.base2k,
+        params.prec().log_delta(),
+        params.k - params.prec().log_delta(),
+    );
+    let eval_bytes = module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &params.atk_layout());
+    if eval_bytes > BE::len_bytes(&scratch.data) {
+        *scratch = ScratchOwned::<BE>::alloc(eval_bytes);
+    }
+    prepared
 }
 
 /// Bit-reversal permutation over `DENSE_LOG_SLOTS` bits (poulpy's slot map order).
@@ -195,7 +225,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = module.ckks_prepare_dft_matrix(&enc_lt, &mut scratch.borrow());
+    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -270,7 +300,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = module.ckks_prepare_dft_matrix(&dec_lt, &mut scratch.borrow());
+    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -345,7 +375,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = module.ckks_prepare_dft_matrix(&enc_lt, &mut scratch.borrow());
+    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -429,7 +459,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = module.ckks_prepare_dft_matrix(&enc_lt, &mut scratch.borrow());
+    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
     assert!(enc_dft.is_sparse(), "expected sparse repack path");
 
     let order = module.cyclotomic_order();
@@ -522,7 +552,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = module.ckks_prepare_dft_matrix(&dec_lt, &mut scratch.borrow());
+    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -610,7 +640,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = module.ckks_prepare_dft_matrix(&dec_lt, &mut scratch.borrow());
+    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
     assert!(dec_dft.is_sparse(), "expected sparse repack path");
 
     let order = module.cyclotomic_order();

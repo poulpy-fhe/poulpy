@@ -8,11 +8,11 @@ use poulpy_hal::{
     oep::HalModuleImpl,
 };
 
-use crate::{family::Family, fft::Fft64, ntt::Ntt4x30, ring::OracleRing};
+use crate::{family::DFTFamily, fft::Fft64, ntt::Ntt4x30, ring::OracleRing};
 
 /// Scalar correctness oracle over the transform family `F` and the ring `R`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Oracle<F: Family, R: OracleRing = Standard>(PhantomData<(F, R)>);
+pub struct Oracle<F: DFTFamily, R: OracleRing = Standard>(PhantomData<(F, R)>);
 
 /// Oracle using a scalar `f64` FFT.
 pub type FFT64Oracle<R = Standard> = Oracle<Fft64, R>;
@@ -28,12 +28,12 @@ pub type NTT4x30CIOracle = NTT4x30Oracle<ConjugateInvariant>;
 
 /// Transform tables for every standard degree up to that of the module degree,
 /// by `log2(n)`.
-pub struct Handle<F: Family> {
+pub struct Handle<F: DFTFamily> {
     tables: Vec<F::Table>,
 }
 
 /// The transform tables of `module` for degree `n`.
-pub(crate) fn table<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, n: usize) -> &F::Table {
+pub(crate) fn table<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, n: usize) -> &F::Table {
     let handle: &Handle<F> = unsafe { &*module.ptr() };
     assert!(
         n.is_power_of_two() && (n.ilog2() as usize) < handle.tables.len(),
@@ -42,7 +42,7 @@ pub(crate) fn table<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, n: 
     &handle.tables[n.ilog2() as usize]
 }
 
-unsafe impl<F: Family, R: OracleRing> HalModuleImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
     fn new(n: u64) -> Module<Self> {
         assert!(n.is_power_of_two(), "module degree must be a power of two, got {n}");
         let top = R::std_degree(n as usize).ilog2();
@@ -52,9 +52,9 @@ unsafe impl<F: Family, R: OracleRing> HalModuleImpl for Oracle<F, R> {
     }
 }
 
-impl<F: Family, R: OracleRing> poulpy_hal::execution::ScratchWorkers for Oracle<F, R> {}
+impl<F: DFTFamily, R: OracleRing> poulpy_hal::execution::ScratchWorkers for Oracle<F, R> {}
 
-impl<F: Family, R: OracleRing> Backend for Oracle<F, R> {
+impl<F: DFTFamily, R: OracleRing> Backend for Oracle<F, R> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

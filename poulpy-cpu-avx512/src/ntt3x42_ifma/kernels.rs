@@ -2,9 +2,9 @@
 //!
 //! Forward: Cooley-Tukey, natural-order input -> bit-reversed output. Inverse:
 //! Gentleman-Sande, bit-reversed -> natural, with the `1/n` scale folded in.
-//! Butterfly values are kept under a lazy reduction (`[0, 4q)` forward,
-//! `[0, 2q)` inverse); the forward kernel ends with a single pass renormalising
-//! to `[0, q)`.
+//! Lazy output ranges are `[0, 4q)` forward and `[0, 2q)` inverse. Canonical
+//! forward output adds a final pass reducing to `[0, q)`. SIMD twiddles are
+//! reconstructed from their precomputed Harvey quotients.
 
 // ----------------------------------------------------------------------
 // DISCLAIMER
@@ -33,8 +33,8 @@ use core::arch::x86_64::{
 use poulpy_hal::layouts::Ring;
 
 use crate::ntt3x42_ifma::{
-    primes::{PrimeSetNtt3x42Ifma, modq_pow64},
-    tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
+    primes::PrimeSetNtt3x42Ifma,
+    tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul},
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ pub(crate) unsafe fn cond_sub_2q_si512(x: __m512i, q2: __m512i) -> __m512i {
 
 /// Harvey modular multiply — 8 lanes (2 coefficients).
 ///
-/// Identical low-52 trick as the 256-bit variant: 3 IFMA + sub + mask.
+/// Accumulate with `-q` modulo 2^52 to fold the subtraction into IFMA.
 #[inline]
 #[target_feature(enable = "avx512ifma")]
 pub(crate) unsafe fn harvey_modmul_si512(a: __m512i, omega: __m512i, omega_quot: __m512i, q: __m512i) -> __m512i {
@@ -91,21 +91,27 @@ pub(crate) unsafe fn harvey_modmul_si512(a: __m512i, omega: __m512i, omega_quot:
     let mask52 = _mm512_set1_epi64((1i64 << 52) - 1);
     let qhat = _mm512_madd52hi_epu64(zero, a, omega_quot);
     let prod_lo52 = _mm512_madd52lo_epu64(zero, a, omega);
-    let qq_lo52 = _mm512_madd52lo_epu64(zero, qhat, q);
-    _mm512_and_si512(_mm512_sub_epi64(prod_lo52, qq_lo52), mask52)
+    let neg_q = _mm512_sub_epi64(zero, q);
+    let reduced = _mm512_madd52lo_epu64(prod_lo52, qhat, neg_q);
+    _mm512_and_si512(reduced, mask52)
+}
+
+// For odd q and 0 < w < q < 2^52, floor(floor(w * 2^52 / q) * q / 2^52) = w - 1.
+#[inline]
+#[target_feature(enable = "avx512ifma")]
+unsafe fn recover_root_si512(quotient: __m512i, q: __m512i) -> __m512i {
+    _mm512_madd52hi_epu64(_mm512_set1_epi64(1), quotient, q)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Forward NTT (Cooley-Tukey, natural -> bit-reversed)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Forward (decimation-in-time) radix-2 butterfly, lazy `[0, 4q)`: given `x`,
-/// `y` in `[0, 4q)`, twiddle `w` (`w_precon` its Harvey/Shoup quotient) and
-/// `q2 = 2q`, returns `(x', y')` in `[0, 4q)` with `x' = X + WY`,
-/// `y' = X - WY (mod q)`.
+// Sums grow by at most 2q per stage: below 33q < 2^48 at n <= 2^16.
+// The final tail narrows them before returning the public [0, 4q) result.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512f")]
-unsafe fn fwd_butterfly_si512(
+unsafe fn fwd_butterfly_unreduced(
     x: __m512i,
     y: __m512i,
     w: __m512i,
@@ -114,10 +120,9 @@ unsafe fn fwd_butterfly_si512(
     q2: __m512i,
 ) -> (__m512i, __m512i) {
     unsafe {
-        let x_red = cond_sub_2q_si512(x, q2);
         let t = harvey_modmul_si512(y, w, w_precon, q);
-        let x_out = _mm512_add_epi64(x_red, t);
-        let y_out = _mm512_add_epi64(x_red, _mm512_sub_epi64(q2, t)); // both [0, 4q)
+        let x_out = _mm512_add_epi64(x, t);
+        let y_out = _mm512_add_epi64(x, _mm512_sub_epi64(q2, t));
         (x_out, y_out)
     }
 }
@@ -196,6 +201,42 @@ unsafe fn write_fwd_interleaved_t1(arg1: __m512i, arg2: __m512i, out: *mut u64) 
 /// Sub-transforms larger than this split depth-first for cache locality.
 const BASE_NTT_SIZE: usize = 2048;
 
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn fwd_broadcast_pair(ptr: *mut u64, t: usize, m: usize, precon: &[u64], wi: usize, q: __m512i, q2: __m512i) {
+    unsafe {
+        let quarter = t / 2;
+        for i in 0..m {
+            let wp0 = _mm512_set1_epi64(precon[wi + i] as i64);
+            let w0 = recover_root_si512(wp0, q);
+            let wp1 = _mm512_set1_epi64(precon[2 * (wi + i)] as i64);
+            let w1 = recover_root_si512(wp1, q);
+            let wp2 = _mm512_set1_epi64(precon[2 * (wi + i) + 1] as i64);
+            let w2 = recover_root_si512(wp2, q);
+            let group = ptr.add(i * 2 * t);
+            for j in (0..quarter).step_by(8) {
+                let p0 = group.add(j) as *mut __m512i;
+                let p1 = group.add(j + quarter) as *mut __m512i;
+                let p2 = group.add(j + 2 * quarter) as *mut __m512i;
+                let p3 = group.add(j + 3 * quarter) as *mut __m512i;
+                let a = _mm512_loadu_si512(p0);
+                let b = _mm512_loadu_si512(p1);
+                let c = _mm512_loadu_si512(p2);
+                let d = _mm512_loadu_si512(p3);
+                let (a, c) = fwd_butterfly_unreduced(a, c, w0, wp0, q, q2);
+                let (b, d) = fwd_butterfly_unreduced(b, d, w0, wp0, q, q2);
+                let (a, b) = fwd_butterfly_unreduced(a, b, w1, wp1, q, q2);
+                let (c, d) = fwd_butterfly_unreduced(c, d, w2, wp2, q, q2);
+                _mm512_storeu_si512(p0, a);
+                _mm512_storeu_si512(p1, b);
+                _mm512_storeu_si512(p2, c);
+                _mm512_storeu_si512(p3, d);
+            }
+        }
+    }
+}
+
 /// Breadth-first forward transform of one sub-plane of length `n_sub`.
 ///
 /// `(depth, half)` locate the sub-plane within the depth-first recursion so the
@@ -213,7 +254,6 @@ unsafe fn fwd_plane_base(
     half: usize,
     root: &[u64],
     precon: &[u64],
-    tail: &[u64],
     tail_p: &[u64],
     q: u64,
     q2: u64,
@@ -225,13 +265,18 @@ unsafe fn fwd_plane_base(
         let mut t = n_sub / 2;
         let mut m = 1usize;
         let mut w_idx = (m << depth) + half * m;
+        while t >= 16 {
+            fwd_broadcast_pair(ptr, t, m, precon, w_idx, q_v, q2_v);
+            t >>= 2;
+            m <<= 2;
+            w_idx <<= 2;
+        }
         while t >= 8 {
             let mut j1 = 0usize;
             for i in 0..m {
-                let w = root[w_idx + i];
                 let w_precon = precon[w_idx + i];
-                let w_v = _mm512_set1_epi64(w as i64);
                 let w_precon_v = _mm512_set1_epi64(w_precon as i64);
+                let w_v = recover_root_si512(w_precon_v, q_v);
 
                 // t/8 independent vector butterflies over (j, j+t).
                 let mut j = j1;
@@ -240,7 +285,7 @@ unsafe fn fwd_plane_base(
                     let yp = ptr.add(j + t) as *mut __m512i;
                     let x_in = _mm512_loadu_si512(xp as *const __m512i);
                     let y_in = _mm512_loadu_si512(yp as *const __m512i);
-                    let x_red = cond_sub_2q_si512(x_in, q2_v);
+                    let x_red = x_in;
                     let tt = harvey_modmul_si512(y_in, w_v, w_precon_v, q_v);
                     let x_out = _mm512_add_epi64(x_red, tt);
                     let y_out = _mm512_sub_epi64(_mm512_add_epi64(x_red, q2_v), tt);
@@ -277,17 +322,15 @@ unsafe fn fwd_plane_base(
             // t = 4 stage, m = n_sub/8. Distance-4 root block.
             {
                 let off = tail_offset(w_idx);
-                let mut w_ptr = tail.as_ptr().add(off);
                 let mut wp_ptr = tail_p.as_ptr().add(off);
                 let mut j1 = 0usize;
                 while j1 < n_sub {
                     let (vx, vy) = load_fwd_interleaved_t4(ptr.add(j1));
-                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
                     let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
-                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    let w_v = recover_root_si512(wp_v, q_v);
+                    let (vx, vy) = fwd_butterfly_unreduced(vx, vy, w_v, wp_v, q_v, q2_v);
                     _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
                     _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
-                    w_ptr = w_ptr.add(8);
                     wp_ptr = wp_ptr.add(8);
                     j1 += 16;
                 }
@@ -296,17 +339,15 @@ unsafe fn fwd_plane_base(
             // t = 2 stage, m = n_sub/4. Distance-2 root block.
             {
                 let off = tail_offset(w_idx << 1);
-                let mut w_ptr = tail.as_ptr().add(off);
                 let mut wp_ptr = tail_p.as_ptr().add(off);
                 let mut j1 = 0usize;
                 while j1 < n_sub {
                     let (vx, vy) = load_fwd_interleaved_t2(ptr.add(j1));
-                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
                     let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
-                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    let w_v = recover_root_si512(wp_v, q_v);
+                    let (vx, vy) = fwd_butterfly_unreduced(vx, vy, w_v, wp_v, q_v, q2_v);
                     _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
                     _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
-                    w_ptr = w_ptr.add(8);
                     wp_ptr = wp_ptr.add(8);
                     j1 += 16;
                 }
@@ -315,16 +356,18 @@ unsafe fn fwd_plane_base(
             // t = 1 stage, m = n_sub/2. Distance-1 root block.
             {
                 let off = tail_offset(w_idx << 2);
-                let mut w_ptr = tail.as_ptr().add(off);
                 let mut wp_ptr = tail_p.as_ptr().add(off);
                 let mut j1 = 0usize;
                 while j1 < n_sub {
                     let (vx, vy) = load_fwd_interleaved_t1(ptr.add(j1));
-                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
                     let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
-                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    let w_v = recover_root_si512(wp_v, q_v);
+                    // Reduce by multiplying by one; its low product is already vx.
+                    let quotient = _mm512_madd52hi_epu64(_mm512_setzero_si512(), vx, _mm512_set1_epi64(precon[0] as i64));
+                    let vx = _mm512_madd52lo_epu64(vx, quotient, _mm512_sub_epi64(_mm512_setzero_si512(), q_v));
+                    let vx = _mm512_and_si512(vx, _mm512_set1_epi64((1i64 << 52) - 1));
+                    let (vx, vy) = fwd_butterfly_unreduced(vx, vy, w_v, wp_v, q_v, q2_v);
                     write_fwd_interleaved_t1(vx, vy, ptr.add(j1));
-                    w_ptr = w_ptr.add(8);
                     wp_ptr = wp_ptr.add(8);
                     j1 += 16;
                 }
@@ -359,22 +402,18 @@ unsafe fn fwd_plane_base(
 
 /// Depth-first forward transform of one sub-plane of length `n_sub`.
 ///
-/// For `n_sub > BASE_NTT_SIZE`, runs the single top broadcast stage (distance
-/// `n_sub/2`, one twiddle group) then recurses into the two halves. For
-/// `n_sub <= BASE_NTT_SIZE`, falls through to the breadth-first base case.
-///
-/// `ILM` (depth-0 only): top-stage input is canonical, so its precondition is skipped.
+/// Large planes pair their top stages and recurse into four children; the
+/// remaining split uses two children. Cache-sized planes use the base case.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn fwd_plane<const ILM: bool>(
+unsafe fn fwd_plane(
     ptr: *mut u64,
     n_sub: usize,
     depth: u32,
     half: usize,
     root: &[u64],
     precon: &[u64],
-    tail: &[u64],
     tail_p: &[u64],
     q: u64,
     q2: u64,
@@ -383,25 +422,45 @@ unsafe fn fwd_plane<const ILM: bool>(
 ) {
     unsafe {
         if n_sub <= BASE_NTT_SIZE {
-            // Base case keeps the precondition (small-n top stage isn't worth a split).
-            fwd_plane_base(ptr, n_sub, depth, half, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+            fwd_plane_base(ptr, n_sub, depth, half, root, precon, tail_p, q, q2, q_v, q2_v);
+            return;
+        }
+
+        if n_sub >= 4 * BASE_NTT_SIZE {
+            let wi = (1usize << depth) + half;
+            fwd_broadcast_pair(ptr, n_sub / 2, 1, precon, wi, q_v, q2_v);
+            let quarter = n_sub / 4;
+            for part in 0..4 {
+                fwd_plane(
+                    ptr.add(part * quarter),
+                    quarter,
+                    depth + 2,
+                    half * 4 + part,
+                    root,
+                    precon,
+                    tail_p,
+                    q,
+                    q2,
+                    q_v,
+                    q2_v,
+                );
+            }
             return;
         }
 
         // Top broadcast stage: distance t = n_sub/2, single twiddle group.
         let t = n_sub / 2;
         let w_idx = (1usize << depth) + half;
-        let w = root[w_idx];
         let w_precon = precon[w_idx];
-        let w_v = _mm512_set1_epi64(w as i64);
         let w_precon_v = _mm512_set1_epi64(w_precon as i64);
+        let w_v = recover_root_si512(w_precon_v, q_v);
         let mut j = 0usize;
         while j < t {
             let xp = ptr.add(j) as *mut __m512i;
             let yp = ptr.add(j + t) as *mut __m512i;
             let x_in = _mm512_loadu_si512(xp as *const __m512i);
             let y_in = _mm512_loadu_si512(yp as *const __m512i);
-            let x_red = if ILM { x_in } else { cond_sub_2q_si512(x_in, q2_v) };
+            let x_red = x_in;
             let tt = harvey_modmul_si512(y_in, w_v, w_precon_v, q_v);
             let x_out = _mm512_add_epi64(x_red, tt);
             let y_out = _mm512_sub_epi64(_mm512_add_epi64(x_red, q2_v), tt);
@@ -410,17 +469,16 @@ unsafe fn fwd_plane<const ILM: bool>(
             j += 8;
         }
 
-        // Recurse into the two halves (inputs now [0, 4q): no ILM).
+        // Recurse into the two halves with unreduced sums.
         let half_n = n_sub / 2;
-        fwd_plane::<false>(ptr, half_n, depth + 1, half * 2, root, precon, tail, tail_p, q, q2, q_v, q2_v);
-        fwd_plane::<false>(
+        fwd_plane(ptr, half_n, depth + 1, half * 2, root, precon, tail_p, q, q2, q_v, q2_v);
+        fwd_plane(
             ptr.add(half_n),
             half_n,
             depth + 1,
             half * 2 + 1,
             root,
             precon,
-            tail,
             tail_p,
             q,
             q2,
@@ -431,15 +489,15 @@ unsafe fn fwd_plane<const ILM: bool>(
 }
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, root: &[u64], precon: &[u64], q_v: __m512i, q2_v: __m512i) {
+unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, precon: &[u64], q_v: __m512i, q2_v: __m512i) {
     unsafe {
         let quarter = N / 4;
-        let w0 = _mm512_set1_epi64(root[1] as i64);
         let wp0 = _mm512_set1_epi64(precon[1] as i64);
-        let w1 = _mm512_set1_epi64(root[2] as i64);
+        let w0 = recover_root_si512(wp0, q_v);
         let wp1 = _mm512_set1_epi64(precon[2] as i64);
-        let w2 = _mm512_set1_epi64(root[3] as i64);
+        let w1 = recover_root_si512(wp1, q_v);
         let wp2 = _mm512_set1_epi64(precon[3] as i64);
+        let w2 = recover_root_si512(wp2, q_v);
 
         let mut j = 0usize;
         while j < quarter {
@@ -461,8 +519,7 @@ unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, root: &[u64], precon: &[u64], 
 
             let t1 = harvey_modmul_si512(u1, w1, wp1, q_v);
             let t3 = harvey_modmul_si512(u3, w2, wp2, q_v);
-            let u0 = cond_sub_2q_si512(u0, q2_v);
-            let u2 = cond_sub_2q_si512(u2, q2_v);
+
             _mm512_storeu_si512(p0, _mm512_add_epi64(u0, t1));
             _mm512_storeu_si512(p1, _mm512_sub_epi64(_mm512_add_epi64(u0, q2_v), t1));
             _mm512_storeu_si512(p2, _mm512_add_epi64(u2, t3));
@@ -505,33 +562,28 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
 
             let ptr = plane.as_mut_ptr();
 
-            // Duplicated tail roots for the t = 4, 2, 1 stages (empty for n < 16).
-            let (tail, tail_p): (&[u64], &[u64]) = if n >= 16 {
+            let tail_p = if n >= 16 {
                 let stride = 3 * n / 2;
-                (
-                    &table.tail_root[k * stride..(k + 1) * stride],
-                    &table.tail_quot[k * stride..(k + 1) * stride],
-                )
+                &table.tail_quot[k * stride..(k + 1) * stride]
             } else {
-                (&[], &[])
+                &[]
             };
 
             if n == 1 << 15 || n == 1 << 16 {
                 if n == 1 << 15 {
-                    fwd_top2::<{ 1 << 15 }>(ptr, root, precon, q_v, q2_v);
+                    fwd_top2::<{ 1 << 15 }>(ptr, precon, q_v, q2_v);
                 } else {
-                    fwd_top2::<{ 1 << 16 }>(ptr, root, precon, q_v, q2_v);
+                    fwd_top2::<{ 1 << 16 }>(ptr, precon, q_v, q2_v);
                 }
                 let quarter = n / 4;
                 for part in 0..4 {
-                    fwd_plane::<false>(
+                    fwd_plane(
                         ptr.add(part * quarter),
                         quarter,
                         2,
                         part,
                         root,
                         precon,
-                        tail,
                         tail_p,
                         q,
                         q2,
@@ -540,7 +592,7 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
                     );
                 }
             } else {
-                fwd_plane::<true>(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+                fwd_plane(ptr, n, 0, 0, root, precon, tail_p, q, q2, q_v, q2_v);
             }
 
             // Final reduction [0, 4q) -> [0, q), skipped on lazy output.
@@ -690,20 +742,11 @@ unsafe fn load_w_op_t4(arg: *const u64) -> __m512i {
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn inv_broadcast_stage(
-    ptr: *mut u64,
-    t: usize,
-    m: usize,
-    inv: &[u64],
-    ip: &[u64],
-    wi: usize,
-    q_v: __m512i,
-    q2_v: __m512i,
-) {
+unsafe fn inv_broadcast_stage(ptr: *mut u64, t: usize, m: usize, ip: &[u64], wi: usize, q_v: __m512i, q2_v: __m512i) {
     unsafe {
         for i in 0..m {
-            let w_v = _mm512_set1_epi64(inv[wi + i] as i64);
             let wp_v = _mm512_set1_epi64(ip[wi + i] as i64);
+            let w_v = recover_root_si512(wp_v, q_v);
             let j1 = i * (2 * t);
             let mut j = 0usize;
             while j < t {
@@ -720,25 +763,57 @@ unsafe fn inv_broadcast_stage(
     }
 }
 
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn inv_broadcast_pair(ptr: *mut u64, t: usize, m: usize, ip: &[u64], wi: usize, next_wi: usize, q: __m512i, q2: __m512i) {
+    unsafe {
+        for i in 0..m / 2 {
+            let wp0 = _mm512_set1_epi64(ip[wi + 2 * i] as i64);
+            let w0 = recover_root_si512(wp0, q);
+            let wp1 = _mm512_set1_epi64(ip[wi + 2 * i + 1] as i64);
+            let w1 = recover_root_si512(wp1, q);
+            let wp2 = _mm512_set1_epi64(ip[next_wi + i] as i64);
+            let w2 = recover_root_si512(wp2, q);
+            let group = ptr.add(i * 4 * t);
+            let mut j = 0;
+            while j < t {
+                let p0 = group.add(j) as *mut __m512i;
+                let p1 = group.add(j + t) as *mut __m512i;
+                let p2 = group.add(j + 2 * t) as *mut __m512i;
+                let p3 = group.add(j + 3 * t) as *mut __m512i;
+                let a = _mm512_loadu_si512(p0);
+                let b = _mm512_loadu_si512(p1);
+                let c = _mm512_loadu_si512(p2);
+                let d = _mm512_loadu_si512(p3);
+                // First-stage sums stay below 4q; narrow only their combined sum.
+                let q4 = _mm512_add_epi64(q2, q2);
+                let ab = _mm512_add_epi64(a, b);
+                let cd = _mm512_add_epi64(c, d);
+                let b = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(a, q2), b), w0, wp0, q);
+                let d = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(c, q2), d), w1, wp1, q);
+                let a = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(ab, cd), q4), q2);
+                let c = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(ab, q4), cd), w2, wp2, q);
+                let (b, d) = inv_butterfly_si512(b, d, w2, wp2, q, q2);
+                _mm512_storeu_si512(p0, a);
+                _mm512_storeu_si512(p1, b);
+                _mm512_storeu_si512(p2, c);
+                _mm512_storeu_si512(p3, d);
+                j += 8;
+            }
+        }
+    }
+}
+
 /// Breadth-first inverse transform of one sub-plane of length `n_sub`.
 ///
 /// Runs all stages except the single `m = 1` (distance `n_sub/2`) stage, which
 /// the caller performs (a parent recursion level, or the `1/n`-folding final
-/// pass at depth 0). `(depth, half)` thread the running root index `wi` into the
-/// shared full-`n` `inv`/`ip` tables; returns `wi` for the deferred stage.
+/// pass at depth 0). `(depth, half)` locate roots in the shared full-`n` tables.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn inv_plane_base(
-    ptr: *mut u64,
-    n_sub: usize,
-    depth: u32,
-    half: usize,
-    inv: &[u64],
-    ip: &[u64],
-    q_v: __m512i,
-    q2_v: __m512i,
-) -> usize {
+unsafe fn inv_plane_base(ptr: *mut u64, n_sub: usize, depth: u32, half: usize, ip: &[u64], q_v: __m512i, q2_v: __m512i) {
     unsafe {
         let mut m = n_sub / 2;
         let mut wi = 1 + m * half;
@@ -751,8 +826,8 @@ unsafe fn inv_plane_base(
             let mut iter = 0usize;
             while iter < m / 8 {
                 let (vx, vy) = load_inv_interleaved_t1(ptr.add(j1));
-                let vw = _mm512_loadu_si512(inv.as_ptr().add(wi + 8 * iter) as *const __m512i);
                 let vwp = _mm512_loadu_si512(ip.as_ptr().add(wi + 8 * iter) as *const __m512i);
+                let vw = recover_root_si512(vwp, q_v);
                 let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
                 _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
                 _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
@@ -770,8 +845,8 @@ unsafe fn inv_plane_base(
             let mut iter = 0usize;
             while iter < m / 4 {
                 let (vx, vy) = load_inv_interleaved_t2(ptr.add(j1));
-                let vw = load_w_op_t2(inv.as_ptr().add(wi + 4 * iter));
                 let vwp = load_w_op_t2(ip.as_ptr().add(wi + 4 * iter));
+                let vw = recover_root_si512(vwp, q_v);
                 let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
                 _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
                 _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
@@ -789,8 +864,8 @@ unsafe fn inv_plane_base(
             let mut iter = 0usize;
             while iter < m / 2 {
                 let (vx, vy) = load_inv_interleaved_t4(ptr.add(j1));
-                let vw = load_w_op_t4(inv.as_ptr().add(wi + 2 * iter));
                 let vwp = load_w_op_t4(ip.as_ptr().add(wi + 2 * iter));
+                let vw = recover_root_si512(vwp, q_v);
                 let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
                 write_inv_interleaved_t4(vx, vy, ptr.add(j1));
                 j1 += 16;
@@ -803,66 +878,56 @@ unsafe fn inv_plane_base(
 
         // Broadcast-twiddle stages: t = 8, 16, …, n_sub/4 (m = n_sub/16 down to 2).
         let mut t = 8usize;
+        while m >= 4 {
+            inv_broadcast_pair(ptr, t, m, ip, wi, wi + wi_delta, q_v, q2_v);
+            m >>= 2;
+            wi += wi_delta + (wi_delta >> 1);
+            wi_delta >>= 2;
+            t *= 4;
+        }
         while m > 1 {
-            inv_broadcast_stage(ptr, t, m, inv, ip, wi, q_v, q2_v);
+            inv_broadcast_stage(ptr, t, m, ip, wi, q_v, q2_v);
             m >>= 1;
             wi += wi_delta;
             wi_delta >>= 1;
             t *= 2;
         }
-
-        // Deferred m = 1 (distance n_sub/2) stage's root index.
-        wi
     }
 }
 
-/// Depth-first inverse transform of one sub-plane of length `n_sub`.
-///
-/// For `n_sub > BASE_NTT_SIZE`, recurses into the two halves first, then runs
-/// the merge stage (`m = 2`, distance `n_sub/4`); otherwise runs the base case.
-/// Either way the single `m = 1` (distance `n_sub/2`) stage is deferred to the
-/// caller; its root index is returned.
+/// Depth-first inverse transform, splitting into two or four cache-sized children.
+/// The final distance-`n_sub/2` stage is deferred to the caller.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn inv_plane(
-    ptr: *mut u64,
-    n_sub: usize,
-    depth: u32,
-    half: usize,
-    inv: &[u64],
-    ip: &[u64],
-    q_v: __m512i,
-    q2_v: __m512i,
-) -> usize {
+unsafe fn inv_plane(ptr: *mut u64, n_sub: usize, depth: u32, half: usize, ip: &[u64], q_v: __m512i, q2_v: __m512i) {
     unsafe {
         if n_sub <= BASE_NTT_SIZE {
-            return inv_plane_base(ptr, n_sub, depth, half, inv, ip, q_v, q2_v);
+            inv_plane_base(ptr, n_sub, depth, half, ip, q_v, q2_v);
+            return;
         }
-
-        let half_n = n_sub / 2;
-        inv_plane(ptr, half_n, depth + 1, half * 2, inv, ip, q_v, q2_v);
-        inv_plane(ptr.add(half_n), half_n, depth + 1, half * 2 + 1, inv, ip, q_v, q2_v);
-
-        // Advance the root index past the stages the halves already ran, then
-        // run the single merge stage (m = 2, distance n_sub/4) that finishes
-        // both halves' deferred top butterflies.
-        let mut m = n_sub / 2;
-        let mut wi = 1 + m * half;
-        let mut wi_delta = (m / 2) * ((1usize << (depth + 1)) - half);
-        let mut t = 1usize;
-        while m > 2 {
-            t <<= 1;
-            wi += wi_delta;
-            wi_delta >>= 1;
-            m >>= 1;
+        let split_depth = if n_sub >= 4 * BASE_NTT_SIZE { 2 } else { 1 };
+        let parts = 1 << split_depth;
+        let child_n = n_sub / parts;
+        for part in 0..parts {
+            inv_plane(
+                ptr.add(part * child_n),
+                child_n,
+                depth + split_depth,
+                half * parts + part,
+                ip,
+                q_v,
+                q2_v,
+            );
         }
-        // m == 2: merge stage at distance t = n_sub/4.
-        inv_broadcast_stage(ptr, t, 2, inv, ip, wi, q_v, q2_v);
-        wi += wi_delta;
-
-        // Deferred m = 1 (distance n_sub/2) stage's root index.
-        wi
+        let stride = (1usize << (depth + 1)) - half;
+        // At m groups, the root offset is 1 + full_n - m * stride.
+        let wi = 1 + (n_sub << depth) - parts * stride;
+        if parts == 4 {
+            inv_broadcast_pair(ptr, n_sub / 8, 4, ip, wi, wi + 2 * stride, q_v, q2_v);
+        } else {
+            inv_broadcast_stage(ptr, n_sub / 4, 2, ip, wi, q_v, q2_v);
+        }
     }
 }
 
@@ -874,10 +939,8 @@ unsafe fn inv_plane(
 /// inverse roots from `table.inv_root` / `table.inv_quot`. Input must be in
 /// `[0, q)`; output is left in `[0, 2q)` (congruent mod q to the natural result).
 ///
-/// Each plane runs [`inv_plane`] (depth-first split above `BASE_NTT_SIZE`) down
-/// to the single `m = 1` (distance `n/2`) stage, which folds the `1/n` scale:
-/// the diff lane uses `W' = (W·n_inv) mod q`, the sum lane is scaled by `n_inv`,
-/// avoiding a separate plane sweep.
+/// For `n >= 32`, the last two stages share a pass with the `1/n` scale:
+/// the diff lanes use `W' = (W·n_inv) mod q`, and the sum lanes use `n_inv`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P, impl Ring>, data: &mut [u64]) {
     let n = table.n;
@@ -924,42 +987,75 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
                 }
             } else {
                 // 1/n scale, folded into the final m == 1 stage below.
-                let n_inv = modq_pow64(n as u64, -1, q);
-                let n_inv_quot = harvey_quotient(n_inv, q);
+                let n_inv = table.n_inv[k];
+                let n_inv_quot = table.n_inv_quot[k];
                 let n_inv_v = _mm512_set1_epi64(n_inv as i64);
                 let n_inv_quot_v = _mm512_set1_epi64(n_inv_quot as i64);
 
-                // Depth-first transform of the full plane, down to (but not
-                // including) the single m == 1 stage. Returns that stage's root
-                // index.
-                let wi = inv_plane(ptr, n, 0, 0, inv, ip, q_v, q2_v);
+                let w_scaled_v = _mm512_set1_epi64(table.final_root[k] as i64);
+                let wp_scaled_v = _mm512_set1_epi64(table.final_quot[k] as i64);
+                if n >= 32 {
+                    let quarter = n / 4;
+                    inv_plane(ptr, n / 2, 1, 0, ip, q_v, q2_v);
+                    inv_plane(ptr.add(n / 2), n / 2, 1, 1, ip, q_v, q2_v);
+                    let w0 = _mm512_set1_epi64(inv[n - 3] as i64);
+                    let wp0 = _mm512_set1_epi64(ip[n - 3] as i64);
+                    let w1 = _mm512_set1_epi64(inv[n - 2] as i64);
+                    let wp1 = _mm512_set1_epi64(ip[n - 2] as i64);
+                    for j in (0..quarter).step_by(8) {
+                        let p0 = ptr.add(j) as *mut __m512i;
+                        let p1 = ptr.add(j + quarter) as *mut __m512i;
+                        let p2 = ptr.add(j + 2 * quarter) as *mut __m512i;
+                        let p3 = ptr.add(j + 3 * quarter) as *mut __m512i;
+                        let a = _mm512_loadu_si512(p0);
+                        let b = _mm512_loadu_si512(p1);
+                        let c = _mm512_loadu_si512(p2);
+                        let d = _mm512_loadu_si512(p3);
+                        let ab = _mm512_add_epi64(a, b);
+                        let cd = _mm512_add_epi64(c, d);
+                        let b = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(a, q2_v), b), w0, wp0, q_v);
+                        let d = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(c, q2_v), d), w1, wp1, q_v);
+                        let a = ab;
+                        let c = cd;
+                        let ac = harvey_modmul_si512(_mm512_add_epi64(a, c), n_inv_v, n_inv_quot_v, q_v);
+                        let bd = harvey_modmul_si512(_mm512_add_epi64(b, d), n_inv_v, n_inv_quot_v, q_v);
+                        let ac_diff = _mm512_sub_epi64(_mm512_add_epi64(a, _mm512_add_epi64(q2_v, q2_v)), c);
+                        let bd_diff = _mm512_sub_epi64(_mm512_add_epi64(b, q2_v), d);
+                        let ac_diff = harvey_modmul_si512(ac_diff, w_scaled_v, wp_scaled_v, q_v);
+                        let bd_diff = harvey_modmul_si512(bd_diff, w_scaled_v, wp_scaled_v, q_v);
+                        _mm512_storeu_si512(p0, ac);
+                        _mm512_storeu_si512(p1, bd);
+                        _mm512_storeu_si512(p2, ac_diff);
+                        _mm512_storeu_si512(p3, bd_diff);
+                    }
+                } else {
+                    // Depth-first transform of the full plane, down to (but not
+                    // including) the single m == 1 stage.
+                    inv_plane(ptr, n, 0, 0, ip, q_v, q2_v);
 
-                // Final stage (m == 1, t = n/2): fold the 1/n scale.
-                let t = n / 2;
-                let w = inv[wi];
-                let w_scaled = ((w as u128 * n_inv as u128) % q as u128) as u64; // W' = W·n_inv
-                let w_scaled_v = _mm512_set1_epi64(w_scaled as i64);
-                let wp_scaled_v = _mm512_set1_epi64(harvey_quotient(w_scaled, q) as i64);
-                let mut j = 0usize;
-                while j < t {
-                    let xp = ptr.add(j) as *mut __m512i;
-                    let yp = ptr.add(j + t) as *mut __m512i;
-                    let x = _mm512_loadu_si512(xp as *const __m512i);
-                    let y = _mm512_loadu_si512(yp as *const __m512i);
-                    // sum lane: (X+Y)·n_inv; diff lane: (X-Y)·W' — folds 1/n.
-                    let x_out = harvey_modmul_si512(_mm512_add_epi64(x, y), n_inv_v, n_inv_quot_v, q_v);
-                    let t_in = _mm512_sub_epi64(_mm512_add_epi64(x, q2_v), y);
-                    let y_out = harvey_modmul_si512(t_in, w_scaled_v, wp_scaled_v, q_v);
-                    _mm512_storeu_si512(xp, x_out);
-                    _mm512_storeu_si512(yp, y_out);
-                    j += 8;
+                    // Final stage (m == 1, t = n/2): fold the 1/n scale.
+                    let t = n / 2;
+                    let mut j = 0usize;
+                    while j < t {
+                        let xp = ptr.add(j) as *mut __m512i;
+                        let yp = ptr.add(j + t) as *mut __m512i;
+                        let x = _mm512_loadu_si512(xp as *const __m512i);
+                        let y = _mm512_loadu_si512(yp as *const __m512i);
+                        // sum lane: (X+Y)·n_inv; diff lane: (X-Y)·W' — folds 1/n.
+                        let x_out = harvey_modmul_si512(_mm512_add_epi64(x, y), n_inv_v, n_inv_quot_v, q_v);
+                        let t_in = _mm512_sub_epi64(_mm512_add_epi64(x, q2_v), y);
+                        let y_out = harvey_modmul_si512(t_in, w_scaled_v, wp_scaled_v, q_v);
+                        _mm512_storeu_si512(xp, x_out);
+                        _mm512_storeu_si512(yp, y_out);
+                        j += 8;
+                    }
                 }
             }
 
             if n < 16 {
                 // Scalar fallback: separate 1/n scaling pass over the plane.
-                let n_inv = modq_pow64(n as u64, -1, q);
-                let n_inv_quot = harvey_quotient(n_inv, q);
+                let n_inv = table.n_inv[k];
+                let n_inv_quot = table.n_inv_quot[k];
                 for c in plane.iter_mut() {
                     *c = harvey_modmul(*c, n_inv, n_inv_quot, q);
                 }
@@ -975,6 +1071,7 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ntt3x42_ifma::tables::harvey_quotient;
     use crate::ntt3x42_ifma::{
         primes::Primes42,
         reference::{
@@ -1022,6 +1119,141 @@ mod tests {
                     expected % q,
                     "SIMD harvey_modmul mismatch: a={a}, omega={omega}, q={q}, got={got}, expected={expected}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn harvey_modmul_si512_full_range() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        for case in 0..1024 {
+            let q: [u64; 8] = std::array::from_fn(|i| Primes42::Q[i % 3]);
+            let a: [u64; 8] = std::array::from_fn(|i| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                match case {
+                    0 => [0, 1, q[i] - 1, q[i], 2 * q[i] - 1, 4 * q[i] - 1, 8 * q[i] - 1, (1 << 52) - 1][i],
+                    _ => state & ((1 << 52) - 1),
+                }
+            });
+            for omega in [0, 1, 7, Primes42::Q[2] / 2, Primes42::Q[2] - 1] {
+                let quot: [u64; 8] = std::array::from_fn(|i| harvey_quotient(omega, q[i]));
+                let mut got = [0u64; 8];
+                unsafe {
+                    let result = harvey_modmul_si512(
+                        _mm512_loadu_si512(a.as_ptr() as *const __m512i),
+                        _mm512_set1_epi64(omega as i64),
+                        _mm512_loadu_si512(quot.as_ptr() as *const __m512i),
+                        _mm512_loadu_si512(q.as_ptr() as *const __m512i),
+                    );
+                    _mm512_storeu_si512(got.as_mut_ptr() as *mut __m512i, result);
+                }
+                for i in 0..8 {
+                    assert_eq!(got[i], harvey_modmul(a[i], omega, quot[i], q[i]));
+                    assert_eq!(got[i] % q[i], ((a[i] as u128 * omega as u128) % q[i] as u128) as u64);
+                    assert!(got[i] < 2 * q[i]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn recover_root_si512_matches_nonzero_twiddles() {
+        let mut state = 0x243f_6a88_85a3_08d3u64;
+        for q in Primes42::Q {
+            for case in 0..1024 {
+                let roots: [u64; 8] = std::array::from_fn(|i| {
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    if case == 0 {
+                        [1, 2, 3, q / 2, q / 2 + 1, q - 3, q - 2, q - 1][i]
+                    } else {
+                        1 + state % (q - 1)
+                    }
+                });
+                let quotients = roots.map(|w| harvey_quotient(w, q));
+                let mut actual = [0u64; 8];
+                unsafe {
+                    let roots = recover_root_si512(_mm512_loadu_si512(quotients.as_ptr().cast()), _mm512_set1_epi64(q as i64));
+                    _mm512_storeu_si512(actual.as_mut_ptr().cast(), roots);
+                }
+                assert_eq!(actual, roots);
+            }
+        }
+    }
+
+    #[test]
+    fn ntt_full_range_residues_vs_ref() {
+        for log_n in 3..=16 {
+            let n = 1 << log_n;
+            let fwd = Ntt3x42IfmaTable::<Primes42>::new(n);
+            let inv = Ntt3x42IfmaTableInv::<Primes42>::new(n);
+            let mut state = 0x9e37_79b9_7f4a_7c15u64;
+            let input: Vec<u64> = (0..3 * n)
+                .map(|i| {
+                    let q = Primes42::Q[i / n];
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    if i % 16 < 8 {
+                        [0, 1, q - 1, q / 2, q - 2, q / 2 + 1, q / 3, q - 3][i % 8]
+                    } else {
+                        state % q
+                    }
+                })
+                .collect();
+            let mut reference = input.clone();
+            ntt3x42_ifma_ref(&fwd, &mut reference);
+            for lazy in [false, true] {
+                let mut actual = input.clone();
+                unsafe {
+                    ntt_avx512(&fwd, &mut actual, lazy);
+                }
+                for i in 0..3 * n {
+                    let q = Primes42::Q[i / n];
+                    assert_eq!(actual[i] % q, reference[i] % q, "forward n={n} i={i}");
+                    assert!(actual[i] < if lazy { 4 * q } else { q });
+                    actual[i] %= q;
+                }
+                let mut expected = actual.clone();
+                intt3x42_ifma_ref(&inv, &mut expected);
+                unsafe {
+                    intt_avx512(&inv, &mut actual);
+                }
+                for i in 0..3 * n {
+                    let q = Primes42::Q[i / n];
+                    assert_eq!(actual[i] % q, expected[i] % q, "inverse n={n} i={i}");
+                    assert_eq!(actual[i] % q, input[i], "roundtrip n={n} i={i}");
+                    assert!(actual[i] < 2 * q);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ntt_uniform_edges_vs_ref() {
+        for log_n in 3..=16 {
+            let n = 1 << log_n;
+            let fwd = Ntt3x42IfmaTable::<Primes42>::new(n);
+            let inv = Ntt3x42IfmaTableInv::<Primes42>::new(n);
+            for edge in [0, 1] {
+                let input: Vec<u64> = (0..3 * n).map(|i| edge * (Primes42::Q[i / n] - 1)).collect();
+                let mut expected = input.clone();
+                ntt3x42_ifma_ref(&fwd, &mut expected);
+                for lazy in [false, true] {
+                    let mut actual = input.clone();
+                    unsafe { ntt_avx512(&fwd, &mut actual, lazy) };
+                    for i in 0..3 * n {
+                        let q = Primes42::Q[i / n];
+                        assert_eq!(actual[i] % q, expected[i] % q, "forward n={n} edge={edge} i={i}");
+                        assert!(actual[i] < if lazy { 4 * q } else { q });
+                    }
+                }
+                let mut expected = input.clone();
+                let mut actual = input;
+                intt3x42_ifma_ref(&inv, &mut expected);
+                unsafe { intt_avx512(&inv, &mut actual) };
+                for i in 0..3 * n {
+                    let q = Primes42::Q[i / n];
+                    assert_eq!(actual[i] % q, expected[i] % q, "inverse n={n} edge={edge} i={i}");
+                    assert!(actual[i] < 2 * q);
+                }
             }
         }
     }

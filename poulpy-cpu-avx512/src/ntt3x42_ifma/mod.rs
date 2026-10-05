@@ -83,7 +83,10 @@ pub struct NTT3x42Ifma<R: Ring = Standard>(PhantomData<R>);
 pub struct NTT3x42IfmaRayon<R: Ring = Standard>(PhantomData<R>);
 
 #[cfg(feature = "enable-rayon")]
-pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
+pub use cache_pools::NTT3x42IfmaRayonExecutor;
+
+#[cfg(feature = "enable-rayon")]
+pub(crate) mod cache_pools;
 
 #[cfg(feature = "enable-rayon")]
 poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon<R>, NTT3x42Ifma<R>, NTT3x42IfmaRayonExecutor; generic R: Ring);
@@ -97,3 +100,6 @@ where
         <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
 }
+
+#[cfg(feature = "enable-rayon")]
+mod linear_transformation;

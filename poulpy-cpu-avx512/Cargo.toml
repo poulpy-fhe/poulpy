@@ -19,7 +19,7 @@ enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 # Enable backend-owned Rayon scheduling. Concrete parallel backends are
 # available when their corresponding SIMD feature is enabled as well.
-enable-rayon = ["enable-avx512f", "dep:rayon", "dep:poulpy-cpu-rayon"]
+enable-rayon = ["enable-avx512f", "dep:rayon", "dep:poulpy-cpu-rayon", "dep:libc"]
 
 [dependencies]
 poulpy-bin-fhe = {workspace = true, optional = true}
@@ -38,6 +38,7 @@ once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
 rayon = {workspace = true, optional = true}
+libc = {version = "0.2", optional = true}
 
 [dev-dependencies]
 # HAL and core cross suites compare against the oracle.

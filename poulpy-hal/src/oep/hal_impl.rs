@@ -13,6 +13,15 @@ use crate::source::Source;
 pub unsafe trait HalModuleImpl: Backend {
     #[allow(clippy::new_ret_no_self)]
     fn new(n: u64) -> Module<Self>;
+
+    /// Waits until every operation previously submitted through `module` has completed.
+    ///
+    /// A backend that completes each call before returning keeps this default.
+    /// A backend that defers execution must override it, see the
+    /// synchronization section of the backend safety contract.
+    fn synchronize(module: &Module<Self>) {
+        let _ = module;
+    }
 }
 
 /// Coefficient-domain `VecZnx` extension point.
