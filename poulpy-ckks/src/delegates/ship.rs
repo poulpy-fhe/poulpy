@@ -100,7 +100,9 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)
+        ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)?;
+        output.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_ship_bootstrap_complex_into<Src>(
@@ -113,6 +115,8 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)
+        ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)?;
+        output.set_encryption_metadata(None);
+        Ok(())
     }
 }

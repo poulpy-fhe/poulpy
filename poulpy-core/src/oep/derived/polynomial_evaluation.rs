@@ -48,13 +48,16 @@ where
         terms.push((power_basis.get(i)?, i));
     }
     if !terms.is_empty() && ops.eval_baby_linear_combination(module, res, &terms, coeffs, scratch)? {
+        res.set_encryption_metadata(None);
         if parity != Parity::Odd {
             ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         }
+        res.set_encryption_metadata(None);
         return Ok(());
     }
 
     ops.init_accumulator(module, res, power_basis.get(init_power)?, scratch)?;
+    res.set_encryption_metadata(None);
 
     if parity != Parity::Odd {
         ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
@@ -64,6 +67,7 @@ where
         ops.mul_add_pt_const(module, res, xpow, coeffs, *i, scratch)?;
     }
 
+    res.set_encryption_metadata(None);
     Ok(())
 }
 
@@ -149,7 +153,9 @@ where
                 // `b·Xᵍˢᵖ` (ct×ct, the scheme stamps `b` with the consumed
                 // budget); then `b += a`.
                 ops.mul_prepared_assign(module, b, &prepared, tsk, scratch)?;
+                b.set_encryption_metadata(None);
                 ops.add_assign(module, b, a, scratch)?;
+                b.set_encryption_metadata(None);
             }
             p = run_end;
         }
@@ -159,6 +165,7 @@ where
 
     let evaluated = baby_steps.last().expect("non-empty baby step vector");
     ops.copy(module, res, evaluated.get(), scratch)?;
+    res.set_encryption_metadata(None);
 
     Ok(())
 }

@@ -253,15 +253,15 @@ where
             },
             "invalid finalization: output key provenance differs"
         );
-        res.set_encryption_metadata(fresh_ggsw_metadata::<BE, K>(share, key));
+        let metadata = fresh_ggsw_metadata::<BE, K>(share, key);
         let key = key.to_backend_ref();
-        let mut res = res.to_backend_mut();
+        let mut res_be = res.to_backend_mut();
         let (mut tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(&glwe_layout(share));
         {
             let col0 = GGLWECompressedToBackendRef::<BE>::to_backend_ref(&share.col0);
             let (base2k, k): (usize, usize) = (share.base2k().into(), share.k().into());
             for row in 0..dnum {
-                let mut cell = res.at_view_mut(row, 0);
+                let mut cell = res_be.at_view_mut(row, 0);
                 cell.set_canonical(true);
                 self.vec_znx_normalize(
                     cell.data_mut(),
@@ -289,7 +289,7 @@ where
                 for i in 0..rank {
                     self.vec_znx_negate(tmp.data_mut(), i + 1, circ_s.at_view(row, i).data(), 0);
                 }
-                let mut cell = res.at_view_mut(row, j);
+                let mut cell = res_be.at_view_mut(row, j);
                 self.glwe_keyswitch(&mut cell, &tmp, &key, &mut scratch_1);
                 for l in 0..rank {
                     self.vec_znx_add_assign(cell.data_mut(), l + 1, circ_u.at_view(row, l).data(), 0);
@@ -297,6 +297,8 @@ where
                 self.glwe_normalize_assign(&mut cell, &mut scratch_1);
             }
         }
+        drop(res_be);
+        res.set_encryption_metadata(metadata);
     }
 }
 

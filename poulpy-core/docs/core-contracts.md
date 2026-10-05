@@ -123,10 +123,11 @@ would not protect it.
 
 ## Encryption metadata
 
-Encryption and protocol finalization derive `EncryptionMetadata` for their
-outputs. Secret provenance records the base distribution and number of secret
-contributors. The separate `FreshNoiseEstimate` records effective phase
-variance in integer coefficient units at the stored creation precision `k`.
+Encryption and construction of fresh collective keys or ciphertexts derive
+`EncryptionMetadata` for their outputs. Secret provenance records the base
+distribution and number of secret contributors. The separate
+`FreshNoiseEstimate` records effective phase variance in integer coefficient
+units at the stored creation precision `k`.
 Its square root is the effective fresh sigma; multiplying that sigma by
 `2^-k` gives its torus scale. `variance_at` and `std_dev_at` express the same
 historical estimate on another precision grid without adding rounding error.
@@ -199,12 +200,19 @@ largest column estimate. Aggregation can sum independent error variances;
 when binary ephemerals reuse one public key, a conservative sum of sigmas
 accounts for possible covariance.
 
-This metadata describes creation noise. Homomorphic evaluation does not make
-it a running estimate of the output's current noise. Copies, compression,
-preparation and backend transfers preserve the recorded estimate and its
-creation precision, even when the destination's precision differs. Backend
-views copy metadata by value, so an operation that records new metadata must
-update the owner through its setter.
+This metadata describes fresh encryption. Homomorphic operations clear the
+entire output tag to `None`, even when the inputs have identical tags or the
+operation happens to leave the value unchanged. This includes arithmetic with
+plaintexts, normalization, key switching, rotations, extraction and evaluation
+conversions. Noise composition is deferred to a later release. Fresh encryption
+and key-generation factories record their output metadata after any internal
+arithmetic used during construction.
+
+Copies, compression, preparation and backend transfers preserve the recorded
+estimate and its creation precision, even when the destination's precision
+differs. They also preserve an absent tag on an evaluated ciphertext. Backend
+views copy metadata by value, so an operation that records or clears metadata
+must update the owner through its setter.
 
 Equality includes the fresh estimate and its precision. The `PNM2` wire format
 preserves them and rejects earlier metadata versions; `PNM1` does not contain

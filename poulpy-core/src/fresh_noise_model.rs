@@ -4,7 +4,7 @@ use poulpy_hal::layouts::Backend;
 
 use crate::{
     Distribution, EncryptionMetadata, FreshNoiseEstimate, GetDistribution, Noise, SecretDistribution,
-    layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, TorusPrecision, prepared::GLWEPublicKeyPreparedToBackendRef},
+    layouts::{GLWEInfos, TorusPrecision, prepared::GLWEPublicKeyPreparedToBackendRef},
 };
 
 fn base_moments(distribution: Distribution, n: usize) -> Option<(f64, f64)> {
@@ -65,19 +65,6 @@ fn scaled_variance(variance: f64, factor: f64) -> f64 {
         0.0
     } else {
         variance * factor
-    }
-}
-
-fn variance_with_extra_precision(estimate: FreshNoiseEstimate, precision: TorusPrecision, extra_bits: i64) -> f64 {
-    let shift = i64::from(precision.as_u32()) + extra_bits - i64::from(estimate.precision().as_u32());
-    // Express the combined shift using two representable grids. Combining
-    // first avoids underflow before a large gadget digit restores its scale.
-    // Shifts beyond u32 already saturate every nonzero finite f64 value.
-    let magnitude = TorusPrecision(shift.unsigned_abs().min(u32::MAX as u64) as u32);
-    if shift >= 0 {
-        FreshNoiseEstimate::new(estimate.variance(), TorusPrecision(0)).variance_at(magnitude)
-    } else {
-        FreshNoiseEstimate::new(estimate.variance(), magnitude).variance_at(TorusPrecision(0))
     }
 }
 
@@ -283,67 +270,10 @@ where
     public_key_phase_plan(pk.encryption_metadata(), res, pk.k(), *pk.to_backend_ref().dist(), body_noise)
 }
 
-/// The expansion constructs mask columns by multiplying a row's phase by a
-/// secret polynomial, then adding a gadget product with the conversion key.
-/// Store the largest column estimate because metadata is shared by the GGSW.
-pub(crate) fn ggsw_expansion_metadata<R: GGSWInfos, K: GGLWEInfos>(
-    res: &R,
-    input: Option<EncryptionMetadata>,
-    input_precision: TorusPrecision,
-    key: &K,
-) -> Option<EncryptionMetadata> {
-    let input = input?;
-    let rank = res.rank().as_usize() as f64;
-    let n = res.n().as_usize() as f64;
-    let secret_second = input
-        .secret_distribution()
-        .coefficient_second_moment(res.n().as_usize())
-        .unwrap_or(f64::INFINITY);
-    let rounding = (1.0 + scaled_variance(secret_second, rank * n)) / 4.0;
-    let body = input.fresh_noise().variance_at(res.k()) + if input_precision > res.k() { rounding } else { 0.0 };
-    if rank == 0.0 {
-        return Some(input.with_fresh_noise(FreshNoiseEstimate::new(body, res.k())));
-    }
-    let Some(key_metadata) = key.encryption_metadata().filter(|m| input.same_secret(m)) else {
-        return Some(input.with_fresh_noise(FreshNoiseEstimate::new(f64::INFINITY, res.k())));
-    };
-    let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
-    let digits = res.k().as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
-    let key_error = scaled_variance(
-        // Var(digit) = 2^(2B)/12. Move B-2 bits into the precision
-        // rescaling, leaving 16/12 outside to avoid premature overflow.
-        variance_with_extra_precision(key_metadata.fresh_noise(), res.k(), digit_bits as i64 - 2),
-        rank * n * digits as f64 * (16.0 / 12.0),
-    );
-    let cover = digits * digit_bits;
-    let residue = if cover < res.k().as_usize() {
-        // The centered-secret product model does not account for the squared
-        // convolution means of binary secrets. Retain an unbounded estimate
-        // when an uncovered gadget tail would multiply those products.
-        if input.secret_distribution().coefficient_mean(res.n().as_usize()) != Some(0.0) {
-            f64::INFINITY
-        } else {
-            scaled_variance(
-                (2.0 * (res.k().as_usize() - cover) as f64).exp2() / 12.0,
-                (rank + 1.0) * n * n * secret_second.powi(2),
-            )
-        }
-    } else {
-        0.0
-    };
-    let rounding = if key.k() > res.k() || !res.k().as_usize().is_multiple_of(res.base2k().as_usize()) {
-        rounding
-    } else {
-        0.0
-    };
-    let mask = scaled_variance(body, scaled_variance(secret_second, n)) + key_error + residue + rounding;
-    Some(input.with_fresh_noise(FreshNoiseEstimate::new(body.max(mask), res.k())))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{Base2K, Degree, Dnum, Dsize, GGLWE, GGLWELayout, GGSWLayout, GLWELayout, Rank};
+    use crate::layouts::{Base2K, Degree, GLWELayout, Rank};
 
     #[test]
     fn collective_binary_moments_include_the_mean() {
@@ -672,88 +602,5 @@ mod tests {
         let equivalent = public_key_phase_plan(Some(older), &layout, key, base, PublicKeyBodyNoise::Sampled);
         assert_eq!(equivalent.sample_precision, ordinary.sample_precision);
         assert_eq!(equivalent.encryption_metadata, ordinary.encryption_metadata);
-    }
-
-    #[test]
-    fn expansion_handles_uncovered_binary_products_and_rank_zero() {
-        let mut layout = GGSWLayout {
-            n: Degree(64),
-            base2k: Base2K(8),
-            dnum: Dnum(3),
-            dsize: Dsize(1),
-            k_aux: TorusPrecision(8),
-            rank: Rank(1),
-        };
-        let key_layout = GGLWELayout {
-            n: Degree(64),
-            base2k: Base2K(8),
-            dnum: Dnum(2),
-            dsize: Dsize(1),
-            k_aux: TorusPrecision(16),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            stride: 1,
-        };
-        let mut key = GGLWE::<poulpy_hal::AlignedBuf, i64>::alloc_from_infos(&key_layout);
-        let binary = EncryptionMetadata::from_secret_at(Distribution::BinaryProb(0.5), TorusPrecision(32));
-        key.encryption_metadata = Some(binary);
-        let expanded = ggsw_expansion_metadata(&layout, Some(binary), TorusPrecision(32), &key).unwrap();
-        assert!(expanded.same_secret(&binary));
-        assert_eq!(expanded.initial_noise_variance(), f64::INFINITY);
-
-        let zero = EncryptionMetadata::from_secret_at(Distribution::ZERO, TorusPrecision(32));
-        key.encryption_metadata = Some(zero);
-        assert!(
-            ggsw_expansion_metadata(&layout, Some(zero), TorusPrecision(32), &key)
-                .unwrap()
-                .initial_noise_variance()
-                .is_finite()
-        );
-
-        layout.rank = Rank(0);
-        key.encryption_metadata = None;
-        assert_eq!(
-            ggsw_expansion_metadata(&layout, Some(binary), TorusPrecision(32), &key),
-            Some(binary)
-        );
-    }
-
-    #[test]
-    fn expansion_includes_copy_rounding_before_secret_multiplication() {
-        let layout = GGSWLayout {
-            n: Degree(64),
-            base2k: Base2K(8),
-            dnum: Dnum(3),
-            dsize: Dsize(1),
-            k_aux: TorusPrecision(8),
-            rank: Rank(1),
-        };
-        let key_layout = GGLWELayout {
-            n: Degree(64),
-            base2k: Base2K(8),
-            dnum: Dnum(4),
-            dsize: Dsize(1),
-            k_aux: TorusPrecision(8),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            stride: 1,
-        };
-        let mut key = GGLWE::<poulpy_hal::AlignedBuf, i64>::alloc_from_infos(&key_layout);
-        let metadata = EncryptionMetadata::from_secret_at(Distribution::TernaryProb(0.5), TorusPrecision(40));
-        key.encryption_metadata = Some(metadata);
-        let narrowed = ggsw_expansion_metadata(&layout, Some(metadata), TorusPrecision(40), &key).unwrap();
-        let same_grid = ggsw_expansion_metadata(&layout, Some(metadata), TorusPrecision(32), &key).unwrap();
-        assert!(narrowed.initial_noise_variance() > same_grid.initial_noise_variance());
-        assert_eq!(narrowed.fresh_noise().precision(), TorusPrecision(32));
-    }
-
-    #[test]
-    fn gadget_digit_scale_is_combined_before_underflow() {
-        let estimate = FreshNoiseEstimate::new(10.24, TorusPrecision(1000));
-        assert_eq!(estimate.variance_at(TorusPrecision(32)), 0.0);
-        let combined = variance_with_extra_precision(estimate, TorusPrecision(32), 498);
-        assert!(combined > 0.0 && combined.is_finite());
-        let near_limit = FreshNoiseEstimate::new(1.0, TorusPrecision(u32::MAX));
-        assert_eq!(variance_with_extra_precision(near_limit, TorusPrecision(u32::MAX), 4), 256.0);
     }
 }

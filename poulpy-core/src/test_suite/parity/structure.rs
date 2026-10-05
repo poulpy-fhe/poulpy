@@ -123,7 +123,10 @@ where
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
             if skip == (params.n.ilog2() as usize) {
-                assert_eq!(out_r, a_r, "empty trace must preserve all input coefficients and metadata");
+                assert_eq!(
+                    out_r, a_r,
+                    "empty trace must preserve coefficients and layout for untagged input"
+                );
             }
         }
         // Empty traces require no key lookup. Invalid skips reject before

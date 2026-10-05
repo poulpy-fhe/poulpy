@@ -25,7 +25,11 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
     {
-        BE::glwe_eval_baby_step::<Ops, V, P, A, G>(self, ops, res, parity, coeffs, power_basis, scratch)
+        let result = BE::glwe_eval_baby_step::<Ops, V, P, A, G>(self, ops, res, parity, coeffs, power_basis, scratch);
+        if result.is_ok() {
+            res.set_encryption_metadata(None);
+        }
+        result
     }
 
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
@@ -47,6 +51,10 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_eval_giant_steps::<Ops, R, B, V, P, A, G, H>(self, ops, res, baby_steps, power_basis, tsk, scratch)
+        let result = BE::glwe_eval_giant_steps::<Ops, R, B, V, P, A, G, H>(self, ops, res, baby_steps, power_basis, tsk, scratch);
+        if result.is_ok() {
+            res.set_encryption_metadata(None);
+        }
+        result
     }
 }

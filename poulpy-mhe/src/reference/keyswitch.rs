@@ -184,7 +184,7 @@ where
         );
         self.glwe_add_into(res, ct, share);
         self.glwe_normalize_assign(res, scratch);
-        res.set_encryption_metadata(share.encryption_metadata());
+        res.set_encryption_metadata(None);
     }
 }
 
@@ -353,5 +353,6 @@ where
         res.set_canonical(false);
         self.vec_znx_add_assign(res.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(res, scratch);
+        res.set_encryption_metadata(None);
     }
 }

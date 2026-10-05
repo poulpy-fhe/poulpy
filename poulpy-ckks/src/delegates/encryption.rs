@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::{EncryptionMetadata, GetDistribution};
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
@@ -42,7 +43,9 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
             ct.n().as_usize(),
             sk.to_backend_ref().n().as_usize(),
         )?;
-        BE::ckks_encrypt_sk_impl(self, ct, pt, sk, source_xe, source_xa, scratch)
+        BE::ckks_encrypt_sk_impl(self, ct, pt, sk, source_xe, source_xa, scratch)?;
+        ct.set_encryption_metadata(Some(EncryptionMetadata::from_secret_at(*sk.to_backend_ref().dist(), ct.k())));
+        Ok(())
     }
 }
 

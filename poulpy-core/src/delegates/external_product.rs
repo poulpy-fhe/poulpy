@@ -1,4 +1,3 @@
-use crate::layouts::LWEInfos;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -42,9 +41,8 @@ impl_external_product_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        let metadata = super::matching_metadata(res.to_backend_ref().encryption_metadata(), rhs.encryption_metadata());
         BE::glwe_external_product_assign(self, res, rhs, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn glwe_external_product<R, A>(
@@ -58,9 +56,8 @@ impl_external_product_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = super::matching_metadata(lhs.to_backend_ref().encryption_metadata(), rhs.encryption_metadata());
         BE::glwe_external_product(self, res, lhs, rhs, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -87,9 +84,8 @@ impl_external_product_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        let metadata = super::matching_metadata(a.to_backend_ref().encryption_metadata(), b.encryption_metadata());
         BE::gglwe_external_product(self, res, a, b, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn gglwe_external_product_assign<R>(
@@ -101,9 +97,8 @@ impl_external_product_delegate!(
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        let metadata = super::matching_metadata(res.to_backend_ref().encryption_metadata(), a.encryption_metadata());
         BE::gglwe_external_product_assign(self, res, a, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -130,9 +125,8 @@ impl_external_product_delegate!(
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
-        let metadata = super::matching_metadata(a.to_backend_ref().encryption_metadata(), b.encryption_metadata());
         BE::ggsw_external_product(self, res, a, b, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn ggsw_external_product_assign<R>(
@@ -144,9 +138,8 @@ impl_external_product_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
-        let metadata = super::matching_metadata(res.to_backend_ref().encryption_metadata(), a.encryption_metadata());
         BE::ggsw_external_product_assign(self, res, a, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 

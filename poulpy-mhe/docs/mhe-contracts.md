@@ -88,10 +88,11 @@ flood, rather than ordinary encryption noise. A Gaussian uses its sigma-squared
 parameter, which bounds the conditioned discrete draw's variance. A `bits`-wide
 uniform flood has variance `(2^(2*bits)-1)/12`; its mean is `-1/2`, and that bias
 is not included in the centered variance. Public key-switching replaces the
-ordinary body error with the flood. Key-switch finalization reports newly
-generated share-construction error at its original grid. The input ciphertext's
-existing error and any input/output precision-conversion error during
-finalization still contribute to its actual output and are not tracked here.
+ordinary body error with the flood. These transcripts describe newly generated
+share-construction error at its original grid. Key-switch finalization clears
+the resulting ciphertext's encryption metadata to `None`: the output also
+contains the input ciphertext's existing error and any precision-conversion
+error, whose composition is not tracked.
 
 When private key switching generates a share narrower than the received mask,
 subtracting the two cropped inner products and normalizing also introduces
@@ -102,9 +103,11 @@ As in core's noise models, precision reduction adds a modeled half-ulp variance
 per ciphertext component, folded against the secret. Adding that rounding term
 independently is an approximation, not a proof that it is uncorrelated with
 other errors. Unknown secret moments produce an infinite estimate while keeping
-secret provenance. Fresh metadata is preserved through later operations and
-does not estimate live evaluated noise. Callers still choose protocol parameters
-using the complete error and statistical budget.
+secret provenance. Homomorphic operations clear fresh metadata from their
+outputs. Copies, preparation, compression and serialization preserve it, and
+fresh key-generation or encryption factories record it after their internal
+arithmetic. Callers still choose protocol parameters using the complete error
+and statistical budget.
 
 ## Randomness and seeds
 

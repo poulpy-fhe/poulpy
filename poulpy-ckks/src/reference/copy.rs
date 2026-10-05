@@ -24,7 +24,9 @@ pub trait CKKSCopyReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
-        crate::ckks_copy_stamp_unary(self, "copy", dst, src, scratch)
+        crate::ckks_copy_stamp_unary(self, "copy", dst, src, scratch)?;
+        dst.set_encryption_metadata(src.encryption_metadata());
+        Ok(())
     }
 }
 

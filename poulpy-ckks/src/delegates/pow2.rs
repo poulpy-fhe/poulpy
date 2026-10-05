@@ -22,14 +22,18 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)
+        BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)
+        BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -37,7 +41,9 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_double_into_impl(self, dst, src, scratch)
+        BE::ckks_double_into_impl(self, dst, src, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_div_pow2_tmp_bytes(&self, res_size: usize) -> usize {
@@ -55,13 +61,17 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)
+        BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_div_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_div_pow2_assign_impl(self, dst, bits)
+        BE::ckks_div_pow2_assign_impl(self, dst, bits)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 }

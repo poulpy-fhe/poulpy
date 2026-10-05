@@ -71,9 +71,10 @@ ephemerals require a conservative covariance bound when reusing a public key.
 The public key's ephemeral sampling law must match its recorded base secret law.
 
 These are fresh construction estimates, not exact distributions or live noise
-tracking after evaluation. Key-switch protocol estimates describe newly generated
-share-construction error. They exclude the input ciphertext's existing phase
-error and precision-conversion error introduced during finalization. See the
+tracking after evaluation. Homomorphic operations clear output encryption
+metadata. Key-switch share estimates describe newly generated construction
+error; finalization clears the ciphertext tag because it also contains the
+input's existing phase error and precision-conversion error. See the
 [fresh-noise contract](docs/mhe-contracts.md#share-metadata) for the model's limits.
 Backend views copy metadata by value, as they do precision and canonical flags,
 so pass the owner to a protocol when its metadata must be updated.

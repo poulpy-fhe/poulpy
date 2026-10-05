@@ -26,7 +26,9 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_rotate_by_into_impl(self, dst, src, k, keys, scratch)
+        BE::ckks_rotate_by_into_impl(self, dst, src, k, keys, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -34,6 +36,8 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_rotate_by_assign_impl(self, dst, k, keys, scratch)
+        BE::ckks_rotate_by_assign_impl(self, dst, k, keys, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 }

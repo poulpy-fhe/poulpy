@@ -80,7 +80,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_mul_into",
                 k: k.into(),
             })?;
-        BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
+        BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -95,16 +97,16 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_mul_assign",
                 k: k.into(),
             })?;
-        BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
+        BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let mut prepared = BE::ckks_prepare_right_impl(self, a, scratch)?;
-        prepared.encryption_metadata = a.encryption_metadata();
-        Ok(prepared)
+        BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
     fn ckks_mul_prepared_assign<Dst, H>(
@@ -124,11 +126,8 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_mul_prepared_assign",
                 k: k.into(),
             })?;
-        let metadata = dst
-            .encryption_metadata()
-            .filter(|value| prepared.encryption_metadata == Some(*value));
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)?;
-        dst.set_encryption_metadata(metadata);
+        dst.set_encryption_metadata(None);
         Ok(())
     }
 
@@ -144,7 +143,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_square_into",
                 k: k.into(),
             })?;
-        BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
+        BE::ckks_square_into_impl(self, dst, a, tsk, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -158,7 +159,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_square_assign",
                 k: k.into(),
             })?;
-        BE::ckks_square_assign_impl(self, dst, tsk, scratch)
+        BE::ckks_square_assign_impl(self, dst, tsk, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -167,7 +170,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)
+        BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -175,7 +180,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)
+        BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_pt_const_into<Dst, A, P>(
@@ -191,7 +198,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)
+        BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_mul_pt_const_assign<Dst, P>(
@@ -205,6 +214,8 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
+        BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 }

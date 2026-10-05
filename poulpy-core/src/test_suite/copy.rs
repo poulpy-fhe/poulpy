@@ -112,35 +112,29 @@ where
     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
     assert_eq!(dst.data.raw(), src.data.raw());
 
-    // Reusing a destination must replace its provenance, including clearing
-    // it when arithmetic combines inputs from different encrypting secrets.
+    // Every evaluation clears freshness, even matching inputs or an identity.
     src.encryption_metadata = provenance;
     module.glwe_rotate(1, &mut dst, &src);
-    assert_eq!(dst.encryption_metadata(), provenance);
+    assert_eq!(dst.encryption_metadata(), None);
     module.glwe_add_into(&mut dst, &src, &src);
-    assert_eq!(dst.encryption_metadata(), provenance);
+    assert_eq!(dst.encryption_metadata(), None);
     module.glwe_sub_assign(&mut dst, &src);
-    assert_eq!(dst.encryption_metadata(), provenance);
+    assert_eq!(dst.encryption_metadata(), None);
     src.encryption_metadata = stale_provenance;
     module.glwe_add_assign(&mut dst, &src);
     assert_eq!(dst.encryption_metadata(), None);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_normalize_tmp_bytes());
     module.glwe_normalize(&mut dst, &src, &mut scratch.borrow());
-    assert_eq!(dst.encryption_metadata(), stale_provenance);
+    assert_eq!(dst.encryption_metadata(), None);
 
-    // A rank-zero plaintext cannot erase the ciphertext's origin. An unknown
-    // rank-positive ciphertext must still clear it, even if its digits are zero.
+    // Plaintext arithmetic also invalidates the fresh-encryption estimate.
     src.encryption_metadata = provenance;
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(dst.data.size()));
     for rank in [0usize, 1] {
         let mut other: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc(base.into(), (2 * base).into(), rank.into());
         for metadata in [None, provenance, stale_provenance] {
             other.encryption_metadata = metadata;
-            let expected = if rank == 0 || metadata == provenance {
-                provenance
-            } else {
-                None
-            };
+            let expected = None;
             module.glwe_add_into(&mut dst, &src, &other);
             assert_eq!(dst.encryption_metadata(), expected, "add: rank={rank}, metadata={metadata:?}");
             module.glwe_add_into(&mut dst, &other, &src);

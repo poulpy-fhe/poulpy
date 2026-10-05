@@ -29,7 +29,10 @@ where
         C: GetBitCircuitInfo,
         O: GLWEToBackendMut<BE> + GLWEInfos + Send,
     {
-        BE::execute_bdd_circuit::<C, G, O>(self, out, inputs, circuit, scratch)
+        BE::execute_bdd_circuit::<C, G, O>(self, out, inputs, circuit, scratch);
+        for ct in out {
+            ct.set_encryption_metadata(None);
+        }
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_multi_thread<C, G, O>(
@@ -44,6 +47,9 @@ where
         C: GetBitCircuitInfo,
         O: GLWEToBackendMut<BE> + GLWEInfos + Send,
     {
-        BE::execute_bdd_circuit_multi_thread::<C, G, O>(self, threads, out, inputs, circuit, scratch)
+        BE::execute_bdd_circuit_multi_thread::<C, G, O>(self, threads, out, inputs, circuit, scratch);
+        for ct in out {
+            ct.set_encryption_metadata(None);
+        }
     }
 }

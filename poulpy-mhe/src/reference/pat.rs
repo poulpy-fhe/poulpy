@@ -61,9 +61,9 @@ where
             let pat_be = pat.to_backend_ref();
             self.vec_znx_normalize(res_be.data_mut(), base2k, k, 0, 0, pat_be.data(), base2k, 0, scratch);
         }
-        res.set_encryption_metadata(pat.encryption_metadata());
         // Seeded masks are uniform digits, already canonical.
         self.fill_glwe_mask_from_seed(res, *pat.seed());
+        res.set_encryption_metadata(pat.encryption_metadata());
     }
 }
 
@@ -131,6 +131,8 @@ where
                 self.vec_znx_normalize_assign(base2k, k, 0, res_be.at_view_mut(row, col).data_mut(), 0, scratch);
             }
         }
+        drop(res_be);
+        res.set_encryption_metadata(pat.encryption_metadata());
     }
 }
 

@@ -243,8 +243,8 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
                     module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
 
-                    assert_eq!(res_ref.encryption_metadata(), key_ref.encryption_metadata());
-                    assert_eq!(res_test.encryption_metadata(), key_test.encryption_metadata());
+                    assert_eq!(res_ref.encryption_metadata(), None);
+                    assert_eq!(res_test.encryption_metadata(), None);
                     assert_ne!(res_ref.encryption_metadata(), a_ref.encryption_metadata());
                     let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                     res_test.transfer_into(&mut have);

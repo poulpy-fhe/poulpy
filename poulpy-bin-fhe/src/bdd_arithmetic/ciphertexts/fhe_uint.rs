@@ -611,5 +611,6 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             module.glwe_copy(&mut current, &tmp.bits, &mut scratch_1);
         }
         module.glwe_copy(self, &current, &mut scratch_1);
+        self.set_encryption_metadata(None);
     }
 }

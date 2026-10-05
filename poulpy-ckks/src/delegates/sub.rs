@@ -22,7 +22,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_sub_into_impl(self, dst, a, b, scratch)
+        BE::ckks_sub_into_impl(self, dst, a, b, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_assign<Dst, A>(&self, dst: &mut Dst, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -30,7 +32,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_sub_assign_impl(self, dst, a, scratch)
+        BE::ckks_sub_assign_impl(self, dst, a, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_one_tmp_bytes(&self, res_size: usize) -> usize {
@@ -41,7 +45,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_sub_one_assign_impl(self, dst, scratch)
+        BE::ckks_sub_one_assign_impl(self, dst, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -50,7 +56,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_sub_pt_vec_into_impl(self, dst, a, pt, scratch)
+        BE::ckks_sub_pt_vec_into_impl(self, dst, a, pt, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -58,7 +66,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_sub_pt_vec_assign_impl(self, dst, pt, scratch)
+        BE::ckks_sub_pt_vec_assign_impl(self, dst, pt, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_pt_const_tmp_bytes(&self, res_size: usize) -> usize {
@@ -79,7 +89,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_sub_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
+        BE::ckks_sub_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_sub_pt_const_assign<Dst, P>(
@@ -94,6 +106,8 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_sub_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
+        BE::ckks_sub_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 }

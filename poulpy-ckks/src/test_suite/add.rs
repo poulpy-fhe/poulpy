@@ -568,7 +568,7 @@ where
     let provenance = ct.encryption_metadata();
     assert!(provenance.is_some());
     module.ckks_add_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
-    assert_eq!(ct.encryption_metadata(), provenance);
+    assert_eq!(ct.encryption_metadata(), None);
     assert_ct_meta("add_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "add_pt_vec_assign",
@@ -624,7 +624,7 @@ where
         .unwrap();
     assert_unary_output_meta("add_pt_vec", &ct_res, &ct1);
     assert!(ct1.encryption_metadata().is_some());
-    assert_eq!(ct_res.encryption_metadata(), ct1.encryption_metadata());
+    assert_eq!(ct_res.encryption_metadata(), None);
     assert_decrypt_precision(
         "add_pt_vec",
         &params,

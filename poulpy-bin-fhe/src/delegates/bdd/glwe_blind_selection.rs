@@ -29,6 +29,7 @@ where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch)
+        BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch);
+        res.set_encryption_metadata(None);
     }
 }

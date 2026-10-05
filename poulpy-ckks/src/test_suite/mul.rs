@@ -114,14 +114,13 @@ where
     assert_mul_ct_output_meta("mul_ct_aligned", &ct_res, &ct1, &ct2);
     let metadata = ct1.encryption_metadata();
     assert!(metadata.is_some());
-    assert_eq!(ct_res.encryption_metadata(), metadata);
+    assert_eq!(ct_res.encryption_metadata(), None);
     let prepared = module.ckks_prepare_right(&ct2, &mut scratch.borrow()).unwrap();
-    assert_eq!(prepared.encryption_metadata, metadata);
     let mut prepared_result = ct1.clone();
     module
         .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_eq!(prepared_result.encryption_metadata(), metadata);
+    assert_eq!(prepared_result.encryption_metadata(), None);
     assert_eq!(ckks_snapshot(&prepared_result), ckks_snapshot(&ct_res));
 
     let mut unknown = ct2.clone();

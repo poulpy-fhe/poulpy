@@ -29,9 +29,8 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = a.to_backend_ref().encryption_metadata();
         BE::lwe_sample_extract(self, res, a);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -58,9 +57,8 @@ impl_conversion_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
     {
-        let metadata = ksk.encryption_metadata();
         BE::glwe_from_lwe(self, res, lwe, ksk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -88,9 +86,8 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = key.encryption_metadata();
         BE::lwe_from_glwe(self, res, a, a_idx, key, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -110,10 +107,9 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = a.to_backend_ref().encryption_metadata();
         BE::glwe_expand_lwe(self, res, a, scratch);
         for value in res {
-            value.set_encryption_metadata(metadata);
+            value.set_encryption_metadata(None);
         }
     }
 );
@@ -136,9 +132,8 @@ impl_conversion_delegate!(
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = a.to_backend_ref().encryption_metadata();
         BE::glwe_expand_lwe_matrix(self, res, a, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -165,9 +160,8 @@ impl_conversion_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        let metadata = crate::fresh_noise_model::ggsw_expansion_metadata(res, a.to_backend_ref().encryption_metadata(), a.k(), tsk);
         BE::ggsw_from_gglwe(self, res, a, tsk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -191,8 +185,7 @@ impl_conversion_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        let metadata = crate::fresh_noise_model::ggsw_expansion_metadata(res, res.to_backend_ref().encryption_metadata(), res.k(), tsk);
         BE::ggsw_expand_row(self, res, tsk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );

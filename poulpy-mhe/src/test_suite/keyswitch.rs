@@ -6,7 +6,7 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
     layouts::{
         Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -88,12 +88,13 @@ where
             }
         }
         assert!(!acc.inner.is_canonical());
+        super::fixtures::assert_collective_metadata(&acc, PARTIES);
+        let rounding = if share_k < layout.k { 1.0 } else { 0.0 };
+        super::fixtures::assert_fresh_noise(&acc, PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding), share_k);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
         module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-        super::fixtures::assert_collective_metadata(&res, PARTIES);
-        let rounding = if share_k < layout.k { 1.0 } else { 0.0 };
-        super::fixtures::assert_fresh_noise(&res, PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding), share_k);
+        assert_eq!(res.encryption_metadata(), None);
         assert!(res.is_canonical());
         assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, share_k, &mut scratch);
     }
@@ -189,10 +190,11 @@ where
             }
         }
         assert!(!acc.inner.is_canonical());
+        super::fixtures::assert_collective_metadata(&acc, PARTIES);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&share_layout);
         module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-        super::fixtures::assert_collective_metadata(&res, PARTIES);
+        assert_eq!(res.encryption_metadata(), None);
         assert!(res.is_canonical());
         // Each party's pk encryption adds 2 * rank * n * 0.5 * PARTIES * sigma^2, as in the pk test.
         let n = module.n() as f64;
@@ -212,7 +214,7 @@ where
         );
         assert!(sample_delta > 0 && sample_delta < BASE2K.as_usize());
         let fresh = PARTIES as f64 * (per_share + SIGMA_FLOOD.powi(2));
-        super::fixtures::assert_fresh_noise(&res, fresh, k_out);
+        super::fixtures::assert_fresh_noise(&acc, fresh, k_out);
         assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, share_layout.k, &mut scratch);
 
         // Changing a valid ephemeral law must not invalidate the aggregation

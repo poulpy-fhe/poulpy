@@ -61,6 +61,7 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
+    res.set_encryption_metadata(None);
     operand_degree(module.n(), &[ksk.n()]);
     assert!(res.n() <= ksk.n());
     assert!(a.n() <= ksk.n());

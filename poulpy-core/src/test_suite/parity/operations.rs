@@ -537,7 +537,7 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     }
 }
 
-/// Zeroing and copying retain destination metadata, including partial limbs.
+/// Zeroing and copying retain destination layout metadata, including partial limbs.
 pub fn test_glwe_copy_zero_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,

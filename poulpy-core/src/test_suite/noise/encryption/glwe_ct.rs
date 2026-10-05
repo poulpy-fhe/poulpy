@@ -759,6 +759,7 @@ where
                     let mut key: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pk_infos);
                     module.glwe_encrypt_zero_sk(&mut key, &sk_prepared, &mut xe, &mut xa, &mut scratch.borrow());
                     module.glwe_normalize_assign(&mut key, &mut scratch.borrow());
+                    key.encryption_metadata = Some(crate::EncryptionMetadata::from_secret_at(*sk.dist(), pk_infos.k));
                     key
                 })
                 .collect();

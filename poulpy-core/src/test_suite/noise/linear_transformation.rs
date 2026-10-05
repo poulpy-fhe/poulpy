@@ -197,7 +197,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
         module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
         assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
-        assert_eq!(prepared_babies.encryption_metadata(), ct.encryption_metadata());
 
         let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);

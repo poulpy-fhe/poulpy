@@ -1,4 +1,4 @@
-//! Provenance recorded by encryption, independent of an object's current noise.
+//! Fresh-encryption provenance, cleared from homomorphic evaluation outputs.
 
 use std::io::{self, Read, Write};
 
@@ -119,8 +119,11 @@ impl SecretDistribution {
 /// operations. Encryption records the encrypting secret's distribution and an
 /// effective fresh phase-error estimate, including amplification during key
 /// generation. The fresh variance is independent of the secret's party count.
-/// Uninitialized objects have no provenance.
-/// Representation changes preserve it; equality and serialization include it.
+/// Homomorphic operations clear it from their outputs; noise composition is
+/// not tracked. Uninitialized objects have no provenance. Copies, preparation,
+/// compression and backend transfers preserve it; equality and serialization
+/// include it. Encryption and key generation record new metadata after any
+/// internal arithmetic used to construct their fresh outputs.
 /// Encapsulated secrets keep their existing ephemeral, nonserializable tag:
 /// an object carrying that provenance cannot be serialized either.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

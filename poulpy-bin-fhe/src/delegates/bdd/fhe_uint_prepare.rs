@@ -31,7 +31,10 @@ where
     ) where
         K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
     {
-        BE::fhe_uint_prepare::<K, T>(self, res, bits, key, scratch)
+        BE::fhe_uint_prepare::<K, T>(self, res, bits, key, scratch);
+        for bit in &mut res.bits {
+            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+        }
     }
     #[allow(clippy::too_many_arguments)]
     fn fhe_uint_prepare_custom<K, T: UnsignedInteger>(
@@ -45,7 +48,10 @@ where
     ) where
         K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
     {
-        BE::fhe_uint_prepare_custom::<K, T>(self, res, bits, bit_start, bit_count, key, scratch)
+        BE::fhe_uint_prepare_custom::<K, T>(self, res, bits, bit_start, bit_count, key, scratch);
+        for bit in &mut res.bits {
+            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+        }
     }
     #[allow(clippy::too_many_arguments)]
     fn fhe_uint_prepare_custom_multi_thread<K, T: UnsignedInteger>(
@@ -60,6 +66,9 @@ where
     ) where
         K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
     {
-        BE::fhe_uint_prepare_custom_multi_thread::<K, T>(self, threads, res, bits, bit_start, bit_count, key, scratch)
+        BE::fhe_uint_prepare_custom_multi_thread::<K, T>(self, threads, res, bits, bit_start, bit_count, key, scratch);
+        for bit in &mut res.bits {
+            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+        }
     }
 }

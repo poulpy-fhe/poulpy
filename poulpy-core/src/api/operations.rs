@@ -268,9 +268,9 @@ pub trait GGSWRotate<BE: Backend> {
 
 /// Multiplies stored polynomial limbs by `X^k - 1` in the negacyclic ring.
 ///
-/// This is raw limb arithmetic: it preserves destination metadata and performs
+/// This is raw limb arithmetic: it preserves destination layout metadata and performs
 /// neither radix conversion nor normalization, even when source and destination
-/// radices differ. Their degrees and ranks must match.
+/// radices differ. Their degrees and ranks must match. Encryption metadata is cleared.
 pub trait GLWEMulXpMinusOne<BE: Backend> {
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
@@ -284,7 +284,8 @@ pub trait GLWEMulXpMinusOne<BE: Backend> {
 
 /// Copies a canonical GLWE's torus value into the destination layout.
 ///
-/// The destination keeps its metadata. Narrowing rounds to its logical `k`,
+/// The destination keeps its layout metadata and copies the source's encryption
+/// metadata. Narrowing rounds to its logical `k`,
 /// including partial limbs; differing radices are converted. With equal radices
 /// and no precision loss, this is a limb copy with zero-extension. A rank-zero
 /// source may be copied into a higher-rank destination, whose mask is zeroed.

@@ -104,6 +104,10 @@ where
     });
     let mut value = Value { data, budget, delta: 3 };
     value.write(values);
+    value.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret_at(
+        crate::Distribution::TernaryProb(0.5),
+        TorusPrecision(12),
+    )));
     value
 }
 struct Step<BE: Backend> {
@@ -255,6 +259,7 @@ where
                 .glwe_eval_baby_step(&ops, &mut res, parity, &coeffs, &basis, &mut scratch.borrow())
                 .unwrap();
             assert_eq!((res.read(0), res.budget), (expected, budget));
+            assert_eq!(res.encryption_metadata(), None);
             out.push((res.read(0), res.budget, res.delta));
         }
         let mut constant = value(module, &[-99], 1);
@@ -270,6 +275,7 @@ where
             )
             .unwrap();
         assert_eq!((constant.read(0), constant.budget), (3, 29));
+        assert_eq!(constant.encryption_metadata(), None);
         ops.mul_pt_const(
             module,
             &mut constant,
@@ -293,6 +299,11 @@ where
             .glwe_eval_giant_steps(&ops, &mut res, &mut steps, &basis, &NoKey, &mut scratch.borrow())
             .unwrap();
         assert_eq!(res.read(0), 1 + 2 * 4 + 3 * 16 + 4 * 64);
+        assert_eq!(res.encryption_metadata(), None);
+        assert!(steps[0].value.encryption_metadata().is_some());
+        assert_eq!(steps[1].value.encryption_metadata(), None);
+        assert!(steps[2].value.encryption_metadata().is_some());
+        assert_eq!(steps[3].value.encryption_metadata(), None);
         assert_eq!(ops.prepare_calls.get(), 2);
         out.push((res.read(0), res.budget, res.delta));
         let mut single = vec![Step {
@@ -303,13 +314,18 @@ where
             .glwe_eval_giant_steps(&ops, &mut res, &mut single, &basis, &NoKey, &mut scratch.borrow())
             .unwrap();
         assert_eq!((res.read(0), res.budget), (11, 21));
+        assert_eq!(res.encryption_metadata(), None);
         assert_eq!(ops.prepare_calls.get(), 2, "single baby step must only copy");
+        let unchanged = single[0].value.encryption_metadata();
+        assert!(unchanged.is_some(), "copying a baby step must preserve its input tag");
+        res.set_encryption_metadata(unchanged);
         let mut empty: Vec<Step<BE>> = Vec::new();
         assert!(
             module
                 .glwe_eval_giant_steps(&ops, &mut res, &mut empty, &basis, &NoKey, &mut scratch.borrow())
                 .is_err()
         );
+        assert_eq!(res.encryption_metadata(), unchanged);
     }
     let ops = ExactOps {
         fused: false,
@@ -317,17 +333,20 @@ where
         fail: true,
     };
     let mut res = value(module, &[-99], 1);
+    let before = res.encryption_metadata();
     let error = module
         .glwe_eval_baby_step(&ops, &mut res, Parity::Full, &coeffs, &basis, &mut scratch.borrow())
         .unwrap_err();
     assert!(error.to_string().contains("policy sentinel"));
     assert_eq!(res.read(0), -99);
+    assert_eq!(res.encryption_metadata(), before);
     basis.take_power(3);
     assert!(
         module
             .glwe_eval_baby_step(&ops, &mut res, Parity::Full, &coeffs, &basis, &mut scratch.borrow())
             .is_err()
     );
+    assert_eq!(res.encryption_metadata(), before);
     out
 }
 /// Both BSGS phases agree with the selected comparison backend and exact

@@ -14,6 +14,8 @@ impl<BE: Backend + CKKSCopyImpl> CKKSCopyOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_copy_impl(self, dst, src, scratch)
+        BE::ckks_copy_impl(self, dst, src, scratch)?;
+        dst.set_encryption_metadata(src.encryption_metadata());
+        Ok(())
     }
 }

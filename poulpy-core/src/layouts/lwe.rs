@@ -14,10 +14,11 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 /// An LWE ciphertext is a scalar (non-polynomial) ciphertext consisting of
 /// a body `b` and a mask `(a_1, ..., a_n)`.
 pub trait LWEInfos {
-    /// Provenance of the original encryption, when known.
+    /// Fresh-encryption provenance, when known.
     ///
-    /// This is not the current noise after homomorphic evaluation. Plain layouts,
-    /// plaintexts, and newly allocated buffers have no encryption provenance.
+    /// Homomorphic evaluation clears this from its outputs. Plain layouts,
+    /// plaintexts, and newly allocated buffers also have no encryption provenance.
+    /// Copies and prepared or compressed representations preserve it.
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
         None
     }

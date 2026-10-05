@@ -21,7 +21,8 @@ where
         T: GLWEToBackendRef<BE>,
         F: GLWEToBackendRef<BE>,
     {
-        BE::cmux::<R, T, F>(self, res, t, f, s, scratch)
+        BE::cmux::<R, T, F>(self, res, t, f, s, scratch);
+        res.set_encryption_metadata(None);
     }
     #[allow(clippy::too_many_arguments)]
     fn cmux_assign_neg<R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -29,7 +30,8 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
     {
-        BE::cmux_assign_neg::<R, A>(self, res, a, s, scratch)
+        BE::cmux_assign_neg::<R, A>(self, res, a, s, scratch);
+        res.set_encryption_metadata(None);
     }
     #[allow(clippy::too_many_arguments)]
     fn cmux_assign<R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -37,6 +39,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
     {
-        BE::cmux_assign::<R, A>(self, res, a, s, scratch)
+        BE::cmux_assign::<R, A>(self, res, a, s, scratch);
+        res.set_encryption_metadata(None);
     }
 }

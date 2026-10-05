@@ -275,6 +275,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
+    res.set_encryption_metadata(None);
     assert_eq!(ggsw.rank(), a.rank());
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());
@@ -363,6 +364,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
         + VecZnxIdftApplyTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
+    res.set_encryption_metadata(None);
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());
     assert!(

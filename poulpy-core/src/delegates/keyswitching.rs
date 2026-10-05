@@ -38,18 +38,16 @@ impl_keyswitching_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = key.encryption_metadata();
         BE::glwe_keyswitch(self, res, a, key, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        let metadata = key.encryption_metadata();
         BE::glwe_keyswitch_assign(self, res, key, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -70,18 +68,16 @@ impl_keyswitching_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        let metadata = b.encryption_metadata();
         BE::gglwe_keyswitch(self, res, a, b, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn gglwe_keyswitch_assign<R>(&self, res: &mut R, a: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        let metadata = a.encryption_metadata();
         BE::gglwe_keyswitch_assign(self, res, a, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -110,9 +106,8 @@ impl_keyswitching_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
     {
-        let metadata = key.encryption_metadata();
         BE::ggsw_keyswitch(self, res, a, key, tsk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 
     fn ggsw_keyswitch_assign<R>(
@@ -125,9 +120,8 @@ impl_keyswitching_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        let metadata = key.encryption_metadata();
         BE::ggsw_keyswitch_assign(self, res, key, tsk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -148,8 +142,7 @@ impl_keyswitching_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
     {
-        let metadata = ksk.encryption_metadata();
         BE::lwe_keyswitch(self, res, a, ksk, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_encryption_metadata(None);
     }
 );

@@ -66,7 +66,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_dft_evaluate_assign_impl(self, ct, dft, keys, scratch)
+        BE::ckks_dft_evaluate_assign_impl(self, ct, dft, keys, scratch)?;
+        ct.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_coeffs_to_slots<P, Dst, H>(
@@ -81,7 +83,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_impl(self, ct, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots_impl(self, ct, dft, keys, scratch)?;
+        ct.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_slots_to_coeffs<P, Dst, H>(
@@ -96,7 +100,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_impl(self, ct, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs_impl(self, ct, dft, keys, scratch)?;
+        ct.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
@@ -114,7 +120,10 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, scratch)?;
+        ct_real.set_encryption_metadata(None);
+        ct_imag.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -132,7 +141,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_split_impl(self, op_out, ct_real, ct_imag, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs_split_impl(self, op_out, ct_real, ct_imag, dft, keys, scratch)?;
+        op_out.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
@@ -149,7 +160,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, scratch)?;
+        ct_out.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -166,7 +179,9 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_repack_impl(self, op_out, ct_in, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs_repack_impl(self, op_out, ct_in, dft, keys, scratch)?;
+        op_out.set_encryption_metadata(None);
+        Ok(())
     }
 }
 

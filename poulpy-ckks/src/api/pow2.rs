@@ -28,7 +28,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// log_budget_out = src.log_budget − offset
 /// ```
 ///
-/// For `_assign` variants `offset = 0` and metadata is unchanged.
+/// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
+/// Encryption metadata is cleared.
 ///
 /// **Note**: the metadata does not account for the increased magnitude of the
 /// encrypted value.  It is the caller's responsibility to ensure that
@@ -75,7 +76,8 @@ pub trait CKKSPow2Ops<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
-    /// Computes `dst *= 2^bits` in-place.  Metadata is unchanged.
+    /// Computes `dst *= 2^bits` in-place, preserving CKKS layout and scale metadata.
+    /// Encryption metadata is cleared.
     fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

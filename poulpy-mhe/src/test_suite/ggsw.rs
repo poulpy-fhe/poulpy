@@ -319,6 +319,7 @@ where
     let ct = encrypt_integers(module, &glwe_layout, &data, &sk, &mut scratch);
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_layout);
     module.glwe_external_product(&mut res, &ct, &ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
+    assert_eq!(res.encryption_metadata(), None);
     let want: Vec<i64> = (0..n)
         .map(|i| if i >= SHIFT { data[i - SHIFT] } else { -data[n + i - SHIFT] })
         .collect();

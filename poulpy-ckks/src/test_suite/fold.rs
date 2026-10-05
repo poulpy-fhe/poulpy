@@ -160,10 +160,8 @@ where
             )
             .unwrap();
 
-        let folded_metadata = ring_switch.map_or(ins[0].encryption_metadata(), |keys| keys.inbound.encryption_metadata());
-        assert!(folded_metadata.is_some());
         for ct in &folded {
-            assert_eq!(ct.encryption_metadata(), folded_metadata, "folded provenance, {label}");
+            assert_eq!(ct.encryption_metadata(), None, "folded provenance, {label}");
         }
 
         let mut refresh_scratch = alloc_scratch(&params, module);
@@ -206,8 +204,6 @@ where
             })
             .collect();
 
-        let refreshed_metadata = refreshed[0].encryption_metadata();
-        let expected_metadata = ring_switch.map_or(refreshed_metadata, |keys| keys.outbound.encryption_metadata());
         let mut outs: Vec<_> = ins
             .iter()
             .map(|ct| {
@@ -227,11 +223,7 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
-            assert_eq!(
-                out.encryption_metadata(),
-                expected_metadata,
-                "unfolded provenance {i}, {label}"
-            );
+            assert_eq!(out.encryption_metadata(), None, "unfolded provenance {i}, {label}");
             let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);
         }
@@ -246,14 +238,8 @@ where
                     &mut fold_scratch.borrow(),
                 )
                 .unwrap();
-            for (ct, group) in folded.iter().zip(units.chunks(span)) {
-                let expected = folded_metadata.filter(|metadata| {
-                    group.iter().all(|&(re, im)| {
-                        ins[re].encryption_metadata() == Some(*metadata)
-                            && im.is_none_or(|im| ins[im].encryption_metadata() == Some(*metadata))
-                    })
-                });
-                assert_eq!(ct.encryption_metadata(), expected, "mixed folded provenance, {label}");
+            for ct in &folded {
+                assert_eq!(ct.encryption_metadata(), None, "mixed folded provenance, {label}");
             }
         }
     }

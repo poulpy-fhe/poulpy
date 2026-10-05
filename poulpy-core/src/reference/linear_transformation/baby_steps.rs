@@ -63,10 +63,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
                 .entry(rot)
                 .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
-        Self {
-            encryption_metadata: None,
-            values,
-        }
+        Self { values }
     }
 
     /// Convenience: pre-allocates from a [`LinearTransformationLayout`].

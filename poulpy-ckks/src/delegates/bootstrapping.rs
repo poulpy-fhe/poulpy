@@ -60,7 +60,9 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mod_up_into_impl(self, dst, src, eval_mod, scratch)
+        BE::ckks_mod_up_into_impl(self, dst, src, eval_mod, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
@@ -76,7 +78,9 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
-        BE::ckks_bootstrap_mod_up_impl(self, dst, src, eval_mod, keys, scratch)
+        BE::ckks_bootstrap_mod_up_impl(self, dst, src, eval_mod, keys, scratch)?;
+        dst.set_encryption_metadata(None);
+        Ok(())
     }
 
     fn ckks_bootstrap<F, K>(
@@ -91,7 +95,9 @@ where
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
-        BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)
+        BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)?;
+        GLWEToBackendMut::<BE>::set_encryption_metadata(ct_out, None);
+        Ok(())
     }
 
     fn ckks_functional_bootstrap<F, K>(
@@ -106,6 +112,10 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)
+        BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)?;
+        for ct in ct_outs {
+            GLWEToBackendMut::<BE>::set_encryption_metadata(ct, None);
+        }
+        Ok(())
     }
 }

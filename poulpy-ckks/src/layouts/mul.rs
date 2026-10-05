@@ -17,8 +17,6 @@ use poulpy_hal::layouts::CnvPVecROwned;
 /// times (e.g. the same `X^{gsp}` across a BSGS giant-step level) hoists the
 /// forward transform out of the per-multiply path.
 pub struct CKKSPreparedRight<BE: Backend> {
-    /// Encryption provenance captured before the convolution representation is prepared.
-    pub(crate) encryption_metadata: Option<poulpy_core::EncryptionMetadata>,
     /// Backend-resident prepared convolution operand.
     pub(crate) prep: CnvPVecROwned<BE>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.
