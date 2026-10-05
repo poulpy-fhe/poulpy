@@ -28,8 +28,8 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GLWEEncToShareShare`: a rank-0 core `GLWE`, the public share of an
   encryption-to-shares conversion; `GLWEShareToEncShare`: a
   `GLWEPatCompressed`, the share of a shares-to-encryption conversion.
-- `GLWERefreshShare`: an encryption-to-shares and a shares-to-encryption part,
-  the share of a refresh.
+- `CKKSRefreshShare`: an encryption-to-shares and a shares-to-encryption part,
+  the share of a CKKS refresh.
 
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
@@ -55,12 +55,12 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   are generated from the ciphertext's mask alone, a core `GLWEMask`.
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext on the torus.
-- `GLWERefreshMHEProtocol`: the collective refresh of a ciphertext to a larger
-  precision, in one round.
+- `CKKSRefreshMHEProtocol`: the collective CKKS refresh of a ciphertext to a
+  larger precision, keeping its integer plaintext, in one round.
 
 ## Smudging
 
-Key switching, encryption-to-shares and refresh take a caller-selected
+Key switching, encryption-to-shares and CKKS refresh take a caller-selected
 `SmudgingNoise` flood, a discrete Gaussian or a uniform distribution on
 consecutive integers, sampled on the share's own precision grid. Size it with
 the [smudging contract](docs/mhe-contracts.md#smudging); small test parameters

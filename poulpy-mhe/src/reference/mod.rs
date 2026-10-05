@@ -2,19 +2,19 @@
 //! `poulpy-hal` operations, the default dispatch target of the
 //! `impl_mhe_*_reference!` opt-ins. A backend replacing one family may keep
 //! calling these for the others.
+pub mod ckks_refresh;
 pub mod evaluation_key;
 pub mod ggsw;
 pub mod keyswitch;
 pub mod pat;
 pub mod public_key;
-pub mod refresh;
 pub mod sharing;
 pub mod tensor_key;
+pub use ckks_refresh::*;
 pub use evaluation_key::*;
 pub use ggsw::*;
 pub use keyswitch::*;
 pub use pat::*;
 pub use public_key::*;
-pub use refresh::*;
 pub use sharing::*;
 pub use tensor_key::*;

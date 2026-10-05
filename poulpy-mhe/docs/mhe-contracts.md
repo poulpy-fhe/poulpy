@@ -13,8 +13,8 @@ the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
 switching protocols, `api::tensor_key` the collective tensor key protocol,
 `api::ggsw` the collective GGSW protocol, `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols and `api::refresh` the
-collective refresh protocol. A protocol
+encryption-to-shares and shares-to-encryption protocols and `api::ckks_refresh` the
+collective CKKS refresh protocol. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
@@ -38,7 +38,7 @@ same trait.
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
 | `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
 | `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
-| `GLWERefreshMHEProtocol` | `GLWERefreshMHEProtocolImpl` | `reference::GLWERefreshMHEProtocolReference` |
+| `CKKSRefreshMHEProtocol` | `CKKSRefreshMHEProtocolImpl` | `reference::CKKSRefreshMHEProtocolReference` |
 
 ## Normalization
 
@@ -126,7 +126,7 @@ parity suite arrives with the first override.
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
 `impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!`,
-`impl_mhe_sharing_reference!` or `impl_mhe_refresh_reference!` alone when
+`impl_mhe_sharing_reference!` or `impl_mhe_ckks_refresh_reference!` alone when
 replacing another one. The
 reference traits stay callable from an override.
 

@@ -8,6 +8,7 @@
 //! the PATs of one party's contribution with the metadata of its result.
 
 mod alloc;
+mod ckks_refresh_share;
 mod gglwe_pat;
 mod gglwe_pat_compressed;
 mod ggsw_share;
@@ -15,13 +16,13 @@ mod glwe_automorphism_key_share;
 mod glwe_keyswitch_share;
 mod glwe_pat_compressed;
 mod glwe_public_key_share;
-mod glwe_refresh_share;
 mod glwe_share;
 mod glwe_sharing_share;
 mod glwe_switching_key_share;
 mod glwe_tensor_key_share;
 
 pub use alloc::*;
+pub use ckks_refresh_share::*;
 pub use gglwe_pat::*;
 pub use gglwe_pat_compressed::*;
 pub use ggsw_share::*;
@@ -29,7 +30,6 @@ pub use glwe_automorphism_key_share::*;
 pub use glwe_keyswitch_share::*;
 pub use glwe_pat_compressed::*;
 pub use glwe_public_key_share::*;
-pub use glwe_refresh_share::*;
 pub use glwe_sharing_share::*;
 pub use glwe_switching_key_share::*;
 pub use glwe_tensor_key_share::*;

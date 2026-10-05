@@ -10,20 +10,20 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::GLWERefreshShareOwned,
+    layouts::CKKSRefreshShareOwned,
     reference::{GLWEEncToShareMHEProtocolReference, GLWEPatCompressedReference, GLWEShareToEncMHEProtocolReference},
 };
 
-pub trait GLWERefreshMHEProtocolReference<BE: Backend> {
-    fn mhe_glwe_refresh_share_gen_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+pub trait CKKSRefreshMHEProtocolReference<BE: Backend> {
+    fn mhe_ckks_refresh_share_gen_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_refresh_share_gen_reference<C, S, E>(
+    fn mhe_ckks_refresh_share_gen_reference<C, S, E>(
         &self,
-        res: &mut GLWERefreshShareOwned<BE>,
+        res: &mut CKKSRefreshShareOwned<BE>,
         mask: &C,
         sk: &S,
         log_bound: usize,
@@ -39,24 +39,24 @@ pub trait GLWERefreshMHEProtocolReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos;
 
-    fn mhe_glwe_refresh_share_aggregate_reference(&self, res: &mut GLWERefreshShareOwned<BE>, a: &GLWERefreshShareOwned<BE>);
+    fn mhe_ckks_refresh_share_aggregate_reference(&self, res: &mut CKKSRefreshShareOwned<BE>, a: &CKKSRefreshShareOwned<BE>);
 
-    fn mhe_glwe_refresh_share_finalize_tmp_bytes_reference<A>(&self, res_infos: &A) -> usize
+    fn mhe_ckks_refresh_share_finalize_tmp_bytes_reference<A>(&self, res_infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn mhe_glwe_refresh_share_finalize_reference<R, C>(
+    fn mhe_ckks_refresh_share_finalize_reference<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWERefreshShareOwned<BE>,
+        share: &CKKSRefreshShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWERefreshMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> CKKSRefreshMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWEEncToShareMHEProtocolReference<BE>
         + GLWEShareToEncMHEProtocolReference<BE>
@@ -72,7 +72,7 @@ where
         + VecZnxAddSmudging<BE>
         + VecZnxAdd<BE>,
 {
-    fn mhe_glwe_refresh_share_gen_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    fn mhe_ckks_refresh_share_gen_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos,
@@ -88,9 +88,9 @@ where
                 .max(self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(res_infos, res_infos))
     }
 
-    fn mhe_glwe_refresh_share_gen_reference<C, S, E>(
+    fn mhe_ckks_refresh_share_gen_reference<C, S, E>(
         &self,
-        res: &mut GLWERefreshShareOwned<BE>,
+        res: &mut CKKSRefreshShareOwned<BE>,
         mask: &C,
         sk: &S,
         log_bound: usize,
@@ -131,7 +131,7 @@ where
         let base2k = e2s.base2k().as_usize();
         flood.assert_valid_for(base2k, k);
         let s2e_infos = res.s2e.inner.glwe_layout();
-        let tmp_bytes = self.mhe_glwe_refresh_share_gen_tmp_bytes_reference(mask, &s2e_infos);
+        let tmp_bytes = self.mhe_ckks_refresh_share_gen_tmp_bytes_reference(mask, &s2e_infos);
         {
             let (mut m, scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             let (mut pt, scratch_2) = scratch_1.take_glwe_plaintext_scratch(mask);
@@ -157,12 +157,12 @@ where
         scratch.wipe(tmp_bytes);
     }
 
-    fn mhe_glwe_refresh_share_aggregate_reference(&self, res: &mut GLWERefreshShareOwned<BE>, a: &GLWERefreshShareOwned<BE>) {
+    fn mhe_ckks_refresh_share_aggregate_reference(&self, res: &mut CKKSRefreshShareOwned<BE>, a: &CKKSRefreshShareOwned<BE>) {
         self.mhe_glwe_enc_to_share_share_aggregate_reference(&mut res.e2s, &a.e2s);
         self.glwe_pat_compressed_aggregate_assign_reference(&mut res.s2e.inner, &a.s2e.inner);
     }
 
-    fn mhe_glwe_refresh_share_finalize_tmp_bytes_reference<A>(&self, res_infos: &A) -> usize
+    fn mhe_ckks_refresh_share_finalize_tmp_bytes_reference<A>(&self, res_infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -173,11 +173,11 @@ where
         raised.max(self.glwe_pat_compressed_finalize_tmp_bytes_reference())
     }
 
-    fn mhe_glwe_refresh_share_finalize_reference<R, C>(
+    fn mhe_ckks_refresh_share_finalize_reference<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWERefreshShareOwned<BE>,
+        share: &CKKSRefreshShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

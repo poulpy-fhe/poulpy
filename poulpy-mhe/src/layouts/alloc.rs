@@ -5,10 +5,10 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::layouts::{
-    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
-    GLWEAutomorphismKeyShareOwned, GLWEEncToShareShare, GLWEEncToShareShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned,
-    GLWEPrivateKeyswitchShare, GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
-    GLWEPublicKeyswitchShare, GLWEPublicKeyswitchShareOwned, GLWERefreshShare, GLWERefreshShareOwned, GLWEShareToEncShare,
+    CKKSRefreshShare, CKKSRefreshShareOwned, GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare,
+    GGSWShareOwned, GLWEAutomorphismKeyShare, GLWEAutomorphismKeyShareOwned, GLWEEncToShareShare, GLWEEncToShareShareOwned,
+    GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPrivateKeyswitchShare, GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyShare,
+    GLWEPublicKeyShareOwned, GLWEPublicKeyswitchShare, GLWEPublicKeyswitchShareOwned, GLWEShareToEncShare,
     GLWEShareToEncShareOwned, GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned,
     ggsw_share_part_layout,
 };
@@ -238,13 +238,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
         }
     }
 
-    /// A refresh share of a ciphertext at `ct_infos` into an output at `res_infos`.
-    fn glwe_refresh_share_alloc_from_infos<A: GLWEInfos, B: GLWEInfos>(
+    /// A CKKS refresh share of a ciphertext at `ct_infos` into an output at `res_infos`.
+    fn ckks_refresh_share_alloc_from_infos<A: GLWEInfos, B: GLWEInfos>(
         &self,
         ct_infos: &A,
         res_infos: &B,
-    ) -> GLWERefreshShareOwned<BE> {
-        GLWERefreshShare {
+    ) -> CKKSRefreshShareOwned<BE> {
+        CKKSRefreshShare {
             e2s: self.glwe_enc_to_share_share_alloc_from_infos(ct_infos),
             s2e: self.glwe_share_to_enc_share_alloc_from_infos(res_infos),
         }

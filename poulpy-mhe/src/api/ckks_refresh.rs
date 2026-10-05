@@ -7,20 +7,20 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::GLWERefreshShareOwned;
+use crate::layouts::CKKSRefreshShareOwned;
 
-/// Collective refresh in one round: every party draws private integers `M_i`
-/// and generates a share of two parts, the encryption-to-shares part, the inner
-/// product of the ciphertext's mask with its secret, minus `M_i`, plus its
-/// flood, and the shares-to-encryption part, the seeded encryption of `M_i` at
-/// the output precision. Any party aggregates the shares and finalizes a fresh
-/// encryption under the ideal secret of the same integer plaintext at the
+/// Collective CKKS refresh in one round: every party draws private integers
+/// `M_i` and generates a share of two parts, the encryption-to-shares part, the
+/// inner product of the ciphertext's mask with its secret, minus `M_i`, plus
+/// its flood, and the shares-to-encryption part, the seeded encryption of `M_i`
+/// at the output precision. Any party aggregates the shares and finalizes a
+/// fresh encryption under the ideal secret of the same integer plaintext at the
 /// output precision, plus the input noise, the floods and fresh encryption
 /// noise.
 ///
-/// The ciphertext's plaintext is read as a signed integer in its top-`k`
-/// window, the torus value `m * 2^-k`, and the raise to the output precision
-/// keeps the integer, so the reconstruction must not wrap, unlike
+/// CKKS reads the ciphertext's plaintext as a signed integer in its top-`k`
+/// window, the torus value `m * 2^-k`, and its modulus raise to the output
+/// precision keeps the integer, so the reconstruction must not wrap, unlike
 /// [`GLWEEncToShareMHEProtocol`](crate::api::GLWEEncToShareMHEProtocol)'s torus
 /// shares. `M_i` is uniform on `log_bound` bits. It hides the noisy plaintext,
 /// of magnitude `B` with the input noise and the aggregate flood: over `n`
@@ -36,9 +36,9 @@ use crate::layouts::GLWERefreshShareOwned;
 /// as for [`GLWEPrivateKeyswitchMHEProtocol`](crate::api::GLWEPrivateKeyswitchMHEProtocol).
 /// The seed of the shares-to-encryption part follows
 /// [`GLWEShareToEncMHEProtocol`](crate::api::GLWEShareToEncMHEProtocol).
-pub trait GLWERefreshMHEProtocol<BE: Backend> {
+pub trait CKKSRefreshMHEProtocol<BE: Backend> {
     /// `ct_infos` is the input ciphertext layout, `res_infos` the output layout.
-    fn mhe_glwe_refresh_share_gen_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    fn mhe_ckks_refresh_share_gen_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos;
@@ -51,9 +51,9 @@ pub trait GLWERefreshMHEProtocol<BE: Backend> {
     /// its error drawn with `enc_infos` from `source_xe` at the output
     /// precision. `M_i` never leaves the call.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_refresh_share_gen<C, S, E>(
+    fn mhe_ckks_refresh_share_gen<C, S, E>(
         &self,
-        res: &mut GLWERefreshShareOwned<BE>,
+        res: &mut CKKSRefreshShareOwned<BE>,
         mask: &C,
         sk: &S,
         log_bound: usize,
@@ -71,10 +71,10 @@ pub trait GLWERefreshMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layouts and seed.
-    fn mhe_glwe_refresh_share_aggregate(&self, res: &mut GLWERefreshShareOwned<BE>, a: &GLWERefreshShareOwned<BE>);
+    fn mhe_ckks_refresh_share_aggregate(&self, res: &mut CKKSRefreshShareOwned<BE>, a: &CKKSRefreshShareOwned<BE>);
 
     /// `res_infos` is the output layout.
-    fn mhe_glwe_refresh_share_finalize_tmp_bytes<A>(&self, res_infos: &A) -> usize
+    fn mhe_ckks_refresh_share_finalize_tmp_bytes<A>(&self, res_infos: &A) -> usize
     where
         A: GLWEInfos;
 
@@ -83,11 +83,11 @@ pub trait GLWERefreshMHEProtocol<BE: Backend> {
     /// the precision of `res`, added to its body. `ct`, the
     /// encryption-to-shares part and `res` share their degree and radix, and
     /// the encryption-to-shares part has the precision of `ct`.
-    fn mhe_glwe_refresh_share_finalize<R, C>(
+    fn mhe_ckks_refresh_share_finalize<R, C>(
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWERefreshShareOwned<BE>,
+        share: &CKKSRefreshShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
