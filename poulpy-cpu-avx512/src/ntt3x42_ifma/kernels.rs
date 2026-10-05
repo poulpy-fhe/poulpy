@@ -995,39 +995,9 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
                 let w_scaled_v = _mm512_set1_epi64(table.final_root[k] as i64);
                 let wp_scaled_v = _mm512_set1_epi64(table.final_quot[k] as i64);
                 if n >= 32 {
-                    let quarter = n / 4;
                     inv_plane(ptr, n / 2, 1, 0, ip, q_v, q2_v);
                     inv_plane(ptr.add(n / 2), n / 2, 1, 1, ip, q_v, q2_v);
-                    let w0 = _mm512_set1_epi64(inv[n - 3] as i64);
-                    let wp0 = _mm512_set1_epi64(ip[n - 3] as i64);
-                    let w1 = _mm512_set1_epi64(inv[n - 2] as i64);
-                    let wp1 = _mm512_set1_epi64(ip[n - 2] as i64);
-                    for j in (0..quarter).step_by(8) {
-                        let p0 = ptr.add(j) as *mut __m512i;
-                        let p1 = ptr.add(j + quarter) as *mut __m512i;
-                        let p2 = ptr.add(j + 2 * quarter) as *mut __m512i;
-                        let p3 = ptr.add(j + 3 * quarter) as *mut __m512i;
-                        let a = _mm512_loadu_si512(p0);
-                        let b = _mm512_loadu_si512(p1);
-                        let c = _mm512_loadu_si512(p2);
-                        let d = _mm512_loadu_si512(p3);
-                        let ab = _mm512_add_epi64(a, b);
-                        let cd = _mm512_add_epi64(c, d);
-                        let b = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(a, q2_v), b), w0, wp0, q_v);
-                        let d = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(c, q2_v), d), w1, wp1, q_v);
-                        let a = ab;
-                        let c = cd;
-                        let ac = harvey_modmul_si512(_mm512_add_epi64(a, c), n_inv_v, n_inv_quot_v, q_v);
-                        let bd = harvey_modmul_si512(_mm512_add_epi64(b, d), n_inv_v, n_inv_quot_v, q_v);
-                        let ac_diff = _mm512_sub_epi64(_mm512_add_epi64(a, _mm512_add_epi64(q2_v, q2_v)), c);
-                        let bd_diff = _mm512_sub_epi64(_mm512_add_epi64(b, q2_v), d);
-                        let ac_diff = harvey_modmul_si512(ac_diff, w_scaled_v, wp_scaled_v, q_v);
-                        let bd_diff = harvey_modmul_si512(bd_diff, w_scaled_v, wp_scaled_v, q_v);
-                        _mm512_storeu_si512(p0, ac);
-                        _mm512_storeu_si512(p1, bd);
-                        _mm512_storeu_si512(p2, ac_diff);
-                        _mm512_storeu_si512(p3, bd_diff);
-                    }
+                    intt_finish_span(table, ptr, k, 0, n / 4);
                 } else {
                     // Depth-first transform of the full plane, down to (but not
                     // including) the single m == 1 stage.
@@ -1060,6 +1030,88 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
                     *c = harvey_modmul(*c, n_inv, n_inv_quot, q);
                 }
             }
+        }
+    }
+}
+
+/// Transforms one quarter, stopping before the final two inverse stages.
+///
+/// # Safety
+/// `ptr` owns `table.n / 4` coefficients, `table.n >= 64`, `prime < 3`,
+/// and `part < 4`. AVX512-IFMA and AVX512-VL must be available.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn intt_quarter<P: PrimeSetNtt3x42Ifma, R: Ring>(
+    table: &Ntt3x42IfmaTableInv<P, R>,
+    ptr: *mut u64,
+    prime: usize,
+    part: usize,
+) {
+    unsafe {
+        let n = table.n;
+        let ip = &table.inv_quot[prime * n..(prime + 1) * n];
+        let q_v = _mm512_set1_epi64(P::Q[prime] as i64);
+        let q2_v = _mm512_set1_epi64((2 * P::Q[prime]) as i64);
+        inv_plane(ptr, n / 4, 2, part, ip, q_v, q2_v);
+        inv_broadcast_stage(ptr, n / 8, 1, ip, n - 7 + part, q_v, q2_v);
+    }
+}
+
+/// Finishes two inverse stages and scales a coefficient span in all four quarters.
+///
+/// # Safety
+/// `ptr` covers `table.n` coefficients with exclusive access to `[begin, end)`
+/// in each quarter. Both bounds are multiples of 8 within `0..=table.n / 4`,
+/// `table.n >= 32`, and `prime < 3`. AVX512-IFMA and AVX512-VL are required.
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn intt_finish_span<P: PrimeSetNtt3x42Ifma, R: Ring>(
+    table: &Ntt3x42IfmaTableInv<P, R>,
+    ptr: *mut u64,
+    prime: usize,
+    begin: usize,
+    end: usize,
+) {
+    unsafe {
+        let n = table.n;
+        let quarter = n / 4;
+        let k = prime;
+        let inv = &table.inv_root[k * n..(k + 1) * n];
+        let ip = &table.inv_quot[k * n..(k + 1) * n];
+        let q_v = _mm512_set1_epi64(P::Q[k] as i64);
+        let q2_v = _mm512_set1_epi64((2 * P::Q[k]) as i64);
+        let n_inv_v = _mm512_set1_epi64(table.n_inv[k] as i64);
+        let n_inv_quot_v = _mm512_set1_epi64(table.n_inv_quot[k] as i64);
+        let w_scaled_v = _mm512_set1_epi64(table.final_root[k] as i64);
+        let wp_scaled_v = _mm512_set1_epi64(table.final_quot[k] as i64);
+        let w0 = _mm512_set1_epi64(inv[n - 3] as i64);
+        let wp0 = _mm512_set1_epi64(ip[n - 3] as i64);
+        let w1 = _mm512_set1_epi64(inv[n - 2] as i64);
+        let wp1 = _mm512_set1_epi64(ip[n - 2] as i64);
+        for j in (begin..end).step_by(8) {
+            let p0 = ptr.add(j) as *mut __m512i;
+            let p1 = ptr.add(j + quarter) as *mut __m512i;
+            let p2 = ptr.add(j + 2 * quarter) as *mut __m512i;
+            let p3 = ptr.add(j + 3 * quarter) as *mut __m512i;
+            let a = _mm512_loadu_si512(p0);
+            let b = _mm512_loadu_si512(p1);
+            let c = _mm512_loadu_si512(p2);
+            let d = _mm512_loadu_si512(p3);
+            let ab = _mm512_add_epi64(a, b);
+            let cd = _mm512_add_epi64(c, d);
+            let b = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(a, q2_v), b), w0, wp0, q_v);
+            let d = harvey_modmul_si512(_mm512_sub_epi64(_mm512_add_epi64(c, q2_v), d), w1, wp1, q_v);
+            let a = ab;
+            let c = cd;
+            let ac = harvey_modmul_si512(_mm512_add_epi64(a, c), n_inv_v, n_inv_quot_v, q_v);
+            let bd = harvey_modmul_si512(_mm512_add_epi64(b, d), n_inv_v, n_inv_quot_v, q_v);
+            let ac_diff = _mm512_sub_epi64(_mm512_add_epi64(a, _mm512_add_epi64(q2_v, q2_v)), c);
+            let bd_diff = _mm512_sub_epi64(_mm512_add_epi64(b, q2_v), d);
+            let ac_diff = harvey_modmul_si512(ac_diff, w_scaled_v, wp_scaled_v, q_v);
+            let bd_diff = harvey_modmul_si512(bd_diff, w_scaled_v, wp_scaled_v, q_v);
+            _mm512_storeu_si512(p0, ac);
+            _mm512_storeu_si512(p1, bd);
+            _mm512_storeu_si512(p2, ac_diff);
+            _mm512_storeu_si512(p3, bd_diff);
         }
     }
 }
