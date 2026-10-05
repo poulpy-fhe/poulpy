@@ -1,6 +1,6 @@
 //! Bounded large-ring tensor coverage for emulated CI.
 //!
-//! The exhaustive suites in `tests.rs` remain enabled for native runs. These
+//! Native suites in `tests.rs` sweep precisions and offsets at rank one. These
 //! focused cases exercise every rank-one specialization (degree 2^15 or 2^16),
 //! with partial top limbs and both aligned and unaligned convolution offsets.
 //! Small-ring suites retain the complete rank, precision and offset sweeps.

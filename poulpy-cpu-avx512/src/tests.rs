@@ -160,11 +160,17 @@ poulpy_core::core_parity_test_suite! {
 }
 
 // Exercise the rank-one specialization at degrees above the general suites.
+// Rank-two fallback coverage stays in the small-ring suites, so scalar oracle
+// comparisons at these degrees only sweep the specialized rank-one path.
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_fused,
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -177,6 +183,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -187,6 +197,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<16, base2k: 52, n: 1<<16 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -198,6 +212,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -209,6 +227,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<16, base2k: 52, n: 1<<16 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -221,6 +243,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
