@@ -8,11 +8,11 @@ use poulpy_hal::{
     oep::HalModuleImpl,
 };
 
-use crate::{family::Family, fft::Fft64, ntt::Ntt4x30};
+use crate::{family::DFTFamily, fft::Fft64, ntt::Ntt4x30};
 
 /// Scalar correctness oracle over the transform family `F`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Oracle<F: Family>(PhantomData<F>);
+pub struct Oracle<F: DFTFamily>(PhantomData<F>);
 
 /// Oracle using a scalar `f64` FFT.
 pub type FFT64Oracle = Oracle<Fft64>;
@@ -21,12 +21,12 @@ pub type FFT64Oracle = Oracle<Fft64>;
 pub type NTT4x30Oracle = Oracle<Ntt4x30>;
 
 /// Transform tables for every degree up to the module degree, by `log2(n)`.
-pub struct Handle<F: Family> {
+pub struct Handle<F: DFTFamily> {
     tables: Vec<F::Table>,
 }
 
 /// The transform tables of `module` for degree `n`.
-pub(crate) fn table<F: Family>(module: &Module<Oracle<F>>, n: usize) -> &F::Table {
+pub(crate) fn table<F: DFTFamily>(module: &Module<Oracle<F>>, n: usize) -> &F::Table {
     let handle: &Handle<F> = unsafe { &*module.ptr() };
     assert!(
         n.is_power_of_two() && (n.ilog2() as usize) < handle.tables.len(),
@@ -35,7 +35,7 @@ pub(crate) fn table<F: Family>(module: &Module<Oracle<F>>, n: usize) -> &F::Tabl
     &handle.tables[n.ilog2() as usize]
 }
 
-unsafe impl<F: Family> HalModuleImpl for Oracle<F> {
+unsafe impl<F: DFTFamily> HalModuleImpl for Oracle<F> {
     fn new(n: u64) -> Module<Self> {
         assert!(n.is_power_of_two(), "module degree must be a power of two, got {n}");
         let tables = (0..=n.ilog2()).map(|log_n| F::table(1 << log_n)).collect();
@@ -44,9 +44,9 @@ unsafe impl<F: Family> HalModuleImpl for Oracle<F> {
     }
 }
 
-impl<F: Family> poulpy_hal::execution::ScratchWorkers for Oracle<F> {}
+impl<F: DFTFamily> poulpy_hal::execution::ScratchWorkers for Oracle<F> {}
 
-impl<F: Family> Backend for Oracle<F> {
+impl<F: DFTFamily> Backend for Oracle<F> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

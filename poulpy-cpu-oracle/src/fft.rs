@@ -4,7 +4,7 @@
 //! layout, all real parts then all imaginary parts. Slot `j` holds the
 //! evaluation at `w^e` with `w = exp(i pi / n)` and `e = 4 bitrev(j) + 1`.
 
-use crate::family::{Family, bitrev};
+use crate::family::{DFTFamily, bitrev};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Fft64;
@@ -74,7 +74,7 @@ fn transform(m: usize, roots: &[f64], data: &mut [f64], inverse: bool) {
     }
 }
 
-impl Family for Fft64 {
+impl DFTFamily for Fft64 {
     type Dft = f64;
     type Big = i64;
     type Table = FftTable;
@@ -100,6 +100,16 @@ impl Family for Fft64 {
         transform(table.m, &table.inverse, &mut values, true);
         for (r, v) in res.iter_mut().zip(&values) {
             *r = (v / table.m as f64).round() as i64;
+        }
+    }
+
+    fn dft_embed(res: &mut [f64], a: &[f64]) {
+        assert!(a.len() >= 2 && a.len().is_power_of_two());
+        assert!(res.len().is_power_of_two() && res.len() >= a.len());
+        let gap = res.len() / a.len();
+        // Bit-reversed evaluations repeat consecutively within each reim half.
+        for (dst, &value) in res.chunks_exact_mut(gap).zip(a) {
+            dst.fill(value);
         }
     }
 

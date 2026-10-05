@@ -10,7 +10,7 @@ use rand_distr::{Distribution as _, Normal};
 use crate::{
     ScalarZnxFill,
     backend::Oracle,
-    family::{Family, Int},
+    family::{DFTFamily, Int},
 };
 
 /// Adds rounded Gaussian noise, rejected above `bound`, to the limb holding
@@ -29,7 +29,7 @@ fn add_normal<T: Int>(limb: &mut [T], base2k: usize, k: usize, sigma: f64, bound
     }
 }
 
-unsafe impl<F: Family> SamplingImpl for Oracle<F> {
+unsafe impl<F: DFTFamily> SamplingImpl for Oracle<F> {
     fn scalar_znx_fill_distribution(
         _module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,

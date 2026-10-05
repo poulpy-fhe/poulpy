@@ -26,7 +26,7 @@ mod scalar_znx_fill;
 mod tests;
 
 pub use backend::{FFT64Oracle, Handle, NTT4x30Oracle, Oracle};
-pub use family::Family;
+pub use family::DFTFamily;
 pub use fft::Fft64;
 pub use ntt::{Ntt4x30, Primes30};
 
