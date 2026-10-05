@@ -28,8 +28,8 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GLWEEncToShareShare`: a rank-0 core `GLWE`, the public share of an
   encryption-to-shares conversion; `GLWEShareToEncShare`: a
   `GLWEPatCompressed`, the share of a shares-to-encryption conversion.
-- `CKKSRefreshShare`: an encryption-to-shares and a shares-to-encryption part,
-  the share of a CKKS refresh.
+- `ckks::CKKSRefreshShare`: an encryption-to-shares and a shares-to-encryption
+  part, the share of a CKKS refresh.
 
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
@@ -55,8 +55,9 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   are generated from the ciphertext's mask alone, a core `GLWEMask`.
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext on the torus.
-- `CKKSRefreshMHEProtocol`: the collective CKKS refresh of a ciphertext to a
-  larger precision, keeping its integer plaintext, in one round.
+- `ckks::CKKSRefreshMHEProtocol`: the collective CKKS refresh of a ciphertext
+  to a larger precision, keeping its integer plaintext, in one round. The
+  `ckks` module holds the CKKS-specific protocols, layered as the crate.
 
 ## Smudging
 

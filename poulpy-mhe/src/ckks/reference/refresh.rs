@@ -10,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::CKKSRefreshShareOwned,
+    ckks::layouts::CKKSRefreshShareOwned,
     reference::{GLWEEncToShareMHEProtocolReference, GLWEPatCompressedReference, GLWEShareToEncMHEProtocolReference},
 };
 

@@ -1,7 +1,6 @@
 //! Backend-generic tests of `poulpy-mhe`, instantiated by backend crates
 //! through [`mhe_backend_test_suite!`](crate::mhe_backend_test_suite).
 
-pub mod ckks_refresh;
 pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod ggsw;
@@ -279,25 +278,25 @@ macro_rules! mhe_backend_test_suite {
 
             #[test]
             fn ckks_refresh() {
-                $crate::test_suite::ckks_refresh::test_ckks_refresh(&Module::<$backend>::new(256));
+                $crate::ckks::test_suite::refresh::test_ckks_refresh(&Module::<$backend>::new(256));
             }
 
             #[test]
             #[should_panic(expected = "invalid share: bound outside the ciphertext precision")]
             fn ckks_refresh_bound() {
-                $crate::test_suite::ckks_refresh::test_ckks_refresh_bound(&Module::<$backend>::new(64));
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_bound(&Module::<$backend>::new(64));
             }
 
             #[test]
             #[should_panic(expected = "invalid finalization: ciphertext, share and output layouts differ")]
             fn ckks_refresh_finalize_layout_mismatch() {
-                $crate::test_suite::ckks_refresh::test_ckks_refresh_finalize_layout_mismatch(&Module::<$backend>::new(64));
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_finalize_layout_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
             #[should_panic(expected = "invalid finalization: ciphertext more precise than the output")]
             fn ckks_refresh_finalize_precision() {
-                $crate::test_suite::ckks_refresh::test_ckks_refresh_finalize_precision(&Module::<$backend>::new(64));
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_finalize_precision(&Module::<$backend>::new(64));
             }
 
             #[test]

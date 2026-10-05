@@ -13,18 +13,18 @@ use poulpy_hal::{
     source::Source,
 };
 
-use super::fixtures::{
+use crate::ckks::{api::CKKSRefreshMHEProtocol, layouts::MHECKKSModuleAlloc};
+use crate::test_suite::fixtures::{
     BASE2K, K, K_OUT, LOG_BOUND, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, bounded_integers,
     encrypt_integers, glwe_layout_at, ideal_secret, integer_flood_infos, party_secrets, plaintext_integers, secret_from_seed,
 };
-use crate::{api::CKKSRefreshMHEProtocol, layouts::MHEModuleAlloc};
 
 pub fn test_ckks_refresh<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
+    Module<BE>: MHECKKSModuleAlloc<BE>
         + CKKSRefreshMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -106,7 +106,7 @@ where
 pub fn test_ckks_refresh_finalize_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE>,
+    Module<BE>: MHECKKSModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let in_layout = glwe_layout_at(module, K);
@@ -126,7 +126,7 @@ where
 pub fn test_ckks_refresh_finalize_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE>,
+    Module<BE>: MHECKKSModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let out_layout = glwe_layout_at(module, K);
@@ -142,7 +142,7 @@ where
 pub fn test_ckks_refresh_bound<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHECKKSModuleAlloc<BE> + CKKSRefreshMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let in_layout = glwe_layout_at(module, K);

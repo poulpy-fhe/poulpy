@@ -12,8 +12,9 @@ defaults in `oep::derived`.
 the collective public key protocol, `api::evaluation_key` the collective
 switching and automorphism key protocols, `api::keyswitch` the collective key
 switching protocols, `api::tensor_key` the collective tensor key protocol,
-`api::ggsw` the collective GGSW protocol, `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols and `api::ckks_refresh` the
+`api::ggsw` the collective GGSW protocol and `api::sharing` the
+encryption-to-shares and shares-to-encryption protocols. `ckks` holds the
+CKKS-specific protocols, layered the same way: `ckks::api::refresh` the
 collective CKKS refresh protocol. A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
@@ -38,7 +39,7 @@ same trait.
 | `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
 | `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
 | `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
-| `CKKSRefreshMHEProtocol` | `CKKSRefreshMHEProtocolImpl` | `reference::CKKSRefreshMHEProtocolReference` |
+| `ckks::CKKSRefreshMHEProtocol` | `ckks::oep::CKKSRefreshMHEProtocolImpl` | `ckks::reference::CKKSRefreshMHEProtocolReference` |
 
 ## Normalization
 

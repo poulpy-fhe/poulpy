@@ -7,7 +7,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::CKKSRefreshMHEProtocol, layouts::CKKSRefreshShareOwned, oep::CKKSRefreshMHEProtocolImpl};
+use crate::ckks::{api::CKKSRefreshMHEProtocol, layouts::CKKSRefreshShareOwned, oep::CKKSRefreshMHEProtocolImpl};
 
 impl<BE: Backend + CKKSRefreshMHEProtocolImpl> CKKSRefreshMHEProtocol<BE> for Module<BE> {
     fn mhe_ckks_refresh_share_gen_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize

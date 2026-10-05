@@ -7,7 +7,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::CKKSRefreshShareOwned;
+use crate::ckks::layouts::CKKSRefreshShareOwned;
 
 /// Collective CKKS refresh in one round: every party draws private integers
 /// `M_i` and generates a share of two parts, the encryption-to-shares part, the

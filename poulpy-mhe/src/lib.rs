@@ -9,7 +9,9 @@
 //! sum of every party's secret. [`layouts`] holds one type per transcript
 //! shape, [`api`] the operations on them. Every operation follows
 //! `API -> delegate -> OEP`; [`reference`](mod@crate::reference) is the default implementation.
+//! [`ckks`] holds the CKKS-specific protocols, layered the same way.
 pub mod api;
+pub mod ckks;
 mod delegates;
 pub mod layouts;
 pub mod oep;

@@ -5,12 +5,11 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::layouts::{
-    CKKSRefreshShare, CKKSRefreshShareOwned, GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare,
-    GGSWShareOwned, GLWEAutomorphismKeyShare, GLWEAutomorphismKeyShareOwned, GLWEEncToShareShare, GLWEEncToShareShareOwned,
-    GLWEPatCompressed, GLWEPatCompressedOwned, GLWEPrivateKeyswitchShare, GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyShare,
-    GLWEPublicKeyShareOwned, GLWEPublicKeyswitchShare, GLWEPublicKeyswitchShareOwned, GLWEShareToEncShare,
-    GLWEShareToEncShareOwned, GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned,
-    ggsw_share_part_layout,
+    GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
+    GLWEAutomorphismKeyShareOwned, GLWEEncToShareShare, GLWEEncToShareShareOwned, GLWEPatCompressed, GLWEPatCompressedOwned,
+    GLWEPrivateKeyswitchShare, GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyShare, GLWEPublicKeyShareOwned,
+    GLWEPublicKeyswitchShare, GLWEPublicKeyswitchShareOwned, GLWEShareToEncShare, GLWEShareToEncShareOwned,
+    GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
 };
 
 /// PAT and share allocation on a backend module.
@@ -235,18 +234,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     fn glwe_share_to_enc_share_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEShareToEncShareOwned<BE> {
         GLWEShareToEncShare {
             inner: self.glwe_pat_compressed_alloc(base2k, k, rank),
-        }
-    }
-
-    /// A CKKS refresh share of a ciphertext at `ct_infos` into an output at `res_infos`.
-    fn ckks_refresh_share_alloc_from_infos<A: GLWEInfos, B: GLWEInfos>(
-        &self,
-        ct_infos: &A,
-        res_infos: &B,
-    ) -> CKKSRefreshShareOwned<BE> {
-        CKKSRefreshShare {
-            e2s: self.glwe_enc_to_share_share_alloc_from_infos(ct_infos),
-            s2e: self.glwe_share_to_enc_share_alloc_from_infos(res_infos),
         }
     }
 }

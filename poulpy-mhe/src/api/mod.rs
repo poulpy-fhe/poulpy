@@ -5,7 +5,6 @@
 //! - [`keyswitch`]: the collective key switching protocols.
 //! - [`pat`]: aggregation and finalization of every PAT shape.
 //! - [`public_key`]: the collective public key protocol.
-//! - [`ckks_refresh`]: the collective CKKS refresh protocol.
 //! - [`sharing`]: the encryption-to-shares and shares-to-encryption protocols.
 //! - [`tensor_key`]: the collective tensor (relinearization) key protocol.
 //!
@@ -14,7 +13,6 @@
 //! type.
 //!
 //! Every trait delegates through [`crate::oep`].
-pub mod ckks_refresh;
 pub mod evaluation_key;
 pub mod ggsw;
 pub mod keyswitch;
@@ -22,7 +20,6 @@ pub mod pat;
 pub mod public_key;
 pub mod sharing;
 pub mod tensor_key;
-pub use ckks_refresh::*;
 pub use evaluation_key::*;
 pub use ggsw::*;
 pub use keyswitch::*;

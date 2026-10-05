@@ -8,7 +8,6 @@
 //! the PATs of one party's contribution with the metadata of its result.
 
 mod alloc;
-mod ckks_refresh_share;
 mod gglwe_pat;
 mod gglwe_pat_compressed;
 mod ggsw_share;
@@ -22,7 +21,6 @@ mod glwe_switching_key_share;
 mod glwe_tensor_key_share;
 
 pub use alloc::*;
-pub use ckks_refresh_share::*;
 pub use gglwe_pat::*;
 pub use gglwe_pat_compressed::*;
 pub use ggsw_share::*;

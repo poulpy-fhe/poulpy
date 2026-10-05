@@ -1,5 +1,4 @@
 //! Public API dispatch to the selected backend contracts.
-mod ckks_refresh;
 mod evaluation_key;
 mod ggsw;
 mod keyswitch;
