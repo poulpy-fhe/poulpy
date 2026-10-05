@@ -154,19 +154,20 @@ pub fn ambient_automorphism(a: &[i64], p: i64) -> Vec<i64> {
 
 /// Shared invariant ring correctness and cross-backend product tests.
 ///
-/// The product parity tests compare against `reference = ($fft, $ntt)`, the
-/// portable conjugate-invariant backends when omitted.
+/// Product parity tests compare against `reference`. An optional
+/// `large_radix_reference` selects an independent backend for large-radix checks.
 #[macro_export]
 macro_rules! conjugate_invariant_test_suite {
-    ($name:ident, $backend:ty, $standard:ty) => {
+    ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty) => {
         $crate::conjugate_invariant_test_suite!(
             $name,
             $backend,
             $standard,
-            reference = ($crate::FFT64CIRef, $crate::NTT4x30CIRef)
+            reference = $reference,
+            large_radix_reference = $reference
         );
     };
-    ($name:ident, $backend:ty, $standard:ty, reference = ($fft_reference:ty, $ntt_reference:ty)) => {
+    ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty, large_radix_reference = $large_radix_reference:ty) => {
         mod $name {
             use poulpy_hal::{api::*, layouts::*};
             type BE = $backend;
@@ -335,7 +336,7 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_products_parity() {
                 let module = module(256);
-                let reference = poulpy_hal::layouts::Module::<$fft_reference>::new(256);
+                let reference = poulpy_hal::layouts::Module::<$reference>::new(256);
                 for n in [8, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
                     let params = poulpy_hal::test_suite::TestParams {
                         size: 256,
@@ -426,7 +427,7 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_large_radix_products() {
                 let module = module(8192);
-                let reference = Module::<$ntt_reference>::new(8192);
+                let reference = Module::<$large_radix_reference>::new(8192);
                 let params = poulpy_hal::test_suite::TestParams {
                     size: 8192,
                     n: 8192,
@@ -450,12 +451,9 @@ macro_rules! conjugate_invariant_test_suite {
 }
 
 /// Core operation parity under an invariant module configuration, against
-/// `reference`, the portable FFT64 conjugate-invariant backend when omitted.
+/// the explicitly selected `reference` backend.
 #[macro_export]
 macro_rules! conjugate_invariant_core_test_suite {
-    ($name:ident, $backend:ty, $standard:ty) => {
-        $crate::conjugate_invariant_core_test_suite!($name, $backend, $standard, reference = $crate::FFT64CIRef);
-    };
     ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty) => {
         mod $name {
             #[test]

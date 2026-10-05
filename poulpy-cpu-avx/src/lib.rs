@@ -225,7 +225,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
     ci_fft64avx,
     crate::FFT64CIAvx,
     crate::FFT64Avx,
-    reference = (poulpy_cpu_ref::FFT64CIRef, poulpy_cpu_ref::FFT64CIRef)
+    reference = poulpy_cpu_ref::FFT64CIRef
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
@@ -233,7 +233,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
     ci_ntt4x30avx,
     crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
-    reference = (poulpy_cpu_ref::NTT4x30CIRef, poulpy_cpu_ref::NTT4x30CIRef)
+    reference = poulpy_cpu_ref::NTT4x30CIRef
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
@@ -241,7 +241,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
     ci_fft64avxrayon,
     crate::FFT64CIAvxRayon,
     crate::FFT64AvxRayon,
-    reference = (crate::FFT64CIAvx, crate::FFT64CIAvx)
+    reference = crate::FFT64CIAvx
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
@@ -249,7 +249,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
     ci_ntt4x30avxrayon,
     crate::NTT4x30CIAvxRayon,
     crate::NTT4x30AvxRayon,
-    reference = (crate::NTT4x30CIAvx, crate::NTT4x30CIAvx)
+    reference = crate::NTT4x30CIAvx
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
