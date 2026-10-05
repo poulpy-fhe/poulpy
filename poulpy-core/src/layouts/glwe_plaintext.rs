@@ -263,7 +263,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -282,7 +282,7 @@ where
 
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -301,7 +301,7 @@ pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
 impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -318,7 +318,7 @@ pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBac
 impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,

@@ -25,7 +25,7 @@ use std::ops::{Deref, DerefMut};
 /// factor proportional to the rank.
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWECompressed<D: Data, W: ZnxWord> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -187,7 +187,7 @@ impl<BE: Backend> GLWECompressedSeed for GLWECompressedViewMut<'_, BE> {
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWECompressed<D, W> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn base2k(&self) -> Base2K {
@@ -260,7 +260,7 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
     pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWECompressed {
-            metadata: None,
+            encryption_metadata: None,
             data: vec_znx_alloc_zeroed::<B>(n.into(), 1, size),
             base2k,
             k,
@@ -286,7 +286,7 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
 /// Deserializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.metadata = crate::EncryptionMetadata::read_optional(reader)?;
+        self.encryption_metadata = crate::EncryptionMetadata::read_optional(reader)?;
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.rank = Rank(reader.read_u32::<LittleEndian>()?);
         reader.read_exact(&mut self.seed)?;
@@ -297,7 +297,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
 /// Serializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
+        crate::EncryptionMetadata::write_optional(self.encryption_metadata, writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.rank.into())?;
         writer.write_all(&self.seed)?;
@@ -353,7 +353,7 @@ pub trait GLWECompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             seed: self.seed,
             k: self.k,
             base2k: self.base2k,
@@ -366,7 +366,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressed<BE::OwnedBuf
 impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             seed: self.inner.seed,
             k: self.k,
             base2k: self.inner.base2k,
@@ -379,7 +379,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewRef<'_, B
 impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             seed: self.inner.seed,
             k: self.k,
             base2k: self.inner.base2k,
@@ -401,12 +401,12 @@ pub trait GLWECompressedToBackendMut<BE: Backend>: GLWECompressedToBackendRef<BE
 
 impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWECompressedBackendMut<'_, BE> {
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             seed: self.seed,
             k: self.k,
             base2k: self.base2k,
@@ -418,12 +418,12 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressed<BE::OwnedBuf
 
 impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressedViewMut<'_, BE> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.metadata = metadata;
+        self.inner.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWECompressedBackendMut<'_, BE> {
         GLWECompressed {
-            metadata: self.inner.metadata,
+            encryption_metadata: self.inner.encryption_metadata,
             seed: self.inner.seed,
             k: self.inner.k,
             base2k: self.inner.base2k,

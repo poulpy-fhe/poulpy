@@ -43,7 +43,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -79,7 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -93,7 +93,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -359,7 +359,7 @@ pub trait GGLWEToGGSWKeyCompressedToBackendMut<BE: Backend>: GGLWEToGGSWKeyCompr
 impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendMut<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
         for key in &mut self.keys {
-            key.metadata = metadata;
+            key.encryption_metadata = metadata;
         }
     }
 

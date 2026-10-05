@@ -889,7 +889,7 @@ where
                 &mut Source::new([6u8; 32]),
                 &mut scratch.borrow(),
             );
-            want.metadata = Some(
+            want.encryption_metadata = Some(
                 crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k)
                     .with_fresh_noise(crate::FreshNoiseEstimate::new(expected_variance, infos.k)),
             );

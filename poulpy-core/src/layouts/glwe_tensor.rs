@@ -10,7 +10,7 @@ use std::fmt;
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWETensor<D: Data, W: ZnxWord> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -40,7 +40,7 @@ impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWETensor<D, W> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn base2k(&self) -> Base2K {
@@ -96,7 +96,7 @@ impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
         let pairs: usize = (((cols + 1) * cols) >> 1).max(1);
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWETensor {
-            metadata: None,
+            encryption_metadata: None,
             data: VecZnx::from_data(
                 alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, size)),
                 n.into(),
@@ -129,7 +129,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -144,7 +144,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -158,12 +158,12 @@ where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -177,7 +177,7 @@ where
 impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -188,12 +188,12 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
 
 impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -206,6 +206,6 @@ impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
 
 impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
     pub(crate) fn record_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 }

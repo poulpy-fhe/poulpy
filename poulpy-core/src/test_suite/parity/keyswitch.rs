@@ -212,9 +212,11 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
 
                     let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-                    a_ref.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.5)));
+                    a_ref.encryption_metadata =
+                        Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.5)));
                     let mut key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
-                    key_ref_coeffs.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(1.0)));
+                    key_ref_coeffs.encryption_metadata =
+                        Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(1.0)));
 
                     let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
                     a_ref.transfer_into(&mut a_test);
@@ -554,7 +556,7 @@ where
             VmpPMat<BE::OwnedBuf, BE::DftWord, BE>: VmpPMatToBackendRef<BE>,
         {
             GGLWEPrepared {
-                metadata: None,
+                encryption_metadata: None,
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
                 dsize: layout.dsize,

@@ -45,7 +45,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -79,7 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -91,7 +91,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
         GGLWEBackendMut::from_inner(GGLWE {
-            metadata: key_i.metadata,
+            encryption_metadata: key_i.encryption_metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -362,7 +362,7 @@ where
 {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
         for key in &mut self.keys {
-            key.metadata = metadata;
+            key.encryption_metadata = metadata;
         }
     }
 
@@ -386,7 +386,7 @@ impl<BE: Backend> GGLWEToGGSWKeyToBackendRef<BE> for &mut GGLWEToGGSWKey<BE::Own
 impl<BE: Backend> GGLWEToGGSWKeyToBackendMut<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
         for key in &mut self.keys {
-            key.metadata = metadata;
+            key.encryption_metadata = metadata;
         }
     }
 

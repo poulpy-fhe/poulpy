@@ -240,7 +240,7 @@ impl_encryption_delegate!(
             pk,
             crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
         )
-        .metadata;
+        .encryption_metadata;
         BE::glwe_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -260,7 +260,7 @@ impl_encryption_delegate!(
             pk,
             crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
         )
-        .metadata;
+        .encryption_metadata;
         BE::glwe_encrypt_zero_pk(self, res, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -283,7 +283,7 @@ impl_encryption_delegate!(
             pk,
             crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
         )
-        .metadata;
+        .encryption_metadata;
         BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -313,7 +313,7 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(res, pk, crate::fresh_noise_model::PublicKeyBodyNoise::Flood(flood)).metadata;
+        let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(res, pk, crate::fresh_noise_model::PublicKeyBodyNoise::Flood(flood)).encryption_metadata;
         BE::glwe_encrypt_pk_smudged(
             self,
             res,
@@ -464,7 +464,7 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(res, pk, crate::fresh_noise_model::PublicKeyBodyNoise::Sampled).metadata;
+        let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(res, pk, crate::fresh_noise_model::PublicKeyBodyNoise::Sampled).encryption_metadata;
         BE::ggsw_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }

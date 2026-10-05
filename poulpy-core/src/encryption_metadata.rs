@@ -397,7 +397,7 @@ mod tests {
 
         let mut ciphertext = GLWE::<poulpy_hal::AlignedBuf, i64>::alloc(Degree(64), Base2K(12), TorusPrecision(35), Rank(1));
         let mut restored = ciphertext.clone();
-        ciphertext.metadata = Some(
+        ciphertext.encryption_metadata = Some(
             EncryptionMetadata::from_secret_at(Distribution::TernaryProb(0.3), TorusPrecision(35))
                 .with_fresh_noise(FreshNoiseEstimate::new(71.0, TorusPrecision(35))),
         );

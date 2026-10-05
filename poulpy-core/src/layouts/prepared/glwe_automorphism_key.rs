@@ -222,7 +222,7 @@ where
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
-            metadata: self.key.metadata,
+            encryption_metadata: self.key.encryption_metadata,
             base2k: self.key.base2k,
             k_aux: self.key.k_aux,
             dsize: self.key.dsize,

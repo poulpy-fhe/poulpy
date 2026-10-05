@@ -22,7 +22,7 @@ use crate::layouts::{
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -39,7 +39,7 @@ pub type GGLWEPreparedBackendMut<'a, B> = GGLWEPrepared<<B as Backend>::BufMut<'
 /// Provides LWE-level parameter accessors (degree, base2k, precision, size).
 impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn n(&self) -> Degree {
@@ -131,7 +131,7 @@ where
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
         GGLWEPrepared {
-            metadata: None,
+            encryption_metadata: None,
             data: self.vmp_pmat_alloc(
                 n,
                 infos.dnum().into(),
@@ -267,7 +267,7 @@ pub trait GGLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
@@ -281,7 +281,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
@@ -304,12 +304,12 @@ pub trait GGLWEPreparedToBackendMut<B: Backend> {
 
 impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         GGLWEPrepared {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,

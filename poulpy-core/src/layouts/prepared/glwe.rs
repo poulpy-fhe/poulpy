@@ -18,7 +18,7 @@ use crate::{
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VecZnxDft<D, B::DftWord, B>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -29,7 +29,7 @@ pub type GLWEPreparedBackendMut<'a, B> = GLWEPrepared<<B as Backend>::BufMut<'a>
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn base2k(&self) -> Base2K {
@@ -76,7 +76,7 @@ where
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         GLWEPrepared {
-            metadata: None,
+            encryption_metadata: None,
             data: self.vec_znx_dft_alloc(n, (infos.rank() + 1).into(), infos.size()),
             base2k: infos.base2k(),
             k: infos.k(),
@@ -149,7 +149,7 @@ pub trait GLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         GLWEPrepared {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -169,12 +169,12 @@ pub trait GLWEPreparedToBackendMut<B: Backend> {
 
 impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

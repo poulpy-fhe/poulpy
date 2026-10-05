@@ -18,7 +18,7 @@ use poulpy_hal::layouts::CnvPVecROwned;
 /// forward transform out of the per-multiply path.
 pub struct CKKSPreparedRight<BE: Backend> {
     /// Encryption provenance captured before the convolution representation is prepared.
-    pub(crate) metadata: Option<poulpy_core::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<poulpy_core::EncryptionMetadata>,
     /// Backend-resident prepared convolution operand.
     pub(crate) prep: CnvPVecROwned<BE>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.

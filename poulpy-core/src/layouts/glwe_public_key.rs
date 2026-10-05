@@ -25,7 +25,7 @@ use crate::{
 /// columns, entry `l` at input column `l`. Its entries are canonical: a writer
 /// through a mutable view or `data_mut` must leave them so.
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
@@ -37,7 +37,7 @@ where
     MatZnx<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.metadata == other.metadata
+        self.encryption_metadata == other.encryption_metadata
             && self.data == other.data
             && self.base2k == other.base2k
             && self.k == other.k
@@ -54,7 +54,7 @@ fn entry<D: Data, W: ZnxWord>(
     metadata: Option<crate::EncryptionMetadata>,
 ) -> GLWE<D, W> {
     GLWE {
-        metadata,
+        encryption_metadata: metadata,
         data,
         base2k,
         k,
@@ -75,13 +75,13 @@ impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
 impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
     /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
     pub fn at(&self, l: usize) -> GLWE<&[u8], W> {
-        entry(self.data.at(0, l), self.base2k, self.k, self.metadata)
+        entry(self.data.at(0, l), self.base2k, self.k, self.encryption_metadata)
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
     pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        entry(self.data.at_mut(0, l), self.base2k, self.k, self.metadata)
+        entry(self.data.at_mut(0, l), self.base2k, self.k, self.encryption_metadata)
     }
 }
 
@@ -116,7 +116,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
             MatZnxAtBackendRef::<BE>::at_backend(&self.data, 0, l),
             self.base2k,
             self.k,
-            self.metadata,
+            self.encryption_metadata,
         ))
     }
 }
@@ -127,7 +127,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
             MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
             self.base2k,
             self.k,
-            self.metadata,
+            self.encryption_metadata,
         ))
     }
 }
@@ -139,7 +139,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendRef<'_, BE>
             mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
             pk.base2k,
             pk.k,
-            pk.metadata,
+            pk.encryption_metadata,
         ))
     }
 }
@@ -151,7 +151,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendMut<'_, BE>
             mat_znx_at_backend_ref_from_mut::<BE>(&pk.data, 0, l),
             pk.base2k,
             pk.k,
-            pk.metadata,
+            pk.encryption_metadata,
         ))
     }
 }
@@ -163,7 +163,7 @@ impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKeyBackendMut<'_, BE>
             mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
             pk.base2k,
             pk.k,
-            pk.metadata,
+            pk.encryption_metadata,
         ))
     }
 }
@@ -190,7 +190,7 @@ pub struct GLWEPublicKeyLayout {
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn base2k(&self) -> Base2K {
@@ -256,7 +256,7 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
         assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (rows, cols_in, cols_out, size) = (1, rank.as_usize(), (rank + 1).as_usize(), k.0.div_ceil(base2k.0) as usize);
         GLWEPublicKey {
-            metadata: None,
+            encryption_metadata: None,
             data: MatZnx::from_data(
                 <poulpy_hal::layouts::HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
@@ -327,7 +327,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
             ));
         }
         self.data.read_from(&mut std::io::Read::chain(header.as_slice(), reader))?;
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
         self.dist = dist;
         self.base2k = base2k;
         self.k = k;
@@ -337,7 +337,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
+        crate::EncryptionMetadata::write_optional(self.encryption_metadata, writer)?;
         self.dist.write_to(writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.k.0)?;
@@ -399,7 +399,7 @@ macro_rules! impl_public_key_infos_for_inner {
     ($ty:ident) => {
         impl<BE: Backend> LWEInfos for $ty<'_, BE> {
             fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-                self.inner.metadata
+                self.inner.encryption_metadata
             }
 
             fn base2k(&self) -> Base2K {
@@ -445,7 +445,7 @@ impl<BE: Backend> GetDistributionMut for GLWEPublicKeyBackendMut<'_, BE> {
 impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
-            metadata: self.inner.metadata,
+            encryption_metadata: self.inner.encryption_metadata,
             data: mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -457,7 +457,7 @@ impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendRef<'_, 
 impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
-            metadata: self.inner.metadata,
+            encryption_metadata: self.inner.encryption_metadata,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -468,12 +468,12 @@ impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, 
 
 impl<BE: Backend> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.metadata = metadata;
+        self.inner.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
-            metadata: self.inner.metadata,
+            encryption_metadata: self.inner.encryption_metadata,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -492,7 +492,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -516,12 +516,12 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendMut<BE>,
 {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

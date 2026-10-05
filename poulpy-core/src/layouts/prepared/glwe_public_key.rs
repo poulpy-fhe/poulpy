@@ -16,7 +16,7 @@ use crate::{
 /// ephemerals from. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
@@ -47,7 +47,7 @@ impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn base2k(&self) -> Base2K {
@@ -99,7 +99,7 @@ where
         assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         GLWEPublicKeyPrepared {
-            metadata: None,
+            encryption_metadata: None,
             data: self.vmp_pmat_alloc(n, 1, rank.into(), (rank + 1).into(), infos.size(), PrepareHint::Reuse),
             base2k: infos.base2k(),
             k: infos.k(),
@@ -178,7 +178,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyPreparedBackendRef<'_, B> {
         GLWEPublicKeyPrepared {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -202,12 +202,12 @@ where
     VmpPMat<D, B::DftWord, B>: VmpPMatToBackendMut<B>,
 {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyPreparedBackendMut<'_, B> {
         GLWEPublicKeyPrepared {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

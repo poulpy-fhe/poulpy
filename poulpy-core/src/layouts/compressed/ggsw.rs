@@ -25,7 +25,7 @@ use std::{
 /// seeds during decompression.
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGSWCompressed<D: Data, W: ZnxWord> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -208,7 +208,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressedSeed for GGSWCompressed<D, W> {
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGSWCompressed<D, W> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
 
     fn n(&self) -> Degree {
@@ -294,7 +294,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSWCompressed {
-            metadata: None,
+            encryption_metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), dnum.into(), (rank + 1).into(), 1, size)),
                 n.into(),
@@ -339,7 +339,7 @@ impl<D: HostDataRef, W: ZnxWord> GGSWCompressed<D, W> {
     pub fn at(&self, row: usize, col: usize) -> GLWECompressed<&[u8], W> {
         let rank: usize = self.rank().into();
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.at(row, col),
             k: self.k(),
             base2k: self.base2k,
@@ -356,7 +356,7 @@ impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
         let k = self.k();
         let seed = self.seed[row * (rank + 1) + col];
         GLWECompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.at_mut(row, col),
             k,
             base2k: self.base2k,
@@ -368,7 +368,7 @@ impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.metadata = crate::EncryptionMetadata::read_optional(reader)?;
+        self.encryption_metadata = crate::EncryptionMetadata::read_optional(reader)?;
         self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
@@ -384,7 +384,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWCompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSWCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
+        crate::EncryptionMetadata::write_optional(self.encryption_metadata, writer)?;
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
@@ -440,7 +440,7 @@ pub trait GGSWCompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -454,7 +454,7 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf
 impl<BE: Backend> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -468,7 +468,7 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<
 impl<BE: Backend> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -491,12 +491,12 @@ pub trait GGSWCompressedToBackendMut<BE: Backend>: GGSWCompressedToBackendRef<BE
 
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -509,12 +509,12 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
 
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -536,7 +536,7 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = ggsw.base2k;
     let rank_field = ggsw.rank;
     GLWECompressed {
-        metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
+        encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col),
         k,
         base2k,
@@ -552,7 +552,7 @@ fn ggsw_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
 ) -> GLWECompressedBackendRef<'a, BE> {
     let rank: usize = ggsw.rank().into();
     GLWECompressed {
-        metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
+        encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
         data: mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col),
         k: ggsw.k(),
         base2k: ggsw.base2k,

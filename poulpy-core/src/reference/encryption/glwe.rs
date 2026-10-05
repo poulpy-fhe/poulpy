@@ -408,7 +408,7 @@ where
                 crate::fresh_noise_model::PublicKeyBodyNoise::Omitted
             },
         );
-        res.set_encryption_metadata(plan.metadata);
+        res.set_encryption_metadata(plan.encryption_metadata);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
 

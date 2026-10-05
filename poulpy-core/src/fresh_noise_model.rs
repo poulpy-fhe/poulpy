@@ -93,7 +93,7 @@ pub(crate) enum PublicKeyBodyNoise {
 pub(crate) struct PublicKeyEncryptionPlan {
     pub sample_precision: TorusPrecision,
     pub work_precision: TorusPrecision,
-    pub metadata: Option<EncryptionMetadata>,
+    pub encryption_metadata: Option<EncryptionMetadata>,
 }
 
 fn public_key_work_precision(sample: TorusPrecision, key: TorusPrecision, base2k: usize) -> TorusPrecision {
@@ -185,7 +185,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
         return PublicKeyEncryptionPlan {
             sample_precision: pk_precision,
             work_precision: pk_precision,
-            metadata: None,
+            encryption_metadata: None,
         };
     };
     if metadata.secret_distribution().base() != Distribution::NONE {
@@ -267,7 +267,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
     PublicKeyEncryptionPlan {
         sample_precision,
         work_precision,
-        metadata: Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, res.k()))),
+        encryption_metadata: Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, res.k()))),
     }
 }
 
@@ -374,7 +374,7 @@ mod tests {
         let pk = one.aggregate(one).aggregate(one);
         let plan = public_key_phase_plan(Some(pk), &layout, TorusPrecision(36), base, PublicKeyBodyNoise::Sampled);
         assert_eq!(plan.sample_precision, TorusPrecision(35));
-        let result = plan.metadata.unwrap();
+        let result = plan.encryption_metadata.unwrap();
         let sigma2 = noise_variance(Noise::ENCRYPTION);
         // Three binary parties have E[S²] = 3, while a new ephemeral has E[u²] = 1/2.
         let expected = 128.0 * 0.5 * (3.0 * sigma2 / 256.0) + (1.0 + 128.0 * 3.0) * sigma2 / 64.0 + (1.0 + 128.0 * 3.0) / 4.0;
@@ -394,7 +394,7 @@ mod tests {
         let base = Distribution::TernaryProb(0.5);
         let pk = EncryptionMetadata::from_secret_at(base, layout.k);
         let without_body = public_key_phase_plan(Some(pk), &layout, layout.k, base, PublicKeyBodyNoise::Omitted)
-            .metadata
+            .encryption_metadata
             .unwrap();
         let smudged = public_key_phase_plan(
             Some(pk),
@@ -403,7 +403,7 @@ mod tests {
             base,
             PublicKeyBodyNoise::Flood(Noise::Uniform { bits: 4 }),
         )
-        .metadata
+        .encryption_metadata
         .unwrap();
         assert_eq!(
             smudged.initial_noise_variance() - without_body.initial_noise_variance(),
@@ -411,7 +411,7 @@ mod tests {
         );
         let unknown = EncryptionMetadata::from_secret_at(Distribution::NONE, layout.k);
         let conservative = public_key_phase_plan(Some(unknown), &layout, layout.k, base, PublicKeyBodyNoise::Sampled)
-            .metadata
+            .encryption_metadata
             .unwrap();
         assert_eq!(conservative.secret_distribution(), unknown.secret_distribution());
         assert_eq!(conservative.initial_noise_variance(), f64::INFINITY);
@@ -590,7 +590,7 @@ mod tests {
         let historical = inherited + sigma2 * 1024.0 + sigma2;
         let plan = public_key_phase_plan(Some(metadata), &layout, layout.k, base, PublicKeyBodyNoise::Sampled);
         assert_eq!(
-            plan.metadata.unwrap().initial_noise_variance().to_bits(),
+            plan.encryption_metadata.unwrap().initial_noise_variance().to_bits(),
             historical.to_bits()
         );
     }
@@ -607,11 +607,11 @@ mod tests {
         let base = Distribution::TernaryProb(0.5);
         let absent = public_key_phase_plan(None, &layout, key, base, PublicKeyBodyNoise::Sampled);
         assert_eq!(absent.sample_precision, key);
-        assert!(absent.metadata.is_none());
+        assert!(absent.encryption_metadata.is_none());
         let unknown = EncryptionMetadata::from_secret_at(Distribution::NONE, key);
         let plan = public_key_phase_plan(Some(unknown), &layout, key, base, PublicKeyBodyNoise::Sampled);
         assert_eq!(plan.sample_precision, key);
-        assert_eq!(plan.metadata.unwrap().initial_noise_variance(), f64::INFINITY);
+        assert_eq!(plan.encryption_metadata.unwrap().initial_noise_variance(), f64::INFINITY);
         let infinite =
             EncryptionMetadata::from_secret_at(base, key).with_fresh_noise(FreshNoiseEstimate::new(f64::INFINITY, key));
         assert_eq!(
@@ -651,13 +651,15 @@ mod tests {
         for noise in [Noise::ENCRYPTION, Noise::Uniform { bits: 40 }] {
             let flood = public_key_phase_plan(Some(metadata), &layout, key, base, PublicKeyBodyNoise::Flood(noise));
             assert_eq!(flood.sample_precision, masks.sample_precision);
-            let expected = masks.metadata.unwrap().initial_noise_variance() + noise_variance(noise);
-            assert_eq!(flood.metadata.unwrap().initial_noise_variance(), expected);
+            let expected = masks.encryption_metadata.unwrap().initial_noise_variance() + noise_variance(noise);
+            assert_eq!(flood.encryption_metadata.unwrap().initial_noise_variance(), expected);
         }
         let ordinary = public_key_phase_plan(Some(metadata), &layout, key, base, PublicKeyBodyNoise::Sampled);
-        let masks_variance = masks.metadata.unwrap().initial_noise_variance();
+        let masks_variance = masks.encryption_metadata.unwrap().initial_noise_variance();
         assert!(
-            (ordinary.metadata.unwrap().initial_noise_variance() - masks_variance - noise_variance(Noise::ENCRYPTION) / 64.0)
+            (ordinary.encryption_metadata.unwrap().initial_noise_variance()
+                - masks_variance
+                - noise_variance(Noise::ENCRYPTION) / 64.0)
                 .abs()
                 < 1e-12
         );
@@ -669,7 +671,7 @@ mod tests {
         ));
         let equivalent = public_key_phase_plan(Some(older), &layout, key, base, PublicKeyBodyNoise::Sampled);
         assert_eq!(equivalent.sample_precision, ordinary.sample_precision);
-        assert_eq!(equivalent.metadata, ordinary.metadata);
+        assert_eq!(equivalent.encryption_metadata, ordinary.encryption_metadata);
     }
 
     #[test]
@@ -694,13 +696,13 @@ mod tests {
         };
         let mut key = GGLWE::<poulpy_hal::AlignedBuf, i64>::alloc_from_infos(&key_layout);
         let binary = EncryptionMetadata::from_secret_at(Distribution::BinaryProb(0.5), TorusPrecision(32));
-        key.metadata = Some(binary);
+        key.encryption_metadata = Some(binary);
         let expanded = ggsw_expansion_metadata(&layout, Some(binary), TorusPrecision(32), &key).unwrap();
         assert!(expanded.same_secret(&binary));
         assert_eq!(expanded.initial_noise_variance(), f64::INFINITY);
 
         let zero = EncryptionMetadata::from_secret_at(Distribution::ZERO, TorusPrecision(32));
-        key.metadata = Some(zero);
+        key.encryption_metadata = Some(zero);
         assert!(
             ggsw_expansion_metadata(&layout, Some(zero), TorusPrecision(32), &key)
                 .unwrap()
@@ -709,7 +711,7 @@ mod tests {
         );
 
         layout.rank = Rank(0);
-        key.metadata = None;
+        key.encryption_metadata = None;
         assert_eq!(
             ggsw_expansion_metadata(&layout, Some(binary), TorusPrecision(32), &key),
             Some(binary)
@@ -738,7 +740,7 @@ mod tests {
         };
         let mut key = GGLWE::<poulpy_hal::AlignedBuf, i64>::alloc_from_infos(&key_layout);
         let metadata = EncryptionMetadata::from_secret_at(Distribution::TernaryProb(0.5), TorusPrecision(40));
-        key.metadata = Some(metadata);
+        key.encryption_metadata = Some(metadata);
         let narrowed = ggsw_expansion_metadata(&layout, Some(metadata), TorusPrecision(40), &key).unwrap();
         let same_grid = ggsw_expansion_metadata(&layout, Some(metadata), TorusPrecision(32), &key).unwrap();
         assert!(narrowed.initial_noise_variance() > same_grid.initial_noise_variance());

@@ -162,7 +162,7 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
         pk,
         crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
     )
-    .metadata;
+    .encryption_metadata;
     BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, source_xu, source_xe, scratch);
     res.set_encryption_metadata(metadata);
 }
@@ -208,7 +208,7 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
         pk,
         crate::fresh_noise_model::PublicKeyBodyNoise::Flood(flood),
     )
-    .metadata;
+    .encryption_metadata;
     BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), false, pk, source_xu, source_xe, scratch);
     res.set_encryption_metadata(metadata);
     let mut res = res.to_backend_mut();
@@ -233,7 +233,7 @@ pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
         pk,
         crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
     )
-    .metadata;
+    .encryption_metadata;
     BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K>(
         module, res, None, true, pk, source_xu, source_xe, scratch,
     );
@@ -274,7 +274,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
             pk,
             crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
         )
-        .metadata,
+        .encryption_metadata,
     );
     operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(

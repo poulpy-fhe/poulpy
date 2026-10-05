@@ -72,7 +72,7 @@ where
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch);
-        cache.metadata = a.to_backend_ref().encryption_metadata();
+        cache.encryption_metadata = a.to_backend_ref().encryption_metadata();
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H>(

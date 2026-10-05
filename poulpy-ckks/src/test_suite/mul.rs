@@ -116,7 +116,7 @@ where
     assert!(metadata.is_some());
     assert_eq!(ct_res.encryption_metadata(), metadata);
     let prepared = module.ckks_prepare_right(&ct2, &mut scratch.borrow()).unwrap();
-    assert_eq!(prepared.metadata, metadata);
+    assert_eq!(prepared.encryption_metadata, metadata);
     let mut prepared_result = ct1.clone();
     module
         .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())

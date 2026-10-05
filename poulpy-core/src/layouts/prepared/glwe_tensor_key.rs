@@ -192,7 +192,7 @@ where
 impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepared<B::BufRef<'a>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
-            metadata: None,
+            encryption_metadata: None,
             base2k: self.0.base2k,
             k_aux: self.0.k_aux,
             dsize: self.0.dsize,

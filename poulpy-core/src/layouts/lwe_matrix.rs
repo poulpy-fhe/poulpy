@@ -47,7 +47,7 @@ impl LWEMatrixInfos for LWEMatrixLayout {
 /// `body[row]` is `b_row`; `mask[col][row]` is `A[row, col]`.
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWEMatrix<D: Data, W: ZnxWord> {
-    pub(crate) metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
     pub(crate) body: VecZnx<D, W>,
     pub(crate) mask: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
@@ -59,7 +59,7 @@ pub type LWEMatrixBackendMut<'a, BE> = LWEMatrix<<BE as Backend>::BufMut<'a>, <B
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWEMatrix<D, W> {
     fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.metadata
+        self.encryption_metadata
     }
     fn n(&self) -> Degree {
         Degree(self.mask.cols() as u32)
@@ -116,7 +116,7 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
         let body_shape = self.body.shape();
         let mask_shape = self.mask.shape();
         LWEMatrix {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             body: VecZnx::from_shape(self.body.into_data(), body_shape),
             mask: VecZnx::from_shape(self.mask.into_data(), mask_shape),
             base2k: self.base2k,
@@ -131,7 +131,7 @@ impl<D: HostDataRef, W: ZnxWord> LWEMatrix<D, W> {
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         LWEMatrix {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             body: self.body.to_host_owned::<BE>(),
             mask: self.mask.to_host_owned::<BE>(),
             base2k: self.base2k,
@@ -147,7 +147,7 @@ pub trait LWEMatrixToBackendRef<BE: Backend> {
 impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE> {
         LWEMatrix {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.body),
             mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.mask),
             base2k: self.base2k,
@@ -168,12 +168,12 @@ pub trait LWEMatrixToBackendMut<BE: Backend>: LWEMatrixToBackendRef<BE> {
 
 impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
     fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.metadata = metadata;
+        self.encryption_metadata = metadata;
     }
 
     fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE> {
         LWEMatrix {
-            metadata: self.metadata,
+            encryption_metadata: self.encryption_metadata,
             body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.body),
             mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.mask),
             base2k: self.base2k,
