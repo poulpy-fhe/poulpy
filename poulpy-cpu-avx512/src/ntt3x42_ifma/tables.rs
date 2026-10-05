@@ -77,6 +77,11 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub inv_root: Vec<u64>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
     pub inv_quot: Vec<u64>,
+    /// Precomputed inverse scale and scaled final-stage roots.
+    pub n_inv: [u64; 3],
+    pub n_inv_quot: [u64; 3],
+    pub final_root: [u64; 3],
+    pub final_quot: [u64; 3],
     /// Conjugate-invariant basis change per prime, empty on the standard ring.
     pub(super) basis: [BasisChangeTable; 3],
     _phantom: PhantomData<(P, R)>,
@@ -422,6 +427,10 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
         let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
 
         let (inv_root, inv_quot) = build_inv_root_table::<P>(n);
+        let n_inv = std::array::from_fn(|k| modq_pow64(n as u64, -1, P::Q[k]));
+        let n_inv_quot = std::array::from_fn(|k| harvey_quotient(n_inv[k], P::Q[k]));
+        let final_root = std::array::from_fn(|k| ((inv_root[k * n + n - 1] as u128 * n_inv[k] as u128) % P::Q[k] as u128) as u64);
+        let final_quot = std::array::from_fn(|k| harvey_quotient(final_root[k], P::Q[k]));
 
         // butterfly levels + last pass (n entries)
         let total_entries = n
@@ -447,6 +456,10 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
                 powomega,
                 inv_root,
                 inv_quot,
+                n_inv,
+                n_inv_quot,
+                final_root,
+                final_quot,
                 basis,
                 _phantom: PhantomData,
             };
@@ -479,7 +492,6 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
             let omega_base = seg_base;
             let quot_base = seg_base + 4 * n;
             let omega_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -1, P::Q[k]));
-            let n_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(n as u64, -1, P::Q[k]));
             let mut pow_om = n_inv; // i=0: just n^{-1}
             for i in 0..n {
                 store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
@@ -496,6 +508,10 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
             powomega,
             inv_root,
             inv_quot,
+            n_inv,
+            n_inv_quot,
+            final_root,
+            final_quot,
             basis,
             _phantom: PhantomData,
         }

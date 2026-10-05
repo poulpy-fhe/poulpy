@@ -220,7 +220,13 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let unprepared =
+        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
+    if prepare_scratch > BE::len_bytes(&scratch.data) {
+        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
+    }
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -232,7 +238,7 @@ where
             &ctx,
             &keys_layout,
         );
-        if boot_tmp > scratch_size {
+        if boot_tmp > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
     }
@@ -517,7 +523,13 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let unprepared =
+        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
+    if prepare_scratch > BE::len_bytes(&scratch.data) {
+        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
+    }
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -529,7 +541,7 @@ where
             &ctx,
             &keys_layout,
         );
-        if boot_tmp > scratch_size {
+        if boot_tmp > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
     }
@@ -814,7 +826,13 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = BootstrappingContext::<BE, F>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let unprepared =
+        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
+    if prepare_scratch > BE::len_bytes(&scratch.data) {
+        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
+    }
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -825,7 +843,7 @@ where
             &ctx,
             &keys_layout,
         );
-        if boot_tmp > scratch_size {
+        if boot_tmp > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
     }

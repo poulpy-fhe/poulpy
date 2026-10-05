@@ -20,6 +20,29 @@ use crate::{
 };
 
 impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
+    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(&self, dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>) -> usize
+    where
+        P: poulpy_core::layouts::LWEInfos,
+    {
+        BE::ckks_prepare_dft_matrix_tmp_bytes_impl(self, dft)
+    }
+
+    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: poulpy_core::layouts::GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: poulpy_core::layouts::GGLWEInfos,
+    {
+        BE::ckks_dft_tmp_bytes_impl(self, dst, src, dft, key)
+    }
+
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         &self,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,

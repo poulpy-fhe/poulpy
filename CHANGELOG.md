@@ -6,6 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- `ModuleSynchronize::synchronize` waits for a module's deferred work through the new defaulted `HalModuleImpl::synchronize` hook, a no-op on backends that complete each call before returning. The backend safety contract now defines when a backend may defer execution: submission order, transfers that wait for the storage they read, and the release and failure rules.
 - `ScratchArena::wipe(len)` zeroes the first `len` bytes the arena can carve out, through `Backend::copy_host_to_view`.
 - **Breaking:** remove `vec_znx_host_backend_ref` and `vec_znx_host_backend_mut` (use `at`/`at_mut` on host layouts); cross-backend test functions no longer take a host module.
 - **Breaking:** `Backend::Ring` (`Standard` or `ConjugateInvariant`) selects the backend ring at compile time; `Ring::CYCLOTOMIC_ORDER_FACTOR` sets the module's cyclotomic order.
@@ -61,6 +62,12 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `GLWEExternalProductImpl` selects the DFT-domain execution and scratch query used by `GLWEExternalProductInternal`. Public reference external products use this dispatch for matching and mixed radices. The contiguous-limb reference remains independently callable; custom DFT layouts can override it.
+
+- Compressed GGSW encryption no longer requires the unused host-only noise-analysis contract.
+
+- Prepared linear-transformation baby-step caches provide mutable operand access for backend preparation, as backend views that keep the rotation keys and operand shapes fixed.
+
 - GLWE decryption rejects ciphertext, plaintext and prepared secret key degrees that differ or exceed the module degree, including in release builds.
 - **Breaking:** remove `GLWEPlaintext::alloc_with_meta`; allocate through the module.
 - `PreparedDiagonal` and the prepared linear transformation stash the scheme's real-slot claim (`real_slots`, `set_real_slots`) next to `log_scale`.
@@ -115,6 +122,14 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - The parity suites read the operand degree from `TestParams::n`, and `core_parity_test_suite!` and `core_encryption_parity_test_suite!` accept `test_size` for a tested module of a larger degree.
 
 ### `poulpy-ckks`
+
+- **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
+
+- `BootstrappingContext::compile_unprepared` and `BootstrappingContextUnprepared::prepare` stage compilation, so preparation can be sized with the selected budget through `prepare_tmp_bytes`. `compile` composes the two stages.
+
+- `oep::defaults` exposes callable DFT format compositions for conditional overrides, retaining selected constituent dispatch.
+
+- DFT matrices expose read-only factor operands and checked construction/replacement, preserving direction, format and diagonal layout contracts. Checked construction rejects repeated diagonals, diagonals stored wider than their precision, and mixed encoded widths or slot kinds.
 
 - `ckks_encrypt_sk` and `ckks_decrypt` return `EncryptionDegreeMismatch` when the ciphertext and prepared secret key degrees differ or exceed the module degree, before backend dispatch or output mutation.
 - **Breaking:** `CKKSBootstrappingOps` dispatches through the new `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), whose delegate only forwards; its reference is the trait `CKKSBootstrappingReference`, implemented for `Module`, in place of the crate-private `BootstrappingReference` driver. `test_bootstrapping_parity` compares it across backends.
