@@ -257,6 +257,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30Neon` and `NTT4x30NeonRayon` implement `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits: one pass over the prepared matrix accumulates every digit of an output limb, with one store and one Montgomery step per 12 products, where the reference body ran one accumulating vector-matrix product per digit.
+  It returns the residues of the reference body, which stays in use above 16 digits.
+  Inner products of at most four terms skip one reduction step.
+- The NEON NTT4x30 convolution reads a sparse right operand in place, through repeated-lane loads, and no longer expands it into a zeroed buffer for every output limb.
 - `NTT4x30Neon` and `NTT4x30NeonRayon` run a native 32-bit NTT on the standard ring, in place on the packed limb, four lanes of one prime per register.
   Butterflies use signed residues and a precomputed twiddle quotient, levels are cache-blocked, the forward transform reads the `i64` coefficients directly and the inverse transform folds `1/n` and the CRT constant into its last level.
   It returns the same residues as the q120 kernel, which stays in use on the conjugate-invariant ring.

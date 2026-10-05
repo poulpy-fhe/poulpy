@@ -335,3 +335,14 @@ fn large_ring_ntt_log17() {
 fn large_ring_ntt_rayon_log17() {
     poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30NeonRayon>(1 << 17);
 }
+
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Neon>::new(64), 50);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical_rayon() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT4x30NeonRayon>::new(64), 50);
+}

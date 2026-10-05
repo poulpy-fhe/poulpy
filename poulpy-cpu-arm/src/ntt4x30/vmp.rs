@@ -20,8 +20,9 @@ use poulpy_hal::{
 };
 
 use crate::NTT4x30Neon;
-use crate::neon::ntt4x30_packed::{add_mod, dot_rows, planes};
+use crate::neon::ntt4x30_packed::{DotState, add_mod, dot_rows, planes};
 use crate::ntt4x30::vec_znx_dft::dft_limb_scaled;
+use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_hal::layouts::Ring;
 
@@ -319,4 +320,126 @@ pub(crate) fn vmp_apply_dft_to_dft_add_neon<R: Ring, E: TaskExecutor>(
             cast_slice_mut(tmp),
         );
     }
+}
+
+/// Largest `dsize` the fused interleaved-digit product handles.
+pub(crate) const STRIDED_MAX_DSIZE: usize = 16;
+
+/// Scratch space (in bytes) of the fused interleaved-digit product, per worker.
+///
+/// Holds the input rows of one block for every digit: the digits partition the input limbs.
+pub(crate) fn vmp_apply_digits_strided_tmp_bytes_neon(a_cols: usize, a_size: usize) -> usize {
+    ROW * (a_size * a_cols).max(1) * size_of::<u32>()
+}
+
+/// One gadget digit of the interleaved-digit product.
+#[derive(Clone, Copy, Default)]
+struct Digit {
+    /// First input limb, the next ones follow every `dsize` limbs.
+    first_limb: usize,
+    /// Input rows, and their offset in the gathered block.
+    rows: usize,
+    x_off: usize,
+    /// Output limbs this digit contributes to.
+    out_limbs: usize,
+}
+
+/// Interleaved-digit GGLWE product in one pass over the prepared matrix.
+///
+/// Digit `di` gathers the input limbs congruent to `dsize - 1 - di` modulo `dsize` and reads the matrix `di` limbs ahead.
+/// Returns the residues of `gglwe_product_digits_strided_reference`.
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    tmp: &mut [u64],
+) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
+    assert!((1..=STRIDED_MAX_DSIZE).contains(&dsize));
+    let n = res.n();
+    assert!(n >= 4 && n.is_power_of_two());
+    let (cols_in, cols_out) = (pmat.cols_in(), pmat.cols_out());
+    let (dnum, key_size) = (pmat.rows(), pmat.size());
+    let nrows = cols_in * dnum;
+    let ncols = cols_out * key_size;
+    let (a_size, res_size) = (a.size(), res.size());
+
+    let mut digits = [Digit::default(); STRIDED_MAX_DSIZE];
+    let mut total_rows = 0;
+    let mut active_limbs = 0;
+    for (di, digit) in digits[..dsize].iter_mut().enumerate() {
+        let rows = ((a_size + di) / dsize).min(dnum) * cols_in;
+        // The first digit overwrites every limb the key covers, the next ones read the key `di` limbs ahead.
+        let out_limbs = if di == 0 {
+            res_size.min(key_size)
+        } else {
+            gglwe_product_digit_output_size(res_size, key_size, dsize, di, product_limbs).min(key_size.saturating_sub(di))
+        };
+        *digit = Digit {
+            first_limb: dsize - di - 1,
+            rows,
+            x_off: total_rows,
+            out_limbs,
+        };
+        total_rows += rows;
+        if rows != 0 {
+            active_limbs = active_limbs.max(out_limbs);
+        }
+    }
+    let digits = &digits[..dsize];
+
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u32: &[u32] = cast_slice(pmat.data());
+    let n_blocks = n / 4;
+    assert!(pmat_u32.len() >= n_blocks * ncols * nrows * ROW);
+    assert!(a_u32.len() >= a_size * cols_in * 4 * n);
+    assert!(res_u32.len() >= res_size * cols_out * 4 * n);
+    let per_worker = ROW * total_rows.max(1);
+    let tmp: &mut [u32] = cast_slice_mut(tmp);
+    assert!(tmp.len() >= per_worker);
+
+    let a_ptr = a_u32.as_ptr() as usize;
+    let pmat_ptr = pmat_u32.as_ptr() as usize;
+    let res_ptr = SendU32Ptr(res_u32.as_mut_ptr());
+
+    if active_limbs != 0 {
+        E::for_each_chunked(n_blocks, tmp, per_worker, |x, blk| unsafe {
+            let c = planes();
+            let (a, pmat, x) = (a_ptr as *const u32, pmat_ptr as *const u32, x.as_mut_ptr());
+            for digit in digits {
+                for row in 0..digit.rows {
+                    let flat = (digit.first_limb + (row / cols_in) * dsize) * cols_in + row % cols_in;
+                    let limb = a.add(flat * 4 * n + 4 * blk);
+                    let dst = x.add((digit.x_off + row) * ROW);
+                    for p in 0..4 {
+                        vst1q_u32(dst.add(4 * p), vld1q_u32(limb.add(p * n)));
+                    }
+                }
+            }
+            let block = pmat.add(blk * ncols * nrows * ROW);
+            for limb in 0..active_limbs {
+                for col in 0..cols_out {
+                    let mut state = DotState::new();
+                    for (di, digit) in digits.iter().enumerate() {
+                        if limb < digit.out_limbs {
+                            let m = block.add(((limb + di) * cols_out + col) * nrows * ROW);
+                            state.push_rows(x.add(digit.x_off * ROW), m, digit.rows, &c);
+                        }
+                    }
+                    let r = state.finish(&c);
+                    let dst = res_ptr.get().add((limb * cols_out + col) * 4 * n + 4 * blk);
+                    for (p, &r) in r.iter().enumerate() {
+                        vst1q_u32(dst.add(p * n), r);
+                    }
+                }
+            }
+        });
+    }
+    res_u32[active_limbs * cols_out * 4 * n..res_size * cols_out * 4 * n].fill(0);
 }

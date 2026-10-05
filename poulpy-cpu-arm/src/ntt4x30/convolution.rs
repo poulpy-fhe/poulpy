@@ -6,7 +6,10 @@
 //! The right operand holds residues multiplied by `2^32`, with its limbs in reverse order, so both operands of one output limb are read forward.
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use core::arch::aarch64::{vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32};
+use core::arch::aarch64::{
+    uint32x4_t, vdupq_n_u32, vdupq_n_u64, vget_low_u32, vld1q_dup_u32, vld1q_u32, vmlal_high_u32, vmlal_u32, vst1q_u32,
+    vzip1q_u32, vzip2q_u32,
+};
 use poulpy_cpu_portable::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
@@ -19,7 +22,7 @@ use poulpy_hal::layouts::{
 use std::mem::size_of;
 
 use super::vec_znx_dft::PackedDft;
-use crate::neon::ntt4x30_packed::{DOT_CHUNK, Plane, add_mod, dot_rows, dot_rows_pairwise, limb_to_prepared, planes};
+use crate::neon::ntt4x30_packed::{DOT_CHUNK, DOT_SHORT, Plane, add_mod, limb_to_prepared, planes, redc_acc};
 
 /// `u32` per limb of a block.
 const ROW: usize = 16;
@@ -57,32 +60,78 @@ where
     cast_slice_mut::<_, u32>(res.at_mut(col, limb)).fill(0);
 }
 
-/// Expands `rows` rows of a sparse right operand to the four slots of block `blk`.
-///
-/// Slot `s` of the dense operand reads slot `s >> log_gap` of the sparse one (spec 4.5).
-/// `b` is the sparse column, already offset to its first row, with rows `b_size` limbs apart in its own block order.
+/// Right operand read as stored.
+const DENSE: u8 = 0;
+/// Right operand slot shared by the four slots of the block: one lane, repeated.
+const SPARSE_ONE: u8 = 1;
+/// Right operand slots shared by pairs of slots of the block: the two low lanes, each repeated.
+const SPARSE_LOW: u8 = 2;
+/// As [`SPARSE_LOW`], on the two high lanes.
+const SPARSE_HIGH: u8 = 3;
+
 #[inline(always)]
-unsafe fn expand_sparse_rows(dst: *mut u32, b: *const u32, b_size: usize, blk: usize, log_gap: usize, rows: usize) {
+unsafe fn load_right<const MODE: u8>(p: *const u32) -> uint32x4_t {
     unsafe {
-        let slot = (4 * blk) >> log_gap;
-        let base = b.add((slot / 4) * b_size * ROW);
-        let lane = slot % 4;
-        for row in 0..rows {
-            for p in 0..4 {
-                let src = base.add(row * ROW + 4 * p);
-                let v = if log_gap >= 2 {
-                    vld1q_dup_u32(src.add(lane))
-                } else {
-                    let v = vld1q_u32(src);
-                    if lane == 0 { vzip1q_u32(v, v) } else { vzip2q_u32(v, v) }
-                };
-                vst1q_u32(dst.add(row * ROW + 4 * p), v);
+        match MODE {
+            DENSE => vld1q_u32(p),
+            SPARSE_ONE => vld1q_dup_u32(p),
+            SPARSE_LOW => {
+                let v = vld1q_u32(p);
+                vzip1q_u32(v, v)
+            }
+            _ => {
+                let v = vld1q_u32(p);
+                vzip2q_u32(v, v)
             }
         }
     }
 }
 
+/// Inner product of `rows` rows, the right operand read through `MODE`.
+#[inline(always)]
+unsafe fn conv_rows<const PAIRWISE: bool, const MODE: u8>(
+    c: &[Plane; 4],
+    a0: *const u32,
+    a1: *const u32,
+    b0: *const u32,
+    b1: *const u32,
+    rows: usize,
+) -> [uint32x4_t; 4] {
+    unsafe {
+        let zero = vdupq_n_u64(0);
+        let mut out = [vdupq_n_u32(0); 4];
+        let mut done = 0;
+        while done < rows {
+            let len = (rows - done).min(DOT_CHUNK);
+            let mut lo = [zero; 4];
+            let mut hi = [zero; 4];
+            for row in done..done + len {
+                for p in 0..4 {
+                    let o = ROW * row + 4 * p;
+                    let mut xv = vld1q_u32(a0.add(o));
+                    let mut mv = load_right::<MODE>(b0.add(o));
+                    if PAIRWISE {
+                        xv = add_mod(xv, vld1q_u32(a1.add(o)), c[p].q);
+                        mv = add_mod(mv, load_right::<MODE>(b1.add(o)), c[p].q);
+                    }
+                    lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
+                    hi[p] = vmlal_high_u32(hi[p], xv, mv);
+                }
+            }
+            for p in 0..4 {
+                let r = redc_acc(lo[p], hi[p], &c[p], len <= DOT_SHORT);
+                out[p] = if done == 0 { r } else { add_mod(out[p], r, c[p].q) };
+            }
+            done += len;
+        }
+        out
+    }
+}
+
 /// Inner product of `rows` rows of block `blk`, with a possibly sparse right operand.
+///
+/// Slot `s` of the dense operand reads slot `s >> b_log_gap` of the sparse one (spec 4.5).
+/// `b0` and `b1` are right columns offset to their first row, with rows `b_size` limbs apart in their own block order.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
 unsafe fn conv_dot<const PAIRWISE: bool>(
@@ -95,35 +144,17 @@ unsafe fn conv_dot<const PAIRWISE: bool>(
     b_size: usize,
     b_log_gap: usize,
     rows: usize,
-) -> [core::arch::aarch64::uint32x4_t; 4] {
+) -> [uint32x4_t; 4] {
     unsafe {
-        if b_log_gap == 0 {
-            let (b0, b1) = (b0.add(blk * b_size * ROW), b1.add(blk * b_size * ROW));
-            return if PAIRWISE {
-                dot_rows_pairwise(a0, a1, b0, b1, rows, c)
-            } else {
-                dot_rows(a0, b0, rows, c)
-            };
+        let slot = (4 * blk) >> b_log_gap;
+        let block = (slot / 4) * b_size * ROW;
+        let (b0, b1) = (b0.add(block), b1.add(block));
+        match b_log_gap {
+            0 => conv_rows::<PAIRWISE, DENSE>(c, a0, a1, b0, b1, rows),
+            1 if slot.is_multiple_of(4) => conv_rows::<PAIRWISE, SPARSE_LOW>(c, a0, a1, b0, b1, rows),
+            1 => conv_rows::<PAIRWISE, SPARSE_HIGH>(c, a0, a1, b0, b1, rows),
+            _ => conv_rows::<PAIRWISE, SPARSE_ONE>(c, a0, a1, b0.add(slot % 4), b1.add(slot % 4), rows),
         }
-        let mut buf0 = [0u32; ROW * DOT_CHUNK];
-        let mut buf1 = [0u32; ROW * DOT_CHUNK];
-        let mut out = [core::arch::aarch64::vdupq_n_u32(0); 4];
-        let mut done = 0;
-        while done < rows {
-            let len = (rows - done).min(DOT_CHUNK);
-            expand_sparse_rows(buf0.as_mut_ptr(), b0.add(done * ROW), b_size, blk, b_log_gap, len);
-            let r = if PAIRWISE {
-                expand_sparse_rows(buf1.as_mut_ptr(), b1.add(done * ROW), b_size, blk, b_log_gap, len);
-                dot_rows_pairwise(a0.add(done * ROW), a1.add(done * ROW), buf0.as_ptr(), buf1.as_ptr(), len, c)
-            } else {
-                dot_rows(a0.add(done * ROW), buf0.as_ptr(), len, c)
-            };
-            for p in 0..4 {
-                out[p] = if done == 0 { r[p] } else { add_mod(out[p], r[p], c[p].q) };
-            }
-            done += len;
-        }
-        out
     }
 }
 

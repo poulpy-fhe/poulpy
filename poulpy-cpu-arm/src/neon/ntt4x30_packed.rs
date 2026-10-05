@@ -129,20 +129,105 @@ pub(crate) unsafe fn mont_mul(a: uint32x4_t, b: uint32x4_t, c: &Plane) -> uint32
     }
 }
 
+/// Largest number of products for which the Montgomery step of an accumulator lands below `2 * q`.
+pub(crate) const DOT_SHORT: usize = 4;
+
 /// Montgomery step of four `u64` sums held as lanes `0, 1` in `lo` and lanes `2, 3` in `hi`.
 ///
-/// Each sum must be at most `DOT_CHUNK * q^2`.
+/// Each sum must be at most `DOT_CHUNK * q^2`, or `DOT_SHORT * q^2` when `short` is set.
 /// Returns `S * 2^-32 mod q`, canonical.
 #[inline(always)]
-pub(crate) unsafe fn redc_acc(lo: uint64x2_t, hi: uint64x2_t, c: &Plane) -> uint32x4_t {
+pub(crate) unsafe fn redc_acc(lo: uint64x2_t, hi: uint64x2_t, c: &Plane, short: bool) -> uint32x4_t {
     unsafe {
         let low = vuzp1q_u32(vreinterpretq_u32_u64(lo), vreinterpretq_u32_u64(hi));
         let m = vmulq_u32(low, c.nqinv);
         let lo = vmlal_u32(lo, vget_low_u32(m), vget_low_u32(c.q));
         let hi = vmlal_high_u32(hi, m, c.q);
         let r = vuzp2q_u32(vreinterpretq_u32_u64(lo), vreinterpretq_u32_u64(hi));
-        let r = vminq_u32(r, vsubq_u32(r, c.q2));
+        let r = if short { r } else { vminq_u32(r, vsubq_u32(r, c.q2)) };
         vminq_u32(r, vsubq_u32(r, c.q))
+    }
+}
+
+/// Running inner product against prepared operands, fed one run of rows at a time.
+///
+/// A row is 16 `u32`: four lanes for each of the four primes.
+pub(crate) struct DotState {
+    lo: [uint64x2_t; 4],
+    hi: [uint64x2_t; 4],
+    out: [uint32x4_t; 4],
+    terms: usize,
+    flushed: bool,
+}
+
+impl DotState {
+    #[inline(always)]
+    pub(crate) unsafe fn new() -> Self {
+        unsafe {
+            let zero = vdupq_n_u64(0);
+            Self {
+                lo: [zero; 4],
+                hi: [zero; 4],
+                out: [vdupq_n_u32(0); 4],
+                terms: 0,
+                flushed: false,
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn flush(&mut self, c: &[Plane; 4]) {
+        unsafe {
+            let short = self.terms <= DOT_SHORT;
+            for (p, c) in c.iter().enumerate() {
+                let r = redc_acc(self.lo[p], self.hi[p], c, short);
+                self.out[p] = if self.flushed { add_mod(self.out[p], r, c.q) } else { r };
+            }
+            let zero = vdupq_n_u64(0);
+            self.lo = [zero; 4];
+            self.hi = [zero; 4];
+            self.terms = 0;
+            self.flushed = true;
+        }
+    }
+
+    /// Adds `sum_row x[row] * m[row]` over `rows` rows.
+    ///
+    /// `x` holds canonical residues and `m` prepared residues.
+    #[inline(always)]
+    pub(crate) unsafe fn push_rows(&mut self, x: *const u32, m: *const u32, rows: usize, c: &[Plane; 4]) {
+        unsafe {
+            let mut row = 0;
+            while row < rows {
+                if self.terms == DOT_CHUNK {
+                    self.flush(c);
+                }
+                let end = row + (rows - row).min(DOT_CHUNK - self.terms);
+                self.terms += end - row;
+                while row < end {
+                    let xr = x.add(16 * row);
+                    let mr = m.add(16 * row);
+                    for p in 0..4 {
+                        let xv = vld1q_u32(xr.add(4 * p));
+                        let mv = vld1q_u32(mr.add(4 * p));
+                        self.lo[p] = vmlal_u32(self.lo[p], vget_low_u32(xv), vget_low_u32(mv));
+                        self.hi[p] = vmlal_high_u32(self.hi[p], xv, mv);
+                    }
+                    row += 1;
+                }
+            }
+        }
+    }
+
+    /// One canonical vector per prime.
+    #[inline(always)]
+    pub(crate) unsafe fn finish(mut self, c: &[Plane; 4]) -> [uint32x4_t; 4] {
+        unsafe {
+            if self.terms != 0 {
+                self.flush(c);
+            }
+            self.out
+        }
     }
 }
 
@@ -154,68 +239,9 @@ pub(crate) unsafe fn redc_acc(lo: uint64x2_t, hi: uint64x2_t, c: &Plane) -> uint
 #[inline(always)]
 pub(crate) unsafe fn dot_rows(x: *const u32, m: *const u32, rows: usize, c: &[Plane; 4]) -> [uint32x4_t; 4] {
     unsafe {
-        let zero = vdupq_n_u64(0);
-        let mut out = [vdupq_n_u32(0); 4];
-        let mut done = 0;
-        while done < rows {
-            let len = (rows - done).min(DOT_CHUNK);
-            let mut lo = [zero; 4];
-            let mut hi = [zero; 4];
-            for row in done..done + len {
-                let xr = x.add(16 * row);
-                let mr = m.add(16 * row);
-                for p in 0..4 {
-                    let xv = vld1q_u32(xr.add(4 * p));
-                    let mv = vld1q_u32(mr.add(4 * p));
-                    lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
-                    hi[p] = vmlal_high_u32(hi[p], xv, mv);
-                }
-            }
-            for p in 0..4 {
-                let r = redc_acc(lo[p], hi[p], &c[p]);
-                out[p] = if done == 0 { r } else { add_mod(out[p], r, c[p].q) };
-            }
-            done += len;
-        }
-        out
-    }
-}
-
-/// [`dot_rows`] on the sums of two operands per side: `sum_row (x0 + x1) * (m0 + m1)`.
-#[inline(always)]
-pub(crate) unsafe fn dot_rows_pairwise(
-    x0: *const u32,
-    x1: *const u32,
-    m0: *const u32,
-    m1: *const u32,
-    rows: usize,
-    c: &[Plane; 4],
-) -> [uint32x4_t; 4] {
-    unsafe {
-        let zero = vdupq_n_u64(0);
-        let mut out = [vdupq_n_u32(0); 4];
-        let mut done = 0;
-        while done < rows {
-            let len = (rows - done).min(DOT_CHUNK);
-            let mut lo = [zero; 4];
-            let mut hi = [zero; 4];
-            for row in done..done + len {
-                let off = 16 * row;
-                for p in 0..4 {
-                    let o = off + 4 * p;
-                    let xv = add_mod(vld1q_u32(x0.add(o)), vld1q_u32(x1.add(o)), c[p].q);
-                    let mv = add_mod(vld1q_u32(m0.add(o)), vld1q_u32(m1.add(o)), c[p].q);
-                    lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
-                    hi[p] = vmlal_high_u32(hi[p], xv, mv);
-                }
-            }
-            for p in 0..4 {
-                let r = redc_acc(lo[p], hi[p], &c[p]);
-                out[p] = if done == 0 { r } else { add_mod(out[p], r, c[p].q) };
-            }
-            done += len;
-        }
-        out
+        let mut state = DotState::new();
+        state.push_rows(x, m, rows, c);
+        state.finish(c)
     }
 }
 
@@ -435,6 +461,7 @@ mod tests {
             let q = Q[p] as u128;
             assert!(DOT_CHUNK as u128 * q * q + ((1u128 << 32) - 1) * q < 1u128 << 64);
             assert!((DOT_CHUNK as u128 * q * q + ((1u128 << 32) - 1) * q) >> 32 < 4 * q);
+            assert!((DOT_SHORT as u128 * q * q + ((1u128 << 32) - 1) * q) >> 32 < 2 * q);
         }
     }
 
@@ -505,7 +532,7 @@ mod tests {
     fn dot_rows_match_scalar() {
         let mut state = 3u64;
         let c = unsafe { planes() };
-        for rows in [1usize, 2, 11, 12, 13, 24, 25, 40] {
+        for rows in [1usize, 2, 4, 5, 11, 12, 13, 24, 25, 40] {
             // Rows of 16 u32, four lanes per prime.
             let gen_rows = |state: &mut u64, max: bool| -> Vec<u32> {
                 let mut v = vec![0u32; 16 * rows];
@@ -520,27 +547,20 @@ mod tests {
             };
             for max in [false, true] {
                 let x0 = gen_rows(&mut state, max);
-                let x1 = gen_rows(&mut state, max);
                 let m0 = gen_rows(&mut state, max);
-                let m1 = gen_rows(&mut state, max);
                 let got = unsafe { dot_rows(x0.as_ptr(), m0.as_ptr(), rows, &c) };
-                let got_pair = unsafe { dot_rows_pairwise(x0.as_ptr(), x1.as_ptr(), m0.as_ptr(), m1.as_ptr(), rows, &c) };
                 for p in 0..4 {
                     let q = Q[p] as u128;
                     let r_inv = pow_mod(R1[p] as u64, Q[p] as u64 - 2, Q[p] as u64) as u128;
                     let mut out = [0u32; 4];
-                    let mut out_pair = [0u32; 4];
                     unsafe { vst1q_u32(out.as_mut_ptr(), got[p]) };
-                    unsafe { vst1q_u32(out_pair.as_mut_ptr(), got_pair[p]) };
-                    for lane in 0..4 {
-                        let (mut want, mut want_pair) = (0u128, 0u128);
+                    for (lane, &got) in out.iter().enumerate() {
+                        let mut want = 0u128;
                         for row in 0..rows {
                             let i = 16 * row + 4 * p + lane;
                             want = (want + x0[i] as u128 * m0[i] as u128) % q;
-                            want_pair = (want_pair + (x0[i] as u128 + x1[i] as u128) * (m0[i] as u128 + m1[i] as u128)) % q;
                         }
-                        assert_eq!(out[lane] as u128, want * r_inv % q, "rows {rows}");
-                        assert_eq!(out_pair[lane] as u128, want_pair * r_inv % q, "pairwise rows {rows}");
+                        assert_eq!(got as u128, want * r_inv % q, "rows {rows}");
                     }
                 }
             }
