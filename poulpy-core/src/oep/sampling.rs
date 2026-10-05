@@ -15,7 +15,7 @@ use crate::{Distribution, Noise};
 /// Each delegate derives a private child seed. Fixed seeds are reproducible
 /// within a backend, but distinct backends may use different random streams.
 /// Every backend must implement these methods, including full-width noise.
-/// A Gaussian with bound `B = floor(cutoff * sigma) <= 64` may use a
+/// A Gaussian with bound `B = floor(cutoff_factor * sigma) <= 64` may use a
 /// 128-bit cumulative table with statistical distance at most `B * 2^-128`.
 /// Larger Gaussians and uniform noise must be sampled exactly.
 ///

@@ -18,13 +18,25 @@ fn noise(c: &mut Criterion) {
     group.throughput(Throughput::Elements(n as u64));
     for (name, noise) in [
         ("encryption", Noise::ENCRYPTION),
-        ("gaussian_table_bound_60", Noise::Gaussian { sigma: 10.0, cutoff: 6 }),
-        ("gaussian_rejection_bound_66", Noise::Gaussian { sigma: 11.0, cutoff: 6 }),
+        (
+            "gaussian_table_bound_60",
+            Noise::Gaussian {
+                sigma: 10.0,
+                cutoff_factor: 6,
+            },
+        ),
+        (
+            "gaussian_rejection_bound_66",
+            Noise::Gaussian {
+                sigma: 11.0,
+                cutoff_factor: 6,
+            },
+        ),
         (
             "gaussian_2_pow_128",
             Noise::Gaussian {
                 sigma: 2f64.powi(128),
-                cutoff: 6,
+                cutoff_factor: 6,
             },
         ),
         ("uniform_192_bits", Noise::Uniform { bits: 192 }),

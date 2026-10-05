@@ -309,14 +309,14 @@ where
         (
             poulpy_core::Noise::Gaussian {
                 sigma: 1024.0,
-                cutoff: 0,
+                cutoff_factor: 0,
             },
-            "invalid noise: Gaussian cutoff must be positive",
+            "invalid noise: Gaussian cutoff factor must be positive",
         ),
         (
             poulpy_core::Noise::Gaussian {
                 sigma: 2.0f64.powi((K.as_usize()) as i32),
-                cutoff: 6,
+                cutoff_factor: 6,
             },
             "invalid noise: Gaussian bound outside the precision",
         ),

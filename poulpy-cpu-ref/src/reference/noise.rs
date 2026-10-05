@@ -204,10 +204,10 @@ struct RejectionGaussian {
     acceptance_den: UBig,
 }
 impl RejectionGaussian {
-    fn new(sigma: f64, cutoff: usize) -> Self {
+    fn new(sigma: f64, cutoff_factor: usize) -> Self {
         let (num, den) = dyadic(sigma);
         let t = &num / &den + 1u8;
-        let bound = &num * cutoff / &den;
+        let bound = &num * cutoff_factor / &den;
         let variance_num = &num * &num;
         let variance_den = &den * &den;
         let acceptance_den = &variance_num * &variance_den * &t * &t * 2u8;
@@ -459,9 +459,9 @@ where
     let shift = (base2k - k % base2k) % base2k;
     match noise {
         Noise::Uniform { bits } => add_uniform(res, col, base2k, size, shift, bits, source),
-        Noise::Gaussian { sigma, cutoff } => {
+        Noise::Gaussian { sigma, cutoff_factor } => {
             let (num, den) = dyadic(sigma);
-            let bound = num * cutoff / den;
+            let bound = num * cutoff_factor / den;
             if bound <= UBig::from(64u8) {
                 let dynamic;
                 let table = if noise == Noise::ENCRYPTION {
@@ -484,7 +484,7 @@ where
                     }
                 }
             } else {
-                let gaussian = RejectionGaussian::new(sigma, cutoff);
+                let gaussian = RejectionGaussian::new(sigma, cutoff_factor);
                 for index in 0..res.n() {
                     place_integer(res, col, index, base2k, size, shift, gaussian.sample(source));
                 }
@@ -500,8 +500,8 @@ mod tests {
     use poulpy_core::{VecZnxAddNoise, VecZnxBigAddNoise};
     use poulpy_hal::{api::*, layouts::*};
 
-    fn assert_pmf(sigma: f64, cutoff: usize, mut sample: impl FnMut() -> i64) {
-        let bound = (sigma * cutoff as f64).floor() as i64;
+    fn assert_pmf(sigma: f64, cutoff_factor: usize, mut sample: impl FnMut() -> i64) {
+        let bound = (sigma * cutoff_factor as f64).floor() as i64;
         let draws = 200_000usize;
         let mut counts = vec![0usize; (2 * bound + 1) as usize];
         for _ in 0..draws {
@@ -619,7 +619,7 @@ mod tests {
         let (base2k, k, size) = (17, 211, 14);
         let noise = Noise::Gaussian {
             sigma: 2f64.powi(150),
-            cutoff: 6,
+            cutoff_factor: 6,
         };
         let mut res = module.vec_znx_alloc(64, 2, size);
         res.at_mut(0, 0).fill(99);
@@ -706,7 +706,10 @@ mod tests {
             for noise in [
                 Noise::ENCRYPTION,
                 Noise::Uniform { bits: 17 },
-                Noise::Gaussian { sigma: 15.25, cutoff: 6 },
+                Noise::Gaussian {
+                    sigma: 15.25,
+                    cutoff_factor: 6,
+                },
             ] {
                 let size = k.div_ceil(base2k);
                 let mut small = fft.vec_znx_alloc(64, 1, size);

@@ -31,7 +31,7 @@ use crate::{
 const SIGMA_FLOOD: f64 = 1024.0;
 const FLOOD: Noise = Noise::Gaussian {
     sigma: 1024.0,
-    cutoff: 6,
+    cutoff_factor: 6,
 };
 
 pub fn test_glwe_private_keyswitch<BE>(module: &Module<BE>)
@@ -457,7 +457,7 @@ where
     // A `k`-bit bound at the sampled precision `k`, which the other layouts would accept.
     let too_wide = |k: TorusPrecision| Noise::Gaussian {
         sigma: 2.0f64.powi((k.as_usize() - 3) as i32),
-        cutoff: 6,
+        cutoff_factor: 6,
     };
     // CKS samples into the narrower result.
     let mut res = GLWEPrivateKeyswitchShare {

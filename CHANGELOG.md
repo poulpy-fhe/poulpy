@@ -63,6 +63,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-core`
 
 - **Fix:** shifted GLWE addition and subtraction accept rank-zero plaintexts without accessing absent mask columns, and preserve the ciphertext mask and encryption provenance.
+- **Breaking:** rename the `Noise::Gaussian` field `cutoff` to `cutoff_factor` to make its dimensionless multiplier explicit. The integer support remains `|z| <= floor(cutoff_factor * sigma)`; `Noise::ENCRYPTION` uses `cutoff_factor: 6`.
 - **Breaking:** replace `EncryptionInfos`, `EncryptionLayout`, `NoiseInfos`, and every encryption `enc_infos` argument with fixed `Noise::ENCRYPTION` at the destination precision. `Noise` unifies discrete Gaussian and full-width uniform sampling through mandatory `SamplingImpl::{vec_znx_add_noise, vec_znx_big_add_noise}`. Encryption noise is now discrete Gaussian, so seeded error values change; compressed masks keep their existing generator ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
 - **Breaking:** ciphertexts and evaluation keys record derived encryption provenance (party count, secret distribution, and initial error variance), preserved by representation changes. Equality includes provenance, and ciphertext serialization gains a versioned provenance prefix; previous serialized ciphertexts require migration. Provenance under an `ENCAPSULATED` secret inherits that tag's existing nonserializable contract.
 

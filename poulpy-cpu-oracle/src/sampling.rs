@@ -63,7 +63,7 @@ struct Gaussian {
 }
 
 impl Gaussian {
-    fn new(sigma: f64, cutoff: usize) -> Self {
+    fn new(sigma: f64, cutoff_factor: usize) -> Self {
         let raw = sigma.to_bits();
         let encoded_exponent = ((raw >> 52) & 2047) as i32;
         let significand = (raw & ((1u64 << 52) - 1)) | (u64::from(encoded_exponent != 0) << 52);
@@ -80,7 +80,7 @@ impl Gaussian {
             numerator <<= exponent as usize;
         }
         Self {
-            bound: &numerator * cutoff / &denominator,
+            bound: &numerator * cutoff_factor / &denominator,
             numerator_squared: &numerator * &numerator,
             denominator_squared: &denominator * &denominator,
         }
@@ -115,7 +115,7 @@ where
     let radix = IBig::ONE << base2k;
     let half = &radix >> 1;
     let gaussian = match noise {
-        Noise::Gaussian { sigma, cutoff } => Some(Gaussian::new(sigma, cutoff)),
+        Noise::Gaussian { sigma, cutoff_factor } => Some(Gaussian::new(sigma, cutoff_factor)),
         Noise::Uniform { .. } => None,
     };
     let mut source = Source::new(seed);
@@ -238,7 +238,7 @@ mod tests {
         for noise in [
             Noise::Gaussian {
                 sigma: 2f64.powi(132),
-                cutoff: 6,
+                cutoff_factor: 6,
             },
             Noise::Uniform { bits: 135 },
         ] {

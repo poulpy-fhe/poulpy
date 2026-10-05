@@ -269,7 +269,7 @@ pub(crate) fn assert_decrypts_to<BE>(
 
 /// Small functional-test flooding parameters, not a production security margin.
 pub(crate) fn integer_flood_infos(sigma: f64) -> Noise {
-    Noise::Gaussian { sigma, cutoff: 6 }
+    Noise::Gaussian { sigma, cutoff_factor: 6 }
 }
 
 /// Checks both correctness and the presence of caller-sized, per-party flooding.
