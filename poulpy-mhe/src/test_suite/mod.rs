@@ -278,7 +278,7 @@ macro_rules! mhe_backend_test_suite {
 
             #[test]
             fn ckks_refresh() {
-                $crate::ckks::test_suite::refresh::test_ckks_refresh(&Module::<$backend>::new(256));
+                $crate::ckks::test_suite::refresh::test_ckks_refresh(&Module::<$backend>::new(1024));
             }
 
             #[test]

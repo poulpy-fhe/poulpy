@@ -1,6 +1,6 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWEShift, GLWESub,
-    ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskInnerProduct, GLWENormalize,
+    GLWEShift, GLWESub, NoiseInfos, ScratchArenaTakeCore, VecZnxAddNormal,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -28,11 +28,9 @@ pub trait CKKSRefreshMHEProtocolReference<BE: Backend> {
         sk: &S,
         log_bound: usize,
         seed: [u8; 32],
-        flood: SmudgingNoise,
         enc_infos: &E,
         source_xm: &mut Source,
         source_xe: &mut Source,
-        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -69,7 +67,7 @@ where
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
         + VecZnxFillUniformSource<BE>
-        + VecZnxAddSmudging<BE>
+        + VecZnxAddNormal<BE>
         + VecZnxAdd<BE>,
 {
     fn mhe_ckks_refresh_share_gen_tmp_bytes_reference<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
@@ -95,11 +93,9 @@ where
         sk: &S,
         log_bound: usize,
         seed: [u8; 32],
-        flood: SmudgingNoise,
         enc_infos: &E,
         source_xm: &mut Source,
         source_xe: &mut Source,
-        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
@@ -129,7 +125,6 @@ where
             "invalid share: bound outside the ciphertext precision"
         );
         let base2k = e2s.base2k().as_usize();
-        flood.assert_valid_for(base2k, k);
         let s2e_infos = res.s2e.inner.glwe_layout();
         let tmp_bytes = self.mhe_ckks_refresh_share_gen_tmp_bytes_reference(mask, &s2e_infos);
         {
@@ -141,13 +136,18 @@ where
             self.glwe_mask_inner_product(&mut pt, mask, sk, &mut scratch_3);
             self.glwe_sub(e2s, &pt, &m);
             self.glwe_normalize_assign(e2s, &mut scratch_3);
-            self.vec_znx_add_smudging(
+            // Keep the mask unchanged for re-encryption: only the public share
+            // receives this error, which survives cancellation and the raise.
+            self.vec_znx_add_normal(
                 base2k,
-                k,
                 GLWEToBackendMut::<BE>::to_backend_mut(e2s).data_mut(),
                 0,
-                flood,
-                source_smudge,
+                NoiseInfos {
+                    k,
+                    sigma: DEFAULT_SIGMA_XE,
+                    bound: DEFAULT_BOUND_XE,
+                },
+                source_xe,
             );
             self.glwe_normalize_assign(e2s, &mut scratch_3);
             self.glwe_copy(&mut raised, &m, &mut scratch_3);

@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    EncryptionInfos,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -26,11 +26,9 @@ pub unsafe trait CKKSRefreshMHEProtocolImpl: Backend {
         sk: &S,
         log_bound: usize,
         seed: [u8; 32],
-        flood: SmudgingNoise,
         enc_infos: &E,
         source_xm: &mut Source,
         source_xe: &mut Source,
-        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         C: GLWEMaskToBackendRef<Self> + GLWEInfos,
@@ -82,18 +80,16 @@ macro_rules! impl_mhe_ckks_refresh_reference {
                 sk: &S,
                 log_bound: usize,
                 seed: [u8; 32],
-                flood: ::poulpy_core::SmudgingNoise,
                 enc_infos: &E,
                 source_xm: &mut ::poulpy_hal::source::Source,
                 source_xe: &mut ::poulpy_hal::source::Source,
-                source_smudge: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 C: ::poulpy_core::layouts::GLWEMaskToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::ckks::reference::CKKSRefreshMHEProtocolReference<$be>>::mhe_ckks_refresh_share_gen_reference(module, res, mask, sk, log_bound, seed, flood, enc_infos, source_xm, source_xe, source_smudge, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::ckks::reference::CKKSRefreshMHEProtocolReference<$be>>::mhe_ckks_refresh_share_gen_reference(module, res, mask, sk, log_bound, seed, enc_infos, source_xm, source_xe, scratch)
             }
 
             fn mhe_ckks_refresh_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::ckks::layouts::CKKSRefreshShareOwned<$be>, a: &$crate::ckks::layouts::CKKSRefreshShareOwned<$be>) {

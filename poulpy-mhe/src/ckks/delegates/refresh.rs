@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    EncryptionInfos,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -25,31 +25,16 @@ impl<BE: Backend + CKKSRefreshMHEProtocolImpl> CKKSRefreshMHEProtocol<BE> for Mo
         sk: &S,
         log_bound: usize,
         seed: [u8; 32],
-        flood: SmudgingNoise,
         enc_infos: &E,
         source_xm: &mut Source,
         source_xe: &mut Source,
-        source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
     {
-        BE::mhe_ckks_refresh_share_gen(
-            self,
-            res,
-            mask,
-            sk,
-            log_bound,
-            seed,
-            flood,
-            enc_infos,
-            source_xm,
-            source_xe,
-            source_smudge,
-            scratch,
-        )
+        BE::mhe_ckks_refresh_share_gen(self, res, mask, sk, log_bound, seed, enc_infos, source_xm, source_xe, scratch)
     }
 
     fn mhe_ckks_refresh_share_aggregate(&self, res: &mut CKKSRefreshShareOwned<BE>, a: &CKKSRefreshShareOwned<BE>) {

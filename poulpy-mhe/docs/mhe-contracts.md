@@ -91,8 +91,8 @@ crate.
 
 ## Smudging
 
-A protocol whose share is a function of the parties' secrets adds a flood to
-every share: a `SmudgingNoise`, either a discrete Gaussian with an explicit
+Collective key switching and generic encryption-to-shares add a flood to every
+share: a `SmudgingNoise`, either a discrete Gaussian with an explicit
 cutoff or a uniform distribution on consecutive integers. The flood is sampled
 on the precision grid of the value it hides, which each protocol trait names,
 so that it reaches its bottom bit; on a coarser grid the low bits would be
@@ -117,6 +117,53 @@ or `2^(bits-1)`, the input and conversion errors and any fresh encryption noise
 to fit the decoding margin. The protocols check the flood against the sampling
 precision before drawing randomness. They cannot infer the input error or
 certify a security level, and neither can statistical tests.
+
+## CKKS refresh
+
+`CKKSRefreshMHEProtocol` uses private integer masks `M_i` and ordinary noise.
+Its encryption-to-shares part is `d_i = <a, s_i> - M_i + e_i` modulo the input
+modulus `q = 2^k`; its shares-to-encryption part is
+`r_i = -<A, s_i> + M_i + e'_i` modulo the output modulus `Q >= q`. The fresh
+common seed determines `A`. Every `e_i` is sampled automatically with sigma
+3.2 and bound `6 * 3.2` on the input precision grid. Each `e'_i` uses the
+caller-selected encryption distribution on the output precision grid.
+Successive fresh child seeds from the private `source_xe` supply independent
+errors for the two parts; `source_xm` remains independent of `source_xe`.
+The errors are added only to the public parts, leaving `M_i` unchanged.
+
+The public opening is `t = m + e + sum(e_i) - sum(M_i)`, where `e` is the
+input error. The masks cancel during re-encryption, giving a ciphertext of
+`m + e + sum(e_i) + sum(e'_i)`. Ordinary noise must remain: combining the two
+public parts modulo `q` cancels `M_i` and leaves
+`<a - A, s_i> + e_i + e'_i`, which would be an exact secret-key equation if
+both errors were removed. Encryption parameters must provide the intended
+RLWE/GLWE security; sigma 3.2 alone does not establish a security level.
+
+The masks statistically hide the public opening without an additional flood.
+Let `B` bound the coefficients of `m + e + sum(e_i)`, including
+all input encryption, evaluation and rounding errors. With `n` coefficients
+and independent masks uniform over `log_bound` bits, one honest party's mask
+hides the opening within statistical distance `n * B / 2^log_bound`. Require
+`log_bound >= log2(B) + log2(n) + lambda` for a per-call margin `lambda`, and
+budget repeated calls and error tails over the whole transcript. The
+integer-preserving raise also requires no wrap; the sufficient bound
+`B + parties * 2^log_bound < 2^(k - 1)` applies coefficientwise. The caller
+must establish these bounds; the protocol knows neither `B` nor the party count.
+
+In the passive model, the whole transcript can be simulated from the input and
+the actual output ciphertexts and the corrupt parties' state. With only one
+honest party, its mask cancels from the output and remains independent of it.
+Sample a statistically indistinguishable masked opening, then derive that
+party's decryption share from the input and its re-encryption share from the
+output. This accounts for the correlation between the two public parts and
+does not require an additional smudging flood. The construction follows the
+ordinary-noise masked refresh in
+[POSEIDON, Protocol 4 and Appendix B](https://www.dpss.inesc-id.pt/~ler/docencia/atpds2021/papers/poseidon.pdf).
+
+This guarantee is privacy beyond the actual encrypted output. Refresh preserves
+the input error and does not sanitize it for disclosure. A later release of an
+approximate decryption, or a requirement to hide the prior error from the output
+recipient, needs separately sized flooding or another suitable protection.
 
 ## Replacing an operation
 

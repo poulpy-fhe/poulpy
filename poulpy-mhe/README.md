@@ -57,15 +57,24 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   a ciphertext and additive shares of its plaintext on the torus.
 - `ckks::CKKSRefreshMHEProtocol`: the collective CKKS refresh of a ciphertext
   to a larger precision, keeping its integer plaintext, in one round. The
-  `ckks` module holds the CKKS-specific protocols, layered as the crate.
+  private integer masks statistically hide the noisy plaintext; each masked
+  decryption share adds automatic Gaussian noise of sigma 3.2, and each
+  re-encryption share retains its encryption noise. The `ckks` module holds
+  the CKKS-specific protocols, layered as the crate.
 
 ## Smudging
 
-Key switching, encryption-to-shares and CKKS refresh take a caller-selected
+Key switching and encryption-to-shares take a caller-selected
 `SmudgingNoise` flood, a discrete Gaussian or a uniform distribution on
 consecutive integers, sampled on the share's own precision grid. Size it with
 the [smudging contract](docs/mhe-contracts.md#smudging); small test parameters
 do not establish security.
+
+CKKS refresh uses bounded private masks and ordinary noise instead of a flood.
+The caller sizes the masks to hide the noisy plaintext and prevent wrap during
+the modulus raise. Refresh retains the input error, so a later release of the
+approximate plaintext needs separate protection. See the
+[refresh contract](docs/mhe-contracts.md#ckks-refresh).
 
 ## Security
 
