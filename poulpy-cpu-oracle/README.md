@@ -7,7 +7,7 @@ The oracle keeps its arithmetic simple and independently maintained, so optimize
 - `FFT64Oracle`: scalar radix-2 FFT with independently generated tables.
 - `NTT4x30Oracle`: scalar negacyclic NTT over four 30-bit primes, with modular reduction after every butterfly, direct modular products, and CRT reconstruction.
 
-Both are instances of one implementation of the HAL backend interfaces, generic over the transform family, so they can take part in the shared test suites.
+Both are instances of one implementation of the HAL backend interfaces, generic over `DFTFamily`, so they can take part in the shared test suites.
 It implements only the required HAL operations, directly and with plain loops, and inherits every optional operation from HAL.
 The one exception is the in-place multiplication by `X^k - 1`, whose derived body needs more scratch than the Core callers provide.
 Temporaries live on the heap, so every scratch size is zero.
@@ -18,6 +18,7 @@ Their transforms store the `n` evaluations of the image at one root of each conj
 Prepared products use ordinary transform order.
 Normalization reconstructs each coefficient as an arbitrary-precision integer, rounds once, and writes centered radix digits.
 A sparse operand, whose degree divides the call degree, is materialized through its degree embedding before the dense operation runs.
+Prepared convolution operands are embedded directly in the transform domain by repeating evaluations, without an inverse or larger forward transform.
 
 This crate does not import production CPU kernels or their generated tables.
 Transform tests check against direct polynomial evaluation, and the prime set against its declared roots and modulus size.

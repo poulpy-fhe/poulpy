@@ -11,18 +11,10 @@ macro_rules! register_backend {
     };
 }
 
-register_backend!(crate::FFT64Avx512, poulpy_cpu_oracle::FFT64Oracle, bin_fhe_parity_fft64avx512);
-register_backend!(
-    crate::NTT4x30Avx512,
-    poulpy_cpu_oracle::NTT4x30Oracle,
-    bin_fhe_parity_ntt4x30avx512
-);
+register_backend!(crate::FFT64Avx512, poulpy_cpu_avx::FFT64Avx, bin_fhe_parity_fft64avx512);
+register_backend!(crate::NTT4x30Avx512, poulpy_cpu_avx::NTT4x30Avx, bin_fhe_parity_ntt4x30avx512);
 #[cfg(feature = "enable-ifma")]
-register_backend!(
-    crate::NTT3x42Ifma,
-    poulpy_cpu_oracle::NTT4x30Oracle,
-    bin_fhe_parity_ntt3x42ifma
-);
+register_backend!(crate::NTT3x42Ifma, crate::NTT4x30Avx512, bin_fhe_parity_ntt3x42ifma);
 #[cfg(feature = "enable-rayon")]
 register_backend!(
     crate::FFT64Avx512Rayon,

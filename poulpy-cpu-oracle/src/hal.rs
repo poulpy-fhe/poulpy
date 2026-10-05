@@ -20,7 +20,7 @@ use poulpy_hal::{
 use crate::{
     backend::Oracle,
     embed::{with_vec_znx, with_vec_znx_big},
-    family::{Family, Int},
+    family::{DFTFamily, Int},
     limbs::{apply, apply_poly, map, map_poly, update, zip},
     normalize::{normalize, normalize_assign},
     ring::{self, OracleRing},
@@ -51,20 +51,7 @@ fn switch_ring(res: &mut [i64], a: &[i64]) {
     }
 }
 
-/// The transform at degree `N = res.len()` of the degree embedding of the
-/// degree-`n` polynomial whose transform is `a`.
-fn lift<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Dft], a: &[F::Dft]) {
-    let (n, big) = (a.len(), res.len());
-    let mut coeffs = vec![F::Big::default(); n];
-    ring::inverse(module, &mut coeffs, a);
-    let mut spread = vec![0i64; big];
-    for (i, c) in coeffs.into_iter().enumerate() {
-        spread[i * (big / n)] = i64::try_from(c.into()).expect("prepared coefficient exceeds 64 bits");
-    }
-    ring::forward(module, res, &spread);
-}
-
-unsafe impl<F: Family, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
     fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize) {
         apply(res, res_col, |_| 0);
     }
@@ -259,7 +246,7 @@ unsafe impl<F: Family, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 // The HAL-derived in-place multiplication by X^p - 1 stages a full-size
 // temporary in scratch, which Core's in-place callers do not provide. This
 // override works limb by limb on the heap.
-unsafe impl<F: Family> HalVecZnxMonomialImpl for Oracle<F, Standard> {
+unsafe impl<F: DFTFamily> HalVecZnxMonomialImpl for Oracle<F, Standard> {
     fn vec_znx_rotate(
         _module: &Module<Self>,
         k: i64,
@@ -308,7 +295,7 @@ unsafe impl<F: Family> HalVecZnxMonomialImpl for Oracle<F, Standard> {
     }
 }
 
-unsafe impl<F: Family, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     fn vec_znx_big_from_small(
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -537,7 +524,7 @@ unsafe impl<F: Family, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
 
 /// Maps between the conjugate-invariant ring of degree `N` and the standard
 /// ring of degree `2N`, from their HAL definitions, on the standard oracle.
-unsafe impl<F: Family> HalVecZnxCIImpl for Oracle<F, Standard> {
+unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F, Standard> {
     // res = a_0 + sum_{0<i<N} a_i (X^i + X^-i), with X^-i = -X^(2N-i)
     fn vec_znx_ci_embed(
         _module: &Module<Self>,
@@ -586,7 +573,7 @@ pub struct DftAutomorphismPlan {
     p: i64,
 }
 
-unsafe impl<F: Family, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
     // res[j] = DFT(a[offset + j step]) while that limb exists, zero after.
     fn vec_znx_dft_apply(
         module: &Module<Self>,
@@ -748,7 +735,7 @@ unsafe impl<F: Family, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
     }
 }
 
-unsafe impl<F: Family, R: OracleRing> HalSvpImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalSvpImpl for Oracle<F, R> {
     fn svp_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
@@ -802,7 +789,7 @@ unsafe impl<F: Family, R: OracleRing> HalSvpImpl for Oracle<F, R> {
 
 // A prepared matrix keeps the MatZnx order: row, input column, limb, output
 // column, each block the transform of one polynomial.
-unsafe impl<F: Family, R: OracleRing> HalVmpImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
     fn vmp_prepare_tmp_bytes(_module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         0
     }
@@ -904,7 +891,7 @@ unsafe impl<F: Family, R: OracleRing> HalVmpImpl for Oracle<F, R> {
 }
 
 /// Prepares every limb of every column of `a` into `raw`, limb-major.
-fn cnv_prepare<F: Family, R: OracleRing>(
+fn cnv_prepare<F: DFTFamily, R: OracleRing>(
     module: &Module<Oracle<F, R>>,
     raw: &mut [F::Dft],
     cols: usize,
@@ -926,7 +913,7 @@ fn cnv_prepare<F: Family, R: OracleRing>(
     }
 }
 
-unsafe impl<F: Family, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
     fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
@@ -1015,7 +1002,7 @@ unsafe impl<F: Family, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
     // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l]. A sparse
     // right operand is read through its degree embedding.
     fn cnv_apply_dft(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1032,7 +1019,7 @@ unsafe impl<F: Family, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
             (0..b.size())
                 .map(|l| {
                     let mut limb = vec![F::Dft::default(); n];
-                    lift(module, &mut limb, b.at(b_col, l));
+                    ring::dft_embed::<F, R>(&mut limb, b.at(b_col, l));
                     limb
                 })
                 .collect()

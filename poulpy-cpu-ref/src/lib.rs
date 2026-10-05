@@ -85,7 +85,8 @@ crate::conjugate_invariant_test_suite!(
     ci_fft64ref,
     crate::FFT64CIRef,
     crate::FFT64Ref,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = poulpy_cpu_oracle::FFT64CIOracle,
+    large_radix_reference = poulpy_cpu_oracle::NTT4x30CIOracle
 );
 
 #[cfg(test)]
@@ -93,7 +94,8 @@ crate::conjugate_invariant_test_suite!(
     ci_ntt4x30ref,
     crate::NTT4x30CIRef,
     crate::NTT4x30Ref,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = poulpy_cpu_oracle::FFT64CIOracle,
+    large_radix_reference = poulpy_cpu_oracle::NTT4x30CIOracle
 );
 
 #[cfg(all(test, feature = "enable-core"))]

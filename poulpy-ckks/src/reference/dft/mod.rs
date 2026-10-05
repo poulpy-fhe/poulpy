@@ -9,5 +9,7 @@
 pub mod eval;
 pub mod matrices;
 
-pub use eval::{ckks_dft_evaluate_assign, ckks_new_dft_matrix, ckks_prepare_dft_matrix};
+pub use eval::{
+    ckks_dft_evaluate_assign, ckks_dft_tmp_bytes, ckks_new_dft_matrix, ckks_prepare_dft_matrix, ckks_prepare_dft_matrix_tmp_bytes,
+};
 pub use matrices::{DftScalar, gen_dft_matrices, gen_dft_matrices_blockwise};

@@ -10,7 +10,7 @@ use rand_distr::{Distribution as _, Normal};
 use crate::{
     ScalarZnxFill,
     backend::Oracle,
-    family::{Family, Int},
+    family::{DFTFamily, Int},
     ring::OracleRing,
 };
 
@@ -30,7 +30,7 @@ fn add_normal<T: Int>(limb: &mut [T], base2k: usize, k: usize, sigma: f64, bound
     }
 }
 
-unsafe impl<F: Family, R: OracleRing> SamplingImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
     fn scalar_znx_fill_distribution(
         _module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,

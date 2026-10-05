@@ -31,6 +31,10 @@ pub trait GLWEExternalProduct<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
+/// DFT-domain external product, dispatched through `GLWEExternalProductImpl`.
+/// The input must use the key radix. Size the output with
+/// [`crate::layouts::glwe_external_product_output_size`] and use the matching
+/// workspace query. No contiguous DFT layout is required by this interface.
 pub trait GLWEExternalProductInternal<BE: Backend> {
     fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where

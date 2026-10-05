@@ -37,8 +37,7 @@ paste = {workspace = true}
 rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
-# HAL, core and scheme suites compare against the oracle.
-poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe"]}
+# Shared test helpers and portable comparison backends.
 poulpy-cpu-ref = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
