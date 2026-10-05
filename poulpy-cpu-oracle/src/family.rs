@@ -72,6 +72,11 @@ pub trait DFTFamily: Copy + Eq + Hash + Debug + Send + Sync + 'static {
 
     /// `res = DFT(sigma_p(IDFT(a)))`, a permutation of the evaluations.
     fn dft_automorphism(p: i64, res: &mut [Self::Dft], a: &[Self::Dft]);
+
+    /// The degree-`2n` spectrum, `n = a.len()`, of a conjugate-invariant
+    /// element whose first `n` slots are `a`: its values on the other root of
+    /// each conjugate pair.
+    fn ci_expand(res: &mut [Self::Dft], a: &[Self::Dft]);
 }
 
 /// `bitrev(i)` over `bits` bits.

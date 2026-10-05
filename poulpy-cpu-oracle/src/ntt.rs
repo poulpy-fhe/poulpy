@@ -229,6 +229,18 @@ impl DFTFamily for Ntt4x30 {
             *r = a[bitrev(((s - 1) / 2) as usize, bits)];
         }
     }
+
+    // Slot i >= n holds the value at exponent 4n - e_i, the conjugate of a
+    // stored slot.
+    fn ci_expand(res: &mut [Residues], a: &[Residues]) {
+        let (n, m) = (a.len(), 2 * a.len());
+        let bits = m.trailing_zeros();
+        res[..n].copy_from_slice(a);
+        for (i, r) in res.iter_mut().enumerate().skip(n) {
+            let e = 2 * bitrev(i, bits) + 1;
+            *r = a[bitrev((2 * m - e - 1) / 2, bits)];
+        }
+    }
 }
 
 #[cfg(test)]

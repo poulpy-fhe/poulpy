@@ -153,6 +153,14 @@ impl DFTFamily for Fft64 {
             res[m + j] = sign * a[m + src];
         }
     }
+
+    // The spectrum of a subring element is real: the stored slots are the
+    // real parts and the imaginary parts are zero.
+    fn ci_expand(res: &mut [f64], a: &[f64]) {
+        let n = a.len();
+        res[..n].copy_from_slice(a);
+        res[n..].fill(0.0);
+    }
 }
 
 #[cfg(test)]

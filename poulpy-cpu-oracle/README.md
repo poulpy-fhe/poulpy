@@ -11,6 +11,10 @@ Both are instances of one implementation of the HAL backend interfaces, generic 
 It implements only the required HAL operations, directly and with plain loops, and inherits every optional operation from HAL.
 The one exception is the in-place multiplication by `X^k - 1`, whose derived body needs more scratch than the Core callers provide.
 Temporaries live on the heap, so every scratch size is zero.
+The implementation also takes the backend ring as a type parameter, the standard ring by default.
+`FFT64CIOracle` and `NTT4x30CIOracle` are the conjugate-invariant instances.
+Every ring-dependent operation on the conjugate-invariant ring of degree `n` is computed in the standard ring of degree `2n`, through the embedding of the subring and back.
+Their transforms store the `n` evaluations of the image at one root of each conjugate pair.
 Prepared products use ordinary transform order.
 Normalization reconstructs each coefficient as an arbitrary-precision integer, rounds once, and writes centered radix digits.
 A sparse operand, whose degree divides the call degree, is materialized through its degree embedding before the dense operation runs.
