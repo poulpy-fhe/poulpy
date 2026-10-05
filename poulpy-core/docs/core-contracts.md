@@ -131,6 +131,24 @@ Its square root is the effective fresh sigma; multiplying that sigma by
 historical estimate on another precision grid without adding rounding error.
 Positive infinity denotes an unbounded estimate, including numeric overflow.
 
+Fresh ciphertexts derive their own phase-error estimate from the encryption
+path. For rank `r`, degree `n`, equal key/ciphertext precision, and a centered
+base secret with coefficient variance `v`, the default noise parameter `sigma`
+gives:
+
+| Encryption path | Fresh ciphertext variance |
+| --- | --- |
+| Secret key | `sigma^2` |
+| Single-party public key | `(1 + 2*r*n*v) * sigma^2` |
+| Public key aggregated from `P` parties | `(1 + 2*r*n*P*v) * sigma^2` |
+
+The public-key paths include both inherited key error and fresh mask error
+multiplied by the destination secret. Their body contributes one fresh error,
+even for a collective key. Noncentered secrets use their second moments;
+different precisions rescale inherited key error and account for new rounding.
+Smudging replaces the fresh body variance with the chosen flood's variance.
+Re-encrypting an existing ciphertext replaces its previous metadata.
+
 The estimate accounts for inherited public-key error and amplification during
 key generation or protocol finalization. It is a variance model, not an exact
 distribution descriptor for sums or products of errors. A whole GGSW uses the

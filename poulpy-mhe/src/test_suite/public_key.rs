@@ -2,10 +2,12 @@
 //! under the finalized key decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWENoise, GetDistributionMut,
+    DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate,
+    GetDistributionMut, Noise,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPreparedFactory,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared,
+        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
+        ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -101,6 +103,195 @@ where
     let bound = variance.sqrt().log2() - K.as_usize() as f64 + 1.25_f64.log2();
     let noise: f64 = module.glwe_noise(&ct, &pt, &sk_ideal, &mut scratch.borrow()).std().log2();
     assert!(noise <= bound, "noise {noise} above bound {bound}");
+}
+
+/// Actual SK, single-PK and collective-PK producers replace a reused
+/// ciphertext's fresh phase-error estimate, including its precision and secret.
+pub fn test_ciphertext_encryption_noise_tags<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: MHEModuleAlloc<BE>
+        + GLWEPublicKeyMHEProtocol<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEPublicKeyPreparedFactory<BE>
+        + GLWEPublicKeyGenerate<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEEncryptPk<BE>
+        + GLWEEncryptPkSmudged<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let key_layout = GLWELayout {
+        n: module.n().into(),
+        base2k: BASE2K,
+        k: K,
+        rank: RANK,
+    };
+    let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+    let rank_n = RANK.as_usize() as f64 * module.n() as f64;
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_encrypt_sk_tmp_bytes(&key_layout)
+            .max(module.glwe_encrypt_pk_tmp_bytes(&key_layout, &key_layout))
+            .max(module.glwe_encrypt_pk_smudged_tmp_bytes(&key_layout, &key_layout))
+            .max(module.glwe_public_key_generate_tmp_bytes(&key_layout))
+            .max(module.glwe_public_key_prepare_tmp_bytes(&key_layout))
+            .max(module.mhe_glwe_public_key_share_gen_tmp_bytes(&key_layout))
+            .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes()),
+    );
+
+    for base in [Distribution::TernaryProb(0.5), Distribution::BinaryProb(0.5)] {
+        let mut secrets = Vec::new();
+        let mut aggregate = module.glwe_public_key_share_alloc_from_infos(&key_layout);
+        let mut share = module.glwe_public_key_share_alloc_from_infos(&key_layout);
+        for i in 0..PARTIES {
+            let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
+            let mut source = Source::new([100 + i as u8; 32]);
+            match base {
+                Distribution::TernaryProb(p) => module.glwe_secret_fill_ternary_prob(&mut sk, p, &mut source),
+                Distribution::BinaryProb(p) => module.glwe_secret_fill_binary_prob(&mut sk, p, &mut source),
+                _ => unreachable!(),
+            }
+            let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+            module.glwe_secret_prepare(&mut prepared, &sk);
+            let dst = if i == 0 { &mut aggregate } else { &mut share };
+            module.mhe_glwe_public_key_share_gen(
+                dst,
+                &prepared,
+                SEEDS[0],
+                &mut Source::new([110 + i as u8; 32]),
+                &mut scratch.borrow(),
+            );
+            if i > 0 {
+                module.mhe_glwe_public_key_share_aggregate(&mut aggregate, &share);
+            }
+            assert_noise_tag(&aggregate, base, i + 1, (i + 1) as f64 * sigma2, K);
+            secrets.push(prepared);
+        }
+
+        let mut encoded = Vec::new();
+        aggregate.write_to(&mut encoded).unwrap();
+        let mut decoded = module.glwe_public_key_share_alloc_from_infos(&key_layout);
+        decoded.read_from(&mut encoded.as_slice()).unwrap();
+        assert!(decoded == aggregate);
+        let mut collective: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
+        module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, &mut scratch.borrow());
+        assert_noise_tag(&collective, base, PARTIES, PARTIES as f64 * sigma2, K);
+        let mut collective_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> =
+            module.glwe_public_key_prepared_alloc_from_infos(&key_layout);
+        module.glwe_public_key_prepare(&mut collective_prepared, &collective, &mut scratch.borrow());
+        assert_noise_tag(&collective_prepared, base, PARTIES, PARTIES as f64 * sigma2, K);
+
+        let mut single: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
+        module.glwe_public_key_generate(
+            &mut single,
+            &secrets[0],
+            &mut Source::new([120; 32]),
+            &mut Source::new([121; 32]),
+            &mut scratch.borrow(),
+        );
+        let mut single_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> =
+            module.glwe_public_key_prepared_alloc_from_infos(&key_layout);
+        module.glwe_public_key_prepare(&mut single_prepared, &single, &mut scratch.borrow());
+        assert_noise_tag(&single_prepared, base, 1, sigma2, K);
+
+        for k in [K, TorusPrecision(K.0 - BASE2K.0)] {
+            let layout = GLWELayout { k, ..key_layout };
+            let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+            let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
+            pt.encode_vec_i64(&vec![1; module.n()], k);
+            let zero_pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
+            let mut source_xu = Source::new([130; 32]);
+            let mut source_xe = Source::new([131; 32]);
+            let mut source_xa = Source::new([132; 32]);
+            let mut source_smudge = Source::new([133; 32]);
+            module.glwe_encrypt_sk(
+                &mut ct,
+                &pt,
+                &secrets[0],
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+            );
+            assert_noise_tag(&ct, base, 1, sigma2, k);
+
+            for (parties, pk) in [(1, &single_prepared), (PARTIES, &collective_prepared)] {
+                let count = parties as f64;
+                // E[S^2] = N E[s^2] + N(N-1) E[s]^2. Binary secrets
+                // include the cross-party mean term, unlike centered ternary.
+                let mean = if matches!(base, Distribution::BinaryProb(_)) {
+                    0.5
+                } else {
+                    0.0
+                };
+                let secret_second = count * 0.5 + count * (count - 1.0) * mean * mean;
+                let key_grid_scale = (2.0 * (k.as_usize() as f64 - K.as_usize() as f64)).exp2();
+                let inherited = rank_n * 0.5 * count * sigma2 * key_grid_scale;
+                let mask_error = rank_n * secret_second * sigma2;
+                let rounding = if k < K { (1.0 + rank_n * secret_second) / 4.0 } else { 0.0 };
+                let without_body = inherited + mask_error + rounding;
+                let ordinary = without_body + sigma2;
+                assert!(ordinary > sigma2);
+                module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                assert_noise_tag(&ct, base, parties, ordinary, k);
+                module.glwe_encrypt_pk_at_col(
+                    &mut ct,
+                    &zero_pt,
+                    RANK.as_usize(),
+                    pk,
+                    &mut source_xu,
+                    &mut source_xe,
+                    &mut scratch.borrow(),
+                );
+                assert_noise_tag(&ct, base, parties, ordinary, k);
+                module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                assert_noise_tag(&ct, base, parties, ordinary, k);
+                for (flood, variance) in [
+                    (Noise::Uniform { bits: 4 }, 21.25),
+                    (
+                        Noise::Gaussian {
+                            sigma: 128.0,
+                            cutoff_factor: 6,
+                        },
+                        16384.0,
+                    ),
+                ] {
+                    module.glwe_encrypt_pk_smudged(
+                        &mut ct,
+                        &pt,
+                        pk,
+                        flood,
+                        &mut source_xu,
+                        &mut source_xe,
+                        &mut source_smudge,
+                        &mut scratch.borrow(),
+                    );
+                    assert_noise_tag(&ct, base, parties, without_body + variance, k);
+                }
+            }
+            // Reusing a collective-PK ciphertext for SK encryption must clear
+            // both its amplified estimate and its collective party count.
+            module.glwe_encrypt_sk(
+                &mut ct,
+                &pt,
+                &secrets[0],
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+            );
+            assert_noise_tag(&ct, base, 1, sigma2, k);
+        }
+    }
+}
+
+fn assert_noise_tag(value: &impl LWEInfos, base: Distribution, parties: usize, variance: f64, k: TorusPrecision) {
+    let metadata = value.encryption_metadata().expect("fresh encryption must record provenance");
+    assert_eq!(metadata.secret_distribution().base(), base);
+    assert_eq!(metadata.parties(), parties as u64);
+    super::fixtures::assert_fresh_noise(value, variance, k);
+    assert!((metadata.fresh_noise().std_dev() - variance.sqrt()).abs() <= variance.sqrt() * 1e-12);
 }
 
 /// Finalizing a share without a samplable distribution panics; a fresh share has `NONE`.
