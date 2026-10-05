@@ -1,0 +1,523 @@
+//! Negacyclic NTT on packed limbs, four lanes of one prime per register.
+//!
+//! The transform works in place on one plane of `n` residues at a time.
+//! Residues are kept as signed 32-bit values, congruent to the true residue and bounded in magnitude.
+//! A product by a twiddle `w` uses the precomputed quotient `w' = round(w * 2^31 / q)`:
+//! `y * w - round(y * w' / 2^31) * q` lies in `[-q, q]` for every `|y| <= 2^31`.
+//!
+//! The forward transform is a Cooley-Tukey network with bit-reversed twiddles and no separate twist pass.
+//! Its output order is the one of the q120 kernels, so automorphism plans are shared with them.
+//! The inverse transform is the matching Gentleman-Sande network.
+//! Its last level folds in `1/n` and the CRT constant, so its output feeds the reconstruction directly.
+
+use core::arch::aarch64::{
+    int32x4_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vld1q_dup_s32, vld1q_s32, vld1q_s64, vminq_u32,
+    vmlsq_s32, vmulq_s32, vqrdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64,
+    vreinterpretq_u32_s32, vreinterpretq_u64_s32, vrshrq_n_s32, vst1q_s32, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32,
+    vuzp1q_s32, vuzp1q_u64, vuzp2q_s32, vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
+};
+
+use poulpy_cpu_portable::kernels::ntt4x30::{
+    ntt::modq_pow_portable,
+    primes::{PrimeSet, PrimeSetCrt4, Primes30},
+};
+
+use super::ntt4x30_packed::{Q, R1};
+
+/// Smallest degree the kernels accept: the two last levels work on pairs of registers.
+pub(crate) const MIN_N: usize = 8;
+
+/// Elements of a block that is finished level by level before moving to the next one.
+const BLOCK: usize = 1 << 13;
+
+/// `round(w * 2^31 / q)`.
+const fn quotient(w: u32, q: u32) -> i32 {
+    ((((w as u64) << 31) + (q as u64) / 2) / q as u64) as i32
+}
+
+fn mul_mod(a: u32, b: u32, q: u32) -> u32 {
+    ((a as u64 * b as u64) % q as u64) as u32
+}
+
+/// Twiddles of one prime and one direction.
+struct PlaneTable {
+    /// `w[m + i]` is the twiddle of block `i` of the level that has `m` blocks.
+    w: Vec<i32>,
+    wp: Vec<i32>,
+    /// Twiddles of the level whose blocks hold four elements, each one stored twice.
+    w2: Vec<i32>,
+    wp2: Vec<i32>,
+}
+
+impl PlaneTable {
+    fn new(n: usize, psi: u32, q: u32) -> Self {
+        let log_n = n.trailing_zeros();
+        let mut pows = vec![1u32; n];
+        for e in 1..n {
+            pows[e] = mul_mod(pows[e - 1], psi, q);
+        }
+        let mut w = vec![0i32; n];
+        let mut wp = vec![0i32; n];
+        for k in 1..n {
+            let x = pows[k.reverse_bits() >> (usize::BITS - log_n)];
+            w[k] = x as i32;
+            wp[k] = quotient(x, q);
+        }
+        let mut w2 = vec![0i32; n / 2];
+        let mut wp2 = vec![0i32; n / 2];
+        for i in 0..n / 4 {
+            w2[2 * i] = w[n / 4 + i];
+            w2[2 * i + 1] = w[n / 4 + i];
+            wp2[2 * i] = wp[n / 4 + i];
+            wp2[2 * i + 1] = wp[n / 4 + i];
+        }
+        Self { w, wp, w2, wp2 }
+    }
+}
+
+/// Constants of the conversion from `i64` for one prime.
+#[derive(Clone, Copy, Default)]
+struct ConvConst {
+    /// Scale times `2^32`, with its quotient and its centered representative.
+    k: i32,
+    kp: i32,
+    kc: i32,
+    /// Scale, with its quotient.
+    s: i32,
+    sp: i32,
+}
+
+/// Constants of the last inverse level for one prime.
+#[derive(Clone, Copy, Default)]
+struct FinalConst {
+    /// `crt / n`, with its quotient.
+    c: i32,
+    cp: i32,
+    /// `w * crt / n` for the twiddle of the level, with its quotient.
+    cw: i32,
+    cwp: i32,
+}
+
+/// Tables of the packed NTT of one degree.
+pub(crate) struct Ntt32Table {
+    n: usize,
+    fwd: [PlaneTable; 4],
+    inv: [PlaneTable; 4],
+    /// Indexed by `prepared`, then by prime.
+    conv: [[ConvConst; 4]; 2],
+    fin: [FinalConst; 4],
+}
+
+impl Ntt32Table {
+    pub(crate) fn new(n: usize) -> Self {
+        assert!(n.is_power_of_two() && (MIN_N..=1 << Primes30::MAX_LOG_N).contains(&n));
+        let psi: [u32; 4] =
+            std::array::from_fn(|p| modq_pow_portable(Primes30::OMEGA[p], (1i64 << Primes30::MAX_LOG_N) / n as i64, Q[p]));
+        let fwd = std::array::from_fn(|p| PlaneTable::new(n, psi[p], Q[p]));
+        let inv = std::array::from_fn(|p| PlaneTable::new(n, modq_pow_portable(psi[p], -1, Q[p]), Q[p]));
+        let conv = std::array::from_fn(|prepared| {
+            std::array::from_fn(|p| {
+                let q = Q[p];
+                let s = if prepared == 1 { R1[p] } else { 1 };
+                let k = mul_mod(s, R1[p], q);
+                ConvConst {
+                    k: k as i32,
+                    kp: quotient(k, q),
+                    kc: if k > q / 2 { k as i32 - q as i32 } else { k as i32 },
+                    s: s as i32,
+                    sp: quotient(s, q),
+                }
+            })
+        });
+        let fin = std::array::from_fn(|p| {
+            let q = Q[p];
+            let c = mul_mod(modq_pow_portable(n as u32, -1, q), Primes30::CRT_CST[p], q);
+            let cw = mul_mod(c, inv[p].w[1] as u32, q);
+            FinalConst {
+                c: c as i32,
+                cp: quotient(c, q),
+                cw: cw as i32,
+                cwp: quotient(cw, q),
+            }
+        });
+        Self { n, fwd, inv, conv, fin }
+    }
+}
+
+/// `y * w mod q` in `[-q, q]`, for any `y`.
+#[inline(always)]
+unsafe fn mul_w(y: int32x4_t, w: int32x4_t, wp: int32x4_t, q: int32x4_t) -> int32x4_t {
+    unsafe { vmlsq_s32(vmulq_s32(y, w), vqrdmulhq_s32(y, wp), q) }
+}
+
+/// Maps any value to a congruent one of magnitude below `0.56 * q`.
+#[inline(always)]
+unsafe fn reduce(x: int32x4_t, q: int32x4_t) -> int32x4_t {
+    unsafe { vmlsq_s32(x, vrshrq_n_s32::<30>(x), q) }
+}
+
+/// Maps `[-q, q]` to `[0, q)`.
+#[inline(always)]
+unsafe fn canonical(x: int32x4_t, q: int32x4_t) -> int32x4_t {
+    unsafe {
+        let (x, q) = (vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(q));
+        let x = vminq_u32(x, vaddq_u32(x, q));
+        vreinterpretq_s32_u32(vminq_u32(x, vsubq_u32(x, q)))
+    }
+}
+
+/// One Cooley-Tukey block: `t` butterflies between `a[..t]` and `a[t..2t]`, `t >= 4`.
+#[inline(always)]
+unsafe fn fwd_block(a: *mut i32, t: usize, w: *const i32, wp: *const i32, q: int32x4_t) {
+    unsafe {
+        let (w, wp) = (vld1q_dup_s32(w), vld1q_dup_s32(wp));
+        let b = a.add(t);
+        let mut j = 0;
+        while j < t {
+            let x = reduce(vld1q_s32(a.add(j)), q);
+            let u = mul_w(vld1q_s32(b.add(j)), w, wp, q);
+            vst1q_s32(a.add(j), vaddq_s32(x, u));
+            vst1q_s32(b.add(j), vsubq_s32(x, u));
+            j += 4;
+        }
+    }
+}
+
+/// The two last forward levels of eight consecutive elements, with canonical outputs.
+///
+/// `e` is the offset of the elements in the plane.
+#[inline(always)]
+unsafe fn fwd_tail(a: *mut i32, e: usize, n: usize, tab: &PlaneTable, q: int32x4_t) {
+    unsafe {
+        let v0 = vreinterpretq_u64_s32(vld1q_s32(a));
+        let v1 = vreinterpretq_u64_s32(vld1q_s32(a.add(4)));
+        // Blocks of four elements: the two low lanes of each register against the two high ones.
+        let x = reduce(vreinterpretq_s32_u64(vuzp1q_u64(v0, v1)), q);
+        let y = vreinterpretq_s32_u64(vuzp2q_u64(v0, v1));
+        let u = mul_w(
+            y,
+            vld1q_s32(tab.w2.as_ptr().add(e / 2)),
+            vld1q_s32(tab.wp2.as_ptr().add(e / 2)),
+            q,
+        );
+        let (x1, y1) = (vaddq_s32(x, u), vsubq_s32(x, u));
+        // Blocks of two elements.
+        let x = reduce(vtrn1q_s32(x1, y1), q);
+        let y = vtrn2q_s32(x1, y1);
+        let k = n / 2 + e / 2;
+        let u = mul_w(y, vld1q_s32(tab.w.as_ptr().add(k)), vld1q_s32(tab.wp.as_ptr().add(k)), q);
+        // |x| < 0.56 q and |u| <= q: one more reduction brings the outputs within q.
+        let x2 = canonical(reduce(vaddq_s32(x, u), q), q);
+        let y2 = canonical(reduce(vsubq_s32(x, u), q), q);
+        vst1q_s32(a, vzip1q_s32(x2, y2));
+        vst1q_s32(a.add(4), vzip2q_s32(x2, y2));
+    }
+}
+
+/// Forward transform of one plane.
+///
+/// Inputs are any signed values, outputs are canonical.
+unsafe fn fwd_plane(a: *mut i32, n: usize, tab: &PlaneTable, q: i32) {
+    unsafe {
+        let q = vdupq_n_s32(q);
+        let (w, wp) = (tab.w.as_ptr(), tab.wp.as_ptr());
+        // Levels that span more than one block run over the whole plane.
+        let mut m = 1;
+        let mut t = n / 2;
+        while t >= 4 && 2 * t > BLOCK {
+            for i in 0..m {
+                fwd_block(a.add(2 * i * t), t, w.add(m + i), wp.add(m + i), q);
+            }
+            m *= 2;
+            t /= 2;
+        }
+        // Each block then runs all of its remaining levels.
+        let (m0, size) = (m, 2 * t);
+        for b in 0..m0 {
+            let base = a.add(b * size);
+            let (mut m, mut t, mut count) = (m0, size / 2, 1);
+            while t >= 4 {
+                for i in 0..count {
+                    let k = m + b * count + i;
+                    fwd_block(base.add(2 * i * t), t, w.add(k), wp.add(k), q);
+                }
+                m *= 2;
+                t /= 2;
+                count *= 2;
+            }
+            let mut e = 0;
+            while e < size {
+                fwd_tail(base.add(e), b * size + e, n, tab, q);
+                e += 8;
+            }
+        }
+    }
+}
+
+/// One Gentleman-Sande block: `t` butterflies between `a[..t]` and `a[t..2t]`, `t >= 4`.
+///
+/// Inputs and outputs have magnitude at most `q`.
+#[inline(always)]
+unsafe fn inv_block(a: *mut i32, t: usize, w: *const i32, wp: *const i32, q: int32x4_t) {
+    unsafe {
+        let (w, wp) = (vld1q_dup_s32(w), vld1q_dup_s32(wp));
+        let b = a.add(t);
+        let mut j = 0;
+        while j < t {
+            let x = vld1q_s32(a.add(j));
+            let y = vld1q_s32(b.add(j));
+            vst1q_s32(a.add(j), reduce(vaddq_s32(x, y), q));
+            vst1q_s32(b.add(j), mul_w(vsubq_s32(x, y), w, wp, q));
+            j += 4;
+        }
+    }
+}
+
+/// The two first inverse levels of eight consecutive elements, read from `src` and written to `dst`.
+#[inline(always)]
+unsafe fn inv_head(dst: *mut i32, src: *const i32, e: usize, n: usize, tab: &PlaneTable, q: int32x4_t) {
+    unsafe {
+        let v0 = vld1q_s32(src);
+        let v1 = vld1q_s32(src.add(4));
+        // Blocks of two elements.
+        let (x, y) = (vuzp1q_s32(v0, v1), vuzp2q_s32(v0, v1));
+        let k = n / 2 + e / 2;
+        let x1 = reduce(vaddq_s32(x, y), q);
+        let y1 = mul_w(
+            vsubq_s32(x, y),
+            vld1q_s32(tab.w.as_ptr().add(k)),
+            vld1q_s32(tab.wp.as_ptr().add(k)),
+            q,
+        );
+        // Blocks of four elements.
+        let (x, y) = (vtrn1q_s32(x1, y1), vtrn2q_s32(x1, y1));
+        let x2 = reduce(vaddq_s32(x, y), q);
+        let y2 = mul_w(
+            vsubq_s32(x, y),
+            vld1q_s32(tab.w2.as_ptr().add(e / 2)),
+            vld1q_s32(tab.wp2.as_ptr().add(e / 2)),
+            q,
+        );
+        let (x2, y2) = (vreinterpretq_u64_s32(x2), vreinterpretq_u64_s32(y2));
+        vst1q_s32(dst, vreinterpretq_s32_u64(vzip1q_u64(x2, y2)));
+        vst1q_s32(dst.add(4), vreinterpretq_s32_u64(vzip2q_u64(x2, y2)));
+    }
+}
+
+/// Inverse transform of one plane, scaled by `crt / n`.
+///
+/// Reads canonical residues from `src` and leaves canonical residues in `a`.
+/// `src` may be `a` itself.
+unsafe fn inv_plane(a: *mut i32, src: *const i32, n: usize, tab: &PlaneTable, fin: &FinalConst, q: i32) {
+    unsafe {
+        let q = vdupq_n_s32(q);
+        let (w, wp) = (tab.w.as_ptr(), tab.wp.as_ptr());
+        let half = n / 2;
+        // Each block runs its levels up to its own size, the last level of the plane excepted.
+        let size = n.min(BLOCK);
+        for b in 0..n / size {
+            let base = a.add(b * size);
+            let mut e = 0;
+            while e < size {
+                inv_head(base.add(e), src.add(b * size + e), b * size + e, n, tab, q);
+                e += 8;
+            }
+            let mut t = 4;
+            while 2 * t <= size && t < half {
+                let m = n / (2 * t);
+                let count = size / (2 * t);
+                for i in 0..count {
+                    let k = m + b * count + i;
+                    inv_block(base.add(2 * i * t), t, w.add(k), wp.add(k), q);
+                }
+                t *= 2;
+            }
+        }
+        // Levels that span more than one block run over the whole plane.
+        let mut t = size;
+        while t < half {
+            let m = n / (2 * t);
+            for i in 0..m {
+                inv_block(a.add(2 * i * t), t, w.add(m + i), wp.add(m + i), q);
+            }
+            t *= 2;
+        }
+        // Last level, with the scaling folded into both outputs.
+        let (c, cp) = (vdupq_n_s32(fin.c), vdupq_n_s32(fin.cp));
+        let (cw, cwp) = (vdupq_n_s32(fin.cw), vdupq_n_s32(fin.cwp));
+        let b = a.add(half);
+        let mut j = 0;
+        while j < half {
+            let x = vld1q_s32(a.add(j));
+            let y = vld1q_s32(b.add(j));
+            vst1q_s32(a.add(j), canonical(mul_w(vaddq_s32(x, y), c, cp, q), q));
+            vst1q_s32(b.add(j), canonical(mul_w(vsubq_s32(x, y), cw, cwp, q), q));
+            j += 4;
+        }
+    }
+}
+
+/// Reduces `n` signed coefficients into four planes of signed residues, multiplied by `2^32` when `prepared` is set.
+unsafe fn from_i64(dst: *mut i32, src: *const i64, n: usize, conv: &[ConvConst; 4]) {
+    unsafe {
+        let mut i = 0;
+        while i < n {
+            let a0 = vreinterpretq_s32_s64(vld1q_s64(src.add(i)));
+            let a1 = vreinterpretq_s32_s64(vld1q_s64(src.add(i + 2)));
+            // x = hi * 2^32 + lo, with lo read as a signed word and its sign bit carried.
+            let lo = vuzp1q_s32(a0, a1);
+            let hi = vuzp2q_s32(a0, a1);
+            let carry = vreinterpretq_s32_u32(vcltzq_s32(lo));
+            for (p, c) in conv.iter().enumerate() {
+                let q = vdupq_n_s32(Q[p] as i32);
+                let u = mul_w(hi, vdupq_n_s32(c.k), vdupq_n_s32(c.kp), q);
+                let v = mul_w(lo, vdupq_n_s32(c.s), vdupq_n_s32(c.sp), q);
+                let v = reduce(vaddq_s32(v, vandq_s32(carry, vdupq_n_s32(c.kc))), q);
+                vst1q_s32(dst.add(p * n + i), vaddq_s32(u, v));
+            }
+            i += 4;
+        }
+    }
+}
+
+/// Forward transform of `n` coefficients into one packed limb.
+///
+/// The residues are canonical, multiplied by `2^32` when `prepared` is set.
+pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: bool) {
+    let n = table.n;
+    assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= n);
+    let d = dst.as_mut_ptr() as *mut i32;
+    unsafe {
+        from_i64(d, src.as_ptr(), n, &table.conv[prepared as usize]);
+        for (p, &q) in Q.iter().enumerate() {
+            fwd_plane(d.add(p * n), n, &table.fwd[p], q as i32);
+        }
+    }
+}
+
+const QM: [u128; 4] = {
+    let q = [Q[0] as u128, Q[1] as u128, Q[2] as u128, Q[3] as u128];
+    [q[1] * q[2] * q[3], q[0] * q[2] * q[3], q[0] * q[1] * q[3], q[0] * q[1] * q[2]]
+};
+const TOTAL_Q: u128 = QM[0] * Q[0] as u128;
+const TOTAL_Q_MULT: [u128; 4] = [0, TOTAL_Q, TOTAL_Q * 2, TOTAL_Q * 3];
+
+/// CRT reconstruction of `n` coefficients from four planes of canonical residues already multiplied by the CRT constants.
+unsafe fn crt(dst: *mut i128, t: *const u32, n: usize) {
+    unsafe {
+        let half_q: u128 = TOTAL_Q.div_ceil(2);
+        let lo: [u64; 4] = std::array::from_fn(|p| QM[p] as u64);
+        let hi: [u64; 4] = std::array::from_fn(|p| (QM[p] >> 64) as u64);
+        for i in 0..n {
+            let mut low = 0u128;
+            let mut high = 0u64;
+            for p in 0..4 {
+                let x = *t.add(p * n + i) as u64;
+                low += x as u128 * lo[p] as u128;
+                high += x * hi[p];
+            }
+            // The sum is below 4 Q and Q is below 2^120.
+            let mut v = low + ((high as u128) << 64);
+            v -= TOTAL_Q_MULT[(v >> 120) as usize];
+            let w = v.wrapping_sub(TOTAL_Q);
+            v = if v >= TOTAL_Q { w } else { v };
+            *dst.add(i) = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
+        }
+    }
+}
+
+/// Inverse transform of one packed limb into `n` coefficients.
+///
+/// `work` receives the intermediate planes and may be `src` itself.
+///
+/// # Safety
+/// `src` and `work` address `4 * n` `u32`, `dst` addresses `n` `i128` and does not overlap `work`.
+pub(crate) unsafe fn intt32(table: &Ntt32Table, dst: *mut i128, src: *const u32, work: *mut u32) {
+    let n = table.n;
+    unsafe {
+        for (p, &q) in Q.iter().enumerate() {
+            inv_plane(
+                (work as *mut i32).add(p * n),
+                (src as *const i32).add(p * n),
+                n,
+                &table.inv[p],
+                &table.fin[p],
+                q as i32,
+            );
+        }
+        crt(dst, work, n);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::NTT4x30Neon;
+    use crate::neon::ntt4x30_packed::{pack_limb, unpack_limb};
+    use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, NttToZnx128, vec_znx_dft::NttModuleHandle};
+    use poulpy_hal::layouts::Module;
+
+    fn lcg(state: &mut u64) -> u64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *state ^ (*state >> 29)
+    }
+
+    #[test]
+    fn matches_q120_kernels() {
+        let mut state = 11u64;
+        for log_n in [3usize, 4, 5, 6, 10, 13, 14, 15, 16] {
+            let n = 1 << log_n;
+            let module = Module::<NTT4x30Neon>::new(n as u64);
+            let table = Ntt32Table::new(n);
+            for round in 0..3 {
+                let src: Vec<i64> = (0..n)
+                    .map(|i| match (round, i % 7) {
+                        (0, 0) => i64::MAX,
+                        (0, 1) => i64::MIN,
+                        (0, 2) => -1,
+                        (0, 3) => (1i64 << 32) - 1,
+                        (0, 4) => -(1i64 << 31),
+                        (1, _) => (lcg(&mut state) as i64) >> 11,
+                        _ => lcg(&mut state) as i64,
+                    })
+                    .collect();
+                let mut wide = vec![0u64; 4 * n];
+                <NTT4x30Neon>::ntt_from_znx64(&mut wide, &src);
+                <NTT4x30Neon as NttDFTExecute<_>>::ntt_dft_execute(module.get_ntt_table_for(n), &mut wide);
+                for prepared in [false, true] {
+                    let mut want = vec![0u32; 4 * n];
+                    pack_limb(n, &mut want, &wide, prepared);
+                    let mut got = vec![0u32; 4 * n];
+                    ntt32(&table, &mut got, &src, prepared);
+                    assert_eq!(got, want, "forward n {n} round {round} prepared {prepared}");
+                }
+
+                // Inverse of arbitrary canonical planes, extremes included.
+                let mut planes = vec![0u32; 4 * n];
+                for p in 0..4 {
+                    for i in 0..n {
+                        planes[p * n + i] = match lcg(&mut state) % 8 {
+                            0 => 0,
+                            1 => Q[p] - 1,
+                            _ => (lcg(&mut state) % Q[p] as u64) as u32,
+                        };
+                    }
+                }
+                unpack_limb(n, &mut wide, &planes);
+                <NTT4x30Neon as NttDFTExecute<_>>::ntt_dft_execute(module.get_intt_table_for(n), &mut wide);
+                let mut want = vec![0i128; n];
+                <NTT4x30Neon>::ntt_to_znx128(&mut want, n, &wide);
+                let mut got = vec![0i128; n];
+                let mut work = vec![0u32; 4 * n];
+                unsafe { intt32(&table, got.as_mut_ptr(), planes.as_ptr(), work.as_mut_ptr()) };
+                assert_eq!(got, want, "inverse n {n} round {round}");
+                // In place.
+                let mut got = vec![0i128; n];
+                let p = planes.as_mut_ptr();
+                unsafe { intt32(&table, got.as_mut_ptr(), p, p) };
+                assert_eq!(got, want, "inverse in place n {n} round {round}");
+            }
+        }
+    }
+}

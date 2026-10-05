@@ -9,6 +9,7 @@ pub(crate) mod ntt4x30_conjugate_invariant;
 pub(crate) mod ntt4x30_convert;
 pub(crate) mod ntt4x30_mat_vec;
 pub(crate) mod ntt4x30_ntt;
+pub(crate) mod ntt4x30_ntt32;
 pub(crate) mod ntt4x30_packed;
 pub(crate) mod q120;
 pub(crate) mod reim4_arith;

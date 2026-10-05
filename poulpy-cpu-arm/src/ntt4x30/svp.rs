@@ -3,7 +3,7 @@
 //! A prepared polynomial is one packed limb whose residues are multiplied by `2^32`.
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::kernels::ntt4x30::NttDFTExecute;
 use poulpy_cpu_portable::kernels::ntt4x30::{
     ntt::{NttTable, NttTableInv},
     primes::Primes30,
@@ -19,9 +19,9 @@ use poulpy_hal::{
 
 use super::{
     NTT4x30Neon,
-    vec_znx_dft::{packed_limb, packed_limb_mut},
+    vec_znx_dft::{dft_limb_scaled, dft_tmp_len, packed_limb, packed_limb_mut},
 };
-use crate::neon::ntt4x30_packed::{OP_MONT_MUL, limb_op, pack_limb};
+use crate::neon::ntt4x30_packed::{OP_MONT_MUL, limb_op};
 
 fn mul_packed_limb(n: usize, dst: &mut [u32], src: &[u32], factor: &[u32]) {
     assert!(dst.len() >= 4 * n && src.len() >= 4 * n && factor.len() >= 4 * n);
@@ -46,11 +46,16 @@ pub(crate) fn svp_prepare<R: Ring>(
     let n = res.n();
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
-    let mut tmp = vec![0u64; 4 * n];
-    NTT4x30Neon::<R>::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT4x30Neon::<R>::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
+    let mut tmp = vec![0u64; dft_tmp_len(module, n)];
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    pack_limb(n, &mut data[4 * n * res_col..][..4 * n], &tmp, true);
+    dft_limb_scaled(
+        module,
+        n,
+        &mut data[4 * n * res_col..][..4 * n],
+        a.at(a_col, 0),
+        true,
+        &mut tmp,
+    );
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(

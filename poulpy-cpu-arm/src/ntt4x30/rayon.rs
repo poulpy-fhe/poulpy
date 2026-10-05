@@ -110,6 +110,16 @@ fn base_vmp_mut<'a, R: Ring>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30NeonRayon<R
 
 use poulpy_cpu_rayon::{parallel_chunk_len, parallel_limb_tasks};
 
+impl<R: Ring> super::vec_znx_dft::PackedDft for Module<NTT4x30NeonRayon<R>>
+where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    #[inline(always)]
+    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool, tmp: &mut [u64]) {
+        base_module(self).packed_dft_limb(n, dst, src, prepared, tmp)
+    }
+}
+
 macro_rules! parallel_binary {
     ($trait:ident, $method:ident) => {
         impl<R: Ring> $trait for NTT4x30NeonRayon<R> {
@@ -1221,8 +1231,9 @@ where
         let a_size = a.size();
         let module = base_module(module);
         let data: &mut [u32] = cast_slice_mut(res.raw_mut());
+        let tmp_len = super::vec_znx_dft::dft_tmp_len(module, n);
         data.par_chunks_mut(4 * n * cols).enumerate().for_each_init(
-            || vec![0u64; 4 * n],
+            || vec![0u64; tmp_len],
             |tmp, (limb, group)| {
                 let src_limb = offset + limb * step;
                 super::vec_znx_dft::dft_limb(
@@ -1324,25 +1335,23 @@ where
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
-        let a_data: &[u32] = cast_slice(a.raw());
         let module = base_module(module);
-        res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
-            || vec![0u64; 4 * n],
-            |tmp, (limb, group)| {
-                let dst = &mut group[n * res_col..][..n];
-                if limb < min_size {
-                    super::vec_znx_dft::idft_limb(
-                        module,
-                        n,
-                        dst,
-                        super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
-                        tmp,
-                    );
-                } else {
-                    dst.fill(0);
-                }
-            },
-        );
+        let (res_active, res_zero) = res.raw_mut().split_at_mut(min_size * n * res_cols);
+        let a_data: &mut [u32] = cast_slice_mut(a.raw_mut());
+        res_active
+            .par_chunks_mut(n * res_cols)
+            .zip(a_data.par_chunks_mut(4 * n * a_cols))
+            .for_each(|(res_group, a_group)| {
+                super::vec_znx_dft::idft_limb_tmpa(
+                    module,
+                    n,
+                    &mut res_group[n * res_col..][..n],
+                    &mut a_group[4 * n * a_col..][..4 * n],
+                );
+            });
+        res_zero
+            .par_chunks_mut(n * res_cols)
+            .for_each(|group| group[n * res_col..][..n].fill(0));
     }
 
     fn vec_znx_dft_add(

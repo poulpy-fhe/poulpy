@@ -257,6 +257,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30Neon` and `NTT4x30NeonRayon` run a native 32-bit NTT on the standard ring, in place on the packed limb, four lanes of one prime per register.
+  Butterflies use signed residues and a precomputed twiddle quotient, levels are cache-blocked, the forward transform reads the `i64` coefficients directly and the inverse transform folds `1/n` and the CRT constant into its last level.
+  It returns the same residues as the q120 kernel, which stays in use on the conjugate-invariant ring.
+  The forward transform no longer allocates.
 - **Breaking, behaviour:** `NTT4x30Neon` and `NTT4x30NeonRayon` store the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR`.
   A transformed limb holds one plane of canonical residues per prime, so every lane of a NEON register belongs to the same prime.
   Prepared operands store their residues multiplied by `2^32` and products against them reduce with one Montgomery step on four lanes.

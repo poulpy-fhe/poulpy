@@ -287,6 +287,23 @@ pub(crate) unsafe fn limb_op<const OP: u8>(n: usize, dst: *mut u32, a: *const u3
     }
 }
 
+/// Multiplies one packed limb of canonical residues by `2^32`, in place.
+pub(crate) fn limb_to_prepared(n: usize, data: &mut [u32]) {
+    assert!(data.len() >= 4 * n);
+    assert!(n.is_multiple_of(4));
+    let d = data.as_mut_ptr();
+    unsafe {
+        for (p, &r2) in R2.iter().enumerate() {
+            let c = plane(p);
+            let r2 = vdupq_n_u32(r2);
+            for i in (0..n).step_by(4) {
+                let o = d.add(p * n + i);
+                vst1q_u32(o, mont_mul(vld1q_u32(o), r2, &c));
+            }
+        }
+    }
+}
+
 #[inline(always)]
 unsafe fn reduce_pair(x: uint64x2_t, ch: uint32x2_t, cl: uint32x2_t, q: uint32x2_t, nqinv: uint32x2_t) -> uint32x2_t {
     unsafe {

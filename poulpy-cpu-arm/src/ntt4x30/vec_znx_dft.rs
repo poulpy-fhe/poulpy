@@ -17,6 +17,7 @@ use poulpy_hal::layouts::{
 };
 
 use super::NTT4x30Neon;
+use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, ntt32};
 use crate::neon::ntt4x30_packed::{OP_ADD, OP_NEG, OP_SUB, Q, limb_op, pack_limb, unpack_limb};
 
 #[inline(always)]
@@ -31,26 +32,102 @@ pub(crate) fn packed_limb_mut(data: &mut [u32], n: usize, cols: usize, col: usiz
     &mut data[start..start + 4 * n]
 }
 
+/// Tables of the packed NTT of degree `n`, absent on the conjugate-invariant ring.
+#[inline(always)]
+fn packed_table<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> Option<&Ntt32Table> {
+    // SAFETY: the handle is initialised before `Module::new` returns and lives as long as the module.
+    unsafe { (*module.ptr()).packed_table(n) }
+}
+
+/// Length in `u64` of the scratch the forward transform of one limb needs.
+///
+/// The packed NTT works in place, the q120 fallback widens the limb.
+#[inline(always)]
+pub(crate) fn dft_tmp_len<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> usize {
+    if packed_table(module, n).is_some() { 0 } else { 4 * n }
+}
+
+/// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
+///
+/// `tmp` holds [`dft_tmp_len`] words.
+pub(crate) fn dft_limb_scaled<R: Ring>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: &mut [u32],
+    src: &[i64],
+    prepared: bool,
+    tmp: &mut [u64],
+) where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    if let Some(table) = packed_table(module, n) {
+        ntt32(table, dst, src, prepared);
+    } else {
+        NTT4x30Neon::<R>::ntt_from_znx64(tmp, src);
+        NTT4x30Neon::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+        pack_limb(n, dst, tmp, prepared);
+    }
+}
+
+/// Forward transform into a packed limb, for drivers shared by the serial and Rayon backends.
+pub(crate) trait PackedDft {
+    /// See [`dft_limb_scaled`], `tmp` holding `4 * n` words.
+    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool, tmp: &mut [u64]);
+}
+
+impl<R: Ring> PackedDft for Module<NTT4x30Neon<R>>
+where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    #[inline(always)]
+    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool, tmp: &mut [u64]) {
+        dft_limb_scaled(self, n, dst, src, prepared, tmp)
+    }
+}
+
 pub(crate) fn dft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64])
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     if let Some(src) = src {
-        NTT4x30Neon::<R>::ntt_from_znx64(tmp, src);
-        NTT4x30Neon::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
-        pack_limb(n, dst, tmp, false);
+        dft_limb_scaled(module, n, dst, src, false, tmp);
     } else {
         dst.fill(0);
     }
 }
 
+/// Inverse transform of one packed limb.
+///
+/// `tmp` holds `4 * n` words.
 pub(crate) fn idft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64])
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
-    unpack_limb(n, tmp, src);
-    NTT4x30Neon::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
-    NTT4x30Neon::<R>::ntt_to_znx128(dst, n, tmp);
+    assert!(dst.len() >= n && src.len() >= 4 * n);
+    if let Some(table) = packed_table(module, n) {
+        let work: &mut [u32] = cast_slice_mut(tmp);
+        assert!(work.len() >= 4 * n);
+        unsafe { intt32(table, dst.as_mut_ptr(), src.as_ptr(), work.as_mut_ptr()) };
+    } else {
+        unpack_limb(n, tmp, src);
+        NTT4x30Neon::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
+        NTT4x30Neon::<R>::ntt_to_znx128(dst, n, tmp);
+    }
+}
+
+/// Inverse transform of one packed limb, which it overwrites.
+pub(crate) fn idft_limb_tmpa<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [i128], src: &mut [u32])
+where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    assert!(dst.len() >= n && src.len() >= 4 * n);
+    if let Some(table) = packed_table(module, n) {
+        let src = src.as_mut_ptr();
+        unsafe { intt32(table, dst.as_mut_ptr(), src, src) };
+    } else {
+        let mut tmp = vec![0u64; 4 * n];
+        idft_limb(module, n, dst, src, &mut tmp);
+    }
 }
 
 fn packed_add(n: usize, dst: &mut [u32], a: &[u32], b: &[u32]) {
@@ -106,7 +183,7 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     let cols = res.cols();
     let res_size = res.size();
     let a_size = a.size();
-    let mut tmp = vec![0u64; 4 * n];
+    let mut tmp = vec![0u64; dft_tmp_len(module, n)];
     let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
@@ -159,9 +236,24 @@ pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
 ) where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
-    let mut tmp = vec![0u64; 4 * a.n()];
-    let a_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(a);
-    vec_znx_idft_apply(module, res, res_col, &a_ref, a_col, &mut tmp);
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
+    let n = res.n();
+    check_degree::<NTT4x30Neon<R>>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
+    let min_size = res.size().min(a.size());
+    let a_cols = a.cols();
+    let a_data: &mut [u32] = cast_slice_mut(a.data_mut());
+    for limb in 0..min_size {
+        idft_limb_tmpa(
+            module,
+            n,
+            res.at_mut(res_col, limb),
+            packed_limb_mut(a_data, n, a_cols, a_col, limb),
+        );
+    }
+    for limb in min_size..res.size() {
+        res.at_mut(res_col, limb).fill(0);
+    }
 }
 
 pub(crate) fn idft_compact_in_place<R: Ring>(
@@ -174,16 +266,23 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
 {
     let n = a.n();
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
-    let table = module.get_intt_table_for(n);
     let cols = a.cols();
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
         let slot = packed_limb_mut(data, n, cols, a_col, limb);
-        unpack_limb(n, tmp, slot);
-        NTT4x30Neon::<R>::ntt_dft_execute(table, tmp);
-        let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
-        NTT4x30Neon::<R>::ntt_to_znx128(dst, n, tmp);
+        if let Some(table) = packed_table(module, n) {
+            // The planes move to `tmp` during the transform, so the coefficients can overwrite the limb.
+            let work: &mut [u32] = cast_slice_mut(tmp);
+            assert!(work.len() >= 4 * n);
+            let slot = slot.as_mut_ptr();
+            unsafe { intt32(table, slot as *mut i128, slot, work.as_mut_ptr()) };
+        } else {
+            unpack_limb(n, tmp, slot);
+            NTT4x30Neon::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
+            let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
+            NTT4x30Neon::<R>::ntt_to_znx128(dst, n, tmp);
+        }
     }
 }
 

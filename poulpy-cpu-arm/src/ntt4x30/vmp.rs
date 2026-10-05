@@ -10,7 +10,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{vld1q_u32, vst1q_u32};
 use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 
-use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, primes::Primes30, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, primes::Primes30};
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
@@ -20,7 +20,8 @@ use poulpy_hal::{
 };
 
 use crate::NTT4x30Neon;
-use crate::neon::ntt4x30_packed::{add_mod, dot_rows, pack_limb, planes};
+use crate::neon::ntt4x30_packed::{add_mod, dot_rows, planes};
+use crate::ntt4x30::vec_znx_dft::dft_limb_scaled;
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_hal::layouts::Ring;
 
@@ -74,8 +75,6 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
 
     let (tmp_b, tmp_packed) = tmp.split_at_mut(4 * n);
     let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
-    let table = module.get_ntt_table_for(n);
-
     let mat_i64: &[i64] = a.raw();
     let pmat: &mut [u32] = cast_slice_mut(res.data_mut());
 
@@ -83,9 +82,7 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
 
-            NTT4x30Neon::<R>::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            NTT4x30Neon::<R>::ntt_dft_execute(table, tmp_b);
-            pack_limb(n, tmp_packed, tmp_b, true);
+            dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true, tmp_b);
 
             for blk in 0..n_blocks {
                 let dst = ((blk * ncols + col_i) * nrows + row_i) * ROW;

@@ -7,7 +7,7 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32};
-use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, primes::Primes30, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
@@ -18,7 +18,8 @@ use poulpy_hal::layouts::{
 };
 use std::mem::size_of;
 
-use crate::neon::ntt4x30_packed::{DOT_CHUNK, Plane, add_mod, dot_rows, dot_rows_pairwise, pack_limb, planes};
+use super::vec_znx_dft::PackedDft;
+use crate::neon::ntt4x30_packed::{DOT_CHUNK, Plane, add_mod, dot_rows, dot_rows_pairwise, limb_to_prepared, planes};
 
 /// `u32` per limb of a block.
 const ROW: usize = 16;
@@ -208,12 +209,10 @@ fn prepare<BE, E: TaskExecutor>(
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle + PackedDft,
 {
     poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
@@ -231,7 +230,6 @@ fn prepare<BE, E: TaskExecutor>(
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
-    let table = module.get_ntt_table_for(n);
     let min_size = size.min(a.size());
     let stride = 4 * n * size;
     let left_ptr = left.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
@@ -245,14 +243,14 @@ fn prepare<BE, E: TaskExecutor>(
         if limb < min_size {
             let (tmp_b, tmp_packed) = tmp.split_at_mut(4 * n);
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
-            BE::ntt_from_znx64(tmp_b, a.at(col, limb));
-            BE::ntt_dft_execute(table, tmp_b);
+            module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none(), tmp_b);
             if let Some(dst) = dst_l {
-                pack_limb(n, tmp_packed, tmp_b, false);
                 scatter_prepared_limb(dst, tmp_packed, n, size, limb);
+                if dst_r.is_some() {
+                    limb_to_prepared(n, tmp_packed);
+                }
             }
             if let Some(dst) = dst_r {
-                pack_limb(n, tmp_packed, tmp_b, true);
                 scatter_prepared_limb(dst, tmp_packed, n, size, size - 1 - limb);
             }
         } else {
@@ -272,12 +270,10 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle + PackedDft,
 {
     prepare::<BE, E>(module, Some(res), None, a, tmp);
 }
@@ -288,12 +284,10 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle + PackedDft,
 {
     prepare::<BE, E>(module, None, Some(res), a, tmp);
 }
@@ -305,12 +299,10 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle + PackedDft,
 {
     prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
 }

@@ -14,6 +14,7 @@ use poulpy_hal::{
 };
 
 use super::NTT4x30Neon;
+use crate::neon::ntt4x30_ntt32::{MIN_N, Ntt32Table};
 
 /// Opaque handle for the [`NTT4x30Neon`](super::NTT4x30Neon) backend.
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
@@ -25,6 +26,16 @@ pub struct NTT4x30NeonHandle<R: Ring = Standard> {
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
+    /// Packed NTT tables by `log2(n)`, present on the standard ring from the smallest degree the kernels accept.
+    packed: Vec<Option<Ntt32Table>>,
+}
+
+impl<R: Ring> NTT4x30NeonHandle<R> {
+    /// Tables of the packed NTT of degree `n`, when this ring and degree have them.
+    #[inline]
+    pub(crate) fn packed_table(&self, n: usize) -> Option<&Ntt32Table> {
+        self.packed.get(n.trailing_zeros() as usize).and_then(Option::as_ref)
+    }
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Neon<R> {}
@@ -148,6 +159,12 @@ where
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30NeonHandle {
             table_cache: Default::default(),
+            packed: (0..=n.ilog2())
+                .map(|log_n| {
+                    let n = 1usize << log_n;
+                    (R::CYCLOTOMIC_ORDER_FACTOR == 2 && n >= MIN_N).then(|| Ntt32Table::new(n))
+                })
+                .collect(),
             ring_plans: NttPlanSet::new(n),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
