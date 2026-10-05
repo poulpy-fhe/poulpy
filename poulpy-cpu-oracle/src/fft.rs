@@ -161,6 +161,15 @@ impl DFTFamily for Fft64 {
         res[..n].copy_from_slice(a);
         res[n..].fill(0.0);
     }
+
+    // The stored conjugate-invariant slots are real evaluations.
+    fn ci_mul_acc(res: &mut [f64], a: &[f64], b: &[f64]) {
+        (0..res.len()).for_each(|i| res[i] += a[i] * b[i]);
+    }
+
+    fn ci_mul_assign(res: &mut [f64], a: &[f64]) {
+        (0..res.len()).for_each(|i| res[i] *= a[i]);
+    }
 }
 
 #[cfg(test)]

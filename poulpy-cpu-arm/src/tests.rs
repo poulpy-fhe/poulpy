@@ -179,12 +179,12 @@ mod tuning {
 }
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64neon,
-    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Neon
 );
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30neon,
-    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Neon
 );
 

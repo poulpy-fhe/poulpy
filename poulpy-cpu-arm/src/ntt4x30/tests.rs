@@ -291,7 +291,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref =  crate::NTT4x30Neon,
     backend_test = crate::NTT4x30NeonRayon,
     params = TestParams { size: 1<<14, base2k: 50, n: 8 },
     tests = {

@@ -349,7 +349,7 @@ fn test_gglwe_product_digits_strided_rayon_scratch_workers() {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref =  crate::NTT4x30Avx,
     backend_test = crate::NTT4x30AvxRayon,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 50, n: 8 }, 256),
     tests = {
