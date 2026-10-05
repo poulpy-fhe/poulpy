@@ -681,6 +681,7 @@ dependencies = [
  "byteorder",
  "criterion",
  "itertools 0.15.0",
+ "libc",
  "once_cell",
  "paste",
  "poulpy-bench",

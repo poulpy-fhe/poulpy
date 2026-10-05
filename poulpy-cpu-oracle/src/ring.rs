@@ -10,13 +10,13 @@
 //! A subring element takes equal values at `z` and `z^-1`. Both transforms
 //! place the evaluations at exponents `1 (mod 4)` of a primitive `4n`-th root,
 //! one per conjugate pair, in their first `n` slots, and the stored spectrum is
-//! that prefix. [`Family::ci_expand`] rebuilds the full standard spectrum.
+//! that prefix. [`DFTFamily::ci_expand`] rebuilds the full standard spectrum.
 
 use poulpy_hal::layouts::{ConjugateInvariant, Module, Ring, Standard};
 
 use crate::{
     backend::{Oracle, table},
-    family::{Family, Int},
+    family::{DFTFamily, Int},
 };
 
 /// A backend ring, by the degree of its standard image.
@@ -53,14 +53,14 @@ fn is_standard<R: OracleRing>(n: usize) -> bool {
     R::std_degree(n) == n
 }
 
-fn expand<F: Family>(a: &[F::Dft]) -> Vec<F::Dft> {
+fn expand<F: DFTFamily>(a: &[F::Dft]) -> Vec<F::Dft> {
     let mut spectrum = vec![F::Dft::default(); 2 * a.len()];
     F::ci_expand(&mut spectrum, a);
     spectrum
 }
 
 /// `res = DFT(a)`.
-pub fn forward<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Dft], a: &[i64]) {
+pub fn forward<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Dft], a: &[i64]) {
     let n = a.len();
     if is_standard::<R>(n) {
         return F::forward(table(module, n), res, a);
@@ -71,7 +71,7 @@ pub fn forward<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mu
 }
 
 /// `res = IDFT(a)`, the exact integer coefficients.
-pub fn inverse<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Big], a: &[F::Dft]) {
+pub fn inverse<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mut [F::Big], a: &[F::Dft]) {
     let n = a.len();
     if is_standard::<R>(n) {
         return F::inverse(table(module, n), res, a);
@@ -81,8 +81,18 @@ pub fn inverse<F: Family, R: OracleRing>(module: &Module<Oracle<F, R>>, res: &mu
     res.copy_from_slice(&coeffs[..n]);
 }
 
+/// Embeds a stored spectrum into a larger degree without returning to coefficients.
+pub fn dft_embed<F: DFTFamily, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft]) {
+    if is_standard::<R>(a.len()) {
+        return F::dft_embed(res, a);
+    }
+    let mut spectrum = vec![F::Dft::default(); 2 * res.len()];
+    F::dft_embed(&mut spectrum, &expand::<F>(a));
+    res.copy_from_slice(&spectrum[..res.len()]);
+}
+
 /// `res += a * b` on stored spectra.
-pub fn mul_acc<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft], b: &[F::Dft]) {
+pub fn mul_acc<F: DFTFamily, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft], b: &[F::Dft]) {
     let n = res.len();
     if is_standard::<R>(n) {
         return F::mul_acc(res, a, b);
@@ -93,7 +103,7 @@ pub fn mul_acc<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft], b: &[
 }
 
 /// `res *= a` on stored spectra.
-pub fn mul_assign<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft]) {
+pub fn mul_assign<F: DFTFamily, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft]) {
     let n = res.len();
     if is_standard::<R>(n) {
         return F::mul_assign(res, a);
@@ -104,7 +114,7 @@ pub fn mul_assign<F: Family, R: OracleRing>(res: &mut [F::Dft], a: &[F::Dft]) {
 }
 
 /// `res = DFT(sigma_p(IDFT(a)))` on stored spectra.
-pub fn dft_automorphism<F: Family, R: OracleRing>(p: i64, res: &mut [F::Dft], a: &[F::Dft]) {
+pub fn dft_automorphism<F: DFTFamily, R: OracleRing>(p: i64, res: &mut [F::Dft], a: &[F::Dft]) {
     let n = a.len();
     if is_standard::<R>(n) {
         return F::dft_automorphism(p, res, a);
@@ -174,7 +184,7 @@ mod tests {
         prod[..n].to_vec()
     }
 
-    fn check_product<F: Family>(module: &Module<Oracle<F, ConjugateInvariant>>, bound: i64) {
+    fn check_product<F: DFTFamily>(module: &Module<Oracle<F, ConjugateInvariant>>, bound: i64) {
         for n in [8usize, 16, 64] {
             let (a, b) = (sample(n, 1, bound), sample(n, 2, bound));
             let (mut fa, mut fb) = (vec![F::Dft::default(); n], vec![F::Dft::default(); n]);
@@ -193,6 +203,32 @@ mod tests {
     fn ci_products_match_definition() {
         check_product(&Module::<FFT64CIOracle>::new(64), 1 << 10);
         check_product(&Module::<NTT4x30CIOracle>::new(64), 1 << 20);
+    }
+
+    fn check_embedding<F: DFTFamily>(module: &Module<Oracle<F, ConjugateInvariant>>) {
+        for n in [1usize, 2, 8, 16, 64] {
+            for big in [n, 2 * n, 4 * n] {
+                let input = sample(n, 3, 1000);
+                let mut small = vec![F::Dft::default(); n];
+                forward(module, &mut small, &input);
+                let mut embedded = vec![F::Dft::default(); big];
+                dft_embed::<F, ConjugateInvariant>(&mut embedded, &small);
+                let mut actual = vec![F::Big::default(); big];
+                inverse(module, &mut actual, &embedded);
+                let actual: Vec<i128> = actual.into_iter().map(Into::into).collect();
+                let mut expected = vec![0i128; big];
+                for (i, &value) in input.iter().enumerate() {
+                    expected[i * (big / n)] = i128::from(value);
+                }
+                assert_eq!(actual, expected, "embedding {n} -> {big}");
+            }
+        }
+    }
+
+    #[test]
+    fn ci_spectrum_embedding_matches_coefficient_embedding() {
+        check_embedding(&Module::<FFT64CIOracle>::new(256));
+        check_embedding(&Module::<NTT4x30CIOracle>::new(256));
     }
 
     /// `sigma_p` on the basis: `X^j + X^-j` goes to `X^t + X^-t`, `t = p j mod 4n`,

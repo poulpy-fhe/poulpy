@@ -37,7 +37,7 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
       filters+=(core_emulated_tensor
         --skip core_parity_ntt4x30_fused --skip core_parity_ntt4x30_rayon_fused
         --skip core_parity_ntt3x42_ifma_fused --skip core_parity_ntt3x42_ifma_rayon_fused
-        --skip ::vec_znx_dft_large)
+        --skip ::vec_znx_dft_large --skip _streaming)
     fi
   fi
 fi

@@ -136,3 +136,26 @@ impl_external_product_delegate!(
         BE::ggsw_external_product_assign(self, res, a, scratch)
     }
 );
+
+impl<BE: Backend + GLWEExternalProductImpl> crate::api::GLWEExternalProductInternal<BE> for Module<BE> {
+    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos,
+    {
+        BE::glwe_external_product_internal_tmp_bytes(self, res_infos, a_infos, b_infos)
+    }
+
+    fn glwe_external_product_dft<'r, A>(
+        &self,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE>,
+        a: &A,
+        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE>,
+    {
+        BE::glwe_external_product_dft(self, res_dft, a, ggsw, scratch)
+    }
+}

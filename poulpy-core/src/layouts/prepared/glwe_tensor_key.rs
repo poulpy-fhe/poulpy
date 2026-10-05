@@ -182,6 +182,19 @@ where
     }
 }
 
+impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepared<B::BufRef<'a>, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        GGLWEPrepared {
+            base2k: self.0.base2k,
+            k_aux: self.0.k_aux,
+            dsize: self.0.dsize,
+            dnum: self.0.dnum,
+            stride: self.0.stride,
+            data: poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref::<B>(&self.0.data),
+        }
+    }
+}
+
 impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWETensorKeyPrepared<D, B>
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,

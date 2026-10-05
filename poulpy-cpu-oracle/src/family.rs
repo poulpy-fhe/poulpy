@@ -40,7 +40,7 @@ impl_int!(i64);
 impl_int!(i128);
 
 /// A transform family: FFT over `f64` or NTT over four primes.
-pub trait Family: Copy + Eq + Hash + Debug + Send + Sync + 'static {
+pub trait DFTFamily: Copy + Eq + Hash + Debug + Send + Sync + 'static {
     /// Word of the transformed layouts, one per coefficient.
     type Dft: DftWord + Copy + Default + Debug + Send + Sync;
     /// Word of the big coefficient layout.
@@ -55,6 +55,10 @@ pub trait Family: Copy + Eq + Hash + Debug + Send + Sync + 'static {
 
     /// `res = IDFT(a)`, the exact integer coefficients.
     fn inverse(table: &Self::Table, res: &mut [Self::Big], a: &[Self::Dft]);
+
+    /// Embeds `DFT_n(a)` into `DFT_N(a(X^(N/n)))` without returning to coefficients.
+    /// Both degrees must be powers of two, with `N >= n`, and valid for this family.
+    fn dft_embed(res: &mut [Self::Dft], a: &[Self::Dft]);
 
     fn dft_add(a: Self::Dft, b: Self::Dft) -> Self::Dft;
 
