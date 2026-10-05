@@ -2,7 +2,7 @@
 //! key of the ideal secrets.
 
 use poulpy_core::{
-    EncryptionLayout, GGLWENoise,
+    GGLWENoise,
     layouts::{
         Degree, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPrepared, GLWESecretPreparedFactory,
         GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank,
@@ -41,7 +41,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let parties_in: Vec<Secret<BE>> = (0..PARTIES).map(|i| secret_from_seed(module, [150 + i as u8; 32])).collect();
     let parties_out = party_secrets(module);
     let pt_want = secret_sum(module, &parties_in);
@@ -58,15 +58,7 @@ where
     for (i, ((sk_in, _), (sk_out, _))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_glwe_switching_key_share_gen(
-            dst,
-            sk_in,
-            sk_out,
-            SEEDS[0],
-            &enc_infos,
-            &mut source_xe,
-            &mut scratch.borrow(),
-        );
+        module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.mhe_glwe_switching_key_share_aggregate(&mut acc, &share);
         }
@@ -74,6 +66,7 @@ where
 
     let mut res: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
     module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     let n = Degree(module.n() as u32);
     assert_eq!((*res.input_degree(), *res.output_degree()), (n, n));
     assert_gglwe_noise(module, &res, &pt_want, &sk_out_ideal, &mut scratch);
@@ -95,7 +88,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let parties = party_secrets(module);
     let pt_want = secret_sum(module, &parties);
     let sk_out = automorphism_inv_prepared(module, &pt_want, P);
@@ -111,7 +104,7 @@ where
     for (i, (sk, _)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.mhe_glwe_automorphism_key_share_aggregate(&mut acc, &share);
         }
@@ -119,6 +112,7 @@ where
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
     module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_eq!(res.p(), P);
     assert_gglwe_noise(module, &res, &pt_want, &sk_out, &mut scratch);
 }
@@ -198,7 +192,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let rank_one = module.glwe_secret_alloc(Rank(1));
     let small_sk = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
@@ -238,7 +232,6 @@ where
                     sk_in,
                     sk_out,
                     SEEDS[0],
-                    &enc_infos,
                     &mut source_xe,
                     &mut scratch.borrow(),
                 );
@@ -255,7 +248,6 @@ where
                     if case == 4 { 2 } else { P },
                     if case == 2 { &small_sk } else { &sk },
                     SEEDS[0],
-                    &enc_infos,
                     &mut source_xe,
                     &mut scratch.borrow(),
                 );
@@ -278,7 +270,6 @@ where
         &sk_in,
         &sk,
         SEEDS[0],
-        &enc_infos,
         &mut Source::new([10u8; 32]),
         &mut scratch.borrow(),
     );

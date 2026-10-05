@@ -8,8 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
-    GLWESwitchingKeyEncryptSk,
+    GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -45,7 +44,7 @@ where
             for di in 1_usize..dsize + 1 {
                 let dnum: usize = (k_ksk - di * base2k) / (di * base2k);
 
-                let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
+                let gglwe_infos = GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
                     dnum: dnum.into(),
@@ -54,8 +53,7 @@ where
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                     stride: 1,
-                })
-                .unwrap();
+                };
 
                 let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
@@ -83,7 +81,6 @@ where
                     &mut ksk,
                     &sk_in,
                     &sk_out,
-                    &gglwe_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.arena(),
@@ -119,7 +116,7 @@ where
     let smaller_n = n / 2;
     if smaller_n > 0 {
         let dnum: usize = (k_ksk - base2k) / base2k;
-        let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
+        let gglwe_infos = GGLWELayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
@@ -128,8 +125,7 @@ where
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
             stride: 1,
-        })
-        .unwrap();
+        };
 
         let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
         let mut source_xs: Source = Source::new([0u8; 32]);
@@ -142,15 +138,7 @@ where
 
         // The lifted and prepared secrets would be left in the scratch.
         crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos), |scratch| {
-            module.glwe_switching_key_encrypt_sk(
-                &mut ksk,
-                &sk_in,
-                &sk_out,
-                &gglwe_infos,
-                &mut source_xe,
-                &mut source_xa,
-                scratch,
-            )
+            module.glwe_switching_key_encrypt_sk(&mut ksk, &sk_in, &sk_out, &mut source_xe, &mut source_xa, scratch)
         });
     }
 }
@@ -184,7 +172,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
             for dsize in 1_usize..max_dsize {
                 let dnum: usize = (k_ksk - dsize * base2k) / (dsize * base2k);
 
-                let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
+                let gglwe_infos = GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
                     dnum: dnum.into(),
@@ -193,8 +181,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                     stride: 1,
-                })
-                .unwrap();
+                };
 
                 let mut ksk_compressed: GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_compressed_alloc_from_infos(&gglwe_infos);
@@ -224,7 +211,6 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     &sk_in,
                     &sk_out,
                     seed_xa,
-                    &gglwe_infos,
                     &mut source_xe,
                     &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
                 );
@@ -263,7 +249,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
     let smaller_n = n / 2;
     if smaller_n > 0 {
         let dnum: usize = (k_ksk - base2k) / base2k;
-        let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
+        let gglwe_infos = GGLWELayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
@@ -272,8 +258,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
             stride: 1,
-        })
-        .unwrap();
+        };
 
         let mut ksk_compressed: GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_switching_key_compressed_alloc_from_infos(&gglwe_infos);
@@ -293,7 +278,6 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
             &sk_in,
             &sk_out,
             seed_xa,
-            &gglwe_infos,
             &mut source_xe,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
@@ -327,7 +311,7 @@ where
             for dsize in 1_usize..max_dsize + 1 {
                 let dnum: usize = (k_ksk - dsize * base2k) / (dsize * base2k);
 
-                let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
+                let gglwe_infos = GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
                     dnum: dnum.into(),
@@ -336,8 +320,7 @@ where
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                     stride: 1,
-                })
-                .unwrap();
+                };
 
                 let mut ksk_compressed: GGLWECompressed<BE::OwnedBuf, BE::ZnxWord> =
                     module.gglwe_compressed_alloc_from_infos(&gglwe_infos);
@@ -367,7 +350,6 @@ where
                     &sk_in.data,
                     &sk_out_prepared,
                     seed_xa,
-                    &gglwe_infos,
                     &mut source_xe,
                     &mut scratch.borrow(),
                 );

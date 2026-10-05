@@ -3,8 +3,8 @@ use crate::{api::*, oep::*};
 use crate::{
     blind_rotation::BlindRotationAlgo,
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyInfos,
-        CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan, CircuitBootstrappingPlanLayout,
+        CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan,
+        CircuitBootstrappingPlanLayout,
     },
 };
 use poulpy_core::{
@@ -193,7 +193,6 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> Circ
         res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -202,7 +201,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> Circ
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
     {
         <BE as CircuitBootstrappingKeyEncryptSkImpl<BRA>>::circuit_bootstrapping_key_encrypt_sk(
-            self, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch,
+            self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
         )
     }
 }

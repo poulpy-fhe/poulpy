@@ -42,6 +42,10 @@ where
 impl<D: Data, W: ZnxWord> Eq for GLWEShareToEncShare<D, W> where GLWEPatCompressed<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEShareToEncShare<D, W> {
+    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         self.inner.n()
     }
@@ -90,6 +94,10 @@ impl<BE: Backend, D: Data> GLWECompressedToBackendMut<BE> for GLWEShareToEncShar
 where
     GLWEPatCompressed<D, BE::ZnxWord>: GLWECompressedToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
+        GLWECompressedToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GLWECompressedBackendMut<'_, BE> {
         self.inner.to_backend_mut()
     }

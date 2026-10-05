@@ -1,7 +1,6 @@
-use poulpy_core::NoiseInfos;
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
+    GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
@@ -22,8 +21,7 @@ use poulpy_hal::{
 use poulpy_bin_fhe::{
     blind_rotation::{BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk,
-        CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
+        CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
     },
 };
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
@@ -173,15 +171,11 @@ fn main() {
     let mut ct_lwe: LWE<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
         module.lwe_alloc_from_infos(&lwe_infos);
 
-    let lwe_enc_infos = NoiseInfos::new(lwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-    let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_layout).unwrap();
-
     // Encrypt LWE Plaintext
     module.lwe_encrypt_sk(
         &mut ct_lwe,
         &pt_lwe,
         &sk_lwe,
-        &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -197,7 +191,6 @@ fn main() {
         &mut cbt_key,
         &sk_lwe,
         &sk_glwe,
-        &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -275,12 +268,11 @@ fn main() {
     println!("{}", pt_glwe);
 
     // Encrypt
-    let glwe_enc_infos = NoiseInfos::new(glwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+
     module.glwe_encrypt_sk(
         &mut ct_glwe,
         &pt_glwe,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

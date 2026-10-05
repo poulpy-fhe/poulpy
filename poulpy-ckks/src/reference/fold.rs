@@ -783,12 +783,20 @@ fn merge<'s, BE, D, S>(
     let mut embedded = module.glwe_alloc_from_infos(dst);
     let mut shifted = module.glwe_alloc_from_infos(dst);
     module.glwe_zero(dst);
-    for (shift, src) in srcs {
+    let mut metadata = None;
+    for (index, (shift, src)) in srcs.into_iter().enumerate() {
+        let source_metadata = src.to_backend_ref().encryption_metadata();
+        metadata = if index == 0 {
+            source_metadata
+        } else {
+            metadata.filter(|value| Some(*value) == source_metadata)
+        };
         switch_ring(module, &mut embedded, src);
         module.glwe_rotate(shift, &mut shifted, &embedded);
         module.glwe_add_assign(dst, &shifted);
         module.glwe_normalize_assign(dst, scratch);
     }
+    dst.set_encryption_metadata(metadata);
 }
 
 /// Writes the component of `src` at `X^j`, `X^(-j)·src` restricted to `X^g`, into
@@ -818,6 +826,7 @@ where
 {
     let src = src.to_backend_ref();
     let canonical = src.is_canonical();
+    dst.set_encryption_metadata(src.encryption_metadata());
     {
         let mut view = dst.to_backend_mut();
         for col in 0..=src.rank().as_usize() {

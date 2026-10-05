@@ -8,7 +8,7 @@ pub use crate::api::GGLWEEncryptSk;
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
+    GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWESecretPreparedToBackendRef,
@@ -23,19 +23,17 @@ pub trait GGLWEEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -64,21 +62,20 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
         let sk_ref = sk.to_backend_ref();
@@ -149,10 +146,10 @@ where
                 self.fill_glwe_mask_from_source(&mut res_view, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
+                    res_view.k().as_usize(),
                     &mut res_view.data,
                     Some((tmp_pt.to_backend_ref(), 0)),
                     sk,
-                    enc_infos,
                     source_xe,
                     &mut scratch_1.borrow(),
                 );

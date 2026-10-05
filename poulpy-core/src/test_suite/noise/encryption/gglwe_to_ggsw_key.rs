@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWENoise, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
+    GGLWENoise, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -37,15 +37,14 @@ where
         let n: usize = module.n();
         let dnum: usize = k / base2k;
 
-        let key_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+        let key_infos = GGLWEToGGSWKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut key: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&key_infos);
 
@@ -68,7 +67,6 @@ where
         module.gglwe_to_ggsw_key_encrypt_sk(
             &mut key,
             &sk,
-            &key_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -139,15 +137,14 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
         let n: usize = module.n();
         let dnum: usize = k / base2k;
 
-        let key_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+        let key_infos = GGLWEToGGSWKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut key_compressed: GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
             module.gglwe_to_ggsw_key_compressed_alloc_from_infos(&key_infos);
@@ -173,7 +170,6 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
             &mut key_compressed,
             &sk,
             seed_xa,
-            &key_infos,
             &mut source_xe,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );

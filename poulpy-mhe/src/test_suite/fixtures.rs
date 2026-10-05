@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, SmudgingNoise,
+    Distribution, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, Noise,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
         GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
@@ -10,7 +10,8 @@ use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
     layouts::{
-        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef, ScratchOwned,
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef,
+        ScratchOwned, WriterTo,
     },
     source::Source,
 };
@@ -148,7 +149,6 @@ where
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_glwe_public_key_share_gen_tmp_bytes(layout)
@@ -160,19 +160,30 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);
-        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
+        assert_collective_metadata(dst, 1);
         if i > 0 {
             module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
         }
+        assert_collective_metadata(&acc, i + 1);
     }
+    let mut encoded = Vec::new();
+    acc.write_to(&mut encoded).unwrap();
+    let mut decoded = module.glwe_public_key_share_alloc_from_infos(layout);
+    decoded.read_from(&mut encoded.as_slice()).unwrap();
+    assert!(decoded == acc);
+    assert_collective_metadata(&decoded, parties.len());
+
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
     module.mhe_glwe_public_key_share_finalize(&mut pk, &acc, &mut scratch.borrow());
+    assert_collective_metadata(&pk, parties.len());
     assert!(
         pk.dist() == parties[0].0.dist(),
         "the key takes the parties' secret distribution"
     );
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+    assert_collective_metadata(&pk_prepared, parties.len());
     pk_prepared
 }
 
@@ -221,13 +232,11 @@ where
     Module<BE>: GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(layout);
     module.glwe_encrypt_sk(
         &mut ct,
         &integer_plaintext(module, layout, data),
         sk,
-        &enc_infos,
         &mut Source::new([31u8; 32]),
         &mut Source::new([32u8; 32]),
         &mut scratch.borrow(),
@@ -259,10 +268,8 @@ pub(crate) fn assert_decrypts_to<BE>(
 }
 
 /// Small functional-test flooding parameters, not a production security margin.
-pub(crate) fn integer_flood_infos(sigma: f64) -> SmudgingNoise {
-    let log_sigma = sigma.log2() as usize;
-    assert_eq!(sigma, 2.0f64.powi(log_sigma as i32));
-    SmudgingNoise::Gaussian { log_sigma, cutoff: 6 }
+pub(crate) fn integer_flood_infos(sigma: f64) -> Noise {
+    Noise::Gaussian { sigma, cutoff: 6 }
 }
 
 /// Checks both correctness and the presence of caller-sized, per-party flooding.
@@ -294,4 +301,15 @@ pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
         .copied()
         .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
     assert_eq!(message, Some(expected));
+}
+
+/// The aggregate preserves the base law and records the number of independent
+/// secret contributions, including after conversion to a prepared key.
+pub(crate) fn assert_collective_metadata<A: poulpy_core::layouts::LWEInfos>(infos: &A, parties: usize) {
+    let metadata = infos.encryption_metadata().expect("derived encryption provenance");
+    assert_eq!(metadata.parties(), parties as u64);
+    assert_eq!(metadata.secret_distribution().parties(), parties as u64);
+    assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(0.5));
+    let expected = (parties as f64).sqrt() * poulpy_core::DEFAULT_SIGMA_XE;
+    assert!((metadata.initial_noise_std_dev() - expected).abs() < 1e-14);
 }

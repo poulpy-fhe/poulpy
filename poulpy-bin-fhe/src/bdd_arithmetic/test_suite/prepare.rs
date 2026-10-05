@@ -1,5 +1,5 @@
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
+    DEFAULT_SIGMA_XE, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::AlignedBuf;
@@ -53,8 +53,6 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-
     // GLWE(value)
     let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
     let value: u32 = source.next_u32();
@@ -62,7 +60,6 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
         module,
         value,
         sk_glwe_prep,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

@@ -3,12 +3,10 @@ use super::{ParityBackend, fixture_ggsw, snapshot_ggsw, with_scratch};
 use crate::{
     api::{CircuitBootstrappingExecute, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory},
     blind_rotation::{BlindRotationKeyLayout, CGGI},
-    circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyLayout,
-    },
+    circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyLayout},
 };
 use poulpy_core::{
-    EncryptionLayout, LWEEncryptSk, TransferInto,
+    LWEEncryptSk, TransferInto,
     layouts::{
         Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWESecretSampling, LWELayout, LWESecretSampling,
         ModuleCoreAlloc,
@@ -79,13 +77,12 @@ where
         let mut sk_lwe = reference.lwe_secret_alloc(6usize.into());
         reference.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source);
         let mut raw_ref = CircuitBootstrappingKey::alloc_from_infos(reference, &layout);
-        let enc = CircuitBootstrappingEncryptionInfos::from_default_sigma(&layout).unwrap();
+
         with_scratch::<BR, _>(reference.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&layout), |scratch| {
             reference.circuit_bootstrapping_key_encrypt_sk(
                 &mut raw_ref,
                 &sk_lwe,
                 &sk_glwe,
-                &enc,
                 &mut Source::new([19; 32]),
                 &mut Source::new([23; 32]),
                 scratch,
@@ -110,12 +107,11 @@ where
         assert_eq!(key_ref.brk_infos(), key_test.brk_infos());
         assert_eq!(key_ref.atk_infos(), key_test.atk_infos());
         assert_eq!(key_ref.tsk_infos(), key_test.tsk_infos());
-        let lwe_infos = EncryptionLayout::new_from_default_sigma(LWELayout {
+        let lwe_infos = LWELayout {
             n: 6usize.into(),
             base2k: 14usize.into(),
             k: 28usize.into(),
-        })
-        .unwrap();
+        };
         let mut plain_host = host.lwe_plaintext_alloc(14usize.into(), 3usize.into());
         plain_host.encode_i64(1, 2usize.into());
         let mut plain = reference.lwe_plaintext_alloc(14usize.into(), 3usize.into());
@@ -126,7 +122,6 @@ where
                 &mut input_ref,
                 &plain,
                 &sk_lwe,
-                &lwe_infos,
                 &mut Source::new([29; 32]),
                 &mut Source::new([31; 32]),
                 s,

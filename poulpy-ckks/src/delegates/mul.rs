@@ -102,7 +102,9 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_prepare_right_impl(self, a, scratch)
+        let mut prepared = BE::ckks_prepare_right_impl(self, a, scratch)?;
+        prepared.metadata = a.encryption_metadata();
+        Ok(prepared)
     }
 
     fn ckks_mul_prepared_assign<Dst, H>(
@@ -122,7 +124,10 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 op: "ckks_mul_prepared_assign",
                 k: k.into(),
             })?;
-        BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
+        let metadata = dst.encryption_metadata().filter(|value| prepared.metadata == Some(*value));
+        BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)?;
+        dst.set_encryption_metadata(metadata);
+        Ok(())
     }
 
     fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

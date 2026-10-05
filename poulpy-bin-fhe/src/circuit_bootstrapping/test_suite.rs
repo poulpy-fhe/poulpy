@@ -10,15 +10,14 @@ use poulpy_hal::{
 use crate::{
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout},
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingExecute, CircuitBootstrappingKey,
-        CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
-        CircuitBootstrappingKeyPreparedFactory,
+        CircuitBootstrappingExecute, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout,
+        CircuitBootstrappingKeyPrepared, CircuitBootstrappingKeyPreparedFactory,
     },
 };
 
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWESecretPreparedFactory, LWELayout, ModuleCoreAlloc,
@@ -146,13 +145,11 @@ pub fn test_circuit_bootstrapping_to_exponent<
 
     println!("pt_lwe: {pt_lwe}");
 
-    let lwe_enc_infos = EncryptionLayout::new_from_default_sigma(lwe_infos).unwrap();
     let mut ct_lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     module.lwe_encrypt_sk(
         &mut ct_lwe,
         &pt_lwe,
         &sk_lwe,
-        &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -163,13 +160,11 @@ pub fn test_circuit_bootstrapping_to_exponent<
         CircuitBootstrappingKey::alloc_from_infos(module, &cbt_infos);
     println!("CBT-ALLOC: {} ms", now.elapsed().as_millis());
 
-    let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
     let now: Instant = Instant::now();
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
         &sk_lwe,
         &sk_glwe,
-        &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -211,7 +206,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
             )
         }
     }
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
+
     let mut ct_glwe: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
     pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - 2);
@@ -220,7 +215,6 @@ pub fn test_circuit_bootstrapping_to_exponent<
         &mut ct_glwe,
         &pt_glwe,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -356,13 +350,11 @@ pub fn test_circuit_bootstrapping_to_constant<
 
     println!("pt_lwe: {pt_lwe}");
 
-    let lwe_enc_infos = EncryptionLayout::new_from_default_sigma(lwe_infos).unwrap();
     let mut ct_lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     module.lwe_encrypt_sk(
         &mut ct_lwe,
         &pt_lwe,
         &sk_lwe,
-        &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -373,13 +365,11 @@ pub fn test_circuit_bootstrapping_to_constant<
         CircuitBootstrappingKey::alloc_from_infos(module, &cbt_infos);
     println!("CBT-ALLOC: {} ms", now.elapsed().as_millis());
 
-    let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
     let now: Instant = Instant::now();
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
         &sk_lwe,
         &sk_glwe,
-        &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -412,7 +402,6 @@ pub fn test_circuit_bootstrapping_to_constant<
         }
     }
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     let mut ct_glwe: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
     pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
@@ -421,7 +410,6 @@ pub fn test_circuit_bootstrapping_to_constant<
         &mut ct_glwe,
         &pt_glwe,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

@@ -9,7 +9,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
+    GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
@@ -50,13 +50,12 @@ where
             let n: usize = module.n();
             let dnum: usize = k_in.div_ceil(k_ggsw * dsize);
 
-            let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let glwe_in_infos = GLWELayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
                 k: k_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let glwe_out_infos: GLWELayout = GLWELayout {
                 n: n.into(),
@@ -65,15 +64,14 @@ where
                 rank: rank.into(),
             };
 
-            let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_apply_infos = GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
             let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -118,7 +116,6 @@ where
                 &mut ggsw_apply,
                 &pt_ggsw,
                 &sk_prepared,
-                &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -128,7 +125,6 @@ where
                 &mut glwe_in,
                 &pt_in,
                 &sk_prepared,
-                &glwe_in_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -210,23 +206,21 @@ where
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(out_base2k * max_dsize);
 
-            let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let glwe_out_infos = GLWELayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 k: k_out.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_apply_infos = GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
             let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
@@ -269,7 +263,6 @@ where
                 &mut ggsw_apply,
                 &pt_ggsw,
                 &sk_prepared,
-                &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -279,7 +272,6 @@ where
                 &mut glwe_out,
                 &pt_want,
                 &sk_prepared,
-                &glwe_out_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

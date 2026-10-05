@@ -7,7 +7,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
+    GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
     layouts::{
         GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -23,19 +23,17 @@ pub trait GGSWEncryptSkReference<BE: Backend> {
     where
         A: GGSWInfos;
 
-    fn ggsw_encrypt_sk_reference<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
@@ -62,21 +60,20 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ggsw_encrypt_sk_reference<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         assert_eq!(res.rank(), sk.rank());
         operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
         assert!(
@@ -112,10 +109,10 @@ where
                 self.fill_glwe_mask_from_source(&mut ct, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
+                    ct.k().as_usize(),
                     &mut ct.data,
                     Some((tmp_pt.to_backend_ref(), col_j)),
                     sk,
-                    enc_infos,
                     source_xe,
                     &mut scratch_1.borrow(),
                 );

@@ -9,7 +9,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
+    GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
@@ -56,45 +56,41 @@ where
 
             let dsize_in: usize = 1;
 
-            let ggsw_in_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_in_layout = GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ggsw_out_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_out_layout = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_layout = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let auto_key_layout = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let ct_in_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
             let ct_out_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
@@ -130,7 +126,6 @@ where
                 &mut auto_key,
                 p,
                 &sk_backend,
-                &auto_key_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -138,7 +133,6 @@ where
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
                 &sk_backend,
-                &tsk_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -157,7 +151,6 @@ where
                 &mut ct_in,
                 &pt_scalar_backend,
                 &sk_prepared,
-                &ggsw_in_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -253,35 +246,32 @@ where
             let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
             let dsize_in: usize = 1;
 
-            let ggsw_out_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_out_layout = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_layout = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let auto_key_layout = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let ct_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
             let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
@@ -316,7 +306,6 @@ where
                 &mut auto_key,
                 p,
                 &sk_backend,
-                &auto_key_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -324,7 +313,6 @@ where
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
                 &sk_backend,
-                &tsk_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -343,7 +331,6 @@ where
                 &mut ct,
                 &pt_scalar_backend,
                 &sk_prepared,
-                &ggsw_out_layout,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

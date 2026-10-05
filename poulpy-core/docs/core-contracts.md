@@ -54,7 +54,7 @@ chooses the order of those calls.
 derived defaults, except sampling and the monomial families (LWE conversion,
 packing, GLWE/GGSW rotate, `mul_xp_minus_one`). Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
-`SamplingImpl`; wide smudging uses the optional `SmudgingSamplingImpl`.
+the mandatory `SamplingImpl`, including full-width flooding.
 Preparation and decompression helpers reuse selected operations;
 see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
@@ -151,7 +151,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-
 
 ## Full-precision smudging
 
-`VecZnxAddSmudging` dispatches to the optional `SmudgingSamplingImpl`. It adds
+`VecZnxAddNoise` dispatches to the mandatory `SamplingImpl`. It adds
 one independent integer sample per coefficient, scaled by `2^-k` at the
 destination's precision `k`, to a canonical input column. Each sample is
 decomposed across all necessary balanced limbs; drawing independent Gaussian
@@ -160,9 +160,13 @@ remain untouched, and padding below the sampling precision contributes zero. Add
 balanced digits leaves enough headroom for normalization; the result is
 unnormalized and callers must normalize before another smudging addition.
 
-Ordinary encryption's `SamplingImpl` and `NoiseInfos` retain their existing
-contract. `SmudgingSamplingImpl` takes no scratch arena, and sampling need not
-run in constant time; distributional exactness assumes uniform private bits.
+Ordinary encryption uses `Noise::ENCRYPTION` at the output precision. The same
+`Noise` descriptor represents floods, with an exact dyadic Gaussian parameter
+or a signed uniform width. `Noise::assert_valid_for` checks a flood against its
+destination before protocol mutation. Sampling takes no scratch arena. The
+production small-Gaussian path scans a 128-bit cumulative table; larger
+Gaussians use exact integer rejection and may take variable time.
+Distributional exactness assumes uniform private bits.
 
 The delegate only derives a private child seed and dispatches. Backend
 implementations validate their input before drawing randomness or mutating

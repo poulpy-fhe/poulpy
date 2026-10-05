@@ -6,12 +6,9 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use poulpy_core::{
-    EncryptionLayout,
-    layouts::{
-        GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -135,7 +132,7 @@ where
         module
             .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
             .unwrap();
-        let input_enc_infos = EncryptionLayout::new_from_default_sigma(input_layout.glwe_layout).unwrap();
+
         let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
         module
@@ -143,7 +140,6 @@ where
                 &mut input,
                 &input_pt,
                 &sk,
-                &input_enc_infos,
                 &mut input_xe,
                 &mut input_xa,
                 &mut scratch.borrow(),

@@ -17,6 +17,7 @@ use crate::layouts::{GGSWLayout, operand_degree};
 /// operations. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GGSWPrepared<D: Data, B: Backend> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -27,6 +28,10 @@ pub type GGSWPreparedBackendRef<'a, B> = GGSWPrepared<<B as Backend>::BufRef<'a>
 pub type GGSWPreparedBackendMut<'a, B> = GGSWPrepared<<B as Backend>::BufMut<'a>, B>;
 
 impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -95,6 +100,7 @@ where
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
         GGSWPrepared {
+            metadata: None,
             data: self.vmp_pmat_alloc(
                 n,
                 infos.dnum().into(),
@@ -154,6 +160,7 @@ where
         R: GGSWPreparedToBackendMut<B>,
         O: GGSWToBackendRef<B>,
     {
+        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
         operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
@@ -172,6 +179,7 @@ where
     where
         R: GGSWPreparedToBackendMut<B>,
     {
+        res.set_encryption_metadata(None);
         let mut res = res.to_backend_mut();
         self.vmp_zero(&mut res.data);
     }
@@ -201,6 +209,7 @@ pub trait GGSWPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
         GGSWPrepared {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
@@ -210,12 +219,23 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
 }
 
 pub trait GGSWPreparedToBackendMut<B: Backend> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B>;
 }
 
 impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
         GGSWPrepared {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,

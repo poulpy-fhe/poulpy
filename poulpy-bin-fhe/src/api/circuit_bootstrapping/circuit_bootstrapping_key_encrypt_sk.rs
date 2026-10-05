@@ -1,6 +1,6 @@
 use crate::{
     blind_rotation::BlindRotationAlgo,
-    circuit_bootstrapping::{CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyInfos},
+    circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos},
 };
 use poulpy_core::{
     GetDistribution,
@@ -34,7 +34,6 @@ where
         res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,

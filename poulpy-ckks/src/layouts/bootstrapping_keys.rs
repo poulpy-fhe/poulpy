@@ -31,7 +31,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
+    GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
         GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
@@ -185,9 +185,8 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 /// Layout parameters for the evaluation keys produced by
 /// [`BootstrappingContext::generate_keys`].
 ///
-/// Each layout is wrapped with the default encryption noise
-/// ([`EncryptionLayout::new_from_default_sigma`]) at generation time. The
-/// Galois elements of the rotation keys are read from the compiled DFT matrices,
+/// Key generation uses [`poulpy_core::Noise::ENCRYPTION`] at each
+/// destination key's precision. The Galois elements of the rotation keys are read from the compiled DFT matrices,
 /// so they are not part of this layout — only the shared automorphism-key shape.
 #[derive(Clone, Copy, Debug)]
 pub struct BootstrappingKeysLayout {
@@ -265,7 +264,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         );
 
         let order = module.cyclotomic_order();
-        let atk_enc = EncryptionLayout::new_from_default_sigma(layout.automorphism_key)?;
+        let atk_layout = layout.automorphism_key;
 
         // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
@@ -279,15 +278,15 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {
-            let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_enc);
-            module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, &atk_enc, source_xe, source_xa, scratch);
+            let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_layout);
+            module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, source_xe, source_xa, scratch);
             rotation_keys.insert(p, atk);
         }
 
         // Tensor (relinearization) key for EvalMod's ct×ct squaring.
-        let tsk_enc = EncryptionLayout::new_from_default_sigma(layout.tensor_key)?;
-        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_enc);
-        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, &tsk_enc, source_xe, source_xa, scratch);
+        let tsk_layout = layout.tensor_key;
+        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
+        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
 
         // Sparse-secret encapsulation key-switching keys.
         let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
@@ -300,29 +299,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                 module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
                 *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
-                let d2s_enc = EncryptionLayout::new_from_default_sigma(encaps.dense_to_sparse)?;
-                let s2d_enc = EncryptionLayout::new_from_default_sigma(encaps.sparse_to_dense)?;
+                let d2s_layout = encaps.dense_to_sparse;
+                let s2d_layout = encaps.sparse_to_dense;
 
-                let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_enc);
-                module.glwe_switching_key_encrypt_sk(
-                    &mut dense_to_sparse,
-                    sk_dense,
-                    &sk_sparse,
-                    &d2s_enc,
-                    source_xe,
-                    source_xa,
-                    scratch,
-                );
-                let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&s2d_enc);
-                module.glwe_switching_key_encrypt_sk(
-                    &mut sparse_to_dense,
-                    &sk_sparse,
-                    sk_dense,
-                    &s2d_enc,
-                    source_xe,
-                    source_xa,
-                    scratch,
-                );
+                let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_layout);
+                module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk_dense, &sk_sparse, source_xe, source_xa, scratch);
+                let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&s2d_layout);
+                module.glwe_switching_key_encrypt_sk(&mut sparse_to_dense, &sk_sparse, sk_dense, source_xe, source_xa, scratch);
                 Some((dense_to_sparse, sparse_to_dense))
             }
             (None, None) => None,
@@ -426,14 +409,13 @@ impl RingSwitchKeysLayout {
             );
         }
         let mut encrypt = |layout: GLWESwitchingKeyLayout, sk_in: &BackendGLWESecret<BE>, sk_out: &BackendGLWESecret<BE>| {
-            let enc = EncryptionLayout::new_from_default_sigma(layout)?;
-            let mut key = module.glwe_switching_key_alloc_from_infos(&enc);
-            module.glwe_switching_key_encrypt_sk(&mut key, sk_in, sk_out, &enc, source_xe, source_xa, scratch);
-            Ok::<_, anyhow::Error>(key)
+            let mut key = module.glwe_switching_key_alloc_from_infos(&layout);
+            module.glwe_switching_key_encrypt_sk(&mut key, sk_in, sk_out, source_xe, source_xa, scratch);
+            key
         };
         Ok(RingSwitchKeys {
-            inbound: encrypt(self.inbound, sk_in, sk)?,
-            outbound: encrypt(self.outbound, sk, sk_in)?,
+            inbound: encrypt(self.inbound, sk_in, sk),
+            outbound: encrypt(self.outbound, sk, sk_in),
         })
     }
 }

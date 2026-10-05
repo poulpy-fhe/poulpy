@@ -2,10 +2,10 @@
 //! under the finalized key decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEEncryptPk, GLWENoise, GetDistributionMut,
+    DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWENoise, GetDistributionMut,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
-        GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPreparedFactory,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{
@@ -41,15 +41,37 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pk_prepared = collective_public_key(module, &parties, &layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_pk_tmp_bytes(&layout, &layout)
-            .max(module.glwe_noise_tmp_bytes(&layout)),
+            .max(module.glwe_noise_tmp_bytes(&layout))
+            .max(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout)),
     );
+
+    // A mismatch in the last entry must be rejected before an earlier entry
+    // changes, including its coefficients and the aggregate's provenance.
+    let mut acc = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    for (i, dst) in [&mut acc, &mut share].into_iter().enumerate() {
+        module.mhe_glwe_public_key_share_gen(
+            dst,
+            &parties[i].1,
+            SEEDS[0],
+            &mut Source::new([70 + i as u8; 32]),
+            &mut scratch.borrow(),
+        );
+    }
+    share.seed_mut()[RANK.as_usize() - 1][0] ^= 1;
+    let unchanged = acc.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: seeds differ", || {
+        module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
+    });
+    assert!(acc == unchanged);
+    super::fixtures::assert_collective_metadata(&acc, 1);
 
     let mut pt: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
     module.vec_znx_fill_uniform_source(
@@ -64,11 +86,12 @@ where
         &mut ct,
         &pt,
         &pk_prepared,
-        &enc_infos,
         &mut Source::new([31u8; 32]),
         &mut Source::new([32u8; 32]),
         &mut scratch.borrow(),
     );
+
+    super::fixtures::assert_collective_metadata(&ct, PARTIES);
 
     // Sum_l u_l e_l over rank entries whose errors sum PARTIES errors, plus <e_1, s> with ideal-secret variance PARTIES / 2.
     let n = module.n() as f64;
@@ -179,18 +202,11 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-    module.mhe_glwe_public_key_share_gen(
-        &mut res,
-        &sk,
-        SEEDS[0],
-        &enc_infos,
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
 }
 
 /// Invalid shapes fail at the protocol boundary with an exact static message.
@@ -206,7 +222,7 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
     let expected = [
         "invalid share: secret degree differs from the share's",
@@ -229,14 +245,7 @@ where
             };
             let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-            module.mhe_glwe_public_key_share_gen(
-                &mut res,
-                &sk,
-                SEEDS[0],
-                &enc_infos,
-                &mut Source::new([10u8; 32]),
-                &mut scratch.borrow(),
-            );
+            module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
         });
     }
 }

@@ -127,10 +127,16 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
+    /// Provenance of the input ciphertext used to populate this cache.
+    pub fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     pub fn size(&self) -> usize {
         let (_, cnv_pvec) = self.values.first_key_value().unwrap();
         cnv_pvec.size()

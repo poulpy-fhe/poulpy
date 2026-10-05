@@ -54,9 +54,20 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext on the torus.
 
+## Encryption provenance
+
+Keys and ciphertexts expose derived provenance through `encryption_metadata()`.
+Secret-share aggregation records the number of independent contributors and
+their common base secret distribution. Public-key protocols preserve the
+destination key's provenance. Compression, preparation and serialization retain
+it. The reported initial variance describes ordinary encryption noise; it does
+not estimate evaluated noise or include a protocol's flood. Backend views copy
+metadata by value, as they do precision and canonical flags, so pass the owner
+to a protocol when its metadata must be updated.
+
 ## Smudging
 
-Key switching and encryption-to-shares take a caller-selected `SmudgingNoise`
+Key switching and encryption-to-shares take a caller-selected `Noise`
 flood, a discrete Gaussian or a uniform distribution on consecutive integers,
 sampled on the share's own precision grid. Size it with the
 [smudging contract](docs/mhe-contracts.md#smudging); small test parameters do

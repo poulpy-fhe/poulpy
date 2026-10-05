@@ -136,6 +136,7 @@ pub trait CKKSMulReference<BE: Backend> {
         let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
+            metadata: a.encryption_metadata(),
             prep,
             size,
             log_delta: a.log_delta(),
@@ -182,7 +183,13 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+            |tmp, dst_ref, s| {
+                let metadata = dst_ref
+                    .encryption_metadata()
+                    .filter(|value| prepared.metadata == Some(*value));
+                glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s);
+                GLWEToBackendMut::<BE>::set_encryption_metadata(tmp, metadata);
+            },
         )
     }
 

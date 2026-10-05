@@ -72,6 +72,10 @@ macro_rules! impl_ckks_infos {
     };
     (self_meta $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::LWEInfos for $name<'a, BE> {
+            fn encryption_metadata(&self) -> Option<::poulpy_core::EncryptionMetadata> {
+                ::poulpy_core::layouts::LWEInfos::encryption_metadata(&self.inner)
+            }
+
             fn base2k(&self) -> ::poulpy_core::layouts::Base2K {
                 ::poulpy_core::layouts::LWEInfos::base2k(&self.inner)
             }

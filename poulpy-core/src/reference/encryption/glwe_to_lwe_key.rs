@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
+    GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, Rank,
         prepared::GLWESecretPreparedFactory,
@@ -25,19 +25,17 @@ pub trait GLWEToLWESwitchingKeyEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
@@ -60,19 +58,17 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn glwe_to_lwe_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
         let sk_lwe = sk_lwe.to_backend_ref();
@@ -119,7 +115,6 @@ where
                 res,
                 &sk_glwe_data_ref,
                 &sk_lwe_as_glwe_prep,
-                enc_infos,
                 source_xe,
                 source_xa,
                 &mut enc_scratch,

@@ -101,3 +101,8 @@ harness = false
 name = "encrypt_pk"
 harness = false
 required-features = ["enable-core"]
+
+[[bench]]
+name = "noise"
+harness = false
+required-features = ["enable-core"]

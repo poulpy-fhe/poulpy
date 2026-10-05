@@ -9,7 +9,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
+    GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
@@ -47,15 +47,14 @@ where
             let dnum_in: usize = k_in / in_base2k;
             let dsize_in: usize = 1;
 
-            let ggsw_in_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_in_infos = GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let ggsw_out_infos: GGSWLayout = GGSWLayout {
                 n: n.into(),
@@ -66,15 +65,14 @@ where
                 rank: rank.into(),
             };
 
-            let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_apply_infos = GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
@@ -113,7 +111,6 @@ where
                 &mut ggsw_apply,
                 &pt_apply,
                 &sk_prepared,
-                &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -123,7 +120,6 @@ where
                 &mut ggsw_in,
                 &pt_in,
                 &sk_prepared,
-                &ggsw_in_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -205,25 +201,23 @@ where
             let dnum_in: usize = k_out / out_base2k;
             let dsize_in: usize = 1;
 
-            let ggsw_out_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_out_infos = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_apply_infos = GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
             let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
@@ -262,7 +256,6 @@ where
                 &mut ggsw_apply,
                 &pt_apply,
                 &sk_prepared,
-                &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -272,7 +265,6 @@ where
                 &mut ggsw_out,
                 &pt_in,
                 &sk_prepared,
-                &ggsw_out_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

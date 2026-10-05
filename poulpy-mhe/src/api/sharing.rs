@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -46,7 +46,7 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -95,22 +95,19 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
     /// conversion: two encryptions under one secret and one seed reveal the
     /// difference of their plaintexts.
     ///
-    /// The error uses the `sigma` and `bound` from `enc_infos`, sampled at
-    /// `res.k()` regardless of the precision in `enc_infos`.
+    /// The fixed encryption error is sampled at the destination precision `res.k()`.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_share_to_enc_share_gen<P, S, E>(
+    fn mhe_glwe_share_to_enc_share_gen<P, S>(
         &self,
         res: &mut GLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout and seed.

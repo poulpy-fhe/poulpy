@@ -3,14 +3,14 @@ use std::collections::HashMap;
 
 use poulpy_bin_fhe::{
     bdd_arithmetic::{
-        Add, BDDEncryptionInfos, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory,
-        ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare, FheUintPrepared, GLWEBlindSelection, Xor,
+        Add, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint,
+        FheUintPrepare, FheUintPrepared, GLWEBlindSelection, Xor,
     },
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
 use poulpy_core::{
-    EncryptionLayout, GLWEDecrypt, GLWEEncryptSk,
+    GLWEDecrypt, GLWEEncryptSk,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -164,14 +164,12 @@ where
     // Creating the public BDD Key
     // This key is required to prepare all Fhe Integers for operations,
     // and for performing the operations themselves
-    let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_layout).unwrap();
 
     let mut bdd_key: BDDKey<AlignedBuf, BRA, i64> = BDDKey::alloc_from_infos(&module, &bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
         &sk_glwe,
-        &bdd_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -182,14 +180,11 @@ where
     let input_a = 255_u32;
     let input_b = 30_u32;
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_layout).unwrap();
-
     let mut a_enc: FheUint<AlignedBuf, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     a_enc.encrypt_sk(
         &module,
         input_a,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -200,7 +195,6 @@ where
         &module,
         input_b,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -288,7 +282,6 @@ where
             &module,
             *input,
             &sk_glwe_prepared,
-            &glwe_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -306,7 +299,6 @@ where
         &module,
         input_selector,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

@@ -22,6 +22,7 @@ use std::{
 /// PRNG seeds during decompression.
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGLWECompressed<D: Data, W: ZnxWord> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
     pub(crate) k_aux: TorusPrecision,
@@ -54,6 +55,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
     /// mask columns.
     pub fn body_as_gglwe(&self) -> GGLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GGLWE {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
@@ -114,6 +116,7 @@ impl<BE: Backend> GGLWECompressedSeedMut for GGLWECompressedBackendMut<'_, BE> {
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             dsize: self.inner.dsize,
@@ -127,6 +130,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendRef<
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             dsize: self.inner.dsize,
@@ -138,8 +142,13 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<
 }
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressedBackendMut<'_, BE> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.inner.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             dsize: self.inner.dsize,
@@ -180,6 +189,10 @@ impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GGLWECompressed<D, W> {
     }
 }
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWECompressed<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -273,6 +286,7 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWECompressed {
+            metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), dnum.into(), rank_in.into(), 1, size)),
                 n.into(),
@@ -314,6 +328,7 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.metadata = crate::EncryptionMetadata::read_optional(reader)?;
         self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
@@ -329,6 +344,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWECompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWECompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
@@ -355,6 +371,7 @@ where
         R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos,
         O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos,
     {
+        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
 
@@ -384,6 +401,7 @@ pub trait GGLWECompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -397,6 +415,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedB
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -410,6 +429,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRe
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -421,12 +441,23 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::B
 }
 
 pub trait GGLWECompressedToBackendMut<BE: Backend>: GGLWECompressedToBackendRef<BE> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedBuf, BE::ZnxWord> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -438,8 +469,13 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedB
 }
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -457,6 +493,7 @@ fn gglwe_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
 ) -> GLWECompressedBackendMut<'a, BE> {
     let rank_in: usize = gglwe.rank_in().into();
     GLWECompressed {
+        metadata: crate::layouts::LWEInfos::encryption_metadata(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
         rank: gglwe.rank_out,
@@ -472,6 +509,7 @@ fn gglwe_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
 ) -> crate::layouts::compressed::GLWECompressedBackendRef<'a, BE> {
     let rank_in: usize = gglwe.rank_in().into();
     GLWECompressed {
+        metadata: crate::layouts::LWEInfos::encryption_metadata(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
         rank: gglwe.rank_out,

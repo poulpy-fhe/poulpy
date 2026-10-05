@@ -8,12 +8,9 @@ use poulpy_ckks::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-use poulpy_core::{
-    EncryptionLayout,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
-    },
+use poulpy_core::layouts::{
+    Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
+    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -53,18 +50,17 @@ fn mul_tsk_layout(p: &CkksBenchParams) -> GLWETensorKeyLayout {
     }
 }
 
-fn atk_layout(cp: &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
+fn atk_layout(cp: &CkksBenchParams) -> GLWEAutomorphismKeyLayout {
     let (dnum, k_aux) =
         crate::core::params::key_dnum_k_aux((cp.k + cp.dsize * cp.base2k) as u32, cp.base2k as u32, cp.dsize as u32);
-    EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+    GLWEAutomorphismKeyLayout {
         n: Degree(cp.n as u32),
         base2k: Base2K(cp.base2k as u32),
         k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(cp.dsize as u32),
         dnum: Dnum(dnum),
-    })
-    .unwrap()
+    }
 }
 
 pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(

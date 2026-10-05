@@ -211,8 +211,10 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     };
                     let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
 
-                    let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-                    let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+                    let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
+                    a_ref.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.5)));
+                    let mut key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+                    key_ref_coeffs.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(1.0)));
 
                     let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
                     a_ref.transfer_into(&mut a_test);
@@ -239,6 +241,9 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
                     module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
 
+                    assert_eq!(res_ref.encryption_metadata(), key_ref.encryption_metadata());
+                    assert_eq!(res_test.encryption_metadata(), key_test.encryption_metadata());
+                    assert_ne!(res_ref.encryption_metadata(), a_ref.encryption_metadata());
                     let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                     res_test.transfer_into(&mut have);
                     assert_glwe_eq!(
@@ -549,6 +554,7 @@ where
             VmpPMat<BE::OwnedBuf, BE::DftWord, BE>: VmpPMatToBackendRef<BE>,
         {
             GGLWEPrepared {
+                metadata: None,
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
                 dsize: layout.dsize,

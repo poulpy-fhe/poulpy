@@ -1,7 +1,7 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
-    ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
+    EncryptionMetadata, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
+    GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos,
@@ -25,7 +25,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -54,7 +54,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
 
 impl<BE: Backend> GLWEPrivateKeyswitchMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEMaskInnerProduct<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEBytesOf<BE> + VecZnxAddSmudging<BE>,
+    Self: GLWEMaskInnerProduct<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEBytesOf<BE> + VecZnxAddNoise<BE>,
 {
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -76,7 +76,7 @@ where
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -120,7 +120,7 @@ where
             self.glwe_mask_inner_product(&mut pt_out, mask, sk_out, &mut scratch_2);
             self.glwe_sub(res, &pt_in, &pt_out);
             self.glwe_normalize_assign(res, &mut scratch_2);
-            self.vec_znx_add_smudging(
+            self.vec_znx_add_noise(
                 base2k,
                 k,
                 GLWEToBackendMut::<BE>::to_backend_mut(res).data_mut(),
@@ -130,6 +130,10 @@ where
             );
             self.glwe_normalize_assign(res, &mut scratch_2);
         }
+        GLWEToBackendMut::<BE>::set_encryption_metadata(
+            res,
+            Some(EncryptionMetadata::from_secret(*sk_out.to_backend_ref().dist())),
+        );
         scratch.wipe(tmp_bytes);
     }
 
@@ -139,7 +143,9 @@ where
         a: &GLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_encryption_metadata(res, metadata);
     }
 
     fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {
@@ -171,6 +177,7 @@ where
         );
         self.glwe_add_into(res, ct, share);
         self.glwe_normalize_assign(res, scratch);
+        res.set_encryption_metadata(share.encryption_metadata());
     }
 }
 
@@ -187,14 +194,13 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
         P: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K, E>(
+    fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
-        flood: SmudgingNoise,
-        enc_infos: &E,
+        flood: Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -202,8 +208,7 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 
     fn mhe_glwe_public_keyswitch_share_aggregate_reference(
         &self,
@@ -249,14 +254,13 @@ where
                 .max(self.glwe_encrypt_pk_smudged_tmp_bytes(res_infos, pk_infos))
     }
 
-    fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K, E>(
+    fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
-        flood: SmudgingNoise,
-        enc_infos: &E,
+        flood: Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -265,7 +269,6 @@ where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         let res = &mut res.inner;
         assert!(
@@ -294,17 +297,7 @@ where
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk_in, &mut scratch_1);
-            self.glwe_encrypt_pk_smudged(
-                res,
-                &pt,
-                pk_out,
-                flood,
-                enc_infos,
-                source_xu,
-                source_xe,
-                source_smudge,
-                &mut scratch_1,
-            );
+            self.glwe_encrypt_pk_smudged(res, &pt, pk_out, flood, source_xu, source_xe, source_smudge, &mut scratch_1);
         }
         scratch.wipe(tmp_bytes);
     }
@@ -315,6 +308,11 @@ where
         a: &GLWEPublicKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        assert_eq!(
+            res.encryption_metadata(),
+            a.encryption_metadata(),
+            "invalid aggregation: output key provenance differs"
+        );
         self.glwe_add_assign(&mut res.inner, &a.inner);
     }
 

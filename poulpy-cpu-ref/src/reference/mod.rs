@@ -8,7 +8,6 @@
 pub mod fft64;
 pub mod normalization;
 pub mod ntt4x30;
-pub mod smudging;
 pub mod vec_znx;
 pub mod vmp_select;
 
@@ -46,3 +45,5 @@ unsafe impl<T> Sync for SendPtr<T> {}
 
 /// Portable HAL primitives and CPU-specific normalization kernels.
 pub mod znx;
+
+pub mod noise;

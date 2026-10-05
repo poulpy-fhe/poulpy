@@ -105,6 +105,7 @@ impl GGSWInfos for GGSWLayout {
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGSW<D: Data, W: ZnxWord> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -174,6 +175,10 @@ impl<BE: Backend> DerefMut for GGSWBackendMut<'_, BE> {
 }
 
 impl<BE: Backend> LWEInfos for GGSWBackendRef<'_, BE> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -212,6 +217,10 @@ impl<BE: Backend> GGSWInfos for GGSWBackendRef<'_, BE> {
 }
 
 impl<BE: Backend> LWEInfos for GGSWBackendMut<'_, BE> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -252,6 +261,7 @@ impl<BE: Backend> GGSWInfos for GGSWBackendMut<'_, BE> {
 impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             dsize: self.inner.dsize(),
             base2k: self.inner.base2k(),
             k_aux: self.inner.k_aux(),
@@ -263,6 +273,7 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRef<'_, BE> {
 impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             dsize: self.inner.dsize,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
@@ -272,8 +283,13 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendMut<'_, BE> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.inner.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
             dsize: self.inner.dsize,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
@@ -301,6 +317,10 @@ impl<BE: Backend> GGSWAtViewRef<BE> for &GGSWBackendRef<'_, BE> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -361,6 +381,7 @@ impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
     pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
         let data = self.data.at(row, col);
         GLWE {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
@@ -378,6 +399,7 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
         GLWE {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
@@ -393,6 +415,7 @@ pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
 ) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col);
     GLWE {
+        metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
         base2k: ggsw.base2k,
         k: ggsw.k(),
         canonical: true,
@@ -419,6 +442,7 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
 ) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&ggsw.data, row, col);
     GLWE {
+        metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
         base2k: ggsw.base2k,
         k: ggsw.k(),
         canonical: true,
@@ -432,6 +456,7 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
         let k = self.k();
         let data = self.data.at_mut(row, col);
         GLWE {
+            metadata: self.metadata,
             base2k,
             k,
             canonical: true,
@@ -451,6 +476,7 @@ impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
         GLWE {
+            metadata: self.metadata,
             base2k,
             k,
             canonical: true,
@@ -468,6 +494,7 @@ pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let k = ggsw.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col);
     GLWE {
+        metadata: ggsw.metadata,
         base2k,
         k,
         canonical: true,
@@ -507,6 +534,7 @@ impl<D: Data, W: ZnxWord> GGSW<D, W> {
             self.data.size(),
         );
         GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: MatZnx::from_data(self.data.into_data(), n, rows, cols_in, cols_out, size),
             k_aux: self.k_aux,
             base2k: self.base2k,
@@ -538,6 +566,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSW {
+            metadata: None,
             data: MatZnx::from_data(
                 alloc_aligned::<u8>(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
@@ -583,6 +612,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSW<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.metadata = crate::EncryptionMetadata::read_optional(reader)?;
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
         self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
@@ -592,6 +622,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSW<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSW<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
@@ -600,6 +631,12 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSW<D, W> {
 }
 
 pub trait GGSWToBackendMut<BE: Backend>: GGSWToBackendRef<BE> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE>;
 }
 
@@ -607,8 +644,13 @@ impl<BE: Backend, D: Data> GGSWToBackendMut<BE> for GGSW<D, BE::ZnxWord>
 where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             dsize: self.dsize,
             base2k: self.base2k,
             k_aux: self.k_aux,
@@ -620,6 +662,7 @@ where
 impl<BE: Backend> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             dsize: self.dsize,
             base2k: self.base2k,
             k_aux: self.k_aux,
@@ -629,6 +672,10 @@ impl<BE: Backend> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord
 }
 
 impl<BE: Backend> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         ggsw_backend_mut_from_mut::<BE>(self)
     }
@@ -636,6 +683,7 @@ impl<BE: Backend> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord
 
 pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend>(ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord>) -> GGSWBackendMut<'a, BE> {
     GGSWBackendMut::from_inner(GGSW {
+        metadata: crate::layouts::LWEInfos::encryption_metadata(&ggsw),
         dsize: ggsw.dsize,
         base2k: ggsw.base2k,
         k_aux: ggsw.k_aux,
@@ -657,6 +705,10 @@ impl<'a, BE: Backend + 'a> GGSWBackendRowViewMut<'a, BE> {
 }
 
 impl<BE: Backend> LWEInfos for GGSWBackendRowViewMut<'_, BE> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -696,8 +748,13 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRowViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendRowViewMut<'_, BE> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.inner.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
+            metadata: self.inner.metadata,
             dsize: self.inner.inner.dsize,
             base2k: self.inner.inner.base2k,
             k_aux: self.inner.inner.k_aux,
@@ -728,6 +785,7 @@ where
 {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             dsize: self.dsize,
             base2k: self.base2k,
             k_aux: self.k_aux,

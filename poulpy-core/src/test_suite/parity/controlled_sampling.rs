@@ -3,7 +3,7 @@
 //! A caller-selected comparison backend may opt into the tested backend's
 //! realized samples. This preserves each backend's freedom to map a seed to its
 //! own random stream without selecting a particular comparison implementation.
-use crate::{Distribution, NoiseInfos, oep::SamplingImpl};
+use crate::{Distribution, Noise, oep::SamplingImpl};
 use poulpy_hal::{
     api::*,
     layouts::*,
@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 trait SampleProvider: Send + Sync {
     fn scalar(&self, n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64>;
-    fn noise(&self, n: usize, base2k: usize, noise: NoiseInfos, seed: [u8; 32], big: bool) -> Vec<i64>;
+    fn noise(&self, n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64>;
 }
 struct BackendSamples<B: Backend>(Module<B>);
 impl<B> SampleProvider for BackendSamples<B>
@@ -26,8 +26,8 @@ where
         B::scalar_znx_fill_distribution(&self.0, &mut scalar_znx_backend_mut::<B>(&mut out), 0, dist, seed);
         download_scalar_znx::<B>(&out).at(0, 0).to_vec()
     }
-    fn noise(&self, n: usize, base2k: usize, noise: NoiseInfos, seed: [u8; 32], big: bool) -> Vec<i64> {
-        let size = noise.k.div_ceil(base2k);
+    fn noise(&self, n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64> {
+        let size = k.div_ceil(base2k);
         let mut out = self.0.vec_znx_alloc(n, 1, size);
         self.0.vec_znx_zero(&mut vec_znx_backend_mut::<B>(&mut out), 0);
         if big {
@@ -39,7 +39,7 @@ where
                 &VecZnxToBackendRef::<B>::to_backend_ref(&out),
                 0,
             );
-            B::vec_znx_big_add_normal(&self.0, base2k, &mut wide.to_backend_mut(), 0, noise, seed);
+            B::vec_znx_big_add_noise(&self.0, base2k, k, &mut wide.to_backend_mut(), 0, noise, seed);
             let mut scratch = ScratchOwned::<B>::alloc(self.0.vec_znx_big_normalize_tmp_bytes());
             self.0.vec_znx_big_normalize(
                 &mut VecZnxToBackendMut::<B>::to_backend_mut(&mut out),
@@ -53,27 +53,10 @@ where
                 &mut scratch.borrow(),
             );
         } else {
-            B::vec_znx_add_normal(&self.0, base2k, &mut vec_znx_backend_mut::<B>(&mut out), 0, noise, seed);
+            B::vec_znx_add_noise(&self.0, base2k, k, &mut vec_znx_backend_mut::<B>(&mut out), 0, noise, seed);
         }
         let host = download_vec_znx::<B>(&out);
-        // Recover the small integer draw exactly from its radix representation.
-        (0..n)
-            .map(|i| {
-                let mut sample = 0i128;
-                for limb in 0..size {
-                    let value = host.at(0, limb)[i] as i128;
-                    let exponent = noise.k as i64 - ((limb + 1) * base2k) as i64;
-                    if exponent >= 127 {
-                        assert_eq!(value, 0);
-                    } else if exponent >= 0 {
-                        sample += value << exponent;
-                    } else {
-                        sample += value >> -exponent;
-                    }
-                }
-                i64::try_from(sample).expect("parity noise sample fits an integer")
-            })
-            .collect()
+        (0..size).flat_map(|limb| host.at(0, limb).iter().copied()).collect()
     }
 }
 // The provider is process-wide, not thread-local: a backend is free to sample
@@ -125,14 +108,13 @@ pub fn scalar_samples(n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> 
     provider().scalar(n, dist, seed)
 }
 
-/// Returns the integer noise draws from the selected backend's ordinary (`big =
-/// false`) or wide (`big = true`) sampler, before radix placement.
-/// The comparison adapter adds these draws at [`NoiseInfos::target_limb_and_shift`].
+/// Returns the placed noise digits from the selected backend's ordinary
+/// (`big = false`) or wide (`big = true`) sampler, in limb-major order.
 ///
 /// # Panics
 /// Panics outside a [`with_backend_samples`] scope.
-pub fn noise_samples(n: usize, base2k: usize, noise: NoiseInfos, seed: [u8; 32], big: bool) -> Vec<i64> {
-    provider().noise(n, base2k, noise, seed, big)
+pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64> {
+    provider().noise(n, base2k, k, noise, seed, big)
 }
 
 /// Registers encryption parity for a caller-selected comparison and tested backend.

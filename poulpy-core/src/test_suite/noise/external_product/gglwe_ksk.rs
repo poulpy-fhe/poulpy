@@ -8,7 +8,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
-    EncryptionLayout, GGLWEExternalProduct, GGLWENoise, GGSWEncryptSk, GLWESwitchingKeyEncryptSk,
+    GGLWEExternalProduct, GGLWENoise, GGSWEncryptSk, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GGSW, GGSWLayout, GGSWPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
@@ -50,7 +50,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                 let dnum: usize = k_in.div_ceil(key_base2k * dsize);
                 let dsize_in: usize = 1;
 
-                let gglwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                let gglwe_in_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: in_base2k.into(),
                     dnum: dnum_in.into(),
@@ -58,8 +58,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
-                })
-                .unwrap();
+                };
 
                 let gglwe_out_infos: GLWESwitchingKeyLayout = GLWESwitchingKeyLayout {
                     n: n.into(),
@@ -71,15 +70,14 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     rank_out: rank_out.into(),
                 };
 
-                let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+                let ggsw_infos = GGSWLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
                     k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank: rank_out.into(),
-                })
-                .unwrap();
+                };
 
                 let mut ct_gglwe_in: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_in_infos);
@@ -120,7 +118,6 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     &mut ct_gglwe_in,
                     &sk_in,
                     &sk_out,
-                    &gglwe_in_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.arena(),
@@ -130,7 +127,6 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     &mut ct_rgsw,
                     &pt_rgsw,
                     &sk_out_prepared,
-                    &ggsw_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.borrow(),
@@ -226,7 +222,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
 
                 let dsize_in: usize = 1;
 
-                let gglwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                let gglwe_out_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: out_base2k.into(),
                     dnum: dnum_in.into(),
@@ -234,18 +230,16 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
-                })
-                .unwrap();
+                };
 
-                let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+                let ggsw_infos = GGSWLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
                     k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank: rank_out.into(),
-                })
-                .unwrap();
+                };
 
                 let mut ct_gglwe: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_out_infos);
@@ -284,7 +278,6 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     &mut ct_gglwe,
                     &sk_in,
                     &sk_out,
-                    &gglwe_out_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.arena(),
@@ -294,7 +287,6 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     &mut ct_rgsw,
                     &pt_rgsw,
                     &sk_out_prepared,
-                    &ggsw_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.borrow(),

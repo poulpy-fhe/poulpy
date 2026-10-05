@@ -283,6 +283,7 @@ fn module_transfer_glwe_roundtrip() {
     let mut src: GLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
         src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
     fill_bytes(src.data.data_mut());
+    src.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.3)));
 
     let mut uploaded = dst_module.glwe_alloc_from_infos(&src);
     src.transfer_into(&mut uploaded);
@@ -299,6 +300,7 @@ fn module_transfer_gglwe_roundtrip() {
     let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
         src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
+    src.metadata = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::BinaryFixed(11)));
 
     let mut uploaded = dst_module.gglwe_alloc_from_infos(&src);
     src.transfer_into(&mut uploaded);

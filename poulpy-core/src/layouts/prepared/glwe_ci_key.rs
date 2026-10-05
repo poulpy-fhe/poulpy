@@ -20,6 +20,10 @@ pub type GLWECIEmbedKeyPrepared<D, B> = GLWECIKeyPrepared<D, B, CIEmbed>;
 pub type GLWECITraceKeyPrepared<D, B> = GLWECIKeyPrepared<D, B, CITrace>;
 
 impl<D: Data, B: Backend, M> LWEInfos for GLWECIKeyPrepared<D, B, M> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.0.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -82,6 +86,10 @@ impl<D: Data, B: Backend, M> GGLWEPreparedToBackendMut<B> for GLWECIKeyPrepared<
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_encryption_metadata(&mut self.0.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.0.key.to_backend_mut()
     }

@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
-    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
+    GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyCompressedEncryptSk,
+    GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
@@ -46,15 +46,14 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
             let n: usize = module.n();
             let dnum: usize = (k_ksk - di * base2k) / (di * base2k);
 
-            let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+            let atk_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
@@ -78,7 +77,6 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
                 &mut atk,
                 p,
                 &sk,
-                &atk_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -155,15 +153,14 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             let n: usize = module.n();
             let dnum: usize = (k_ksk - dsize * base2k) / (dsize * base2k);
 
-            let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+            let atk_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut atk_compressed: GLWEAutomorphismKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_compressed_alloc_from_infos(&atk_infos);
@@ -189,7 +186,6 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 p,
                 &sk,
                 seed_xa,
-                &atk_infos,
                 &mut source_xe,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );

@@ -13,6 +13,10 @@ macro_rules! impl_gglwe_to_backend_for_field {
         where
             $inner: GGLWEToBackendMut<BE>,
         {
+            fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+                <_ as GGLWEToBackendMut<BE>>::set_encryption_metadata(&mut self.$field, metadata);
+            }
+
             fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
                 self.$field.to_backend_mut()
             }
@@ -55,6 +59,8 @@ macro_rules! impl_glwe_host_at_for_field {
 macro_rules! impl_gglwe_infos_for_inner {
     ($ty:ty, [$($gen:tt)*]; $($field:tt)+) => {
         impl<$($gen)*> LWEInfos for $ty {
+            fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> { self.$($field)+.encryption_metadata() }
+
             fn n(&self) -> Degree {
                 self.$($field)+.n()
             }

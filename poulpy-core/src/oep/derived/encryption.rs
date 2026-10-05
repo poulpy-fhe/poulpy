@@ -7,13 +7,12 @@
 
 use crate::layouts::operand_degree;
 use crate::{
-    Distribution, EncryptionInfos, GLWENormalize, GetDistribution, GetDistributionMut, ScratchArenaTakeCore, SmudgingNoise,
-    VecZnxAddSmudging,
+    Distribution, GLWENormalize, GetDistribution, GetDistributionMut, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     api::GLWEBytesOf,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos, GLWEInfos,
-        GLWEPlaintext, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory, GLWESecretTensorFactory,
-        GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEToBackendMut,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos,
+        GGSWToBackendMut, GLWEInfos, GLWEPlaintext, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedFactory,
+        GLWESecretTensorFactory, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEToBackendMut,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -55,18 +54,16 @@ where
     BE::glwe_encrypt_sk_tmp_bytes(module, infos).max(module.glwe_normalize_tmp_bytes())
 }
 
-pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
+pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
-    enc_infos: &E,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
     R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-    E: EncryptionInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     Module<BE>: GLWENormalize<BE>,
 {
@@ -90,10 +87,11 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S, E>(
         let mut pk = res.to_backend_mut();
         for l in 0..pk.rank().as_usize() {
             let mut entry = GLWEPublicKeyAtViewMut::<BE>::at_view_mut(&mut pk, l);
-            BE::glwe_encrypt_zero_sk(module, &mut entry, sk, enc_infos, source_xe, source_xa, scratch);
+            BE::glwe_encrypt_zero_sk(module, &mut entry, sk, source_xe, source_xa, scratch);
             module.glwe_normalize_assign(&mut entry, scratch);
         }
     }
+    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(*sk.dist())));
     *res.dist_mut() = *sk.dist();
 }
 
@@ -105,18 +103,16 @@ pub(crate) fn glwe_public_key_compressed_generate_tmp_bytes_derived<BE: Encrypti
     BE::glwe_compressed_encrypt_sk_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, E>(
+pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
     seed: [u8; 32],
-    enc_infos: &E,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
     R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
-    E: EncryptionInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
 {
     {
@@ -139,19 +135,19 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, E>(
     {
         let mut pk = res.to_backend_mut();
         for (l, entry_seed) in entry_seeds.iter().enumerate() {
-            BE::glwe_compressed_encrypt_zero_sk(module, &mut pk.at_view_mut(l), sk, *entry_seed, enc_infos, source_xe, scratch);
+            BE::glwe_compressed_encrypt_zero_sk(module, &mut pk.at_view_mut(l), sk, *entry_seed, source_xe, scratch);
         }
     }
     res.seed_mut().copy_from_slice(&entry_seeds);
+    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(*sk.dist())));
     *res.dist_mut() = *sk.dist();
 }
 
-pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K, E>(
+pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
     pk: &K,
-    enc_infos: &E,
     source_xu: &mut Source,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -159,10 +155,9 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K, E>(
     BE: EncryptionImpl,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: GLWEToBackendRef<BE> + GLWEInfos,
-    E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, enc_infos, source_xu, source_xe, scratch);
+    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, source_xu, source_xe, scratch);
 }
 
 pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: GLWEInfos, K: GLWEInfos>(
@@ -178,13 +173,12 @@ where
 
 /// Public-key encryption without a body error, then the flood on the canonical
 /// body at the output's precision, normalized once more.
-pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K, E>(
+pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
     pk: &K,
-    flood: SmudgingNoise,
-    enc_infos: &E,
+    flood: Noise,
     source_xu: &mut Source,
     source_xe: &mut Source,
     source_smudge: &mut Source,
@@ -193,9 +187,8 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K, E>(
     BE: EncryptionImpl,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: GLWEToBackendRef<BE> + GLWEInfos,
-    E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    Module<BE>: VecZnxAddSmudging<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: VecZnxAddNoise<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
     flood.assert_valid_for(base2k, k);
@@ -203,38 +196,26 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K, E>(
         scratch.available() >= glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res, pk),
         "insufficient scratch for smudged GLWE public-key encryption"
     );
-    BE::glwe_encrypt_pk_at_col(
-        module,
-        res,
-        Some((pt, 0)),
-        false,
-        pk,
-        enc_infos,
-        source_xu,
-        source_xe,
-        scratch,
-    );
+    BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), false, pk, source_xu, source_xe, scratch);
     let mut res = res.to_backend_mut();
-    module.vec_znx_add_smudging(base2k, k, &mut res.data, 0, flood, source_smudge);
+    module.vec_znx_add_noise(base2k, k, &mut res.data, 0, flood, source_smudge);
     module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, 0, scratch);
 }
 
-pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K, E>(
+pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
     module: &Module<BE>,
     res: &mut R,
     pk: &K,
-    enc_infos: &E,
     source_xu: &mut Source,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K, E>(
-        module, res, None, true, pk, enc_infos, source_xu, source_xe, scratch,
+    BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K>(
+        module, res, None, true, pk, source_xu, source_xe, scratch,
     );
 }
 
@@ -251,23 +232,22 @@ where
         + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
 }
 
-pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
+pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
     pk: &K,
-    enc_infos: &E,
     source_xu: &mut Source,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: EncryptionImpl,
-    R: GGSWInfos + GGSWAtViewMut<BE>,
+    R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
     P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-    E: EncryptionInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
+    res.set_encryption_metadata(pk.encryption_metadata());
     operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
@@ -297,7 +277,6 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, E>(
                     Some((&tmp_pt, col)),
                     true,
                     pk,
-                    enc_infos,
                     source_xu,
                     source_xe,
                     &mut scratch_1.borrow(),
@@ -328,11 +307,10 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
 }
 
-pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
+pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
-    enc_infos: &E,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -340,7 +318,6 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
     Module<BE>: GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
     BE: EncryptionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    E: EncryptionInfos,
     S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_eq!(res.rank_out(), sk.rank());
@@ -365,7 +342,6 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, E>(
             res,
             &sk_tensor_data,
             &sk_prepared,
-            enc_infos,
             source_xe,
             source_xa,
             &mut enc_scratch,
@@ -394,19 +370,17 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
 }
 
-pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
+pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
     seed_xa: [u8; 32],
-    enc_infos: &E,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     Module<BE>: GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
     BE: EncryptionImpl,
     R: GGLWEInfos + GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
-    E: EncryptionInfos,
     S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_eq!(res.rank_out(), sk.rank());
@@ -432,7 +406,6 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, E>(
             &sk_tensor_data,
             &sk_prepared,
             seed_xa,
-            enc_infos,
             source_xe,
             &mut enc_scratch,
         );

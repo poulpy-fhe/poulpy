@@ -12,18 +12,16 @@ where
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`FheUintPreparedEncryptSk::fhe_uint_prepared_encrypt_sk`].
-pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64>, S, E>(
+pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64>, S>(
     module: &Module<BE>,
     res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
     value: T,
     sk: &S,
-    enc_infos: &E,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    E: EncryptionInfos,
     Module<BE>: Sized
         + ModuleN
         + GGSWEncryptSk<BE>
@@ -42,15 +40,7 @@ pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: B
         pt[..size_of::<i64>()].copy_from_slice(&(value.bit(i) as i64).to_ne_bytes());
         let pt_backend = ScalarZnx::from_data(BE::from_host_bytes(&pt), module.n(), 1);
         let mut scratch_bit = scratch_1.borrow();
-        module.ggsw_encrypt_sk(
-            &mut tmp_ggsw,
-            &pt_backend,
-            sk,
-            enc_infos,
-            source_xe,
-            source_xa,
-            &mut scratch_bit,
-        );
+        module.ggsw_encrypt_sk(&mut tmp_ggsw, &pt_backend, sk, source_xe, source_xa, &mut scratch_bit);
         module.ggsw_prepare(&mut res.bits[i], &tmp_ggsw, &mut scratch_bit);
     }
 }

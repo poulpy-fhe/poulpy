@@ -1,3 +1,4 @@
+use crate::layouts::LWEInfos;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -38,14 +39,18 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism(self, res, a, key, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism(self, res, a, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_assign(self, res, key, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_assign(self, res, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_add<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -53,14 +58,18 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_add(self, res, a, key, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_add(self, res, a, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_add_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_add_assign(self, res, key, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_add_assign(self, res, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_sub<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -68,7 +77,9 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_sub(self, res, a, key, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_sub(self, res, a, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_sub_negate<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -76,21 +87,27 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_sub_negate(self, res, a, key, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_sub_negate(self, res, a, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_sub_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_sub_assign(self, res, key, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_sub_assign(self, res, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_sub_negate_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -112,14 +129,18 @@ impl_automorphism_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
     {
-        BE::ggsw_automorphism(self, res, a, key, tsk, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::ggsw_automorphism(self, res, a, key, tsk, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn ggsw_automorphism_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        BE::ggsw_automorphism_assign(self, res, key, tsk, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::ggsw_automorphism_assign(self, res, key, tsk, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -146,7 +167,9 @@ impl_automorphism_delegate!(
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     {
-        BE::glwe_automorphism_key_automorphism(self, res, a, key, scratch)
+        let metadata = a.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_key_automorphism(self, res, a, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_automorphism_key_automorphism_assign<R>(
@@ -158,6 +181,8 @@ impl_automorphism_delegate!(
     where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
     {
-        BE::glwe_automorphism_key_automorphism_assign(self, res, key, scratch)
+        let metadata = res.to_backend_ref().encryption_metadata();
+        BE::glwe_automorphism_key_automorphism_assign(self, res, key, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );

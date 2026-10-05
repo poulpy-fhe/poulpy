@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEAutomorphismKeyCompressedEncryptSk, GLWESwitchingKeyCompressedEncryptSk, GetDistribution,
+    GLWEAutomorphismKeyCompressedEncryptSk, GLWESwitchingKeyCompressedEncryptSk, GetDistribution,
     layouts::{GGLWEInfos, GLWEInfos, GLWESecretToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -15,19 +15,17 @@ pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_switching_key_share_gen_reference<S1, S2, E>(
+    fn mhe_glwe_switching_key_share_gen_reference<S1, S2>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos;
+        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend> GLWESwitchingKeyMHEProtocolReference<BE> for Module<BE>
@@ -45,19 +43,17 @@ where
         self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn mhe_glwe_switching_key_share_gen_reference<S1, S2, E>(
+    fn mhe_glwe_switching_key_share_gen_reference<S1, S2>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos,
     {
         assert!(
             res.n().as_usize() == self.n(),
@@ -79,7 +75,7 @@ where
             sk_out.rank() == res.rank_out(),
             "invalid share: output secret rank differs from the key's"
         );
-        self.glwe_switching_key_compressed_encrypt_sk(res, sk_in, sk_out, seed, enc_infos, source_xe, scratch);
+        self.glwe_switching_key_compressed_encrypt_sk(res, sk_in, sk_out, seed, source_xe, scratch);
     }
 }
 
@@ -89,18 +85,16 @@ pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_automorphism_key_share_gen_reference<S, E>(
+    fn mhe_glwe_automorphism_key_share_gen_reference<S>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEAutomorphismKeyMHEProtocolReference<BE> for Module<BE>
@@ -118,18 +112,16 @@ where
         self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn mhe_glwe_automorphism_key_share_gen_reference<S, E>(
+    fn mhe_glwe_automorphism_key_share_gen_reference<S>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         assert!(
             res.n().as_usize() == self.n(),
@@ -145,6 +137,6 @@ where
             "invalid share: secret rank differs from the key's"
         );
         assert!(p & 1 != 0, "invalid share: Galois element must be odd");
-        self.glwe_automorphism_key_compressed_encrypt_sk(res, p, sk, seed, enc_infos, source_xe, scratch);
+        self.glwe_automorphism_key_compressed_encrypt_sk(res, p, sk, seed, source_xe, scratch);
     }
 }

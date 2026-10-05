@@ -1,6 +1,6 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution, GetDistributionMut,
-    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
+    GetDistribution, GetDistributionMut,
+    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Module, ScratchArena},
@@ -19,17 +19,15 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_key_share_gen<S, E>(
+    fn mhe_glwe_public_key_share_gen<S>(
         module: &Module<Self>,
         res: &mut GLWEPublicKeyShareOwned<Self>,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<Self> + GetDistribution;
 
     fn mhe_glwe_public_key_share_aggregate(
         module: &Module<Self>,
@@ -49,7 +47,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
         share: &GLWEPublicKeyShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEPublicKeyAtViewMut<Self> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyAtViewMut<Self> + GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
     {
         derived::mhe_glwe_public_key_share_finalize_derived(module, res, share, scratch)
     }
@@ -68,19 +66,17 @@ macro_rules! impl_mhe_public_key_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
-            fn mhe_glwe_public_key_share_gen<S, E>(
+            fn mhe_glwe_public_key_share_gen<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWEPublicKeyShareOwned<$be>,
                 sk: &S,
                 seed: [u8; 32],
-                enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::GetDistribution,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_reference(module, res, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyMHEProtocolReference<$be>>::mhe_glwe_public_key_share_gen_reference(module, res, sk, seed, source_xe, scratch)
             }
         }
     };

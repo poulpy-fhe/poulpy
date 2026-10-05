@@ -14,6 +14,14 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 /// An LWE ciphertext is a scalar (non-polynomial) ciphertext consisting of
 /// a body `b` and a mask `(a_1, ..., a_n)`.
 pub trait LWEInfos {
+    /// Provenance of the original encryption, when known.
+    ///
+    /// This is not the current noise after homomorphic evaluation. Plain layouts,
+    /// plaintexts, and newly allocated buffers have no encryption provenance.
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        None
+    }
+
     /// Returns the LWE dimension, i.e. the number of mask elements (= GLWE ring degree N).
     fn n(&self) -> Degree;
     /// Returns `log2(n)`.
@@ -55,6 +63,10 @@ pub trait LWEInfos {
 }
 
 impl<T: LWEInfos + ?Sized> LWEInfos for &T {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        (**self).encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         (**self).n()
     }
@@ -73,6 +85,10 @@ impl<T: LWEInfos + ?Sized> LWEInfos for &T {
 }
 
 impl<T: LWEInfos + ?Sized> LWEInfos for &mut T {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        (**self).encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         (**self).n()
     }
@@ -143,6 +159,7 @@ impl LWEInfos for LWELayout {
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWE<D: Data, W: ZnxWord> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) body: VecZnx<D, W>,
     pub(crate) mask: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
@@ -153,6 +170,10 @@ pub type LWEBackendRef<'a, BE> = LWE<<BE as Backend>::BufRef<'a>, <BE as Backend
 pub type LWEBackendMut<'a, BE> = LWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWE<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -247,6 +268,7 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
         let mask_shape = self.mask.shape();
         let mask_data = self.mask.into_data();
         LWE {
+            metadata: self.metadata,
             body: VecZnx::from_shape(body_data, body_shape),
             mask: VecZnx::from_shape(mask_data, mask_shape),
             base2k: self.base2k,
@@ -291,6 +313,7 @@ impl<W: ZnxWord> LWE<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
+            metadata: None,
             body: VecZnx::from_data(alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)), 1, 1, size),
             mask: VecZnx::from_data(
                 alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
@@ -332,6 +355,7 @@ where
 {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
+            metadata: self.metadata,
             base2k: self.base2k,
             k: self.k,
             body: self.body.to_backend_ref(),
@@ -341,6 +365,12 @@ where
 }
 
 pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE>;
 }
 
@@ -348,8 +378,13 @@ impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D, BE::ZnxWord>
 where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
+            metadata: self.metadata,
             base2k: self.base2k,
             k: self.k,
             body: self.body.to_backend_mut(),
@@ -361,6 +396,7 @@ where
 impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
+            metadata: self.metadata,
             base2k: self.base2k,
             k: self.k,
             body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.body),
@@ -370,8 +406,13 @@ impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> 
 }
 
 impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
+            metadata: self.metadata,
             base2k: self.base2k,
             k: self.k,
             body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),
@@ -383,6 +424,7 @@ impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.metadata = crate::EncryptionMetadata::read_optional(reader)?;
         self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
         self.body.read_from(reader)?;
         self.mask.read_from(reader)?;
@@ -393,6 +435,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
 impl<D: HostDataRef, W: ZnxWord> WriterTo for LWE<D, W> {
     /// Serialises the [`LWE`] in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         self.body.write_to(writer)?;
         self.mask.write_to(writer)

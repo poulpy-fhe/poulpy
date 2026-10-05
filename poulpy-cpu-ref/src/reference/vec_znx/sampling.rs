@@ -1,6 +1,6 @@
 use crate::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
-    reference::znx::{znx_add_normal_f64_ref, znx_fill_uniform_ref},
+    reference::znx::znx_fill_uniform_ref,
     source::Source,
 };
 
@@ -33,25 +33,16 @@ pub fn vec_znx_fill_uniform_ref<'r, BE>(
     }
 }
 
-pub fn vec_znx_add_normal_ref<'r, BE>(
+pub fn vec_znx_add_noise_ref<'r, BE>(
     base2k: usize,
+    k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
-    k: usize,
-    sigma: f64,
-    bound: f64,
+    noise: poulpy_core::Noise,
     source: &mut Source,
 ) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
-    assert!(
-        (bound.log2().ceil() as i64) < 64,
-        "invalid bound: ceil(log2(bound))={} > 63",
-        (bound.log2().ceil() as i64)
-    );
-
-    let limb: usize = k.div_ceil(base2k) - 1;
-    let shift: u32 = ((limb + 1) * base2k - k) as u32;
-    znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
+    crate::reference::noise::add_noise(base2k, k, res, res_col, noise, source);
 }

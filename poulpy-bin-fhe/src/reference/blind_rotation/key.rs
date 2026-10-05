@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use poulpy_core::{
-    Distribution, EncryptionInfos, GGSWEncryptSk, GetDistribution,
+    Distribution, GGSWEncryptSk, GetDistribution,
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 
@@ -23,18 +23,16 @@ where
 }
 
 /// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk`.
-pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1, E>(
+pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     sk_glwe: &S0,
     sk_lwe: &S1,
-    enc_infos: &E,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    E: EncryptionInfos,
     S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
@@ -65,7 +63,7 @@ pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1, E>(
             pt_host[..size_of::<i64>()].copy_from_slice(&sk_host[i * size_of::<i64>()..(i + 1) * size_of::<i64>()]);
             BE::copy_from_host(&mut pt.data, &pt_host);
             let mut scratch_iter = scratch.borrow();
-            module.ggsw_encrypt_sk(ggsw, &pt, sk_glwe, enc_infos, source_xe, source_xa, &mut scratch_iter);
+            module.ggsw_encrypt_sk(ggsw, &pt, sk_glwe, source_xe, source_xa, &mut scratch_iter);
         }
     }
 }

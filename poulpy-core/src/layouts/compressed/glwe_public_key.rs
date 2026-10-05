@@ -24,6 +24,7 @@ use crate::{
 /// the bodies of its `r` encryptions of zero, entry `l` at input column `l` of
 /// a one-row matrix, each mask regenerated from its own seed.
 pub struct GLWEPublicKeyCompressed<D: Data, W: ZnxWord> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
@@ -36,7 +37,8 @@ where
     MatZnx<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        self.metadata == other.metadata
+            && self.data == other.data
             && self.base2k == other.base2k
             && self.k == other.k
             && self.seed == other.seed
@@ -49,6 +51,7 @@ impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyCompressed<D, W> where MatZnx<D, W
 impl<D: Data + Clone, W: ZnxWord> Clone for GLWEPublicKeyCompressed<D, W> {
     fn clone(&self) -> Self {
         Self {
+            metadata: self.metadata,
             data: self.data.clone(),
             base2k: self.base2k,
             k: self.k,
@@ -103,6 +106,10 @@ impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKeyCompressed<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKeyCompressed<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -138,6 +145,7 @@ impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressed<D, W> {
         assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (rank, size) = (rank.as_usize(), k.0.div_ceil(base2k.0) as usize);
         GLWEPublicKeyCompressed {
+            metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), 1, rank, 1, size)),
                 n.into(),
@@ -182,6 +190,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyCompressed<D, W> {
     /// unchanged, on a stream that is not one row of `r >= 1` bodies of a
     /// nonzero degree at its precision with one seed per body.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        let metadata = crate::EncryptionMetadata::read_optional(reader)?;
         let dist = Distribution::read_from(reader)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
@@ -210,6 +219,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyCompressed<D, W> {
         for s in &mut seed {
             reader.read_exact(s)?;
         }
+        self.metadata = metadata;
         self.dist = dist;
         self.base2k = base2k;
         self.k = k;
@@ -220,6 +230,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyCompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKeyCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::EncryptionMetadata::write_optional(self.metadata, writer)?;
         self.dist.write_to(writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.k.0)?;
@@ -281,6 +292,7 @@ impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendMut<'a, BE> {
     pub fn at_view_mut(&mut self, l: usize) -> GLWECompressedViewMut<'_, BE> {
         let (base2k, k, rank, seed) = (self.inner.base2k, self.inner.k, self.inner.rank(), self.inner.seed[l]);
         GLWECompressedViewMut::from_inner(GLWECompressed {
+            metadata: self.inner.metadata,
             data: mat_znx_at_backend_mut_from_mut::<BE>(&mut self.inner.data, 0, l),
             base2k,
             k,
@@ -306,6 +318,7 @@ impl<BE: Backend> DerefMut for GLWEPublicKeyCompressedBackendMut<'_, BE> {
 
 fn entry<D: Data, E: Data, W: ZnxWord>(data: VecZnx<D, W>, pk: &GLWEPublicKeyCompressed<E, W>, l: usize) -> GLWECompressed<D, W> {
     GLWECompressed {
+        metadata: pk.metadata,
         data,
         base2k: pk.base2k,
         k: pk.k,
@@ -317,6 +330,10 @@ fn entry<D: Data, E: Data, W: ZnxWord>(data: VecZnx<D, W>, pk: &GLWEPublicKeyCom
 macro_rules! impl_compressed_public_key_infos_for_inner {
     ($ty:ident) => {
         impl<BE: Backend> LWEInfos for $ty<'_, BE> {
+            fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+                self.inner.metadata
+            }
+
             fn base2k(&self) -> Base2K {
                 self.inner.base2k()
             }
@@ -374,6 +391,12 @@ pub trait GLWEPublicKeyCompressedToBackendRef<BE: Backend> {
 }
 
 pub trait GLWEPublicKeyCompressedToBackendMut<BE: Backend>: GLWEPublicKeyCompressedToBackendRef<BE> {
+    /// Records derived encryption provenance on this key.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE>;
 }
 
@@ -383,6 +406,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
+            metadata: self.metadata,
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -396,8 +420,13 @@ impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPubli
 where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
+            metadata: self.metadata,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,
@@ -410,6 +439,7 @@ where
 impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompressedBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
+            metadata: self.inner.metadata,
             data: mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -422,6 +452,7 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompr
 impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompressedBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
+            metadata: self.inner.metadata,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -432,8 +463,13 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompr
 }
 
 impl<BE: Backend> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyCompressedBackendMut<'_, BE> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.inner.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
+            metadata: self.inner.metadata,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -467,6 +503,7 @@ where
                 self.decompress_glwe(&mut res.at_view_mut(l), &other.at_view(l));
             }
         }
+        res.set_encryption_metadata(other.encryption_metadata());
         *res.dist_mut() = *other.dist();
     }
 }

@@ -293,8 +293,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 12, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 
@@ -305,8 +305,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 17, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 
@@ -439,9 +439,10 @@ fn test_hal_serialization_fft64_oracle() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
-    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
-    const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
-    const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
+    // Pins the discrete-Gaussian sampler and versioned provenance wire format.
+    // Digests cover the public key, encryption of a message, and encryption of zero.
+    const FFT64: [u64; 3] = [12791603530367151350, 7369564479430214975, 6533552777094031734];
+    const NTT4X30: [u64; 3] = [2297156535081888866, 8058310005054516083, 4359999775920702199];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Oracle>::new(256), 17),

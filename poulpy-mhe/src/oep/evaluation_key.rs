@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    GetDistribution,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
@@ -22,19 +22,17 @@ pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_switching_key_share_gen<S1, S2, E>(
+    fn mhe_glwe_switching_key_share_gen<S1, S2>(
         module: &Module<Self>,
         res: &mut GLWESwitchingKeyShareOwned<Self>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
-        S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos;
+        S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
     fn mhe_glwe_switching_key_share_aggregate(
         module: &Module<Self>,
@@ -69,18 +67,16 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
         A: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_automorphism_key_share_gen<S, E>(
+    fn mhe_glwe_automorphism_key_share_gen<S>(
         module: &Module<Self>,
         res: &mut GLWEAutomorphismKeyShareOwned<Self>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S: GLWESecretToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretToBackendRef<Self> + GLWEInfos;
 
     fn mhe_glwe_automorphism_key_share_aggregate(
         module: &Module<Self>,
@@ -119,13 +115,12 @@ macro_rules! impl_mhe_evaluation_key_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
-            fn mhe_glwe_switching_key_share_gen<S1, S2, E>(
+            fn mhe_glwe_switching_key_share_gen<S1, S2>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWESwitchingKeyShareOwned<$be>,
                 sk_in: &S1,
                 sk_out: &S2,
                 seed: [u8; 32],
-                enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
@@ -133,9 +128,8 @@ macro_rules! impl_mhe_evaluation_key_reference {
                 S2: ::poulpy_core::layouts::GLWESecretToBackendRef<$be>
                     + ::poulpy_core::GetDistribution
                     + ::poulpy_core::layouts::GLWEInfos,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_reference(module, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_reference(module, res, sk_in, sk_out, seed, source_xe, scratch)
             }
         }
 
@@ -147,20 +141,18 @@ macro_rules! impl_mhe_evaluation_key_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
-            fn mhe_glwe_automorphism_key_share_gen<S, E>(
+            fn mhe_glwe_automorphism_key_share_gen<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWEAutomorphismKeyShareOwned<$be>,
                 p: i64,
                 sk: &S,
                 seed: [u8; 32],
-                enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_reference(module, res, p, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_reference(module, res, p, sk, seed, source_xe, scratch)
             }
         }
     };

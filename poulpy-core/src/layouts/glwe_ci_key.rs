@@ -27,6 +27,10 @@ pub type GLWECIEmbedKey<D, W> = GLWECIKey<D, W, CIEmbed>;
 pub type GLWECITraceKey<D, W> = GLWECIKey<D, W, CITrace>;
 
 impl<D: Data, W: ZnxWord, M> LWEInfos for GLWECIKey<D, W, M> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.0.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -109,6 +113,10 @@ impl<BE: Backend, D: Data, M> GGLWEToBackendMut<BE> for GLWECIKey<D, BE::ZnxWord
 where
     GLWESwitchingKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        <_ as GGLWEToBackendMut<BE>>::set_encryption_metadata(&mut self.0, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         self.0.to_backend_mut()
     }

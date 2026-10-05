@@ -4,7 +4,7 @@ use crate::layouts::VecZnxBigBackendRef;
 use crate::{
     layouts::{
         Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxViewMut,
+        VecZnxToBackendRef,
     },
     reference::{
         vec_znx::{
@@ -16,7 +16,7 @@ use crate::{
             I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
             ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
             ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-            ZnxNormalizeMiddleStepCarryOnly, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_add_normal_f64_ref,
+            ZnxNormalizeMiddleStepCarryOnly, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero,
         },
     },
     source::Source,
@@ -194,29 +194,19 @@ pub fn vec_znx_big_normalize<R, A, BE>(
     );
 }
 
-pub fn vec_znx_big_add_normal_ref<R, B>(
+pub fn vec_znx_big_add_noise_ref<R, BE>(
     base2k: usize,
+    k: usize,
     res: &mut R,
     res_col: usize,
-    k: usize,
-    sigma: f64,
-    bound: f64,
+    noise: poulpy_core::Noise,
     source: &mut Source,
 ) where
-    B: Backend<BigWord = i64, ZnxWord = i64>,
-    for<'a> B::BufMut<'a>: HostDataMut,
-    R: VecZnxBigToBackendMut<B>,
+    BE: Backend<BigWord = i64, ZnxWord = i64>,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    R: VecZnxBigToBackendMut<BE>,
 {
-    let mut res = res.to_backend_mut();
-    assert!(
-        (bound.log2().ceil() as i64) < 64,
-        "invalid bound: ceil(log2(bound))={} > 63",
-        (bound.log2().ceil() as i64)
-    );
-
-    let limb: usize = k.div_ceil(base2k) - 1;
-    let shift: u32 = ((limb + 1) * base2k - k) as u32;
-    znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
+    crate::reference::noise::add_noise(base2k, k, &mut res.to_backend_mut(), res_col, noise, source);
 }
 
 /// R <- A - B

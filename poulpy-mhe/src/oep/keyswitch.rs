@@ -1,6 +1,6 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef,
@@ -26,7 +26,7 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
@@ -69,14 +69,13 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
         P: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
+    fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         module: &Module<Self>,
         res: &mut GLWEPublicKeyswitchShareOwned<Self>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
-        flood: SmudgingNoise,
-        enc_infos: &E,
+        flood: Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -84,8 +83,7 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
     ) where
         C: GLWEMaskToBackendRef<Self> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     fn mhe_glwe_public_keyswitch_share_aggregate(
         module: &Module<Self>,
@@ -124,7 +122,7 @@ macro_rules! impl_mhe_keyswitch_reference {
                 mask: &C,
                 sk_in: &S1,
                 sk_out: &S2,
-                flood: ::poulpy_core::SmudgingNoise,
+                flood: ::poulpy_core::Noise,
                 source_smudge: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
@@ -172,14 +170,13 @@ macro_rules! impl_mhe_keyswitch_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(module, ct_infos, res_infos, pk_infos)
             }
 
-            fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
+            fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWEPublicKeyswitchShareOwned<$be>,
                 mask: &C,
                 sk_in: &S,
                 pk_out: &K,
-                flood: ::poulpy_core::SmudgingNoise,
-                enc_infos: &E,
+                flood: ::poulpy_core::Noise,
                 source_xu: &mut ::poulpy_hal::source::Source,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 source_smudge: &mut ::poulpy_hal::source::Source,
@@ -188,9 +185,8 @@ macro_rules! impl_mhe_keyswitch_reference {
                 C: ::poulpy_core::layouts::GLWEMaskToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 K: ::poulpy_core::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_reference(module, res, mask, sk_in, pk_out, flood, enc_infos, source_xu, source_xe, source_smudge, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_reference(module, res, mask, sk_in, pk_out, flood, source_xu, source_xe, source_smudge, scratch)
             }
 
             fn mhe_glwe_public_keyswitch_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::GLWEPublicKeyswitchShareOwned<$be>, a: &$crate::layouts::GLWEPublicKeyswitchShareOwned<$be>) {

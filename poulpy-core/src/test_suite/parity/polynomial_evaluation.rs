@@ -32,6 +32,10 @@ impl<BE: Backend> GLWEToBackendRef<BE> for Value<BE> {
     }
 }
 impl<BE: Backend> GLWEToBackendMut<BE> for Value<BE> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        <BackendGLWE<BE> as GLWEToBackendMut<BE>>::set_encryption_metadata(&mut self.data, metadata)
+    }
+
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         <BackendGLWE<BE> as GLWEToBackendMut<BE>>::to_backend_mut(&mut self.data)
     }
@@ -40,6 +44,10 @@ impl<BE: Backend> GLWEToBackendMut<BE> for Value<BE> {
     }
 }
 impl<BE: Backend> LWEInfos for Value<BE> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.data.encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         self.data.n()
     }

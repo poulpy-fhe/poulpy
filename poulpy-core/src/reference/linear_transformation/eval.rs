@@ -178,6 +178,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
+    cache.metadata = a.encryption_metadata();
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
 }
 
@@ -245,6 +246,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     );
 
     glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
+    res.set_encryption_metadata(lhs.encryption_metadata());
     res.set_canonical(true);
 }
 

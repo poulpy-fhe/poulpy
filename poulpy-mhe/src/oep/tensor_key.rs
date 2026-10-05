@@ -1,7 +1,4 @@
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef};
 use poulpy_hal::{
     layouts::{Module, ScratchArena},
     source::Source,
@@ -19,19 +16,17 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_tensor_key_share_gen<S, K, E>(
+    fn mhe_glwe_tensor_key_share_gen<S, K>(
         module: &Module<Self>,
         res: &mut GLWETensorKeyShareOwned<Self>,
         sk: &S,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         S: GLWESecretToBackendRef<Self> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     fn mhe_glwe_tensor_key_share_aggregate(
         module: &Module<Self>,
@@ -75,21 +70,19 @@ macro_rules! impl_mhe_tensor_key_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWETensorKeyMHEProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(module, res_infos, pk_infos)
             }
 
-            fn mhe_glwe_tensor_key_share_gen<S, K, E>(
+            fn mhe_glwe_tensor_key_share_gen<S, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWETensorKeyShareOwned<$be>,
                 sk: &S,
                 pk: &K,
-                enc_infos: &E,
                 source_xu: &mut ::poulpy_hal::source::Source,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 K: ::poulpy_core::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWETensorKeyMHEProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_reference(module, res, sk, pk, enc_infos, source_xu, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWETensorKeyMHEProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_reference(module, res, sk, pk, source_xu, source_xe, scratch)
             }
         }
     };

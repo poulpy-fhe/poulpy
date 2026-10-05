@@ -222,6 +222,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
 ) -> GLWE<AlignedBuf, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWE {
+        metadata: src.metadata,
         data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
         k: src.k,
         base2k: src.base2k,
@@ -282,6 +283,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     src: &GGSW<BE::OwnedBuf, BE::ZnxWord>,
 ) -> GGSW<AlignedBuf, BE::ZnxWord> {
     GGSW {
+        metadata: src.metadata,
         data: poulpy_hal::layouts::MatZnx::from_data(
             AlignedBuf::from(BE::to_host_bytes(src.data.data())),
             src.data.n(),

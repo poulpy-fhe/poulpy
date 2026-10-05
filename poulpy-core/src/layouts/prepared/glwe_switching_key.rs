@@ -39,6 +39,10 @@ impl<D: Data, BE: Backend> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPrepar
 }
 
 impl<D: Data, B: Backend> LWEInfos for GLWESwitchingKeyPrepared<D, B> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.key.encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -206,12 +210,19 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWESwitchingKeyPrepa
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_encryption_metadata(&mut self.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.key.to_backend_mut()
     }
 }
 
 pub trait GLWESwitchingKeyPreparedToBackendMut<B: Backend> {
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GLWESwitchingKeyPreparedBackendMut<'_, B>;
 }
 

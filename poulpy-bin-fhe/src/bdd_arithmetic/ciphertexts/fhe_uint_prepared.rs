@@ -7,7 +7,7 @@ use poulpy_core::layouts::{
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
 use poulpy_core::layouts::{GGSWPreparedToBackendMut, GetAutomorphismKey};
-use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEPacking};
+use poulpy_core::{GLWECopy, GLWEDecrypt, GLWEPacking};
 
 use poulpy_core::layouts::GLWESecretPreparedToBackendRef;
 use poulpy_hal::api::ModuleLogN;
@@ -171,21 +171,19 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPrepared<BE::OwnedBuf, T, BE> {
 
 impl<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64>> FheUintPrepared<BE::OwnedBuf, T, BE> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<M, S, E>(
+    pub fn encrypt_sk<M, S>(
         &mut self,
         module: &M,
         value: T,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: FheUintPreparedEncryptSk<T, BE>,
-        E: EncryptionInfos,
     {
-        module.fhe_uint_prepared_encrypt_sk(self, value, sk, enc_infos, source_xe, source_xa, scratch);
+        module.fhe_uint_prepared_encrypt_sk(self, value, sk, source_xe, source_xa, scratch);
     }
 }
 
@@ -214,6 +212,10 @@ where
 }
 
 impl<D: Data, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepared<D, T, B> {
+    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+        self.bits.first().and_then(LWEInfos::encryption_metadata)
+    }
+
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits[0].base2k()
     }

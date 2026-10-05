@@ -1,7 +1,7 @@
 //! Subtraction tests: ct-ct, ct-pt, ct-const (out-of-place and in-place).
 
 use crate::{CKKSInfos, api::CKKSSubOps};
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{IntPolyInfos, LWEInfos};
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
@@ -505,7 +505,10 @@ where
     );
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
+    let provenance = ct.encryption_metadata();
+    assert!(provenance.is_some());
     module.ckks_sub_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
+    assert_eq!(ct.encryption_metadata(), provenance);
     assert_ct_meta("sub_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_pt_vec_assign",
@@ -559,6 +562,8 @@ where
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_vec_into", &ct_res, &ct1);
+    assert!(ct1.encryption_metadata().is_some());
+    assert_eq!(ct_res.encryption_metadata(), ct1.encryption_metadata());
     assert_decrypt_precision(
         "sub_pt_vec_into",
         &params,

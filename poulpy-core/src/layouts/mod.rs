@@ -331,6 +331,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWE {
+            metadata: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -369,6 +370,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let n = self.ring_degree().as_usize();
         let cols = (rank + 1).as_usize();
         GLWE {
+            metadata: None,
             data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
@@ -381,6 +383,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGLWE {
+            metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -426,6 +429,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGSW {
+            metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -520,6 +524,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let pairs = (((cols + 1) * cols) >> 1).max(1);
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWETensor {
+            metadata: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), pairs, size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -539,6 +544,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         assert!(infos.rank().as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (n, rank, size) = (infos.n().as_usize(), infos.rank().as_usize(), infos.size());
         GLWEPublicKey {
+            metadata: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
                 n,
@@ -707,6 +713,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let n = infos.n().as_usize();
         LWE {
+            metadata: None,
             body: vec_znx_alloc_zeroed::<B>(1, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(n, 1, size),
             base2k: infos.base2k(),
@@ -721,6 +728,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let rows = infos.rows();
         LWEMatrix {
+            metadata: None,
             body: vec_znx_alloc_zeroed::<B>(rows, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(rows, infos.n().as_usize(), size),
             k: infos.k(),

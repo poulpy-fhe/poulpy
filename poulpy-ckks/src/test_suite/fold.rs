@@ -3,7 +3,9 @@
 
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, LWEInfos};
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, GLWEToBackendMut, LWEInfos,
+};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
@@ -49,8 +51,8 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
     let (half_sk_raw, half_sk) = gen_sk_with_raw(&half_params, module, host_module, [32; 32]);
     let ring_switch = RingSwitchKeys {
-        inbound: params.ksk_layout(k_in).layout,
-        outbound: params.ksk_layout(k_out).layout,
+        inbound: params.ksk_layout(k_in),
+        outbound: params.ksk_layout(k_out),
     }
     .generate(
         module,
@@ -98,7 +100,7 @@ where
             .enumerate()
             .map(|(seed, &slots)| message(n_in, slots, log_sparsity, seed))
             .collect();
-        let ins: Vec<_> = msgs
+        let mut ins: Vec<_> = msgs
             .iter()
             .zip(slots)
             .map(|(msg, slots)| {
@@ -158,6 +160,12 @@ where
             )
             .unwrap();
 
+        let folded_metadata = ring_switch.map_or(ins[0].encryption_metadata(), |keys| keys.inbound.encryption_metadata());
+        assert!(folded_metadata.is_some());
+        for ct in &folded {
+            assert_eq!(ct.encryption_metadata(), folded_metadata, "folded provenance, {label}");
+        }
+
         let mut refresh_scratch = alloc_scratch(&params, module);
         let mut refreshed: Vec<_> = folded
             .iter()
@@ -198,6 +206,8 @@ where
             })
             .collect();
 
+        let refreshed_metadata = refreshed[0].encryption_metadata();
+        let expected_metadata = ring_switch.map_or(refreshed_metadata, |keys| keys.outbound.encryption_metadata());
         let mut outs: Vec<_> = ins
             .iter()
             .map(|ct| {
@@ -217,8 +227,34 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            assert_eq!(
+                out.encryption_metadata(),
+                expected_metadata,
+                "unfolded provenance {i}, {label}"
+            );
             let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);
+        }
+
+        if ring_switch.is_none() {
+            GLWEToBackendMut::<BE>::set_encryption_metadata(&mut ins[1], None);
+            module
+                .ckks_fold(
+                    &mut folded,
+                    &ins,
+                    ring_switch.map(|keys| &keys.inbound),
+                    &mut fold_scratch.borrow(),
+                )
+                .unwrap();
+            for (ct, group) in folded.iter().zip(units.chunks(span)) {
+                let expected = folded_metadata.filter(|metadata| {
+                    group.iter().all(|&(re, im)| {
+                        ins[re].encryption_metadata() == Some(*metadata)
+                            && im.is_none_or(|im| ins[im].encryption_metadata() == Some(*metadata))
+                    })
+                });
+                assert_eq!(ct.encryption_metadata(), expected, "mixed folded provenance, {label}");
+            }
         }
     }
 }

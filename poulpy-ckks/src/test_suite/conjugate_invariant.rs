@@ -554,6 +554,8 @@ where
         .unwrap();
     assert_eq!((extended.meta(), extended.k()), (ct.meta(), ct.k()));
     assert!(extended.is_canonical());
+    assert_eq!(extended.encryption_metadata(), embed_key.encryption_metadata());
+    assert!(extended.encryption_metadata().is_some());
     // Decoding follows the module's slots, so the standard side is decoded only at its own degree.
     if standard.n() == standard_params.n {
         assert_output!(standard, standard_params, extended, standard_sk, standard_scratch);
@@ -565,6 +567,8 @@ where
         .unwrap();
     assert_eq!((back.log_delta(), back.slots()), (ct.log_delta(), SlotsKind::Real));
     assert!(back.is_canonical());
+    assert_eq!(back.encryption_metadata(), trace_key.encryption_metadata());
+    assert!(back.encryption_metadata().is_some());
     assert_output!(ci, params, back, ci_sk, scratch);
 
     let mut wrong_degree = alloc_ct(&params, &standard, params.k);
@@ -611,8 +615,8 @@ where
     standard.glwe_secret_prepare(&mut embedded_sk, &embedded);
     let (std_sk_raw, std_sk) = gen_sk_with_raw(&std_params, &standard, &std_host, [42; 32]);
     let ring_switch = RingSwitchKeys {
-        inbound: std_params.ksk_layout(k_in).layout,
-        outbound: std_params.ksk_layout(k_out).layout,
+        inbound: std_params.ksk_layout(k_in),
+        outbound: std_params.ksk_layout(k_out),
     }
     .generate(
         &standard,
@@ -696,6 +700,12 @@ where
             )
             .unwrap();
 
+        let folded_metadata = ring_switch.map_or(ins[0].encryption_metadata(), |keys| keys.inbound.encryption_metadata());
+        assert!(folded_metadata.is_some());
+        for ct in &folded {
+            assert_eq!(ct.encryption_metadata(), folded_metadata, "folded provenance, {label}");
+        }
+
         let embedded_msgs: Vec<Vec<f64>> = msgs.iter().map(|msg| embed(msg)).collect();
         let mut refreshed: Vec<_> = folded
             .iter()
@@ -726,6 +736,8 @@ where
             })
             .collect();
 
+        let refreshed_metadata = refreshed[0].encryption_metadata();
+        let expected_metadata = ring_switch.map_or(refreshed_metadata, |keys| keys.outbound.encryption_metadata());
         let mut outs: Vec<_> = ins
             .iter()
             .map(|ct| {
@@ -745,6 +757,11 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            assert_eq!(
+                out.encryption_metadata(),
+                expected_metadata,
+                "unfolded provenance {i}, {label}"
+            );
             let got = decrypt_coeffs::<BE, f64>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n);
         }

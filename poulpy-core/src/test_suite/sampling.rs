@@ -26,7 +26,7 @@ use poulpy_hal::{
     },
 };
 
-use crate::{Distribution, NoiseInfos, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal};
+use crate::{Distribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise};
 
 const BASE2K: usize = 17;
 const SIZE: usize = 5;
@@ -130,8 +130,9 @@ where
     }
 }
 
-fn noise_infos() -> NoiseInfos {
-    NoiseInfos::new(2 * BASE2K - 3, 3.2, 6.0 * 3.2).unwrap()
+const NOISE_K: usize = 2 * BASE2K - 3;
+fn noise_infos() -> Noise {
+    Noise::ENCRYPTION
 }
 
 /// Four standard errors of a sample standard deviation over `n` draws. Wide
@@ -142,9 +143,9 @@ fn std_tolerance(n: usize, expected: f64) -> f64 {
 }
 
 /// Asserts the shape of `a` after two additions into `col_i`.
-fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, noise: NoiseInfos) {
+fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, _noise: Noise) {
     let zero: Vec<i64> = vec![0; a.n()];
-    let k_f64: f64 = (1u64 << noise.k as u64) as f64;
+    let k_f64: f64 = (1u64 << NOISE_K as u64) as f64;
     for col_j in 0..COLS {
         if col_j != col_i {
             for limb_i in 0..SIZE {
@@ -153,33 +154,48 @@ fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, noise: NoiseInfos) {
             continue;
         }
         let std: f64 = a.stats(BASE2K, col_i).std() * k_f64;
-        let want: f64 = noise.sigma * SQRT_2;
+        let want: f64 = 3.2 * SQRT_2;
         assert!((std - want).abs() < std_tolerance(a.n(), want), "std={std} ~!= {want}");
-        let (limb, shift) = noise.target_limb_and_shift(BASE2K);
+        let limb = NOISE_K.div_ceil(BASE2K) - 1;
+        let shift = (limb + 1) * BASE2K - NOISE_K;
         let low_mask = (1i64 << shift) - 1;
         assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
     }
 }
 
-pub fn test_vec_znx_add_normal<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_add_noise<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxAddNormal<BE>,
+    Module<BE>: VecZnxAddNoise<BE>,
 {
     let noise = noise_infos();
     let mut source: Source = Source::new([0u8; 32]);
 
     for col_i in 0..COLS {
         let mut a = upload_vec_znx::<BE>(&alloc_host_vec_znx::<BE>(module.n(), COLS, SIZE));
-        module.vec_znx_add_normal(BASE2K, &mut vec_znx_backend_mut::<BE>(&mut a), col_i, noise, &mut source);
-        module.vec_znx_add_normal(BASE2K, &mut vec_znx_backend_mut::<BE>(&mut a), col_i, noise, &mut source);
+        module.vec_znx_add_noise(
+            BASE2K,
+            NOISE_K,
+            &mut vec_znx_backend_mut::<BE>(&mut a),
+            col_i,
+            noise,
+            &mut source,
+        );
+        module.vec_znx_add_noise(
+            BASE2K,
+            NOISE_K,
+            &mut vec_znx_backend_mut::<BE>(&mut a),
+            col_i,
+            noise,
+            &mut source,
+        );
         assert_two_additions(&download_vec_znx::<BE>(&a), col_i, noise);
     }
 }
 
-pub fn test_vec_znx_big_add_normal<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_add_noise<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
 where
     Module<BE>:
-        VecZnxBigAddNormal<BE> + VecZnxAlloc<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
+        VecZnxBigAddNoise<BE> + VecZnxAlloc<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let noise = noise_infos();
@@ -188,8 +204,8 @@ where
 
     for col_i in 0..COLS {
         let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
-        module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
-        module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
+        module.vec_znx_big_add_noise(BASE2K, NOISE_K, &mut a.to_backend_mut(), col_i, noise, &mut source);
+        module.vec_znx_big_add_noise(BASE2K, NOISE_K, &mut a.to_backend_mut(), col_i, noise, &mut source);
 
         // The digits are only readable once normalized back into a `VecZnx`.
         let mut res = module.vec_znx_alloc(module.n(), COLS, SIZE);
@@ -214,8 +230,8 @@ where
 /// Random streams deliberately are not compared between distinct backends.
 fn gaussian_reproducibility<BE: TestBackend>(module: &Module<BE>)
 where
-    Module<BE>: VecZnxAddNormal<BE>
-        + VecZnxBigAddNormal<BE>
+    Module<BE>: VecZnxAddNoise<BE>
+        + VecZnxBigAddNoise<BE>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
@@ -228,7 +244,7 @@ where
             let mut result = module.vec_znx_alloc(module.n(), COLS, SIZE);
             if big {
                 let mut a = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
-                module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), 1, noise, source);
+                module.vec_znx_big_add_noise(BASE2K, NOISE_K, &mut a.to_backend_mut(), 1, noise, source);
                 let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
                 for col in 0..COLS {
                     module.vec_znx_big_normalize(
@@ -244,7 +260,7 @@ where
                     );
                 }
             } else {
-                module.vec_znx_add_normal(BASE2K, &mut vec_znx_backend_mut::<BE>(&mut result), 1, noise, source);
+                module.vec_znx_add_noise(BASE2K, NOISE_K, &mut vec_znx_backend_mut::<BE>(&mut result), 1, noise, source);
             }
             download_vec_znx::<BE>(&result)
         };
@@ -271,15 +287,15 @@ pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
     t: &Module<BT>,
 ) where
     Module<BR>: ScalarZnxFillDistribution<BR>
-        + VecZnxAddNormal<BR>
-        + VecZnxBigAddNormal<BR>
+        + VecZnxAddNoise<BR>
+        + VecZnxBigAddNoise<BR>
         + VecZnxAlloc<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: ScalarZnxFillDistribution<BT>
-        + VecZnxAddNormal<BT>
-        + VecZnxBigAddNormal<BT>
+        + VecZnxAddNoise<BT>
+        + VecZnxBigAddNoise<BT>
         + VecZnxAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
@@ -289,10 +305,10 @@ pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
 {
     test_scalar_znx_fill_distribution(params, r);
     test_scalar_znx_fill_distribution(params, t);
-    test_vec_znx_add_normal(params, r);
-    test_vec_znx_add_normal(params, t);
-    test_vec_znx_big_add_normal(params, r);
-    test_vec_znx_big_add_normal(params, t);
+    test_vec_znx_add_noise(params, r);
+    test_vec_znx_add_noise(params, t);
+    test_vec_znx_big_add_noise(params, r);
+    test_vec_znx_big_add_noise(params, t);
     gaussian_reproducibility(r);
     gaussian_reproducibility(t);
 }

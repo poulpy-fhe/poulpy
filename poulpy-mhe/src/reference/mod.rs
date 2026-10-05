@@ -16,3 +16,21 @@ pub use pat::*;
 pub use public_key::*;
 pub use sharing::*;
 pub use tensor_key::*;
+
+/// Combining seeded shares combines independently sampled secret summands.
+pub(crate) fn aggregate_metadata(
+    left: Option<poulpy_core::EncryptionMetadata>,
+    right: Option<poulpy_core::EncryptionMetadata>,
+) -> Option<poulpy_core::EncryptionMetadata> {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            assert!(
+                left.secret_distribution().base() == right.secret_distribution().base(),
+                "invalid aggregation: secret distributions differ"
+            );
+            Some(left.aggregate(right))
+        }
+        (None, None) => None,
+        _ => panic!("invalid aggregation: encryption provenance differs"),
+    }
+}

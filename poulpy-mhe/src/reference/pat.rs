@@ -36,9 +36,12 @@ where
     {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
+        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.vec_znx_add_assign(res_be.data_mut(), 0, a_be.data(), 0);
+        drop(res_be);
+        res.set_encryption_metadata(metadata);
     }
 
     fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
@@ -58,6 +61,7 @@ where
             let pat_be = pat.to_backend_ref();
             self.vec_znx_normalize(res_be.data_mut(), base2k, k, 0, 0, pat_be.data(), base2k, 0, scratch);
         }
+        res.set_encryption_metadata(pat.encryption_metadata());
         // Seeded masks are uniform digits, already canonical.
         self.fill_glwe_mask_from_seed(res, *pat.seed());
     }
@@ -92,6 +96,7 @@ where
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
+        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
@@ -100,6 +105,8 @@ where
                 self.vec_znx_add_assign(res_be.at_view_mut(row, col).data_mut(), 0, a_be.at_view(row, col).data(), 0);
             }
         }
+        drop(res_be);
+        res.set_encryption_metadata(metadata);
     }
 
     fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
@@ -151,6 +158,11 @@ where
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
+        assert_eq!(
+            res.encryption_metadata(),
+            a.encryption_metadata(),
+            "invalid aggregation: output key provenance differs"
+        );
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
@@ -182,5 +194,7 @@ where
                 self.glwe_normalize(&mut res_be.at_view_mut(row, col), &pat_be.at_view(row, col), scratch);
             }
         }
+        drop(res_be);
+        res.set_encryption_metadata(pat.encryption_metadata());
     }
 }

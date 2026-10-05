@@ -131,6 +131,10 @@ impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSCiphertext<D, W, R> {
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSCiphertext<D, W, R> {
+    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -220,6 +224,10 @@ where
     fn set_canonical(&mut self, canonical: bool) {
         self.inner.set_canonical(canonical)
     }
+
+    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
+        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    }
 }
 
 /// Backend-owned CKKS ciphertext: the backend's buffer type and its coefficient word.
@@ -242,6 +250,10 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
 }
 
 impl<BE: Backend> LWEInfos for CKKSCiphertextViewRef<'_, BE> {
+    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+        self.inner.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -329,6 +341,10 @@ impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
 
     fn set_canonical(&mut self, canonical: bool) {
         GLWEToBackendMut::<BE>::set_canonical(&mut self.inner, canonical)
+    }
+
+    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
+        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
     }
 }
 

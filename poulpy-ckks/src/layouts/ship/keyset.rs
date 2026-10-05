@@ -11,13 +11,12 @@
 use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
+    GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey,
-        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        ModuleCoreAlloc, Rank,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory, GLWESwitchingKey,
+        GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -398,7 +397,7 @@ where
     sk_out_host.transfer_into(&mut sk_out);
 
     let b2k = base2k.as_usize();
-    let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+    let ksk_infos = GLWESwitchingKeyLayout {
         n,
         base2k,
         dnum: k_ct.div_ceil(b2k * dsize).into(),
@@ -406,9 +405,9 @@ where
         rank_in: Rank(2),
         rank_out: Rank(1),
         dsize: dsize.into(),
-    })?;
+    };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
-    module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, &ksk_infos, source_xe, source_xa, scratch);
+    module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
     Ok(HMuxRotKey { key, gal_el })
 }
 
@@ -480,12 +479,6 @@ impl<D: Data> ShipKeySet<D, i64> {
             log_sparsity: 0,
             slots: SlotsKind::Complex,
         };
-        let enc_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
-            n,
-            base2k,
-            k: kk.into(),
-            rank: Rank(1),
-        })?;
 
         let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host);
         sk_dense_host.transfer_into(&mut sk_dense);
@@ -505,7 +498,7 @@ impl<D: Data> ShipKeySet<D, i64> {
                         pt.set_meta_checked(mask_meta)?;
                         module.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
                         let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());
-                        module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, &enc_infos, source_xe, source_xa, scratch)?;
+                        module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, source_xe, source_xa, scratch)?;
                         Ok(ct)
                     })
                     .collect()
@@ -545,7 +538,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         spec.fill_glwe_secret(plan, &mut sk_sparse_host)?;
         let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_sparse_host);
         sk_sparse_host.transfer_into(&mut sk_sparse);
-        let d2s_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+        let d2s_infos = GLWESwitchingKeyLayout {
             n,
             base2k,
             dnum: 1usize.into(),
@@ -553,25 +546,17 @@ impl<D: Data> ShipKeySet<D, i64> {
             rank_in: Rank(1),
             rank_out: Rank(1),
             dsize: 1usize.into(),
-        })?;
+        };
         let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
-        module.glwe_switching_key_encrypt_sk(
-            &mut dense_to_sparse,
-            &sk_dense,
-            &sk_sparse,
-            &d2s_infos,
-            source_xe,
-            source_xa,
-            scratch,
-        );
+        module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);
 
-        let tsk_infos = EncryptionLayout::new_from_default_sigma(layout.tensor_key)?;
+        let tsk_infos = layout.tensor_key;
         let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
-        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense, &tsk_infos, source_xe, source_xa, scratch);
+        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense, source_xe, source_xa, scratch);
 
-        let atk_infos = EncryptionLayout::new_from_default_sigma(layout.conjugation_key)?;
+        let atk_infos = layout.conjugation_key;
         let mut conjugation_key = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
-        module.glwe_automorphism_key_encrypt_sk(&mut conjugation_key, -1, &sk_dense, &atk_infos, source_xe, source_xa, scratch);
+        module.glwe_automorphism_key_encrypt_sk(&mut conjugation_key, -1, &sk_dense, source_xe, source_xa, scratch);
 
         Self::new(
             plan,

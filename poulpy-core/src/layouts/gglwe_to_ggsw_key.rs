@@ -45,6 +45,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
+            metadata: key_i.metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -78,6 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
+            metadata: key_i.metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -89,6 +91,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
         GGLWEBackendMut::from_inner(GGLWE {
+            metadata: key_i.metadata,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -115,6 +118,10 @@ impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendRef<'a, BE>, ['a, BE: Backend +
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKey<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.keys.first().and_then(crate::layouts::LWEInfos::encryption_metadata)
+    }
+
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -340,6 +347,12 @@ where
 }
 
 pub trait GGLWEToGGSWKeyToBackendMut<BE: Backend>: GGLWEToGGSWKeyToBackendRef<BE> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE>;
 }
 
@@ -347,6 +360,12 @@ impl<BE: Backend, D: Data> GGLWEToGGSWKeyToBackendMut<BE> for GGLWEToGGSWKey<D, 
 where
     GGLWE<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        for key in &mut self.keys {
+            key.metadata = metadata;
+        }
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE> {
         GGLWEToGGSWKeyBackendMut::from_inner(GGLWEToGGSWKey {
             keys: self
@@ -365,6 +384,12 @@ impl<BE: Backend> GGLWEToGGSWKeyToBackendRef<BE> for &mut GGLWEToGGSWKey<BE::Own
 }
 
 impl<BE: Backend> GGLWEToGGSWKeyToBackendMut<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        for key in &mut self.keys {
+            key.metadata = metadata;
+        }
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE> {
         <GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> as GGLWEToGGSWKeyToBackendMut<BE>>::to_backend_mut(self)
     }

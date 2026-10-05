@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    GetDistribution,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
@@ -28,19 +28,17 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     /// independently seeded for each party and purpose; never replay its stream
     /// or initialize it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_switching_key_share_gen<S1, S2, E>(
+    fn mhe_glwe_switching_key_share_gen<S1, S2>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos;
+        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, seed and degrees.
@@ -82,18 +80,16 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     /// seeded for each party and purpose; never replay its stream or initialize
     /// it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_automorphism_key_share_gen<S, E>(
+    fn mhe_glwe_automorphism_key_share_gen<S>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretToBackendRef<BE> + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, seed and Galois element.

@@ -478,19 +478,18 @@ mod tests {
 #[cfg(all(test, feature = "enable-core"))]
 #[test]
 fn conjugate_invariant_key_composition() {
-    use poulpy_core::{EncryptionLayout, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk, layouts::*};
+    use poulpy_core::{GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk, layouts::*};
     use poulpy_hal::{api::*, layouts::*, source::Source};
     type BE = crate::NTT4x30CIRef;
     let module = Module::<BE>::new(8);
-    let infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+    let infos = GLWEAutomorphismKeyLayout {
         n: 8u32.into(),
         base2k: 10u32.into(),
         dnum: 4u32.into(),
         k_aux: 30u32.into(),
         dsize: 1u32.into(),
         rank: 1u32.into(),
-    })
-    .unwrap();
+    };
     let mut source_s = Source::new([0; 32]);
     let mut source_e = Source::new([1; 32]);
     let mut source_a = Source::new([2; 32]);
@@ -506,24 +505,8 @@ fn conjugate_invariant_key_composition() {
             .max(module.gglwe_noise_tmp_bytes(&infos))
             .max(module.glwe_automorphism_key_automorphism_tmp_bytes(&infos, &infos, &infos)),
     );
-    module.glwe_automorphism_key_encrypt_sk(
-        &mut input,
-        25,
-        &sk,
-        &infos,
-        &mut source_e,
-        &mut source_a,
-        &mut scratch.arena(),
-    );
-    module.glwe_automorphism_key_encrypt_sk(
-        &mut applied,
-        25,
-        &sk,
-        &infos,
-        &mut source_e,
-        &mut source_a,
-        &mut scratch.arena(),
-    );
+    module.glwe_automorphism_key_encrypt_sk(&mut input, 25, &sk, &mut source_e, &mut source_a, &mut scratch.arena());
+    module.glwe_automorphism_key_encrypt_sk(&mut applied, 25, &sk, &mut source_e, &mut source_a, &mut scratch.arena());
     let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&infos);
     module.glwe_automorphism_key_prepare(&mut prepared, &applied, &mut scratch.arena());
     module.glwe_automorphism_key_automorphism(

@@ -12,7 +12,7 @@ use crate::{
     layouts::CKKSModuleAlloc,
 };
 use poulpy_core::{
-    EncryptionLayout,
+    GetDistribution,
     layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos},
 };
 use poulpy_hal::{
@@ -112,6 +112,10 @@ where
         &im1,
         &mut scratch.borrow(),
     );
+    let metadata = ct.encryption_metadata().expect("CKKS encryption must record provenance");
+    assert_eq!(metadata.parties(), 1);
+    assert_eq!(metadata.secret_distribution().base(), *sk.dist());
+    assert_eq!(metadata.initial_noise_std_dev(), poulpy_core::DEFAULT_SIGMA_XE);
     assert_ct_meta(
         "encrypt_decrypt",
         &ct,
@@ -132,13 +136,12 @@ where
     let n = BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
     let other = Module::<BE>::new((2 * n) as u64);
-    let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let enc = GLWELayout {
         n: n.into(),
         base2k: 8usize.into(),
         k: 8usize.into(),
         rank: 1usize.into(),
-    })
-    .unwrap();
+    };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
     let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
@@ -160,7 +163,7 @@ where
         assert_eq!(pt_before, snapshot::<BE, _>(&pt));
 
         let err = call_module
-            .ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena())
+            .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
             .unwrap_err();
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
         assert_eq!(ct_before, snapshot::<BE, _>(&ct));

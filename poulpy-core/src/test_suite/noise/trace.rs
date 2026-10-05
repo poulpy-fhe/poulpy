@@ -11,7 +11,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
+    GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
@@ -51,23 +51,21 @@ where
         let dnum: usize = k.div_ceil(key_base2k * dsize);
         let k_aux: usize = dsize * key_base2k + module.log_n();
 
-        let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_out_infos = GLWELayout {
             n: n.into(),
             base2k: out_base2k.into(),
             k: k.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
-        let key_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+        let key_infos = GLWEAutomorphismKeyLayout {
             n: n.into(),
             base2k: key_base2k.into(),
             dnum: dnum.into(),
             k_aux: k_aux.into(),
             rank: rank.into(),
             dsize: dsize.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
         let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
@@ -107,7 +105,6 @@ where
             &mut glwe_out,
             &pt_input,
             &sk_dft,
-            &glwe_out_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -123,7 +120,6 @@ where
                 &mut tmp,
                 *gal_el,
                 &sk_backend,
-                &key_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),

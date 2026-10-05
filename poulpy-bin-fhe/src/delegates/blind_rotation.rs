@@ -5,7 +5,7 @@ use crate::blind_rotation::{
     LookUpTableRotationDirection, LookupTable,
 };
 use crate::oep::*;
-use poulpy_core::{EncryptionInfos, GetDistribution, layouts::*};
+use poulpy_core::{GetDistribution, layouts::*};
 use poulpy_hal::{layouts::*, source::Source};
 
 impl<BRA: BlindRotationAlgo, BE: BlindRotationExecuteImpl<BRA>> BlindRotationExecute<BRA, BE> for Module<BE> {
@@ -41,21 +41,19 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyEncryptSkImpl<BRA>> BlindRotati
     fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(&self, infos: &A) -> usize {
         BE::blind_rotation_key_encrypt_sk_tmp_bytes(self, infos)
     }
-    fn blind_rotation_key_encrypt_sk<S0, S1, E>(
+    fn blind_rotation_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
     {
-        BE::blind_rotation_key_encrypt_sk(self, res, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch)
+        BE::blind_rotation_key_encrypt_sk(self, res, sk_glwe, sk_lwe, source_xe, source_xa, scratch)
     }
 }
 
@@ -68,21 +66,19 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyCompressedEncryptSkImpl<BRA>> B
     {
         BE::blind_rotation_key_compressed_encrypt_sk_tmp_bytes(self, infos)
     }
-    fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
+    fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         &self,
         res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
     {
-        BE::blind_rotation_key_compressed_encrypt_sk(self, res, sk_glwe, sk_lwe, seed_xa, enc_infos, source_xe, scratch)
+        BE::blind_rotation_key_compressed_encrypt_sk(self, res, sk_glwe, sk_lwe, seed_xa, source_xe, scratch)
     }
 }
 

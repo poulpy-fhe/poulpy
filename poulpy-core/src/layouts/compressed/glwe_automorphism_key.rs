@@ -29,6 +29,10 @@ impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, 
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.key.encryption_metadata()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }

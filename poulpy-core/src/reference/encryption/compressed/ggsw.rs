@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     encryption::{GGSWEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GGSWCompressedSeedMut, GGSWInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, compressed::GGSWCompressedToBackendMut,
@@ -24,19 +24,17 @@ pub trait GGSWCompressedEncryptSkReference<BE: Backend> {
     where
         A: GGSWInfos;
 
-    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -60,21 +58,20 @@ where
         self.ggsw_encrypt_sk_tmp_bytes(infos) + full_ct
     }
 
-    fn ggsw_compressed_encrypt_sk_reference<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         let base2k: usize = res.base2k().into();
         let rank: usize = res.rank().into();
         let cols: usize = rank + 1;
@@ -130,10 +127,10 @@ where
                     self.fill_glwe_mask_from_seed(&mut full_ct, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
+                        full_ct.k().as_usize(),
                         &mut full_ct.data,
                         Some((tmp_pt_backend, col_j)),
                         sk,
-                        enc_infos,
                         source_xe,
                         &mut scratch_2,
                     );

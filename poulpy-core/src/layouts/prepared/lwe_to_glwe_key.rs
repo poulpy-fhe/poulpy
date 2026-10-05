@@ -15,6 +15,10 @@ use crate::layouts::{
 pub struct LWEToGLWEKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for LWEToGLWEKeyPrepared<D, B> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.0.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -135,6 +139,10 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for LWEToGLWEKeyPrepared<
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_encryption_metadata(&mut self.0.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> crate::layouts::GGLWEPreparedBackendMut<'_, B> {
         self.0.key.to_backend_mut()
     }
@@ -176,6 +184,9 @@ where
 }
 
 pub trait LWEToGLWEKeyPreparedToBackendMut<B: Backend> {
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> LWEToGLWEKeyPreparedBackendMut<'_, B>;
 }
 

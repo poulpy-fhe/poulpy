@@ -4,7 +4,7 @@
 //! seed equality alone does not imply identical samples across backends.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, unnormalized_twin};
 use crate::{
-    Distribution, EncryptionLayout, GetDistribution, GetDistributionMut,
+    Distribution, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
@@ -57,8 +57,19 @@ pub(crate) struct Snapshot {
     pub(crate) metadata: Vec<usize>,
     pub(crate) bytes: Vec<u8>,
 }
+pub(crate) fn assert_fresh_encryption_metadata(value: &impl LWEInfos) {
+    let metadata = value.encryption_metadata().expect("encryption must record its provenance");
+    assert_eq!(metadata.parties(), 1);
+    assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(2.0 / 3.0));
+    assert_eq!(metadata.secret_distribution().parties(), 1);
+    assert_eq!(metadata.initial_noise_std_dev(), crate::DEFAULT_SIGMA_XE);
+}
+
 pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
+    if label.contains("encrypt") || label == "public_key_generate" {
+        assert_fresh_encryption_metadata(&view);
+    }
     let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
     B::copy_view_to_host(view.data.data(), &mut bytes);
     Snapshot {
@@ -129,7 +140,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             k: (k as u32).into(),
             rank: (rank as u32).into(),
         };
-        let enc = EncryptionLayout::new_from_default_sigma(infos).unwrap();
+
         let sk = secret(module, n, rank);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
@@ -154,7 +165,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut out,
             &pt,
             &skp,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
@@ -168,7 +178,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut with_mask,
             &pt,
             &skp,
-            &enc,
             &mut Source::new([71; 32]),
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
@@ -246,7 +255,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.glwe_encrypt_zero_sk(
             &mut out,
             &skp,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
@@ -265,7 +273,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                     &mut pk_compressed,
                     &skp,
                     [89; 32],
-                    &enc,
                     &mut e,
                     &mut poisoned_scratch::<B>(module.glwe_public_key_compressed_generate_tmp_bytes(&infos)).arena(),
                 );
@@ -274,7 +281,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 module.glwe_public_key_generate(
                     &mut pk,
                     &skp,
-                    &enc,
                     &mut e,
                     &mut a,
                     &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
@@ -295,12 +301,12 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
             );
             assert_eq!(pkp.dist(), pk.dist());
+            assert_eq!(pkp.encryption_metadata(), pk.encryption_metadata());
             poison_glwe::<B, _>(&mut out);
             module.glwe_encrypt_pk(
                 &mut out,
                 &pt,
                 &pkp,
-                &enc,
                 &mut e,
                 &mut a,
                 &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
@@ -311,7 +317,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             module.glwe_encrypt_zero_pk(
                 &mut out,
                 &pkp,
-                &enc,
                 &mut e,
                 &mut a,
                 &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
@@ -327,7 +332,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &pt,
             &skp,
             [79; 32],
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.glwe_compressed_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
@@ -340,7 +344,6 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut compressed,
             &skp,
             [79; 32],
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.glwe_compressed_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
@@ -400,6 +403,9 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
 
 fn snapshot_lwe<B: Backend, G: LWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = LWEToBackendRef::<B>::to_backend_ref(value);
+    if label == "lwe_encrypt_sk" {
+        assert_fresh_encryption_metadata(&view);
+    }
     let mut bytes = vec![0; view.body.n() * view.body.cols() * view.body.size() * size_of::<i64>()];
     B::copy_view_to_host(view.body.data(), &mut bytes);
     let mut mask = vec![0; view.mask.n() * view.mask.cols() * view.mask.size() * size_of::<i64>()];
@@ -425,7 +431,6 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             base2k: base2k.into(),
             k: k.into(),
         };
-        let enc = EncryptionLayout::new_from_default_sigma(infos).unwrap();
         let mut sk = module.lwe_secret_alloc(n.into());
         {
             let mut view = LWESecretToBackendMut::<B>::to_backend_mut(&mut sk);
@@ -446,7 +451,6 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut out,
             &pt,
             &sk,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.lwe_encrypt_sk_tmp_bytes(&infos)).arena(),

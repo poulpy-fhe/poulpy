@@ -6,7 +6,7 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     api::{
-        EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
+        GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
         GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk,
         GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEMaskFill,
         GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
@@ -51,7 +51,7 @@ macro_rules! impl_encryption_delegate {
         impl<BE> $trait for Module<BE>
         where
             BE: Backend + EncryptionImpl,
-            Module<BE>: crate::VecZnxAddSmudging<BE>
+            Module<BE>: crate::VecZnxAddNoise<BE>
                 + poulpy_hal::api::VecZnxNormalizeAssign<BE>
                 + poulpy_hal::api::VecZnxNormalizeTmpBytes,
         {
@@ -95,7 +95,8 @@ impl_encryption_delegate!(
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_from_source(self, res, source)
+        BE::fill_glwe_from_source(self, res, source);
+        res.set_encryption_metadata(None);
     }
 );
 
@@ -123,12 +124,11 @@ impl_encryption_delegate!(
     {
         BE::lwe_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn lwe_encrypt_sk<R, P, S, E>(
+    fn lwe_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
@@ -136,9 +136,10 @@ impl_encryption_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
     {
-        BE::lwe_encrypt_sk(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::lwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -150,53 +151,53 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_encrypt_sk<R, P, S, E>(
+    fn glwe_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::glwe_encrypt_sk(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     },
-    fn glwe_encrypt_zero_sk<R, E, S>(
+    fn glwe_encrypt_zero_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::glwe_encrypt_zero_sk(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_encrypt_zero_sk(self, res, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     },
-    fn glwe_encrypt_sk_with_mask<R, P, S, E>(
+    fn glwe_encrypt_sk_with_mask<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::glwe_encrypt_sk_with_mask(self, res, pt, sk, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_encrypt_sk_with_mask(self, res, pt, sk, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -209,55 +210,55 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_pk_tmp_bytes(self, res_infos, pk_infos)
     },
-    fn glwe_encrypt_pk<R, P, K, E>(
+    fn glwe_encrypt_pk<R, P, K>(
         &self,
         res: &mut R,
         pt: &P,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_pk(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+        let metadata = pk.encryption_metadata();
+        BE::glwe_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     },
-    fn glwe_encrypt_zero_pk<R, K, E>(
+    fn glwe_encrypt_zero_pk<R, K>(
         &self,
         res: &mut R,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_zero_pk(self, res, pk, enc_infos, source_xu, source_xe, scratch)
+        let metadata = pk.encryption_metadata();
+        BE::glwe_encrypt_zero_pk(self, res, pk, source_xu, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     },
-    fn glwe_encrypt_pk_at_col<R, P, K, E>(
+    fn glwe_encrypt_pk_at_col<R, P, K>(
         &self,
         res: &mut R,
         pt: &P,
         col: usize,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, enc_infos, source_xu, source_xe, scratch)
+        let metadata = pk.encryption_metadata();
+        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, source_xu, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -270,13 +271,12 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_pk_smudged_tmp_bytes(self, res_infos, pk_infos)
     },
-    fn glwe_encrypt_pk_smudged<R, P, K, E>(
+    fn glwe_encrypt_pk_smudged<R, P, K>(
         &self,
         res: &mut R,
         pt: &P,
         pk: &K,
-        flood: crate::SmudgingNoise,
-        enc_infos: &E,
+        flood: crate::Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -284,21 +284,21 @@ impl_encryption_delegate!(
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
+        let metadata = pk.encryption_metadata();
         BE::glwe_encrypt_pk_smudged(
             self,
             res,
             pt,
             pk,
             flood,
-            enc_infos,
             source_xu,
             source_xe,
             source_smudge,
             scratch,
-        )
+        );
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -310,20 +310,20 @@ impl_encryption_delegate!(
     {
         BE::glwe_public_key_generate_tmp_bytes(self, infos)
     },
-    fn glwe_public_key_generate<R, S, E>(
+    fn glwe_public_key_generate<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        BE::glwe_public_key_generate(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_public_key_generate(self, res, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -335,20 +335,20 @@ impl_encryption_delegate!(
     {
         BE::glwe_public_key_compressed_generate_tmp_bytes(self, infos)
     },
-    fn glwe_public_key_compressed_generate<R, S, E>(
+    fn glwe_public_key_compressed_generate<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        BE::glwe_public_key_compressed_generate(self, res, sk, seed, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_public_key_compressed_generate(self, res, sk, seed, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -360,22 +360,22 @@ impl_encryption_delegate!(
     {
         BE::gglwe_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn gglwe_encrypt_sk<R, P, S, E>(
+    fn gglwe_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::gglwe_encrypt_sk(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::gglwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -387,22 +387,22 @@ impl_encryption_delegate!(
     {
         BE::ggsw_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn ggsw_encrypt_sk<R, P, S, E>(
+    fn ggsw_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
-        BE::ggsw_encrypt_sk(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::ggsw_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -415,22 +415,22 @@ impl_encryption_delegate!(
     {
         BE::ggsw_encrypt_pk_tmp_bytes(self, res_infos, pk_infos)
     },
-    fn ggsw_encrypt_pk<R, P, K, E>(
+    fn ggsw_encrypt_pk<R, P, K>(
         &self,
         res: &mut R,
         pt: &P,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GGSWInfos + GGSWAtViewMut<BE>,
+        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::ggsw_encrypt_pk(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
+        let metadata = pk.encryption_metadata();
+        BE::ggsw_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -442,20 +442,20 @@ impl_encryption_delegate!(
     {
         BE::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn gglwe_to_ggsw_key_encrypt_sk<R, S, E>(
+    fn gglwe_to_ggsw_key_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::gglwe_to_ggsw_key_encrypt_sk(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::gglwe_to_ggsw_key_encrypt_sk(self, res, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -467,22 +467,22 @@ impl_encryption_delegate!(
     {
         BE::glwe_switching_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_switching_key_encrypt_sk<R, S1, S2, E>(
+    fn glwe_switching_key_encrypt_sk<R, S1, S2>(
         &self,
         res: &mut R,
         sk_in: &S1,
         sk_out: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::glwe_switching_key_encrypt_sk(self, res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_out.to_backend_ref().dist));
+        BE::glwe_switching_key_encrypt_sk(self, res, sk_in, sk_out, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -494,20 +494,20 @@ impl_encryption_delegate!(
     {
         BE::glwe_tensor_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_tensor_key_encrypt_sk<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::glwe_tensor_key_encrypt_sk(self, res, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_tensor_key_encrypt_sk(self, res, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -519,22 +519,22 @@ impl_encryption_delegate!(
     {
         BE::glwe_to_lwe_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_to_lwe_key_encrypt_sk<R, S1, S2, E>(
+    fn glwe_to_lwe_key_encrypt_sk<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        BE::glwe_to_lwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_lwe.to_backend_ref().dist));
+        BE::glwe_to_lwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -546,22 +546,22 @@ impl_encryption_delegate!(
     {
         BE::lwe_switching_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn lwe_switching_key_encrypt_sk<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe_in: &S1,
         sk_lwe_out: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE>,
         S2: LWESecretToBackendRef<BE>,
     {
-        BE::lwe_switching_key_encrypt_sk(self, res, sk_lwe_in, sk_lwe_out, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_lwe_out.to_backend_ref().dist));
+        BE::lwe_switching_key_encrypt_sk(self, res, sk_lwe_in, sk_lwe_out, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -573,22 +573,22 @@ impl_encryption_delegate!(
     {
         BE::lwe_to_glwe_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn lwe_to_glwe_key_encrypt_sk<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretPreparedToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        BE::lwe_to_glwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_glwe.to_backend_ref().dist));
+        BE::lwe_to_glwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -600,21 +600,21 @@ impl_encryption_delegate!(
     {
         BE::glwe_automorphism_key_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_automorphism_key_encrypt_sk<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         p: i64,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_key_encrypt_sk(self, res, p, sk, enc_infos, source_xe, source_xa, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_automorphism_key_encrypt_sk(self, res, p, sk, source_xe, source_xa, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -626,37 +626,37 @@ impl_encryption_delegate!(
     {
         BE::glwe_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_compressed_encrypt_sk<R, P, S, E>(
+    fn glwe_compressed_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::glwe_compressed_encrypt_sk(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_compressed_encrypt_sk(self, res, pt, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     },
-    fn glwe_compressed_encrypt_zero_sk<R, S, E>(
+    fn glwe_compressed_encrypt_zero_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::glwe_compressed_encrypt_zero_sk(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_compressed_encrypt_zero_sk(self, res, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -668,22 +668,22 @@ impl_encryption_delegate!(
     {
         BE::gglwe_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn gglwe_compressed_encrypt_sk<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::gglwe_compressed_encrypt_sk(self, res, pt, sk, seed, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::gglwe_compressed_encrypt_sk(self, res, pt, sk, seed, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -695,22 +695,22 @@ impl_encryption_delegate!(
     {
         BE::ggsw_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn ggsw_compressed_encrypt_sk<R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        BE::ggsw_compressed_encrypt_sk(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::ggsw_compressed_encrypt_sk(self, res, pt, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -722,20 +722,20 @@ impl_encryption_delegate!(
     {
         BE::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::gglwe_to_ggsw_key_compressed_encrypt_sk(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::gglwe_to_ggsw_key_compressed_encrypt_sk(self, res, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -747,21 +747,21 @@ impl_encryption_delegate!(
     {
         BE::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_automorphism_key_compressed_encrypt_sk<R, S, E>(
+    fn glwe_automorphism_key_compressed_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         p: i64,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_automorphism_key_compressed_encrypt_sk(self, res, p, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_automorphism_key_compressed_encrypt_sk(self, res, p, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -773,22 +773,22 @@ impl_encryption_delegate!(
     {
         BE::glwe_switching_key_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_switching_key_compressed_encrypt_sk<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk<R, S1, S2>(
         &self,
         res: &mut R,
         sk_in: &S1,
         sk_out: &S2,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::glwe_switching_key_compressed_encrypt_sk(self, res, sk_in, sk_out, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_out.to_backend_ref().dist));
+        BE::glwe_switching_key_compressed_encrypt_sk(self, res, sk_in, sk_out, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );
 
@@ -800,19 +800,19 @@ impl_encryption_delegate!(
     {
         BE::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(self, infos)
     },
-    fn glwe_tensor_key_compressed_encrypt_sk<R, S, E>(
+    fn glwe_tensor_key_compressed_encrypt_sk<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWEInfos + GGLWECompressedSeedMut,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::glwe_tensor_key_compressed_encrypt_sk(self, res, sk, seed_xa, enc_infos, source_xe, scratch)
+        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        BE::glwe_tensor_key_compressed_encrypt_sk(self, res, sk, seed_xa, source_xe, scratch);
+        res.set_encryption_metadata(metadata);
     }
 );

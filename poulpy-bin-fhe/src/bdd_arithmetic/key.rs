@@ -4,19 +4,15 @@ use crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos;
 use crate::{
     bdd_arithmetic::{FheUint, UnsignedInteger},
     blind_rotation::BlindRotationAlgo,
-    circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyLayout,
-        CircuitBootstrappingKeyPrepared,
-    },
+    circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared},
 };
 use poulpy_hal::AlignedBuf;
 
-use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use poulpy_core::TransferInto;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey, ModuleCoreAlloc,
 };
-use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, TransferInto};
 use poulpy_core::{
     GetDistribution,
     layouts::{
@@ -25,7 +21,6 @@ use poulpy_core::{
     },
 };
 
-use poulpy_core::NoiseInfos;
 use poulpy_hal::{
     layouts::{
         Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ReaderFrom, ScratchArena, WriterTo,
@@ -33,33 +28,6 @@ use poulpy_hal::{
     },
     source::Source,
 };
-
-/// Encryption noise parameters for all sub-keys of a BDD evaluation key bundle.
-///
-/// Created via [`BDDEncryptionInfos::from_default_sigma`] for the standard
-/// Gaussian error distribution, or constructed manually for custom noise parameters.
-pub struct BDDEncryptionInfos {
-    /// Noise parameters for the circuit-bootstrapping key.
-    pub cbt: CircuitBootstrappingEncryptionInfos,
-    /// Noise parameters for the optional GLWE-to-GLWE switching key.
-    pub ks_glwe: Option<NoiseInfos>,
-    /// Noise parameters for the GLWE-to-LWE switching key.
-    pub ks_lwe: NoiseInfos,
-}
-
-impl BDDEncryptionInfos {
-    /// Constructs encryption infos using the default Gaussian sigma for all sub-keys.
-    pub fn from_default_sigma(layout: &BDDKeyLayout) -> Result<Self> {
-        Ok(Self {
-            cbt: CircuitBootstrappingEncryptionInfos::from_default_sigma(&layout.cbt_layout)?,
-            ks_glwe: match layout.ks_glwe_layout {
-                Some(ref l) => Some(NoiseInfos::new(l.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?),
-                None => None,
-            },
-            ks_lwe: NoiseInfos::new(layout.ks_lwe_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-        })
-    }
-}
 
 /// Dimension descriptor for a complete BDD evaluation key bundle.
 ///
@@ -181,7 +149,6 @@ impl<D: Data, BRA: BlindRotationAlgo> BDDKey<D, BRA, i64> {
         module: &M,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -190,7 +157,7 @@ impl<D: Data, BRA: BlindRotationAlgo> BDDKey<D, BRA, i64> {
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         M: BDDKeyEncryptSk<BRA, BE>,
     {
-        module.bdd_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
+        module.bdd_key_encrypt_sk(self, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
     }
 }
 

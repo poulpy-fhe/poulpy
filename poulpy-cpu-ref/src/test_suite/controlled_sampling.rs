@@ -4,56 +4,68 @@
 //! may select this adapter, another adapter, or backends with matching streams.
 use super::{ControlledSamplingFFT64CIRef, ControlledSamplingFFT64Ref};
 use poulpy_core::{
-    Distribution, NoiseInfos,
+    Distribution, Noise,
     oep::SamplingImpl,
     test_suite::parity::controlled_sampling::{noise_samples, scalar_samples},
 };
 use poulpy_hal::layouts::*;
 
-// Safety: these test reference backends copy distribution-correct draws from
-// the backend under test and mutate only the selected coefficient/limb column.
+// Safety: this test reference backend copies distribution-correct draws from
+// the backend under test and mutates only the selected coefficient/limb column.
 macro_rules! impl_controlled_sampling {
     ($($be:ty),+) => {$(
-        unsafe impl SamplingImpl for $be {
-            fn scalar_znx_fill_distribution(
-                _: &Module<Self>,
-                res: &mut ScalarZnxBackendMut<'_, Self>,
-                col: usize,
-                dist: Distribution,
-                seed: [u8; 32],
-            ) {
-                let samples = scalar_samples(res.n(), dist, seed);
-                res.at_mut(col, 0).copy_from_slice(&samples);
-            }
-            fn vec_znx_add_normal(
-                _: &Module<Self>,
-                base2k: usize,
-                res: &mut VecZnxBackendMut<'_, Self>,
-                col: usize,
-                noise: NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let samples = noise_samples(res.n(), base2k, noise, seed, false);
-                let (limb, shift) = noise.target_limb_and_shift(base2k);
-                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-                    *dst += sample << shift;
-                }
-            }
-            fn vec_znx_big_add_normal(
-                _: &Module<Self>,
-                base2k: usize,
-                res: &mut VecZnxBigBackendMut<'_, Self>,
-                col: usize,
-                noise: NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let samples = noise_samples(res.n(), base2k, noise, seed, true);
-                let (limb, shift) = noise.target_limb_and_shift(base2k);
-                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-                    *dst += sample << shift;
-                }
+unsafe impl SamplingImpl for $be {
+    fn scalar_znx_fill_distribution(
+        _: &Module<Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        col: usize,
+        dist: Distribution,
+        seed: [u8; 32],
+    ) {
+        let samples = scalar_samples(res.n(), dist, seed);
+        res.at_mut(col, 0).copy_from_slice(&samples);
+    }
+    fn vec_znx_add_noise(
+        _: &Module<Self>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        col: usize,
+        noise: Noise,
+        seed: [u8; 32],
+    ) {
+        noise.validate();
+        assert!((1..=63).contains(&base2k));
+        assert!(k > 0 && k.div_ceil(base2k) <= res.size());
+        assert!(col < res.cols());
+        let samples = noise_samples(res.n(), base2k, k, noise, seed, false);
+        for (limb, digits) in samples.chunks(res.n()).enumerate() {
+            for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
+                *dst = dst.wrapping_add(*digit);
             }
         }
+    }
+    fn vec_znx_big_add_noise(
+        _: &Module<Self>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        col: usize,
+        noise: Noise,
+        seed: [u8; 32],
+    ) {
+        noise.validate();
+        assert!((1..=63).contains(&base2k));
+        assert!(k > 0 && k.div_ceil(base2k) <= res.size());
+        assert!(col < res.cols());
+        let samples = noise_samples(res.n(), base2k, k, noise, seed, true);
+        for (limb, digits) in samples.chunks(res.n()).enumerate() {
+            for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
+                *dst = dst.wrapping_add(*digit);
+            }
+        }
+    }
+}
     )+};
 }
 
@@ -81,27 +93,30 @@ mod tests {
         ) {
             FFT64Ref::scalar_znx_fill_distribution(module.reinterpret(), res, col, dist, changed_seed(seed));
         }
-        fn vec_znx_add_normal(
+        fn vec_znx_add_noise(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             res: &mut VecZnxBackendMut<'_, Self>,
             col: usize,
-            noise: NoiseInfos,
+            noise: Noise,
             seed: [u8; 32],
         ) {
-            FFT64Ref::vec_znx_add_normal(module.reinterpret(), base2k, res, col, noise, changed_seed(seed));
+            FFT64Ref::vec_znx_add_noise(module.reinterpret(), base2k, k, res, col, noise, changed_seed(seed));
         }
-        fn vec_znx_big_add_normal(
+        fn vec_znx_big_add_noise(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             res: &mut VecZnxBigBackendMut<'_, Self>,
             col: usize,
-            noise: NoiseInfos,
+            noise: Noise,
             seed: [u8; 32],
         ) {
-            FFT64Ref::vec_znx_big_add_normal(
+            FFT64Ref::vec_znx_big_add_noise(
                 module.reinterpret(),
                 base2k,
+                k,
                 &mut res.reborrow_backend_mut().into_backend::<FFT64Ref>(),
                 col,
                 noise,

@@ -9,7 +9,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretTensorFactory, GLWESecretToBackendRef,
         prepared::GLWESecretPreparedFactory,
@@ -24,17 +24,15 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
@@ -61,19 +59,18 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3 + lvl_4_encrypt
     }
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         assert_eq!(res.rank(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(
@@ -114,15 +111,7 @@ where
 
                 let mut ct = res.at_view_mut(i);
 
-                self.gglwe_compressed_encrypt_sk(
-                    &mut ct,
-                    &sk_ij,
-                    &sk_prepared,
-                    seed_xa_tmp,
-                    enc_infos,
-                    source_xe,
-                    &mut enc_scratch,
-                );
+                self.gglwe_compressed_encrypt_sk(&mut ct, &sk_ij, &sk_prepared, seed_xa_tmp, source_xe, &mut enc_scratch);
             }
         }
         scratch.wipe(tmp_bytes);

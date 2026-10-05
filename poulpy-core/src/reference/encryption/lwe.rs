@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, LWEFillMask, VecZnxBigAddNormal,
+    LWEFillMask, Noise, VecZnxBigAddNoise,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
@@ -43,27 +43,25 @@ pub trait LWEEncryptSkReference<BE: Backend> {
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_reference<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
-        S: LWESecretToBackendRef<BE>,
-        E: EncryptionInfos;
+        S: LWESecretToBackendRef<BE>;
 }
 
 impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
         + LWEFillMask<BE>
-        + VecZnxBigAddNormal<BE>
+        + VecZnxBigAddNoise<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSum<BE>
         + VecZnxBigNormalize<BE>
@@ -84,12 +82,11 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_encrypt_sk_reference<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -97,8 +94,8 @@ where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         let pt = pt.to_backend_ref();
         let sk = sk.to_backend_ref();
 
@@ -135,7 +132,7 @@ where
             self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);
 
             // tmp_scalar = m - <mask, sk> + e
-            self.vec_znx_big_add_normal(base2k, &mut tmp_scalar, 0, enc_infos.noise_infos(), source_xe);
+            self.vec_znx_big_add_noise(base2k, res.k().as_usize(), &mut tmp_scalar, 0, Noise::ENCRYPTION, source_xe);
 
             // Normalize into res.body.
             {

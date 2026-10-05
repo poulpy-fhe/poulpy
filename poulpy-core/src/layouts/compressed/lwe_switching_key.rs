@@ -31,6 +31,10 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for LWESwitchingKeyCompressed<
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWESwitchingKeyCompressed<D, W> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.0.encryption_metadata()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }

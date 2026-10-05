@@ -31,8 +31,8 @@ use crate::{
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch,
-    GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
+    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWELayout, GLWESecretPreparedFactory,
@@ -526,7 +526,7 @@ where
     Module<BE>: CKKSModuleAlloc<BE>,
 {
     let mut layout = params.glwe_layout();
-    layout.layout.k = k.into();
+    layout.k = k.into();
     module.ckks_ciphertext_alloc_from_glwe_infos(&layout)
 }
 
@@ -713,7 +713,7 @@ where
     let mut xa = Source::new(next_test_seed(1));
     let mut xe = Source::new(next_test_seed(2));
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
-    module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &tsk_infos, &mut xe, &mut xa, scratch);
+    module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
     module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
     tsk_prepared
@@ -736,7 +736,7 @@ where
     let mut xa = Source::new(next_test_seed(1));
     let mut xe = Source::new(next_test_seed(2));
     let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
-    module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &atk_infos, &mut xe, &mut xa, scratch);
+    module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &mut xe, &mut xa, scratch);
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, scratch);
     atk_prepared
@@ -760,7 +760,7 @@ where
     let mut xa = Source::new(next_test_seed(1));
     let mut xe = Source::new(next_test_seed(2));
     let mut ksk = module.glwe_switching_key_alloc_from_infos(&infos);
-    module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &infos, &mut xe, &mut xa, scratch);
+    module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &mut xe, &mut xa, scratch);
     let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
     module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch);
     ksk_prepared
@@ -788,9 +788,9 @@ where
     let mut xa = Source::new(next_test_seed(1));
     let mut xe = Source::new(next_test_seed(2));
     let mut embed = module.glwe_ci_embed_key_alloc_from_infos(&infos);
-    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &mut xe, &mut xa, scratch);
     let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
-    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &infos, &mut xe, &mut xa, scratch);
+    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &mut xe, &mut xa, scratch);
     let mut embed_prepared = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
     module.glwe_ci_key_prepare(&mut embed_prepared, &embed, scratch);
     let mut trace_prepared = module.glwe_ci_trace_key_prepared_alloc_from_infos(&infos);
@@ -883,16 +883,10 @@ where
     host_pt.encode_host_floats(coeffs).unwrap();
     let pt = upload_pt(module, &host_pt);
 
-    let mut layout = params.glwe_layout().layout;
-    layout.k = k.into();
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
-
     let mut ct = alloc_ct(params, module, k);
     let mut xa = Source::new(next_test_seed(5));
     let mut xe = Source::new(next_test_seed(6));
-    module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
-        .unwrap();
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
     ct
 }
 
@@ -921,16 +915,10 @@ where
     encoder.encode_reim(&mut host_pt, re, im).unwrap();
     let pt = upload_pt(module, &host_pt);
 
-    let mut layout = params.glwe_layout().layout;
-    layout.k = k.into();
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
-
     let mut ct = alloc_ct(params, module, k);
     let mut xa = Source::new(next_test_seed(3));
     let mut xe = Source::new(next_test_seed(4));
-    module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
-        .unwrap();
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
     ct
 }
 
@@ -951,16 +939,10 @@ where
 {
     let pt = upload_pt(module, host_pt);
 
-    let mut layout = params.glwe_layout().layout;
-    layout.k = k.into();
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
-
     let mut ct = alloc_ct(params, module, k);
     let mut xa = Source::new(next_test_seed(3));
     let mut xe = Source::new(next_test_seed(4));
-    module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
-        .unwrap();
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
     ct
 }
 

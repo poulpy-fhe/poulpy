@@ -3,7 +3,7 @@
 //! secret, and the GGSW drives external products under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
+    DEFAULT_SIGMA_XE, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
     layouts::{
         Dnum, Dsize, GGLWELayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWESecretPrepared,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyPrepared,
@@ -83,7 +83,6 @@ where
     Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_glwe_switching_key_share_gen_tmp_bytes(layout)
@@ -95,7 +94,7 @@ where
     for (i, ((u, _), (sk, _))) in ephemerals.iter().zip(secrets).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([60 + i as u8; 32]);
-        module.mhe_glwe_switching_key_share_gen(dst, u, sk, SEEDS[1], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.mhe_glwe_switching_key_share_gen(dst, u, sk, SEEDS[1], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.mhe_glwe_switching_key_share_aggregate(&mut acc, &share);
         }
@@ -146,7 +145,7 @@ where
     let (secrets, ephemerals) = parties(module, layout.rank);
     let key_layout = ephemeral_key_layout(module, layout);
     let key = ephemeral_key(module, &ephemerals, &secrets, &key_layout);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
+
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_ggsw_share_gen_tmp_bytes(layout)
@@ -160,7 +159,7 @@ where
         let mut source_xe = Source::new([10 + i as u8; 32]);
         // The message and the secret-derived products would be left in the scratch.
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(module.mhe_ggsw_share_gen_tmp_bytes(layout), |scratch| {
-            module.mhe_ggsw_share_gen(dst, m, sk, u, SEEDS[0], &enc_infos, &mut source_xe, scratch)
+            module.mhe_ggsw_share_gen(dst, m, sk, u, SEEDS[0], &mut source_xe, scratch)
         });
         if i > 0 {
             module.mhe_ggsw_share_aggregate(&mut acc, &share);
@@ -169,6 +168,7 @@ where
 
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(layout);
     module.mhe_ggsw_share_finalize(&mut res, &acc, &key, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     (res, ideal_secret(module, &secrets))
 }
 
@@ -318,7 +318,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let (secrets, ephemerals) = parties(module, layout.rank);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
@@ -331,7 +331,6 @@ where
             &secrets[i].1,
             &ephemerals[i].1,
             SEEDS[i],
-            &enc_infos,
             &mut source_xe,
             &mut scratch.borrow(),
         );
@@ -348,7 +347,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let (secrets, _) = parties(module, layout.rank);
     let u = secret_from_seed_at(module, Rank(1), [9u8; 32]);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
@@ -360,7 +359,6 @@ where
         &secrets[0].1,
         &u.1,
         SEEDS[0],
-        &enc_infos,
         &mut Source::new([10u8; 32]),
         &mut scratch.borrow(),
     );
@@ -416,7 +414,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let (secrets, ephemerals) = parties(module, layout.rank);
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
     let expected = [
@@ -456,7 +454,6 @@ where
                 sk,
                 u,
                 SEEDS[0],
-                &enc_infos,
                 &mut Source::new([10u8; 32]),
                 &mut scratch.borrow(),
             );

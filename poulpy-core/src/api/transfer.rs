@@ -83,6 +83,7 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWE<D2, W>) {
+        dst.metadata = self.metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
         move_vec_znx(&self.data, &mut dst.data);
@@ -123,6 +124,7 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut LWE<D2, W>) {
+        dst.metadata = self.metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: LWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: LWE k");
         move_vec_znx(&self.body, &mut dst.body);
@@ -137,6 +139,7 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GGLWE<D2, W>) {
+        dst.metadata = self.metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.dsize, dst.dsize, "transfer_into: GGLWE dsize");
@@ -151,6 +154,7 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GGSW<D2, W>) {
+        dst.metadata = self.metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGSW base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
         assert_eq!(self.dsize, dst.dsize, "transfer_into: GGSW dsize");
@@ -214,6 +218,7 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWETensor<D2, W>) {
+        dst.metadata = self.metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWETensor base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
         assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");

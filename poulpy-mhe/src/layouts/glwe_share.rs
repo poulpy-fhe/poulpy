@@ -30,6 +30,10 @@ macro_rules! glwe_share {
         }
 
         impl<D: Data, W: ZnxWord> LWEInfos for $name<D, W> {
+            fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+                self.inner.encryption_metadata()
+            }
+
             fn n(&self) -> Degree {
                 self.inner.n()
             }
@@ -68,7 +72,11 @@ macro_rules! glwe_share {
         where
             GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
         {
-            fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+            fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
+        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    }
+
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 self.inner.to_backend_mut()
             }
 

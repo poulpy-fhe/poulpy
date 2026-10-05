@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use poulpy_core::{
-    EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, LWEEncryptSk,
+    GLWEDecrypt, GLWEEncryptSk, LWEEncryptSk,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
@@ -12,13 +12,12 @@ use poulpy_core::{
 
 use poulpy_bin_fhe::{
     bdd_arithmetic::{
-        Add, And, BDDEncryptionInfos, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory,
-        ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare, FheUintPrepared, Or, Sll, Slt, Sltu, Sra, Srl, Sub, Xor,
+        Add, And, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint,
+        FheUintPrepare, FheUintPrepared, Or, Sll, Slt, Sltu, Sra, Srl, Sub, Xor,
     },
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk,
-        CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
+        CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
     },
 };
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
@@ -88,14 +87,13 @@ where
     module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     // Circuit bootstrapping evaluation key
-    let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&params.bdd_layout.cbt_layout).unwrap();
+
     let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &params.bdd_layout.cbt_layout);
     cbt_key.encrypt_sk(
         &module,
         &sk_lwe,
         &sk_glwe,
-        &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -108,14 +106,11 @@ where
     let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&params.glwe_layout);
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
-    let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
     let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
         &sk_glwe,
-        &bdd_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -129,7 +124,6 @@ where
         &module,
         input_a,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -140,7 +134,6 @@ where
         &module,
         input_b,
         &sk_glwe_prepared,
-        &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

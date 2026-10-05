@@ -9,7 +9,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWEEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    GGLWEEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, GLWESecretTensorFactory, GLWESecretToBackendRef,
         prepared::GLWESecretPreparedFactory,
@@ -24,17 +24,15 @@ pub trait GGLWEToGGSWKeyEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S, E>(
+    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
@@ -61,20 +59,19 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3 + lvl_4_encrypt
     }
 
-    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S, E>(
+    fn gglwe_to_ggsw_key_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
 
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToGGSWKeyToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
+        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
         let mut res = res.to_backend_mut();
 
         let rank: usize = res.rank_out().as_usize();
@@ -111,7 +108,6 @@ where
                     &mut res.at_view_mut(i),
                     &sk_ij,
                     &sk_prepared,
-                    enc_infos,
                     source_xe,
                     source_xa,
                     &mut enc_scratch,

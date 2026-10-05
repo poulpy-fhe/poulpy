@@ -2066,7 +2066,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_add(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }
@@ -2092,7 +2092,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_sub(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }

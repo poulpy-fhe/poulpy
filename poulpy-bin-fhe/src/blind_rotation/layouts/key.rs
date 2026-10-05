@@ -6,7 +6,7 @@ use poulpy_hal::{
 use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
-    Distribution, EncryptionLayout, TransferInto,
+    Distribution, TransferInto,
     layouts::{Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -50,16 +50,6 @@ impl BlindRotationKeyInfos for BlindRotationKeyLayout {
 
     fn n_lwe(&self) -> Degree {
         self.n_lwe
-    }
-}
-
-impl BlindRotationKeyInfos for EncryptionLayout<BlindRotationKeyLayout> {
-    fn n_glwe(&self) -> Degree {
-        self.layout.n_glwe()
-    }
-
-    fn n_lwe(&self) -> Degree {
-        self.layout.n_lwe()
     }
 }
 
@@ -265,6 +255,10 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRT, W> {
 }
 
 impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKey<D, BRT, W> {
+    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
+        self.keys.first().and_then(LWEInfos::encryption_metadata)
+    }
+
     fn base2k(&self) -> Base2K {
         self.keys[0].base2k()
     }

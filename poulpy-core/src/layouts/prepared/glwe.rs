@@ -18,6 +18,7 @@ use crate::{
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
+    pub(crate) metadata: Option<crate::EncryptionMetadata>,
     pub(crate) data: VecZnxDft<D, B::DftWord, B>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -27,6 +28,10 @@ pub type GLWEPreparedBackendRef<'a, B> = GLWEPrepared<<B as Backend>::BufRef<'a>
 pub type GLWEPreparedBackendMut<'a, B> = GLWEPrepared<<B as Backend>::BufMut<'a>, B>;
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
+    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
+        self.metadata
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -71,6 +76,7 @@ where
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         GLWEPrepared {
+            metadata: None,
             data: self.vec_znx_dft_alloc(n, (infos.rank() + 1).into(), infos.size()),
             base2k: infos.base2k(),
             k: infos.k(),
@@ -106,6 +112,7 @@ where
         R: GLWEPreparedToBackendMut<B>,
         O: GLWEToBackendRef<B> + GLWEInfos,
     {
+        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
         let (mut other_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(other);
         let other = if other.is_canonical() {
             other.to_backend_ref()
@@ -142,6 +149,7 @@ pub trait GLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         GLWEPrepared {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -150,12 +158,23 @@ impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
 }
 
 pub trait GLWEPreparedToBackendMut<B: Backend> {
+    /// Backend hook for recording or propagating derived encryption provenance.
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+
+    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_encryption_metadata` hook.
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B>;
 }
 
 impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
+    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+        self.metadata = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
+            metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

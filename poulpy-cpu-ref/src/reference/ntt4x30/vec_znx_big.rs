@@ -24,13 +24,12 @@
 //!   `i128` limbs into `i64` `VecZnx` output.  Uses an `i128` carry buffer.
 //! - **Automorphism**: [`ntt4x30_vec_znx_big_automorphism`] /
 //!   [`ntt4x30_vec_znx_big_automorphism_assign`] — apply `X → X^p` on `i128` coefficients.
-//! - **Gaussian noise**: [`ntt4x30_vec_znx_big_add_normal_ref`] — add rounded Gaussian
+//! - **Gaussian noise**: [`ntt4x30_vec_znx_big_add_noise_ref`] — add integer
 //!   noise into a specified limb of a `VecZnxBig`.
 //!
 //! [`fft64`]: crate::reference::fft64
 
 use itertools::izip;
-use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
@@ -1590,42 +1589,18 @@ where
     }
 }
 
-/// Add rounded Gaussian noise `N(0, σ²)` into the limb of `res[res_col]` that
-/// holds the precision bits around level `k` in base `2^base2k`.
-///
-/// # Panics
-///
-/// Panics if `ceil(log2(bound)) >= 64`.
-pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
+/// Add full-width integer noise at precision `k`, in radix `2^base2k`.
+pub fn ntt4x30_vec_znx_big_add_noise_ref<R, BE>(
     base2k: usize,
+    k: usize,
     res: &mut R,
     res_col: usize,
-    k: usize,
-    sigma: f64,
-    bound: f64,
+    noise: poulpy_core::Noise,
     source: &mut Source,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
+    for<'a> BE::BufMut<'a>: HostDataMut,
     R: VecZnxBigToBackendMut<BE>,
-    for<'x> BE::BufMut<'x>: HostDataMut,
 {
-    let mut res = res.to_backend_mut();
-    assert!(
-        (bound.log2().ceil() as i64) < 64,
-        "invalid bound: ceil(log2(bound))={} > 63",
-        bound.log2().ceil() as i64
-    );
-
-    let limb: usize = k.div_ceil(base2k) - 1;
-    let shift: u32 = ((limb + 1) * base2k - k) as u32;
-    let normal: Normal<f64> = Normal::new(0.0, sigma).unwrap();
-    let rj: &mut [i128] = res.at_mut(res_col, limb);
-
-    rj.iter_mut().for_each(|r| {
-        let mut s: f64 = normal.sample(source);
-        while s.abs() > bound {
-            s = normal.sample(source);
-        }
-        *r = r.wrapping_add((s.round() as i64 as i128) << shift);
-    });
+    crate::reference::noise::add_noise(base2k, k, &mut res.to_backend_mut(), res_col, noise, source);
 }
