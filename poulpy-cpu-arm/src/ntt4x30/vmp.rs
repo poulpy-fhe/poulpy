@@ -1,59 +1,61 @@
-//! Vector-matrix product NEON kernels for [`NTT4x30Neon`](crate::NTT4x30Neon).
+//! Vector-matrix product for [`NTT4x30Neon`](crate::NTT4x30Neon) on the packed layout.
 //!
-//! Uses a 4-plane prime-major prepared-matrix layout so the apply path streams
-//! one prime plane at a time and reuses extracted input rows across output columns.
+//! The prepared matrix is ordered `block -> output column -> input row`, where a block is four consecutive coefficients.
+//! One row of a block is 16 `u32`: four lanes for each of the four primes, multiplied by `2^32`.
+//! The apply path therefore reads the matrix as one contiguous stream, in the order of its inner loop.
 
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use core::arch::aarch64::{vld1q_u32, vst1q_u32};
 use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 
-use poulpy_cpu_portable::kernels::ntt4x30::{
-    NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
-};
+use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
-        DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
-        ZnxView, ZnxViewMut, check_degree,
+        DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxView, ZnxViewMut, check_degree,
     },
 };
 
-use super::super::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
 use crate::NTT4x30Neon;
-use poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable;
+use crate::neon::ntt4x30_packed::{add_mod, dot_rows, pack_limb, planes};
+use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_hal::layouts::Ring;
 
+/// `u32` per row of a block.
+const ROW: usize = 16;
+
 #[derive(Clone, Copy)]
-struct SendU64Ptr(*mut u64);
+struct SendU32Ptr(*mut u32);
 
-// Each task writes a distinct NTT block pair and joins before reuse.
-unsafe impl Send for SendU64Ptr {}
-unsafe impl Sync for SendU64Ptr {}
+// Each task writes a distinct block and joins before reuse.
+unsafe impl Send for SendU32Ptr {}
+unsafe impl Sync for SendU32Ptr {}
 
-impl SendU64Ptr {
+impl SendU32Ptr {
     #[inline(always)]
-    fn get(&self) -> *mut u64 {
+    fn get(&self) -> *mut u32 {
         self.0
     }
 }
 
-/// Scratch space (in bytes) required by the NEON VMP prepare kernel.
+/// Scratch space (in bytes) required by the VMP prepare kernel.
+///
+/// Holds one q120b polynomial for the transform and one packed limb.
 pub(crate) fn vmp_prepare_tmp_bytes_neon(n: usize) -> usize {
-    8 * n * size_of::<u64>()
+    6 * n * size_of::<u64>()
 }
 
-/// NEON-local VMP prepare into a 4-plane prime-major layout.
-/// The prepared matrix uses one plane per CRT prime. Within each plane the
-/// layout is `block_pair -> output_column -> input_row`, and every row stores
-/// four u64 values in lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
+/// VMP prepare into the block-major prepared layout.
 pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
     module: &Module<NTT4x30Neon<R>>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
     a: &MatZnxBackendRef<'_, NTT4x30Neon<R>>,
     tmp: &mut [u64],
 ) where
-    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>>,
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     let n = res.n();
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
@@ -68,17 +70,14 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
 
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
-    let n_block_pairs = n / 4;
-    let plane_stride = n_block_pairs * ncols * nrows * 4;
-    let bp_stride = ncols * nrows * 4;
-    let col_stride = nrows * 4;
+    let n_blocks = n / 4;
 
-    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
-    let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
+    let (tmp_b, tmp_packed) = tmp.split_at_mut(4 * n);
+    let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
     let table = module.get_ntt_table_for(n);
 
     let mat_i64: &[i64] = a.raw();
-    let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
+    let pmat: &mut [u32] = cast_slice_mut(res.data_mut());
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
@@ -86,278 +85,19 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
 
             NTT4x30Neon::<R>::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
             NTT4x30Neon::<R>::ntt_dft_execute(table, tmp_b);
-            NTT4x30Neon::<R>::ntt_c_from_b(n, tmp_c, tmp_b);
-            let tmp_c_u64: &[u64] = cast_slice(tmp_c);
+            pack_limb(n, tmp_packed, tmp_b, true);
 
-            for bp in 0..n_block_pairs {
-                let coeff_base = 16 * bp;
-                for p in 0..4usize {
-                    let dst = p * plane_stride + bp * bp_stride + col_i * col_stride + row_i * 4;
-                    pmat_u64[dst..dst + 4].copy_from_slice(&[
-                        tmp_c_u64[coeff_base + p],
-                        tmp_c_u64[coeff_base + 4 + p],
-                        tmp_c_u64[coeff_base + 8 + p],
-                        tmp_c_u64[coeff_base + 12 + p],
-                    ]);
+            for blk in 0..n_blocks {
+                let dst = ((blk * ncols + col_i) * nrows + row_i) * ROW;
+                for p in 0..4 {
+                    pmat[dst + 4 * p..dst + 4 * p + 4].copy_from_slice(&tmp_packed[p * n + 4 * blk..p * n + 4 * blk + 4]);
                 }
             }
         }
     }
 }
 
-/// Scratch space (in bytes) required by the NEON VMP apply kernels.
-pub(crate) fn vmp_apply_tmp_bytes_neon(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
-    let row_max = a_size.min(b_rows) * b_cols_in;
-    (16 + 16 * row_max) * size_of::<u64>()
-}
-
-/// Extract one q120b block pair into 4 prime-major planes.
-/// Each plane stores `row_max` rows of 4 u64 with lane order
-/// `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`. The packing is scalar — each output
-/// u64 comes from a non-contiguous source offset, so SIMD gathers would not
-/// help.
-#[inline]
-fn extract_blk_pair_prime_major_neon(n: usize, row_max: usize, blk_pair: usize, src: &[u64], dst: &mut [u64]) {
-    assert!(n.is_multiple_of(4));
-    assert!(src.len() >= row_max * 4 * n);
-    assert!(dst.len() >= 16 * row_max);
-
-    let plane_stride = 4 * row_max;
-    let coeff_base = 16 * blk_pair;
-
-    for row in 0..row_max {
-        let row_base = row * 4 * n + coeff_base;
-        for p in 0..4usize {
-            let off = p * plane_stride + row * 4;
-            dst[off] = src[row_base + p];
-            dst[off + 1] = src[row_base + 4 + p];
-            dst[off + 2] = src[row_base + 8 + p];
-            dst[off + 3] = src[row_base + 12 + p];
-        }
-    }
-}
-
-/// Non-temporal store of one x2-block (8 u64) into a q120b vector via two
-/// `stnp q, q` pairs. The result is write-once before being read back by the
-/// caller's normalization, so NT stores avoid polluting L1/L2 with output lines.
-#[inline]
-fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    assert!(src.len() >= 8);
-    let off = 8 * blk;
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let dst_ptr = dst.as_mut_ptr().add(off);
-        let src_ptr = src.as_ptr();
-        core::arch::asm!(
-            "ldp  {v0:q}, {v1:q}, [{src}]",
-            "ldp  {v2:q}, {v3:q}, [{src}, #32]",
-            "stnp {v0:q}, {v1:q}, [{dst}]",
-            "stnp {v2:q}, {v3:q}, [{dst}, #32]",
-            src = in(reg) src_ptr,
-            dst = in(reg) dst_ptr,
-            v0 = out(vreg) _,
-            v1 = out(vreg) _,
-            v2 = out(vreg) _,
-            v3 = out(vreg) _,
-            options(nostack, preserves_flags),
-        );
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        dst[off..off + 8].copy_from_slice(&src[..8]);
-    }
-}
-
-#[inline(always)]
-fn save_blk_add(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    assert!(src.len() >= 8);
-    assert!(dst.len() >= 8 * (blk + 1));
-    for i in 0..8 {
-        let k = i % 4;
-        dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
-    n: usize,
-    res_u64: &mut [u64],
-    a_u64: &[u64],
-    pmat_u64: &[u64],
-    limb_offset: usize,
-    nrows: usize,
-    ncols: usize,
-    meta: &BbcMeta<Primes30>,
-    tmp: &mut [u64],
-) {
-    assert!(n >= 4);
-    assert!(n.is_power_of_two());
-    assert!(n.is_multiple_of(4));
-
-    let a_size = a_u64.len() / (4 * n);
-    let res_size = res_u64.len() / (4 * n);
-    let n_block_pairs = n / 4;
-
-    let row_end = nrows.min(a_size);
-    let row_start = a_u64
-        .chunks_exact(4 * n)
-        .take(row_end)
-        .take_while(|row| row.iter().all(|&x| x == 0))
-        .count();
-    let row_max = row_end - row_start;
-    let col_max = ncols.min(res_size + limb_offset);
-
-    if limb_offset >= col_max || row_max == 0 {
-        if OVERWRITE {
-            res_u64.fill(0);
-        }
-        return;
-    }
-
-    let plane_stride = n_block_pairs * ncols * nrows * 4;
-    let bp_stride = ncols * nrows * 4;
-    let col_stride = nrows * 4;
-    let a_u64 = &a_u64[row_start * 4 * n..];
-
-    if !E::is_parallel() || n_block_pairs < 2 {
-        let (blkpair_output, x_pm) = tmp.split_at_mut(16);
-        let x_pm = &mut x_pm[..16 * row_max];
-        for bp in 0..n_block_pairs {
-            extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
-
-            for col_pmat in limb_offset..col_max {
-                let col_res = col_pmat - limb_offset;
-                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
-
-                unsafe {
-                    vec_mat1col_product_blkpair_bbc_pm_neon(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
-                };
-
-                let blk0 = 2 * bp;
-                let blk1 = blk0 + 1;
-                let base = col_res * 4 * n;
-                if OVERWRITE {
-                    save_blk_overwrite(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                    save_blk_overwrite(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
-                } else {
-                    save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                    save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
-                }
-            }
-        }
-    } else {
-        let res_ptr = SendU64Ptr(res_u64.as_mut_ptr());
-        E::for_each_chunked(n_block_pairs, tmp, 16 + 16 * row_max, |task_tmp, bp| {
-            let (blkpair_output, x_pm) = task_tmp.split_at_mut(16);
-            extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
-
-            for col_pmat in limb_offset..col_max {
-                let col_res = col_pmat - limb_offset;
-                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
-                unsafe {
-                    vec_mat1col_product_blkpair_bbc_pm_neon(
-                        meta,
-                        row_max,
-                        blkpair_output,
-                        x_pm,
-                        &pmat_u64[y_off..],
-                        plane_stride,
-                    );
-                    let base = col_res * 4 * n;
-                    let blk0 = 2 * bp;
-                    let blk1 = blk0 + 1;
-                    let dst0 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 8 * blk0), 8);
-                    let dst1 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 8 * blk1), 8);
-                    if OVERWRITE {
-                        save_blk_overwrite(n, 0, dst0, &blkpair_output[0..8]);
-                        save_blk_overwrite(n, 0, dst1, &blkpair_output[8..16]);
-                    } else {
-                        save_blk_add(n, 0, dst0, &blkpair_output[0..8]);
-                        save_blk_add(n, 0, dst1, &blkpair_output[8..16]);
-                    }
-                }
-            }
-        });
-    }
-
-    if OVERWRITE {
-        let active_cols = col_max - limb_offset;
-        for col in active_cols..res_size {
-            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
-        }
-    }
-}
-
-pub(crate) fn vmp_apply_dft_to_dft_neon<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Neon<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
-    limb_offset: usize,
-    tmp: &mut [u64],
-) {
-    assert_eq!(res.n(), pmat.n());
-    assert_eq!(a.n(), pmat.n());
-    assert_eq!(res.cols(), pmat.cols_out());
-    assert_eq!(a.cols(), pmat.cols_in());
-    let n = res.n();
-    let nrows = pmat.cols_in() * pmat.rows();
-    let ncols = pmat.cols_out() * pmat.size();
-    let meta = module.get_bbc_meta();
-
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
-
-    vmp_apply_core_neon_pm::<true, E>(
-        n,
-        res_u64,
-        a_u64,
-        pmat_u64,
-        limb_offset * pmat.cols_out(),
-        nrows,
-        ncols,
-        meta,
-        tmp,
-    );
-}
-
-pub(crate) fn vmp_apply_dft_to_dft_add_neon<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Neon<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
-    limb_offset: usize,
-    tmp: &mut [u64],
-) {
-    assert_eq!(res.n(), pmat.n());
-    assert_eq!(a.n(), pmat.n());
-    assert_eq!(res.cols(), pmat.cols_out());
-    assert_eq!(a.cols(), pmat.cols_in());
-    let n = res.n();
-    let nrows = pmat.cols_in() * pmat.rows();
-    let ncols = pmat.cols_out() * pmat.size();
-    let meta = module.get_bbc_meta();
-
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
-
-    vmp_apply_core_neon_pm::<false, E>(
-        n,
-        res_u64,
-        a_u64,
-        pmat_u64,
-        limb_offset * pmat.cols_out(),
-        nrows,
-        ncols,
-        meta,
-        tmp,
-    );
-}
-
-/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
-/// limbs, into rows `i` of `res`, in the prime-major prepared layout.
+/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()` limbs, into rows `i` of `res`.
 pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
     res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
     a: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
@@ -370,28 +110,216 @@ pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
     let cols_in: usize = a.cols_in();
     let (res_rows, res_nrows, res_ncols) = (res.rows(), res.rows() * cols_in, res.cols_out() * res.size());
     let (a_nrows, a_ncols) = (a.rows() * cols_in, a.cols_out() * a.size());
-    let n_block_pairs: usize = n / 4;
-    // Same strides as the prepare kernel above, per matrix shape.
-    let (res_plane, res_bp, res_col) = (
-        n_block_pairs * res_ncols * res_nrows * 4,
-        res_ncols * res_nrows * 4,
-        res_nrows * 4,
-    );
-    let (a_plane, a_bp, a_col) = (n_block_pairs * a_ncols * a_nrows * 4, a_ncols * a_nrows * 4, a_nrows * 4);
-    let span: usize = cols_in * 4;
+    // One selected row spans `cols_in` consecutive input rows.
+    let span: usize = cols_in * ROW;
 
-    let src: &[u64] = cast_slice(a.raw());
-    let dst: &mut [u64] = cast_slice_mut(res.data_mut());
-    for p in 0..4 {
-        for bp in 0..n_block_pairs {
-            for col in 0..res_ncols {
-                let dst_base: usize = p * res_plane + bp * res_bp + col * res_col;
-                let src_base: usize = p * a_plane + bp * a_bp + col * a_col;
-                for i in 0..res_rows {
-                    let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
-                    dst[d..d + span].copy_from_slice(&src[s..s + span]);
+    let src: &[u32] = cast_slice(a.raw());
+    let dst: &mut [u32] = cast_slice_mut(res.data_mut());
+    for blk in 0..n / 4 {
+        for col in 0..res_ncols {
+            let dst_base: usize = (blk * res_ncols + col) * res_nrows * ROW;
+            let src_base: usize = (blk * a_ncols + col) * a_nrows * ROW;
+            for i in 0..res_rows {
+                let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
+                dst[d..d + span].copy_from_slice(&src[s..s + span]);
+            }
+        }
+    }
+}
+
+/// Scratch space (in bytes) required by the VMP apply kernels, per worker.
+///
+/// Holds the input rows of one block.
+pub(crate) fn vmp_apply_tmp_bytes_neon(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
+    let row_max = a_size.min(b_rows) * b_cols_in;
+    ROW * row_max.max(1) * size_of::<u32>()
+}
+
+/// Gathers block `blk` of `row_max` input limbs into rows of 16 `u32`.
+#[inline(always)]
+unsafe fn extract_block(n: usize, row_max: usize, blk: usize, a: *const u32, x: *mut u32) {
+    unsafe {
+        for row in 0..row_max {
+            let limb = a.add(row * 4 * n + 4 * blk);
+            let dst = x.add(row * ROW);
+            for p in 0..4 {
+                vst1q_u32(dst.add(4 * p), vld1q_u32(limb.add(p * n)));
+            }
+        }
+    }
+}
+
+/// Computes block `blk` of every active output column.
+///
+/// # Safety
+/// `res` addresses the output limbs, `a` the `row_max` active input limbs and `pmat` the first active row of the matrix.
+/// `x` addresses `16 * row_max` `u32` of scratch.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+unsafe fn apply_block<const OVERWRITE: bool>(
+    n: usize,
+    blk: usize,
+    res: *mut u32,
+    a: *const u32,
+    pmat: *const u32,
+    nrows: usize,
+    ncols: usize,
+    row_max: usize,
+    limb_offset: usize,
+    col_max: usize,
+    x: *mut u32,
+) {
+    unsafe {
+        let c = planes();
+        extract_block(n, row_max, blk, a, x);
+        for col_pmat in limb_offset..col_max {
+            let m = pmat.add((blk * ncols + col_pmat) * nrows * ROW);
+            let r = dot_rows(x, m, row_max, &c);
+            let dst = res.add((col_pmat - limb_offset) * 4 * n + 4 * blk);
+            for p in 0..4 {
+                let d = dst.add(p * n);
+                if OVERWRITE {
+                    vst1q_u32(d, r[p]);
+                } else {
+                    vst1q_u32(d, add_mod(vld1q_u32(d), r[p], c[p].q));
                 }
             }
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
+    n: usize,
+    res_u32: &mut [u32],
+    a_u32: &[u32],
+    pmat_u32: &[u32],
+    limb_offset: usize,
+    nrows: usize,
+    ncols: usize,
+    tmp: &mut [u32],
+) {
+    assert!(n >= 4);
+    assert!(n.is_power_of_two());
+
+    let a_size = a_u32.len() / (4 * n);
+    let res_size = res_u32.len() / (4 * n);
+    let n_blocks = n / 4;
+
+    let row_end = nrows.min(a_size);
+    let row_start = a_u32
+        .chunks_exact(4 * n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0))
+        .count();
+    let row_max = row_end - row_start;
+    let col_max = ncols.min(res_size + limb_offset);
+
+    if limb_offset >= col_max || row_max == 0 {
+        if OVERWRITE {
+            res_u32.fill(0);
+        }
+        return;
+    }
+
+    assert!(pmat_u32.len() >= n_blocks * ncols * nrows * ROW);
+    assert!(a_u32.len() >= row_end * 4 * n);
+    assert!(res_u32.len() >= (col_max - limb_offset) * 4 * n);
+    let per_worker = ROW * row_max;
+    assert!(tmp.len() >= per_worker);
+
+    let a_ptr = a_u32[row_start * 4 * n..].as_ptr() as usize;
+    let pmat_ptr = pmat_u32[row_start * ROW..].as_ptr() as usize;
+    let res_ptr = SendU32Ptr(res_u32.as_mut_ptr());
+
+    E::for_each_chunked(n_blocks, tmp, per_worker, |x, blk| unsafe {
+        apply_block::<OVERWRITE>(
+            n,
+            blk,
+            res_ptr.get(),
+            a_ptr as *const u32,
+            pmat_ptr as *const u32,
+            nrows,
+            ncols,
+            row_max,
+            limb_offset,
+            col_max,
+            x.as_mut_ptr(),
+        )
+    });
+
+    if OVERWRITE {
+        let active_cols = col_max - limb_offset;
+        for col in active_cols..res_size {
+            res_u32[col * 4 * n..(col + 1) * 4 * n].fill(0);
+        }
+    }
+}
+
+pub(crate) fn vmp_apply_dft_to_dft_neon<R: Ring, E: TaskExecutor>(
+    _module: &Module<NTT4x30Neon<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
+    let n = res.n();
+    let nrows = pmat.cols_in() * pmat.rows();
+    let ncols = pmat.cols_out() * pmat.size();
+
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u32: &[u32] = cast_slice(pmat.data());
+
+    unsafe {
+        vmp_apply_core_neon_pm::<true, E>(
+            n,
+            res_u32,
+            a_u32,
+            pmat_u32,
+            limb_offset * pmat.cols_out(),
+            nrows,
+            ncols,
+            cast_slice_mut(tmp),
+        );
+    }
+}
+
+pub(crate) fn vmp_apply_dft_to_dft_add_neon<R: Ring, E: TaskExecutor>(
+    _module: &Module<NTT4x30Neon<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
+    let n = res.n();
+    let nrows = pmat.cols_in() * pmat.rows();
+    let ncols = pmat.cols_out() * pmat.size();
+
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u32: &[u32] = cast_slice(pmat.data());
+
+    unsafe {
+        vmp_apply_core_neon_pm::<false, E>(
+            n,
+            res_u32,
+            a_u32,
+            pmat_u32,
+            limb_offset * pmat.cols_out(),
+            nrows,
+            ncols,
+            cast_slice_mut(tmp),
+        );
     }
 }

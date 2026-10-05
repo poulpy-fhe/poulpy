@@ -272,19 +272,36 @@ fn test_convolution_direct() {
     test_convolution_by_const_add(&module, module.n(), 50);
     test_convolution_pairwise(&module, FLOOR, 50);
     test_convolution_pairwise(&module, module.n(), 50);
+    // Sparse right operands one and two halvings below the module degree take distinct expansion paths.
+    for gap in [1, 2] {
+        test_convolution(&module, module.n() >> gap, 50);
+        test_convolution_pairwise(&module, module.n() >> gap, 50);
+    }
 }
 
-cross_backend_test_suite! {
-    mod word_compat,
-    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
-    backend_test = crate::NTT4x30Neon,
-    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
-    tests = {
-        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
-        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
-        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
-        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
-    }
+#[test]
+fn test_transform_domain_packed_byte_sizes() {
+    use poulpy_hal::layouts::{Backend, PrepareHint};
+    let (n, cols, size) = (256, 3, 5);
+    let packed_bytes = n * cols * size * 4 * size_of::<u32>();
+    assert_eq!(<NTT4x30Neon as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(
+        <NTT4x30Neon as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Neon as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Neon as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
+        n * cols * 4 * size_of::<u32>()
+    );
+    let (rows, cols_in, cols_out) = (3, 2, 4);
+    assert_eq!(
+        <NTT4x30Neon as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
+        n * rows * cols_in * cols_out * size * 4 * size_of::<u32>()
+    );
 }
 
 // Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.

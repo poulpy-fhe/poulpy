@@ -26,7 +26,8 @@
 //! # Scalar types
 //!
 //! - `FFT64Neon`: `DftWord = f64`, `BigWord = i64`.
-//! - `NTT4x30Neon`: `DftWord = Q120bScalar` (4 × u64 CRT residues over `Primes30`), `BigWord = i128`.
+//! - `NTT4x30Neon`: `DftWord = CrtWord<Primes30, u32>` (four `u32` CRT residues over `Primes30`), `BigWord = i128`.
+//!   A transformed limb stores one plane of residues per prime.
 //!
 //! # CPU requirements
 //!

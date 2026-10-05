@@ -257,6 +257,11 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- **Breaking, behaviour:** `NTT4x30Neon` and `NTT4x30NeonRayon` store the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR`.
+  A transformed limb holds one plane of canonical residues per prime, so every lane of a NEON register belongs to the same prime.
+  Prepared operands store their residues multiplied by `2^32` and products against them reduce with one Montgomery step on four lanes.
+  The prepared matrix is ordered block, output column, input row, so a vector-matrix product reads it as one contiguous stream, and the convolution shares its inner product kernel.
+  These buffers are no longer byte-compatible with `NTT4x30Portable`: the `VecZnxDftLayoutCompatible` and `SvpPPolLayoutCompatible` markers between the two are removed, `VecZnxBigLayoutCompatible` stays.
 - AVX-512 rank-one tensor multiplication and squaring retain full-limb precision before pairwise subtraction and round all output columns to the requested precision. `NTT3x42IfmaRayon` specializes prepared-right Core tensor products with matching input and output radices.
   The ordinary and prepared rank-one specializations share one gate: rank one at degree `2^13` and above, where they run 1.08x to 1.5x faster than the reference composition on 4 to 48 Rayon threads. They previously ran only at `2^15` and `2^16`.
 - `NTT3x42IfmaRayon` streams inverse transforms at degree `2^16` and above through CRT reconstruction and shared carry normalization, respects nested execution, and avoids clearing carry storage before overwriting it.

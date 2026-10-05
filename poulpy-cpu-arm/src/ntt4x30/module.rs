@@ -5,13 +5,12 @@ use std::ptr::NonNull;
 use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    types::Q120bScalar,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
 use poulpy_hal::layouts::{Ring, Standard};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, CrtWord, Host},
 };
 
 use super::NTT4x30Neon;
@@ -35,7 +34,7 @@ impl<R: Ring> Backend for NTT4x30Neon<R> {
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type Ring = R;
-    type DftWord = Q120bScalar;
+    type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
