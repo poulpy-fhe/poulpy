@@ -120,6 +120,35 @@ instance the key rests on. A single ephemeral would give `r + 1` ring-LWE
 samples of degree `n` in one secret, so parameters sized for dimension `n r`
 would not protect it.
 
+## Encryption metadata
+
+Encryption and protocol finalization derive `EncryptionMetadata` for their
+outputs. Secret provenance records the base distribution and number of secret
+contributors. The separate `FreshNoiseEstimate` records effective phase
+variance in integer coefficient units at the stored creation precision `k`.
+Its square root is the effective fresh sigma; multiplying that sigma by
+`2^-k` gives its torus scale. `variance_at` and `std_dev_at` express the same
+historical estimate on another precision grid without adding rounding error.
+Positive infinity denotes an unbounded estimate, including numeric overflow.
+
+The estimate accounts for inherited public-key error and amplification during
+key generation or protocol finalization. It is a variance model, not an exact
+distribution descriptor for sums or products of errors. A whole GGSW uses the
+largest column estimate. Aggregation can sum independent error variances;
+when binary ephemerals reuse one public key, a conservative sum of sigmas
+accounts for possible covariance.
+
+This metadata describes creation noise. Homomorphic evaluation does not make
+it a running estimate of the output's current noise. Copies, compression,
+preparation and backend transfers preserve the recorded estimate and its
+creation precision, even when the destination's precision differs. Backend
+views copy metadata by value, so an operation that records new metadata must
+update the owner through its setter.
+
+Equality includes the fresh estimate and its precision. The `PNM2` wire format
+preserves them and rejects earlier metadata versions; `PNM1` does not contain
+enough information to reconstruct amplified fresh noise.
+
 ## Testing a replacement
 
 Select the comparison backend with `backend_ref` and the backend under test

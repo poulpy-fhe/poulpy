@@ -57,13 +57,26 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 ## Encryption provenance
 
 Keys and ciphertexts expose derived provenance through `encryption_metadata()`.
-Secret-share aggregation records the number of independent contributors and
-their common base secret distribution. Public-key protocols preserve the
-destination key's provenance. Compression, preparation and serialization retain
-it. The reported initial variance describes ordinary encryption noise; it does
-not estimate evaluated noise or include a protocol's flood. Backend views copy
-metadata by value, as they do precision and canonical flags, so pass the owner
-to a protocol when its metadata must be updated.
+The secret's base distribution and party count are separate from `fresh_noise()`,
+an effective phase-error variance estimate tied to its sampling precision.
+`variance_at(k)` and `std_dev_at(k)` convert that estimate to another precision.
+Compression, preparation and serialization preserve both parts.
+
+Secret-share aggregation adds independent error variances and secret party
+counts. Public-key protocols retain the destination secret's party count while
+combining their generated errors, including inherited public-key error, fresh
+mask error and any selected flood. Tensor-key and GGSW construction record their
+larger phase errors; a GGSW uses its largest column estimate. Noncentered binary
+ephemerals require a conservative covariance bound when reusing a public key.
+The public key's ephemeral sampling law must match its recorded base secret law.
+
+These are fresh construction estimates, not exact distributions or live noise
+tracking after evaluation. Key-switch protocol estimates describe newly generated
+share-construction error. They exclude the input ciphertext's existing phase
+error and precision-conversion error introduced during finalization. See the
+[fresh-noise contract](docs/mhe-contracts.md#share-metadata) for the model's limits.
+Backend views copy metadata by value, as they do precision and canonical flags,
+so pass the owner to a protocol when its metadata must be updated.
 
 ## Smudging
 

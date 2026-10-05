@@ -156,6 +156,7 @@ where
         let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
         module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
         super::fixtures::assert_collective_metadata(&ct, PARTIES);
+        super::fixtures::assert_fresh_noise(&ct, PARTIES as f64 * DEFAULT_SIGMA_XE.powi(2), K_OUT);
         // The shares add up modulo 1; the output's extra precision only carries the noise.
         let want: Vec<i64> = (0..module.n())
             .map(|j| shares.iter().fold(0, |sum, s| wrap(sum + s[j], K.as_usize())))

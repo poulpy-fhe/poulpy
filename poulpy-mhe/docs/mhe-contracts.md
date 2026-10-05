@@ -47,9 +47,56 @@ follows the
 
 ## Share metadata
 
-A share carries the metadata of the core object it finalizes into, as listed
-on each protocol trait. Aggregation asserts that both shares carry the same
-metadata, and finalization copies it into the result.
+A share carries the secret provenance and effective fresh phase-error estimate
+of the core object it finalizes into. The secret distribution records its base
+law and number of independently summed parties. `FreshNoiseEstimate` records a
+separate centered variance and its precision: an estimate `V` at precision `k`
+has torus variance `V * 2^(-2k)`. Rescaling the estimate does not change the stored
+secret count. The estimate is not an assertion that the resulting distribution
+is Gaussian.
+
+Seeded share aggregation checks compatible base laws and adds independent
+variances after bringing them to the same precision, while also adding secret
+party counts. Public-key ciphertext and tensor-key shares retain the destination
+secret count. Their fresh variance includes public-key error multiplied by new
+ephemerals, fresh mask error multiplied by the collective secret, and body noise.
+For a centered base secret law the independent ephemeral contributions give
+additive variances. For a noncentered law, reusing a public key correlates its
+error across shares; the scalar estimate uses the conservative squared sum of
+standard deviations. Compatibility checks compare secret provenance, not the
+changing fresh variance. The public key's ephemeral sampling law must equal its
+recorded base secret law; changing that tag independently is rejected before
+share generation mutates output or consumes randomness.
+
+A GGSW's first column carries ordinary aggregated encryption error. Other
+columns also contain the circular terms `E_s * U - E_u * S` and key-switching
+error. Their variance model uses the secret and ephemeral second moments,
+including nonzero means, and bounds each gadget digit by `2^(B-1)`. The stored
+estimate is the largest column estimate. Key coverage is checked before this
+construction, so no gadget truncation residue is omitted.
+
+Private key-switch and encryption-to-shares transcripts record their selected
+flood, rather than ordinary encryption noise. A Gaussian uses its sigma-squared
+parameter, which bounds the conditioned discrete draw's variance. A `bits`-wide
+uniform flood has variance `(2^(2*bits)-1)/12`; its mean is `-1/2`, and that bias
+is not included in the centered variance. Public key-switching replaces the
+ordinary body error with the flood. Key-switch finalization reports newly
+generated share-construction error at its original grid. The input ciphertext's
+existing error and any input/output precision-conversion error during
+finalization still contribute to its actual output and are not tracked here.
+
+When private key switching generates a share narrower than the received mask,
+subtracting the two cropped inner products and normalizing also introduces
+conversion error. Its estimate adds the squared one-ulp bound at the share's
+precision to the flood variance. Equal or wider shares add no conversion term.
+
+As in core's noise models, precision reduction adds a modeled half-ulp variance
+per ciphertext component, folded against the secret. Adding that rounding term
+independently is an approximation, not a proof that it is uncorrelated with
+other errors. Unknown secret moments produce an infinite estimate while keeping
+secret provenance. Fresh metadata is preserved through later operations and
+does not estimate live evaluated noise. Callers still choose protocol parameters
+using the complete error and statistical budget.
 
 ## Randomness and seeds
 

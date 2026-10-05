@@ -158,11 +158,8 @@ where
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
-        assert_eq!(
-            res.encryption_metadata(),
-            a.encryption_metadata(),
-            "invalid aggregation: output key provenance differs"
-        );
+        let metadata =
+            super::aggregate_common_key_metadata(res.encryption_metadata(), a.encryption_metadata(), res.n().as_usize());
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
@@ -171,6 +168,8 @@ where
                 self.glwe_add_assign(&mut res_be.at_view_mut(row, col), &a_be.at_view(row, col));
             }
         }
+        drop(res_be);
+        res.set_encryption_metadata(metadata);
     }
 
     fn gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize {

@@ -151,7 +151,11 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
@@ -193,7 +197,11 @@ where
         R: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let sk_ref = sk.to_backend_ref();
@@ -235,7 +243,11 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
@@ -387,7 +399,12 @@ where
         R: GLWEToBackendMut<BE>,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        res.set_encryption_metadata(pk.encryption_metadata());
+        let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(
+            &res.to_backend_ref(),
+            pk,
+            body_noise.then_some(Noise::ENCRYPTION),
+        );
+        res.set_encryption_metadata(metadata);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
 

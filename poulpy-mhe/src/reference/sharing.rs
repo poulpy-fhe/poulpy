@@ -1,6 +1,6 @@
 use poulpy_core::{
-    GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWESub, Noise,
-    ScratchArenaTakeCore, VecZnxAddNoise,
+    EncryptionMetadata, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct,
+    GLWENormalize, GLWESub, GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -127,6 +127,13 @@ where
             );
             self.glwe_normalize_assign(public, &mut scratch_1);
         }
+        GLWEToBackendMut::<BE>::set_encryption_metadata(
+            public,
+            Some(
+                EncryptionMetadata::from_secret_at(*sk.to_backend_ref().dist(), public.k())
+                    .with_fresh_noise(FreshNoiseEstimate::new(super::flood_variance(flood), public.k())),
+            ),
+        );
         scratch.wipe(tmp_bytes);
     }
 
@@ -136,7 +143,9 @@ where
         a: &GLWEEncToShareShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_encryption_metadata(res, metadata);
     }
 
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference(&self) -> usize {
@@ -171,6 +180,7 @@ where
         self.glwe_add_assign(secret, public);
         self.vec_znx_add_assign(secret.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(secret, scratch);
+        secret.set_encryption_metadata(None);
         scratch.wipe(self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference());
     }
 }

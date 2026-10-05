@@ -73,7 +73,11 @@ where
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         assert_eq!(res.rank(), sk.rank());
         operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
         assert!(

@@ -197,6 +197,22 @@ where
         }
     }
     let k = layout.k().as_usize();
+    let key_layout = ephemeral_key_layout(module, layout);
+    let rank_n = layout.rank.as_usize() as f64 * module.n() as f64;
+    let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+    let parties = PARTIES as f64;
+    let circular_variance = rank_n * parties * parties * sigma2;
+    let digit_bits = key_layout.dsize.as_usize() * key_layout.base2k.as_usize();
+    let digits = k.div_ceil(digit_bits).min(key_layout.dnum.as_usize());
+    let switching_variance = rank_n
+        * digits as f64
+        * (2.0 * digit_bits as f64 - 2.0).exp2()
+        * parties
+        * sigma2
+        * (2.0 * (k as f64 - key_layout.k().as_usize() as f64)).exp2();
+    let rounding_variance = (1.0 + rank_n * parties * 0.5) / 4.0;
+    super::fixtures::assert_fresh_noise(&ggsw, circular_variance + switching_variance + rounding_variance, layout.k());
+    assert!(ggsw.encryption_metadata().unwrap().initial_noise_variance() > parties * sigma2);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_noise_tmp_bytes(layout));
     for row in 0..layout.dnum.as_usize() {
         for col in 0..=layout.rank.as_usize() {

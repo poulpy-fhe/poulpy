@@ -1,9 +1,9 @@
 use poulpy_core::{
-    EncryptionMetadata, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
-    GetDistribution, ScratchArenaTakeCore,
+    EncryptionMetadata, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
+    GLWENormalize, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
-        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank,
+        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
     },
 };
@@ -165,7 +165,7 @@ where
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
                 GGLWECompressedToBackendMut::<BE>::set_encryption_metadata(
                     circ_u,
-                    Some(EncryptionMetadata::from_secret(*u.to_backend_ref().dist())),
+                    Some(EncryptionMetadata::from_secret_at(*u.to_backend_ref().dist(), circ_u.k())),
                 );
                 for row in 0..dnum {
                     for i in 0..r {
@@ -245,12 +245,15 @@ where
             "invalid finalization: key does not cover the GGSW precision"
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
-        assert_eq!(
-            share.encryption_metadata(),
-            key.encryption_metadata(),
+        assert!(
+            match (share.encryption_metadata(), key.encryption_metadata()) {
+                (Some(share), Some(key)) => share.same_secret(&key),
+                (None, None) => true,
+                _ => false,
+            },
             "invalid finalization: output key provenance differs"
         );
-        res.set_encryption_metadata(share.encryption_metadata());
+        res.set_encryption_metadata(fresh_ggsw_metadata::<BE, K>(share, key));
         let key = key.to_backend_ref();
         let mut res = res.to_backend_mut();
         let (mut tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(&glwe_layout(share));
@@ -304,4 +307,70 @@ fn glwe_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
         k: infos.k(),
         rank: infos.rank(),
     }
+}
+
+/// The first column retains its direct encryption error. Every other column
+/// contains E_s * U - E_u * S and the switching key's error. Store the largest
+/// column estimate, including canonical rounding, at the output precision.
+fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, key: &K) -> Option<EncryptionMetadata> {
+    let metadata = share.encryption_metadata()?;
+    let k = share.k();
+    let mut variance = metadata.fresh_noise().variance_at(k);
+    let rank = share.rank().as_usize();
+    if rank == 0 {
+        return Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, k)));
+    }
+    let n = share.n().as_usize();
+    let secret_second_moment = metadata
+        .secret_distribution()
+        .coefficient_second_moment(n)
+        .unwrap_or(f64::INFINITY);
+    let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
+    let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
+    // Bounded balanced digits require no uniform-digit assumption. Fold their
+    // squared magnitude into the precision rescaling to avoid a vanishing
+    // key variance times an overflowing digit bound when the product is finite.
+    // Full key coverage means there is no gadget truncation residue.
+    let key_variance = key.encryption_metadata().map_or(f64::INFINITY, |metadata| {
+        if metadata.fresh_noise().variance() == 0.0 {
+            return 0.0;
+        }
+        k.as_usize()
+            .checked_add(digit_bits - 1)
+            .and_then(|precision| u32::try_from(precision).ok())
+            .map_or(f64::INFINITY, |precision| {
+                metadata.fresh_noise().variance_at(TorusPrecision(precision))
+            })
+    });
+    let switching_variance = rank as f64 * n as f64 * digits as f64 * key_variance;
+    let rounding_variance = if key.k() > k {
+        (1.0 + rank as f64 * n as f64 * secret_second_moment) / 4.0
+    } else {
+        0.0
+    };
+    for (circ_s, circ_u) in share.circ_s.iter().zip(&share.circ_u) {
+        let s = circ_s.encryption_metadata();
+        let u = circ_u.encryption_metadata();
+        let column_variance = match (s, u) {
+            (Some(s), Some(u)) => {
+                let ephemeral_second_moment = u.secret_distribution().coefficient_second_moment(n).unwrap_or(f64::INFINITY);
+                let v_s = s.fresh_noise().variance_at(k);
+                let v_u = u.fresh_noise().variance_at(k);
+                let e_s_times_u = if v_s == 0.0 || ephemeral_second_moment == 0.0 {
+                    0.0
+                } else {
+                    v_s * ephemeral_second_moment
+                };
+                let e_u_times_s = if v_u == 0.0 || secret_second_moment == 0.0 {
+                    0.0
+                } else {
+                    v_u * secret_second_moment
+                };
+                rank as f64 * n as f64 * (e_s_times_u + e_u_times_s) + switching_variance + rounding_variance
+            }
+            _ => f64::INFINITY,
+        };
+        variance = variance.max(column_variance);
+    }
+    Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, k)))
 }

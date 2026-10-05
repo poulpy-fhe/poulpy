@@ -91,8 +91,10 @@ where
             ),
             "invalid share: public key needs a samplable distribution"
         );
+        super::assert_public_key_distribution::<BE, _>(pk);
         let (dnum, dsize): (usize, usize) = (res.dnum().into(), res.dsize().into());
         let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
+        let mut metadata = None;
         {
             let sk = sk.to_backend_ref();
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&*res);
@@ -103,20 +105,14 @@ where
                         self.vec_znx_zero(pt.data_mut(), 0);
                         self.vec_znx_add_scalar_assign(pt.data_mut(), 0, (dsize - 1) + row * dsize, sk.data(), b);
                         // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
-                        self.glwe_encrypt_pk_at_col(
-                            &mut res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2),
-                            &pt,
-                            1 + a,
-                            pk,
-                            source_xu,
-                            source_xe,
-                            &mut scratch_1.borrow(),
-                        );
+                        let mut cell = res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2);
+                        self.glwe_encrypt_pk_at_col(&mut cell, &pt, 1 + a, pk, source_xu, source_xe, &mut scratch_1.borrow());
+                        metadata = cell.encryption_metadata();
                     }
                 }
             }
         }
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(res, pk.to_backend_ref().encryption_metadata());
+        GGLWEToBackendMut::<BE>::set_encryption_metadata(res, metadata);
         scratch.wipe(tmp_bytes);
     }
 }

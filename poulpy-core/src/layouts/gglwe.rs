@@ -630,9 +630,12 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     }
 }
 
-#[expect(
-    dead_code,
-    reason = "host-owned constructors are kept for serialization and host-only staging"
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "host-owned constructors are kept for serialization and host-only staging"
+    )
 )]
 impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self

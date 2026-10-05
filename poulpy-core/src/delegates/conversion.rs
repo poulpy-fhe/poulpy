@@ -165,7 +165,7 @@ impl_conversion_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        let metadata = a.to_backend_ref().encryption_metadata();
+        let metadata = crate::fresh_noise_model::ggsw_expansion_metadata(res, a.to_backend_ref().encryption_metadata(), a.k(), tsk);
         BE::ggsw_from_gglwe(self, res, a, tsk, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -191,7 +191,7 @@ impl_conversion_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        let metadata = res.to_backend_ref().encryption_metadata();
+        let metadata = crate::fresh_noise_model::ggsw_expansion_metadata(res, res.to_backend_ref().encryption_metadata(), res.k(), tsk);
         BE::ggsw_expand_row(self, res, tsk, scratch);
         res.set_encryption_metadata(metadata);
     }

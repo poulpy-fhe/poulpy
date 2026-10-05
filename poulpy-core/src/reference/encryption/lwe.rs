@@ -95,7 +95,11 @@ where
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         let pt = pt.to_backend_ref();
         let sk = sk.to_backend_ref();
 

@@ -137,7 +137,10 @@ impl_encryption_delegate!(
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::lwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -164,7 +167,10 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -179,7 +185,10 @@ impl_encryption_delegate!(
         R: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_encrypt_zero_sk(self, res, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -195,7 +204,10 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_encrypt_sk_with_mask(self, res, pt, sk, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -223,7 +235,8 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = pk.encryption_metadata();
+        let metadata =
+            crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(crate::Noise::ENCRYPTION));
         BE::glwe_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -238,7 +251,8 @@ impl_encryption_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = pk.encryption_metadata();
+        let metadata =
+            crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(crate::Noise::ENCRYPTION));
         BE::glwe_encrypt_zero_pk(self, res, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -256,7 +270,8 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = pk.encryption_metadata();
+        let metadata =
+            crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(crate::Noise::ENCRYPTION));
         BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -286,7 +301,7 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = pk.encryption_metadata();
+        let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(flood));
         BE::glwe_encrypt_pk_smudged(
             self,
             res,
@@ -321,7 +336,7 @@ impl_encryption_delegate!(
         R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(sk.to_backend_ref().dist, res.k()));
         BE::glwe_public_key_generate(self, res, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -346,7 +361,10 @@ impl_encryption_delegate!(
         R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_public_key_compressed_generate(self, res, sk, seed, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -373,7 +391,10 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::gglwe_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -400,7 +421,10 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::ggsw_encrypt_sk(self, res, pt, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -428,7 +452,7 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = pk.encryption_metadata();
+        let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(crate::Noise::ENCRYPTION));
         BE::ggsw_encrypt_pk(self, res, pt, pk, source_xu, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -453,7 +477,10 @@ impl_encryption_delegate!(
         R: GGLWEToGGSWKeyToBackendMut<BE>,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::gglwe_to_ggsw_key_encrypt_sk(self, res, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -480,7 +507,10 @@ impl_encryption_delegate!(
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_out.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk_out.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_switching_key_encrypt_sk(self, res, sk_in, sk_out, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -505,7 +535,7 @@ impl_encryption_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(sk.to_backend_ref().dist, crate::layouts::LWEInfos::k(&res.to_backend_ref())));
         BE::glwe_tensor_key_encrypt_sk(self, res, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -532,7 +562,10 @@ impl_encryption_delegate!(
         S2: GLWESecretToBackendRef<BE>,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_lwe.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk_lwe.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_to_lwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -559,7 +592,10 @@ impl_encryption_delegate!(
         S1: LWESecretToBackendRef<BE>,
         S2: LWESecretToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_lwe_out.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk_lwe_out.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::lwe_switching_key_encrypt_sk(self, res, sk_lwe_in, sk_lwe_out, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -586,7 +622,10 @@ impl_encryption_delegate!(
         S2: GLWESecretPreparedToBackendRef<BE>,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_glwe.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk_glwe.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::lwe_to_glwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -612,7 +651,10 @@ impl_encryption_delegate!(
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_automorphism_key_encrypt_sk(self, res, p, sk, source_xe, source_xa, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -639,7 +681,10 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_compressed_encrypt_sk(self, res, pt, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     },
@@ -654,7 +699,10 @@ impl_encryption_delegate!(
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_compressed_encrypt_zero_sk(self, res, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -681,7 +729,10 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::gglwe_compressed_encrypt_sk(self, res, pt, sk, seed, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -708,7 +759,10 @@ impl_encryption_delegate!(
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::ggsw_compressed_encrypt_sk(self, res, pt, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -733,7 +787,10 @@ impl_encryption_delegate!(
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::gglwe_to_ggsw_key_compressed_encrypt_sk(self, res, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -759,7 +816,10 @@ impl_encryption_delegate!(
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_automorphism_key_compressed_encrypt_sk(self, res, p, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -786,7 +846,10 @@ impl_encryption_delegate!(
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk_out.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk_out.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
         BE::glwe_switching_key_compressed_encrypt_sk(self, res, sk_in, sk_out, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }
@@ -811,7 +874,7 @@ impl_encryption_delegate!(
         R: GGLWECompressedToBackendMut<BE> + GGLWEInfos + GGLWECompressedSeedMut,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(sk.to_backend_ref().dist, crate::layouts::LWEInfos::k(&res.to_backend_ref())));
         BE::glwe_tensor_key_compressed_encrypt_sk(self, res, sk, seed_xa, source_xe, scratch);
         res.set_encryption_metadata(metadata);
     }

@@ -76,7 +76,11 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         res.seed_mut().copy_from_slice(&seed_xa);
 
         {
@@ -116,7 +120,11 @@ where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         res.seed_mut().copy_from_slice(&seed_xa);
 
         let mut res_backend = res.to_backend_mut();

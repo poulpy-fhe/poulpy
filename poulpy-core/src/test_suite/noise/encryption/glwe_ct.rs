@@ -179,7 +179,7 @@ where
         assert_canonical(&ct);
         assert_eq!(
             ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret(sk.dist))
+            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
         );
 
         let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -281,7 +281,7 @@ where
         assert_canonical(&ct);
         assert_eq!(
             ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret(sk.dist))
+            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
         );
 
         let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -365,7 +365,7 @@ where
         assert_canonical(&ct);
         assert_eq!(
             ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret(sk.dist))
+            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
         );
 
         // Reproduce the error independently at the ciphertext's partial-limb
@@ -797,8 +797,31 @@ where
                 &mut scratch.borrow(),
             );
         }
-        want.metadata = Some(crate::EncryptionMetadata::from_secret(*sk.dist()));
+        want.metadata = Some(
+            crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k).with_fresh_noise(crate::FreshNoiseEstimate::new(
+                (rank as f64 * n as f64 + 1.0) * DEFAULT_SIGMA_XE.powi(2),
+                infos.k,
+            )),
+        );
         assert_eq!(ct, want, "rank={rank}");
+
+        // Changing the ephemeral law would invalidate the recorded collective
+        // secret/noise model. Reject it before changing coefficients or provenance.
+        *pk_prepared.dist_mut() = Distribution::BinaryProb(0.5);
+        let before = ct.to_owned_deep();
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_encrypt_pk(
+                &mut ct,
+                &pt,
+                &pk_prepared,
+                &mut Source::new([5u8; 32]),
+                &mut Source::new([6u8; 32]),
+                &mut scratch.borrow(),
+            );
+        }));
+        assert!(rejected.is_err());
+        assert_eq!(ct, before, "invalid public-key provenance must not mutate the destination");
+        *pk_prepared.dist_mut() = *sk.dist();
 
         // The ephemerals and their products would decrypt `ct` from the scratch.
         crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos), |scratch| {

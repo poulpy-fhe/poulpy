@@ -71,7 +71,11 @@ where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(sk.to_backend_ref().dist)));
+        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+        ));
+        res.set_encryption_metadata(metadata);
         let base2k: usize = res.base2k().into();
         let rank: usize = res.rank().into();
         let cols: usize = rank + 1;

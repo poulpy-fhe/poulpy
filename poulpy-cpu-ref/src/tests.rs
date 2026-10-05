@@ -493,10 +493,10 @@ fn test_hal_serialization_fft64_ref() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
-    // Pins the discrete-Gaussian sampler and versioned provenance wire format.
+    // Pins the discrete-Gaussian sampler and PNM2 fresh-noise provenance wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [11500506848985675781, 18177756221428167628, 7889866540101819216];
-    const NTT4X30: [u64; 3] = [1260479974367288618, 15920528364644534952, 9140025131022131835];
+    const FFT64: [u64; 3] = [14356007549734520518, 630618147339403513, 258827872729038009];
+    const NTT4X30: [u64; 3] = [13065521322920688496, 15975341381814497720, 8820874820132125899];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Ref>::new(256), 17),

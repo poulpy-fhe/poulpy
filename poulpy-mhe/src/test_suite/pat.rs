@@ -118,7 +118,7 @@ where
     let mut mismatched = share.clone();
     GLWECompressedToBackendMut::<BE>::set_encryption_metadata(
         &mut mismatched,
-        Some(EncryptionMetadata::from_secret(Distribution::BinaryProb(0.5))),
+        Some(EncryptionMetadata::from_secret_at(Distribution::BinaryProb(0.5), K)),
     );
     super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
         module.glwe_pat_compressed_aggregate_assign(&mut acc, &mismatched);
@@ -236,6 +236,7 @@ where
         let mut source_xm = Source::new([30 + i as u8; 32]);
         let mut source_xu = Source::new([20 + i as u8; 32]);
         let mut source_xe = Source::new([10 + i as u8; 32]);
+        let mut metadata = None;
         {
             let mut dst_be = GGLWEToBackendMut::<BE>::to_backend_mut(dst);
             for row in 0..dnum {
@@ -247,14 +248,9 @@ where
                         0,
                         &mut source_xm,
                     );
-                    module.glwe_encrypt_pk(
-                        &mut dst_be.at_view_mut(row, col),
-                        &pt,
-                        &pk,
-                        &mut source_xu,
-                        &mut source_xe,
-                        &mut scratch.borrow(),
-                    );
+                    let mut cell = dst_be.at_view_mut(row, col);
+                    module.glwe_encrypt_pk(&mut cell, &pt, &pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                    metadata = cell.encryption_metadata();
                     module.vec_znx_add_assign(
                         &mut vec_znx_backend_mut::<BE>(pts_want[row * rank_in + col].data_mut()),
                         0,
@@ -264,10 +260,15 @@ where
                 }
             }
         }
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(dst, pk.encryption_metadata());
+        GGLWEToBackendMut::<BE>::set_encryption_metadata(dst, metadata);
         if i == 1 {
             // Backend borrows stand in for the owned PATs.
-            module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
+            let metadata = {
+                let mut view = acc.to_backend_mut();
+                module.gglwe_pat_aggregate_assign(&mut view, &share.to_backend_ref());
+                view.encryption_metadata()
+            };
+            GGLWEToBackendMut::<BE>::set_encryption_metadata(&mut acc, metadata);
         } else if i > 1 {
             module.gglwe_pat_aggregate_assign(&mut acc, &share);
         }

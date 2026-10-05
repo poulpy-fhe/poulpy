@@ -1,7 +1,7 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionMetadata, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
-    GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
+    EncryptionMetadata, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize,
+    GLWESub, GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos,
@@ -130,9 +130,16 @@ where
             );
             self.glwe_normalize_assign(res, &mut scratch_2);
         }
+        // Cropping two inner products before normalization contributes at
+        // most one output-grid ulp. Keep its squared bound in the effective
+        // variance model when the protocol narrows the mask precision.
+        let rounding = if res.k() < mask.k() { 1.0 } else { 0.0 };
         GLWEToBackendMut::<BE>::set_encryption_metadata(
             res,
-            Some(EncryptionMetadata::from_secret(*sk_out.to_backend_ref().dist())),
+            Some(
+                EncryptionMetadata::from_secret_at(*sk_out.to_backend_ref().dist(), res.k())
+                    .with_fresh_noise(FreshNoiseEstimate::new(super::flood_variance(flood) + rounding, res.k())),
+            ),
         );
         scratch.wipe(tmp_bytes);
     }
@@ -293,6 +300,7 @@ where
         );
         assert!(pk_out.k() >= res.k(), "invalid share: public key less precise than the share");
         flood.assert_valid_for(res.base2k().as_usize(), res.k().as_usize());
+        super::assert_public_key_distribution::<BE, _>(pk_out);
         let tmp_bytes = self.mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(mask, &*res, pk_out);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
@@ -308,12 +316,10 @@ where
         a: &GLWEPublicKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
-        assert_eq!(
-            res.encryption_metadata(),
-            a.encryption_metadata(),
-            "invalid aggregation: output key provenance differs"
-        );
+        let metadata =
+            super::aggregate_common_key_metadata(res.encryption_metadata(), a.encryption_metadata(), res.n().as_usize());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_encryption_metadata(res, metadata);
     }
 
     fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {

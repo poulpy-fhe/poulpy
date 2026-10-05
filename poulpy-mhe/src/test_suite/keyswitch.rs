@@ -3,7 +3,7 @@
 //! smudging noise.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, Noise,
+    DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
     layouts::{
         Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
         GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -67,31 +67,36 @@ where
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
     let mask = ciphertext_mask(module, &ct);
 
-    let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
-    for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
-        let dst = if i == 0 { &mut acc } else { &mut share };
-        dst.inner.set_canonical(false);
-        let mut source_smudge = Source::new([10 + i as u8; 32]);
-        // The inner products with both secrets would be left in the scratch.
-        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-            module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
-            |scratch| {
-                module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
-            },
-        );
-        assert!(dst.inner.is_canonical());
-        if i > 0 {
-            module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
+    for share_k in [K, TorusPrecision(K.0 - BASE2K.0)] {
+        let share_layout = GLWELayout { k: share_k, ..layout };
+        let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
+            let dst = if i == 0 { &mut acc } else { &mut share };
+            dst.inner.set_canonical(false);
+            let mut source_smudge = Source::new([10 + i as u8; 32]);
+            // The inner products with both secrets would be left in the scratch.
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
+                |scratch| {
+                    module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
+                },
+            );
+            assert!(dst.inner.is_canonical());
+            if i > 0 {
+                module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
+            }
         }
-    }
-    assert!(!acc.inner.is_canonical());
+        assert!(!acc.inner.is_canonical());
 
-    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-    super::fixtures::assert_collective_metadata(&res, PARTIES);
-    assert!(res.is_canonical());
-    assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, layout.k, &mut scratch);
+        let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+        module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
+        super::fixtures::assert_collective_metadata(&res, PARTIES);
+        let rounding = if share_k < layout.k { 1.0 } else { 0.0 };
+        super::fixtures::assert_fresh_noise(&res, PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding), share_k);
+        assert!(res.is_canonical());
+        assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, share_k, &mut scratch);
+    }
 }
 
 pub fn test_glwe_public_keyswitch<BE>(module: &Module<BE>)
@@ -142,7 +147,7 @@ where
         );
         let share_bytes = module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &share_layout, &pk_layout);
 
-        let pk_out = collective_public_key(module, &parties_out, &pk_layout);
+        let mut pk_out = collective_public_key(module, &parties_out, &pk_layout);
 
         let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
         let mask = ciphertext_mask(module, &ct);
@@ -193,7 +198,40 @@ where
         let n = module.n() as f64;
         let rank = rank_out.as_usize() as f64;
         let pk_noise = PARTIES as f64 * 2.0 * rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+        let secret_fold = rank * n * 0.5 * PARTIES as f64;
+        let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+        let inherited = secret_fold * sigma2 * (2.0 * (k_out.as_usize() as f64 - pk_layout.k.as_usize() as f64)).exp2();
+        let fresh = PARTIES as f64 * (inherited + secret_fold * sigma2 + SIGMA_FLOOD.powi(2) + (1.0 + secret_fold) / 4.0);
+        super::fixtures::assert_fresh_noise(&res, fresh, k_out);
         assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, share_layout.k, &mut scratch);
+
+        // Changing a valid ephemeral law must not invalidate the aggregation
+        // covariance model or mutate an existing transcript on rejection.
+        *pk_out.dist_mut() = Distribution::BinaryProb(0.5);
+        let before = share.clone();
+        let mut source_xu = Source::new([20u8; 32]);
+        let mut source_xe = Source::new([10u8; 32]);
+        let mut source_smudge = Source::new([30u8; 32]);
+        assert_panics_with(
+            "invalid public key: ephemeral distribution differs from its secret provenance",
+            || {
+                module.mhe_glwe_public_keyswitch_share_gen(
+                    &mut share,
+                    &mask,
+                    &parties_in[0].1,
+                    &pk_out,
+                    FLOOD,
+                    &mut source_xu,
+                    &mut source_xe,
+                    &mut source_smudge,
+                    &mut scratch.borrow(),
+                );
+            },
+        );
+        assert!(share == before);
+        assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+        assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
     }
 }
 

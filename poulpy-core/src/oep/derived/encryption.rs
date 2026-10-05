@@ -91,7 +91,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
             module.glwe_normalize_assign(&mut entry, scratch);
         }
     }
-    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(*sk.dist())));
+    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret_at(*sk.dist(), res.k())));
     *res.dist_mut() = *sk.dist();
 }
 
@@ -139,7 +139,7 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S>(
         }
     }
     res.seed_mut().copy_from_slice(&entry_seeds);
-    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret(*sk.dist())));
+    res.set_encryption_metadata(Some(crate::EncryptionMetadata::from_secret_at(*sk.dist(), res.k())));
     *res.dist_mut() = *sk.dist();
 }
 
@@ -157,7 +157,9 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
     P: GLWEToBackendRef<BE> + GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
+    let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(Noise::ENCRYPTION));
     BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, source_xu, source_xe, scratch);
+    res.set_encryption_metadata(metadata);
 }
 
 pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: GLWEInfos, K: GLWEInfos>(
@@ -196,7 +198,9 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
         scratch.available() >= glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res, pk),
         "insufficient scratch for smudged GLWE public-key encryption"
     );
+    let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(flood));
     BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), false, pk, source_xu, source_xe, scratch);
+    res.set_encryption_metadata(metadata);
     let mut res = res.to_backend_mut();
     module.vec_znx_add_noise(base2k, k, &mut res.data, 0, flood, source_smudge);
     module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, 0, scratch);
@@ -214,9 +218,11 @@ pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
+    let metadata = crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(res, pk, Some(Noise::ENCRYPTION));
     BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K>(
         module, res, None, true, pk, source_xu, source_xe, scratch,
     );
+    res.set_encryption_metadata(metadata);
 }
 
 pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos, K: GLWEInfos>(
@@ -247,7 +253,11 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
-    res.set_encryption_metadata(pk.encryption_metadata());
+    res.set_encryption_metadata(crate::fresh_noise_model::public_key_encryption_metadata::<BE, _, _>(
+        res,
+        pk,
+        Some(Noise::ENCRYPTION),
+    ));
     operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),

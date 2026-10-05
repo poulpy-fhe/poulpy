@@ -58,16 +58,25 @@ pub(crate) struct Snapshot {
     pub(crate) bytes: Vec<u8>,
 }
 pub(crate) fn assert_fresh_encryption_metadata(value: &impl LWEInfos) {
+    assert_encryption_metadata(value, crate::DEFAULT_SIGMA_XE.powi(2));
+}
+
+fn assert_encryption_metadata(value: &impl LWEInfos, variance: f64) {
     let metadata = value.encryption_metadata().expect("encryption must record its provenance");
     assert_eq!(metadata.parties(), 1);
     assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(2.0 / 3.0));
     assert_eq!(metadata.secret_distribution().parties(), 1);
-    assert_eq!(metadata.initial_noise_std_dev(), crate::DEFAULT_SIGMA_XE);
+    assert_eq!(metadata.fresh_noise().precision(), value.k());
+    assert!((metadata.initial_noise_variance() - variance).abs() <= variance * 1e-12);
 }
 
 pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
-    if label.contains("encrypt") || label == "public_key_generate" {
+    if label == "encrypt_pk" || label == "encrypt_zero_pk" {
+        let variance = (2.0 * view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0)
+            * crate::DEFAULT_SIGMA_XE.powi(2);
+        assert_encryption_metadata(&view, variance);
+    } else if label.contains("encrypt") || label == "public_key_generate" {
         assert_fresh_encryption_metadata(&view);
     }
     let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];

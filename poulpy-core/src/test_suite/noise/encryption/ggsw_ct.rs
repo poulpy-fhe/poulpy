@@ -11,8 +11,9 @@ use crate::{
     GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWELayout, GLWEPublicKey,
+        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -106,7 +107,8 @@ where
         + GLWEPublicKeyGenerate<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
-        + GGSWNoise<BE>,
+        + GGSWNoise<BE>
+        + GGSWPreparedFactory<BE>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;
@@ -149,6 +151,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
                     .ggsw_noise_tmp_bytes(&ggsw_infos)
+                    .max(module.ggsw_prepare_tmp_bytes(&ggsw_infos))
                     .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
                     .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
             );
@@ -173,6 +176,13 @@ where
                 &mut source_xe,
                 &mut enc_scratch.borrow(),
             );
+
+            let metadata = ct.encryption_metadata().unwrap();
+            assert_eq!(metadata.fresh_noise().precision(), ct.k());
+            assert!(metadata.initial_noise_variance() > DEFAULT_SIGMA_XE.powi(2));
+            let mut prepared = module.ggsw_prepared_alloc_from_infos(&ct);
+            module.ggsw_prepare(&mut prepared, &ct, &mut scratch.borrow());
+            assert_eq!(prepared.encryption_metadata(), Some(metadata));
 
             // Sum_l u_l e_l has rank terms, as Sum_j e_j s_j does.
             let noise_want: f64 = ((2.0 * rank as f64 * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2()

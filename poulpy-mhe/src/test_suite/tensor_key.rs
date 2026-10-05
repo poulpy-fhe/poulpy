@@ -50,7 +50,7 @@ where
 
         let parties = party_secrets(module);
         let sk_ideal = ideal_secret(module, &parties);
-        let pk = collective_public_key(module, &parties, &pk_layout);
+        let mut pk = collective_public_key(module, &parties, &pk_layout);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_secret_tensor_prepare_tmp_bytes(RANK)
@@ -84,8 +84,38 @@ where
         let parties_f = PARTIES as f64;
         let variance = 2.0 * RANK.as_usize() as f64 * n * 0.5 * parties_f * parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE
             + parties_f * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+        let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+        let rank_n = RANK.as_usize() as f64 * n;
+        let secret_second = parties_f * 0.5;
+        let inherited =
+            rank_n * 0.5 * parties_f * sigma2 * (2.0 * (layout.k().as_usize() as f64 - pk_layout.k.as_usize() as f64)).exp2();
+        let expected_fresh =
+            parties_f * (inherited + (1.0 + rank_n * secret_second) * sigma2 + (1.0 + rank_n * secret_second) / 4.0);
+        super::fixtures::assert_fresh_noise(&res, expected_fresh, layout.k());
+        assert!(expected_fresh > parties_f * sigma2);
         let bound = 0.5 * variance.log2() - layout.k().as_usize() as f64 + 0.5;
         assert_gglwe_noise_within(module, &res, &pt_want.data().to_ref(), &sk_ideal, bound, &mut scratch);
+
+        *pk.dist_mut() = Distribution::BinaryProb(0.5);
+        let before = share.clone();
+        let mut source_xu = Source::new([20u8; 32]);
+        let mut source_xe = Source::new([10u8; 32]);
+        super::fixtures::assert_panics_with(
+            "invalid public key: ephemeral distribution differs from its secret provenance",
+            || {
+                module.mhe_glwe_tensor_key_share_gen(
+                    &mut share,
+                    &parties[0].0,
+                    &pk,
+                    &mut source_xu,
+                    &mut source_xe,
+                    &mut scratch.borrow(),
+                );
+            },
+        );
+        assert!(share == before);
+        assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
     }
 }
 

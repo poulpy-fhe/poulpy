@@ -166,6 +166,7 @@ where
             module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
         }
         assert_collective_metadata(&acc, i + 1);
+        assert_fresh_noise(&acc, (i + 1) as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2), layout.k);
     }
     let mut encoded = Vec::new();
     acc.write_to(&mut encoded).unwrap();
@@ -184,6 +185,11 @@ where
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
     assert_collective_metadata(&pk_prepared, parties.len());
+    assert_fresh_noise(
+        &pk_prepared,
+        parties.len() as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2),
+        layout.k,
+    );
     pk_prepared
 }
 
@@ -310,6 +316,19 @@ pub(crate) fn assert_collective_metadata<A: poulpy_core::layouts::LWEInfos>(info
     assert_eq!(metadata.parties(), parties as u64);
     assert_eq!(metadata.secret_distribution().parties(), parties as u64);
     assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(0.5));
-    let expected = (parties as f64).sqrt() * poulpy_core::DEFAULT_SIGMA_XE;
-    assert!((metadata.initial_noise_std_dev() - expected).abs() < 1e-14);
+}
+
+/// Checks a fresh phase estimate independently of the secret's party count.
+pub(crate) fn assert_fresh_noise<A: poulpy_core::layouts::LWEInfos>(
+    infos: &A,
+    expected_variance: f64,
+    precision: TorusPrecision,
+) {
+    let estimate = infos.encryption_metadata().expect("derived fresh noise").fresh_noise();
+    assert_eq!(estimate.precision(), precision);
+    assert!(
+        (estimate.variance() - expected_variance).abs() <= 1e-12 * expected_variance.max(1.0),
+        "fresh variance {} differs from {expected_variance}",
+        estimate.variance()
+    );
 }

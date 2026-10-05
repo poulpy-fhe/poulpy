@@ -415,6 +415,8 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
         + VecZnxNormalize<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
 {
+    let metadata =
+        crate::fresh_noise_model::ggsw_expansion_metadata(res, res.to_backend_ref().encryption_metadata(), res.k(), tsk);
     let mut res_backend = res.to_backend_mut();
 
     let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, tsk);
@@ -486,6 +488,8 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
             );
         }
     }
+    drop(res_backend);
+    res.set_encryption_metadata(metadata);
 }
 
 #[allow(clippy::too_many_arguments)]

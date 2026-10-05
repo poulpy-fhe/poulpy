@@ -97,6 +97,7 @@ where
     let n = module.n() as f64;
     let rank = RANK.as_usize() as f64;
     let variance = 2.0 * rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+    super::fixtures::assert_fresh_noise(&ct, variance + DEFAULT_SIGMA_XE.powi(2), K);
     let bound = variance.sqrt().log2() - K.as_usize() as f64 + 1.25_f64.log2();
     let noise: f64 = module.glwe_noise(&ct, &pt, &sk_ideal, &mut scratch.borrow()).std().log2();
     assert!(noise <= bound, "noise {noise} above bound {bound}");
