@@ -14,7 +14,7 @@ doctest = false
 
 [features]
 enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-ref/enable-bin-fhe"]
-enable-avx512f = []
+enable-avx512f = ["poulpy-cpu-avx/enable-avx"]
 enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 # Enable backend-owned Rayon scheduling. Concrete parallel backends are
@@ -41,15 +41,17 @@ rayon = {workspace = true, optional = true}
 libc = {version = "0.2", optional = true}
 
 [dev-dependencies]
-# HAL and core cross suites compare against the oracle.
-poulpy-cpu-oracle = {workspace = true, features = ["enable-core"]}
-# Encryption and scheme parity suites still select portable comparison backends.
+# Shared test helpers and portable comparison backends.
 poulpy-cpu-ref = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}
 criterion = {workspace = true}
 anyhow = {workspace = true}
+
+# AVX-512 parity follows the AVX backend, enabled only with the SIMD tests.
+[target.'cfg(target_arch = "x86_64")'.dev-dependencies]
+poulpy-cpu-avx = {workspace = true}
 
 [package.metadata.docs.rs]
 all-features = true
