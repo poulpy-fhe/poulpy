@@ -26,7 +26,7 @@
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendRef},
+    layouts::{Base2K, GLWEToBackendRef, LWEInfos},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -402,6 +402,81 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     }
 }
 
+/// Unprepared stage of a [`BootstrappingContext`]: the generated DFT matrices and
+/// the encoded EvalMod, before the matrices are prepared.
+///
+/// Built by [`BootstrappingContext::compile_unprepared`]. Preparation is a
+/// separate step so that its scratch can be sized with
+/// [`Self::prepare_tmp_bytes`], which follows the backend's selected
+/// preparation budget.
+pub struct BootstrappingContextUnprepared<BE: Backend, F> {
+    c2s_guard_bits: usize,
+    functional_message_modulus: Option<usize>,
+    coeffs_to_slots: DFTMatrix<BE, Encode, Split>,
+    coeffs_to_slots_bypass: Option<DFTMatrix<BE, Encode, Split>>,
+    slots_to_coeffs: DFTMatrix<BE, Decode, Split>,
+    eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
+    pipeline: BootstrappingPipeline,
+    sparse_secret_hamming_weight: Option<usize>,
+}
+
+impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
+    /// Scratch required by [`Self::prepare`]: the largest selected preparation
+    /// budget among the matrices.
+    pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
+    where
+        Module<BE>: CKKSDFTOps<BE>,
+        CKKSPlaintextOwned<BE>: LWEInfos,
+    {
+        let mut bytes = module
+            .ckks_prepare_dft_matrix_tmp_bytes(&self.coeffs_to_slots)
+            .max(module.ckks_prepare_dft_matrix_tmp_bytes(&self.slots_to_coeffs));
+        if let Some(bypass) = &self.coeffs_to_slots_bypass {
+            bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(bypass));
+        }
+        bytes
+    }
+
+    /// Prepares the matrices into the resident form the pipeline evaluates.
+    /// Each unprepared matrix is released as soon as it has been prepared.
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BootstrappingContext<BE, F>
+    where
+        Module<BE>: CKKSDFTOps<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        let Self {
+            c2s_guard_bits,
+            functional_message_modulus,
+            coeffs_to_slots,
+            coeffs_to_slots_bypass,
+            slots_to_coeffs,
+            eval_mod,
+            pipeline,
+            sparse_secret_hamming_weight,
+        } = self;
+        let coeffs_to_slots = {
+            let unprepared = coeffs_to_slots;
+            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+        };
+        let slots_to_coeffs = {
+            let unprepared = slots_to_coeffs;
+            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+        };
+        let coeffs_to_slots_bypass =
+            coeffs_to_slots_bypass.map(|unprepared| module.ckks_prepare_dft_matrix(&unprepared, scratch));
+        BootstrappingContext {
+            c2s_guard_bits,
+            functional_message_modulus,
+            coeffs_to_slots,
+            coeffs_to_slots_bypass,
+            slots_to_coeffs,
+            eval_mod,
+            pipeline,
+            sparse_secret_hamming_weight,
+        }
+    }
+}
+
 impl<BE: Backend, F> BootstrappingContext<BE, F>
 where
     F: CKKSEncodingScalar,
@@ -411,6 +486,11 @@ where
     /// Each stage carries its own coefficient metadata (`DFTPlan::meta` /
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
     /// [`BootstrappingPlan::new`].
+    ///
+    /// `scratch` serves both generation and preparation, so it must also cover
+    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. That value is only
+    /// known once the matrices exist: use [`Self::compile_unprepared`] followed by
+    /// [`BootstrappingContextUnprepared::prepare`] to size preparation exactly.
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,
@@ -421,25 +501,29 @@ where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        let c2s_lt: DFTMatrix<BE, Encode, Split> =
-            module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
-        let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
+        Ok(Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch))
+    }
 
-        let s2c_lt: DFTMatrix<BE, Decode, Split> =
-            module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
-        let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch);
-
+    /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
+    /// EvalMod, without preparing the matrices.
+    pub fn compile_unprepared(
+        module: &Module<BE>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<BootstrappingContextUnprepared<BE, F>>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    {
+        let coeffs_to_slots = module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
+        let slots_to_coeffs = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
-
-        let coeffs_to_slots_bypass = if let Some(bypass) = plan.coeffs_to_slots_bypass() {
-            let c2s_lt: DFTMatrix<BE, Encode, Split> = module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?;
-
-            Some(module.ckks_prepare_dft_matrix(&c2s_lt, scratch))
-        } else {
-            None
+        let coeffs_to_slots_bypass = match plan.coeffs_to_slots_bypass() {
+            Some(bypass) => Some(module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?),
+            None => None,
         };
 
-        Ok(Self {
+        Ok(BootstrappingContextUnprepared {
             c2s_guard_bits: plan.c2s_guard_bits,
             functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,

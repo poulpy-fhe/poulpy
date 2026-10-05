@@ -1,5 +1,5 @@
 use crate::{
-    api::{MatZnxAlloc, ModuleN, ModuleNew, ScalarZnxAlloc, VecZnxAlloc},
+    api::{MatZnxAlloc, ModuleN, ModuleNew, ModuleSynchronize, ScalarZnxAlloc, VecZnxAlloc},
     layouts::{Backend, MatZnx, Module, ScalarZnx, VecZnx},
     oep::HalModuleImpl,
 };
@@ -10,6 +10,15 @@ where
 {
     fn new(n: u64) -> Self {
         B::new(n)
+    }
+}
+
+impl<B> ModuleSynchronize<B> for Module<B>
+where
+    B: Backend + HalModuleImpl,
+{
+    fn synchronize(&self) {
+        B::synchronize(self)
     }
 }
 

@@ -80,3 +80,6 @@ pub use rotate::impl_ckks_rotate_reference;
 pub use ship::CKKSShipCoeffEncodingImpl;
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference;
+
+/// Callable same-layer fallbacks that retain selected constituent overrides.
+pub mod defaults;
