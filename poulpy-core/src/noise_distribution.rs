@@ -5,12 +5,20 @@
 /// Uniform noise covers `[-2^(bits - 1), 2^(bits - 1) - 1]` exactly.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Noise {
-    Gaussian { sigma: f64, cutoff: usize },
-    Uniform { bits: usize },
+    /// Discrete Gaussian conditioned on `|z| <= floor(cutoff * sigma)`.
+    /// `cutoff` is a multiplier of `sigma`: `cutoff: 6` means a six-sigma bound.
+    Gaussian {
+        sigma: f64,
+        cutoff: usize,
+    },
+    Uniform {
+        bits: usize,
+    },
 }
 
 impl Noise {
-    /// The discrete Gaussian used by every encryption operation.
+    /// The discrete Gaussian used by every encryption operation, truncated at
+    /// six sigma. With `sigma = 3.2`, integer samples satisfy `|z| <= 19`.
     pub const ENCRYPTION: Self = Self::Gaussian { sigma: 3.2, cutoff: 6 };
 
     /// Rejects invalid distribution parameters before drawing randomness.

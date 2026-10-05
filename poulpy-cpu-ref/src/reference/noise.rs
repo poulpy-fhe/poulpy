@@ -8,7 +8,8 @@ use poulpy_core::Noise;
 use poulpy_hal::{layouts::ZnxViewMut, source::Source};
 use rand_core::Rng;
 
-// floor(2^128 P(|z| <= i)), for the exact binary64 value 3.2, cutoff 6.
+// floor(2^128 P(|z| <= i)), for the exact binary64 value 3.2, truncated at
+// six sigma: B = floor(6 * 3.2) = 19.
 // The integer interval constructor below independently verifies these values.
 const ENCRYPTION_CDT: [u128; 19] = [
     0x1fea56814b22fdba95eb5e667e6e5a60,
