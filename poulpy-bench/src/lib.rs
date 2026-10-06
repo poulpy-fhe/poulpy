@@ -1,5 +1,5 @@
 //! Shared infrastructure for writing Criterion benchmarks against any
-//! `poulpy` backend (`poulpy-cpu-ref`, `-avx`, `-avx512`, `-arm`, ...).
+//! `poulpy` backend (`poulpy-cpu-portable`, `-avx`, `-avx512`, `-arm`, ...).
 //!
 //! Backend crates don't define their own benchmark logic — they write a thin
 //! `benches/*.rs` binary that picks a backend type and calls into the runners
@@ -104,7 +104,7 @@ pub(crate) fn bin_fhe_n() -> u64 {
 }
 
 // #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-// type BenchHostBackend = poulpy_cpu_ref::FFT64Ref;
+// type BenchHostBackend = poulpy_cpu_portable::FFT64Portable;
 
 /// Return the shared Criterion configuration used by all bench binaries.
 ///
@@ -134,7 +134,7 @@ pub struct BenchOp<M: Measurement, P> {
 }
 
 /// The short name Criterion group labels use for a backend marker type: paths stripped,
-/// default ring elided (`NTT4x30Ref<Standard>` -> `"NTT4x30Ref"`, `FFT64Ref<ConjugateInvariant>` kept).
+/// default ring elided (`NTT4x30Portable<Standard>` -> `"NTT4x30Portable"`, `FFT64Portable<ConjugateInvariant>` kept).
 fn backend_name<BE: ?Sized>() -> String {
     let name: String = std::any::type_name::<BE>()
         .split_inclusive(['<', ',', '>'])
@@ -145,7 +145,7 @@ fn backend_name<BE: ?Sized>() -> String {
 
 /// Runs one criterion group per op in `ops`, each expanded over every entry
 /// in `sweeps`. `BE` — the backend the ops were built against (e.g.
-/// `Ntt`/`Fft` in the `poulpy-cpu-ref` benches) — names the run; it's given
+/// `Ntt`/`Fft` in the `poulpy-cpu-portable` benches) — names the run; it's given
 /// as `PhantomData<BE>` rather than turbofish so this composes inside other
 /// generic functions, where `BE` may be an abstract type parameter with no
 /// nameable value. Each op's own `layer` field distinguishes it inside the

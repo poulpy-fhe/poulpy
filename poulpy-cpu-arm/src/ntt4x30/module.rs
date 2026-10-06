@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     types::Q120bScalar,
@@ -25,7 +25,7 @@ pub struct NTT4x30NeonHandle<R: Ring = Standard> {
     ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Neon<R> {}
@@ -143,8 +143,8 @@ impl<R: Ring> Backend for NTT4x30Neon<R> {
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
 unsafe impl<R: Ring> NttHandleFactory for NTT4x30NeonHandle<R>
 where
-    poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttPlanNew,
+    poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
 {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30NeonHandle {
@@ -173,8 +173,8 @@ unsafe impl<R: Ring> NttHandleProvider for NTT4x30NeonHandle<R> {
     }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle<R> {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle<R> {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

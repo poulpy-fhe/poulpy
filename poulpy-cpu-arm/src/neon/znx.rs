@@ -7,10 +7,11 @@ use core::arch::aarch64::{
     vreinterpretq_s64_u64, vreinterpretq_u64_s64, vsetq_lane_s64, vshlq_s64, vshrq_n_u64, vst1q_s64, vsubq_s64,
 };
 
-use poulpy_cpu_ref::reference::znx::{
-    standard::znx_automorphism_ref, znx_add_assign_ref, znx_add_ref, znx_automorphism_rotate_ref, znx_copy_ref,
-    znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref,
-    znx_negate_ref, znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
+use poulpy_cpu_portable::kernels::znx::{
+    standard::znx_automorphism_portable, znx_add_assign_portable, znx_add_portable, znx_automorphism_rotate_portable,
+    znx_copy_portable, znx_mul_add_power_of_two_portable, znx_mul_power_of_two_assign_portable, znx_mul_power_of_two_portable,
+    znx_negate_assign_portable, znx_negate_portable, znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable,
+    znx_switch_ring_portable, znx_zero_portable,
 };
 
 /// `res[i] = a[i].wrapping_add(b[i])` for all `i`.
@@ -40,7 +41,7 @@ pub(crate) fn znx_add_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_add_ref(&mut res[tail..], &a[tail..], &b[tail..]);
+        znx_add_portable(&mut res[tail..], &a[tail..], &b[tail..]);
     }
 }
 
@@ -67,7 +68,7 @@ pub(crate) fn znx_add_assign_neon(res: &mut [i64], a: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_add_assign_ref(&mut res[tail..], &a[tail..]);
+        znx_add_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -97,7 +98,7 @@ pub(crate) fn znx_sub_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_sub_ref(&mut res[tail..], &a[tail..], &b[tail..]);
+        znx_sub_portable(&mut res[tail..], &a[tail..], &b[tail..]);
     }
 }
 
@@ -124,7 +125,7 @@ pub(crate) fn znx_sub_assign_neon(res: &mut [i64], a: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_sub_assign_ref(&mut res[tail..], &a[tail..]);
+        znx_sub_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -151,7 +152,7 @@ pub(crate) fn znx_sub_negate_assign_neon(res: &mut [i64], a: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_sub_negate_assign_ref(&mut res[tail..], &a[tail..]);
+        znx_sub_negate_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -178,7 +179,7 @@ pub(crate) fn znx_negate_neon(res: &mut [i64], a: &[i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_negate_ref(&mut res[tail..], &a[tail..]);
+        znx_negate_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -201,7 +202,7 @@ pub(crate) fn znx_negate_assign_neon(res: &mut [i64]) {
 
     let tail = span << 2;
     if tail < n {
-        znx_negate_assign_ref(&mut res[tail..]);
+        znx_negate_assign_portable(&mut res[tail..]);
     }
 }
 
@@ -228,7 +229,7 @@ pub(crate) fn znx_automorphism_neon(p: i64, res: &mut [i64], a: &[i64]) {
     assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
-        znx_automorphism_ref(p, res, a);
+        znx_automorphism_portable(p, res, a);
         return;
     }
 
@@ -304,7 +305,7 @@ pub(crate) fn znx_automorphism_rotate_neon(p: i64, k: i64, res: &mut [i64], a: &
     assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
-        znx_automorphism_rotate_ref(p, k, res, a);
+        znx_automorphism_rotate_portable(p, k, res, a);
         return;
     }
 
@@ -378,7 +379,7 @@ pub(crate) fn znx_switch_ring_neon(res: &mut [i64], a: &[i64]) {
     assert!(n_in.max(n_out).is_multiple_of(n_in.min(n_out)));
 
     if n_in == n_out {
-        znx_copy_ref(res, a);
+        znx_copy_portable(res, a);
         return;
     }
 
@@ -400,11 +401,11 @@ pub(crate) fn znx_switch_ring_neon(res: &mut [i64], a: &[i64]) {
         }
         let tail = span << 2;
         if tail < n_out {
-            znx_switch_ring_ref(&mut res[tail..], &a[tail * gap..]);
+            znx_switch_ring_portable(&mut res[tail..], &a[tail * gap..]);
         }
     } else {
         let gap = n_out / n_in;
-        znx_zero_ref(res);
+        znx_zero_portable(res);
         let span = n_in >> 2;
         let mut aa = a.as_ptr();
         let rr = res.as_mut_ptr();
@@ -447,7 +448,7 @@ pub(crate) fn znx_mul_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) {
         return;
     }
     if k == 0 {
-        znx_copy_ref(res, a);
+        znx_copy_portable(res, a);
         return;
     }
     let span = n >> 2;
@@ -478,7 +479,7 @@ pub(crate) fn znx_mul_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) {
     }
     let tail = span << 2;
     if tail < n {
-        znx_mul_power_of_two_ref(k, &mut res[tail..], &a[tail..]);
+        znx_mul_power_of_two_portable(k, &mut res[tail..], &a[tail..]);
     }
 }
 
@@ -513,7 +514,7 @@ pub(crate) fn znx_mul_power_of_two_assign_neon(k: i64, res: &mut [i64]) {
     }
     let tail = span << 2;
     if tail < n {
-        znx_mul_power_of_two_assign_ref(k, &mut res[tail..]);
+        znx_mul_power_of_two_assign_portable(k, &mut res[tail..]);
     }
 }
 
@@ -568,7 +569,7 @@ pub(crate) fn znx_mul_add_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) 
     }
     let tail = span << 2;
     if tail < n {
-        znx_mul_add_power_of_two_ref(k, &mut res[tail..], &a[tail..]);
+        znx_mul_add_power_of_two_portable(k, &mut res[tail..], &a[tail..]);
     }
 }
 
@@ -587,7 +588,7 @@ mod tests {
     }
 
     /// Random `i64` values bounded to `[-2^60, 2^60)`. The scalar reference
-    /// `znx_*_ref` uses non-wrapping `+`/`-`, which panics in debug mode on
+    /// `znx_*_portable` uses non-wrapping `+`/`-`, which panics in debug mode on
     /// overflow; bounding to 2^60 keeps `add`/`sub` results safely below
     /// `i64::MAX/MIN` while still exercising both signs and the high bits
     /// the NEON kernel must propagate.
@@ -604,7 +605,7 @@ mod tests {
             let mut got = vec![0i64; n];
             let mut want = vec![0i64; n];
             znx_add_neon(&mut got, &a, &b);
-            znx_add_ref(&mut want, &a, &b);
+            znx_add_portable(&mut want, &a, &b);
             assert_eq!(got, want, "znx_add_neon mismatch at n={n}");
         }
     }
@@ -618,7 +619,7 @@ mod tests {
             let mut got = r0.clone();
             let mut want = r0;
             znx_add_assign_neon(&mut got, &a);
-            znx_add_assign_ref(&mut want, &a);
+            znx_add_assign_portable(&mut want, &a);
             assert_eq!(got, want, "znx_add_assign_neon mismatch at n={n}");
         }
     }
@@ -632,7 +633,7 @@ mod tests {
             let mut got = vec![0i64; n];
             let mut want = vec![0i64; n];
             znx_sub_neon(&mut got, &a, &b);
-            znx_sub_ref(&mut want, &a, &b);
+            znx_sub_portable(&mut want, &a, &b);
             assert_eq!(got, want, "znx_sub_neon mismatch at n={n}");
         }
     }
@@ -646,7 +647,7 @@ mod tests {
             let mut got = r0.clone();
             let mut want = r0;
             znx_sub_assign_neon(&mut got, &a);
-            znx_sub_assign_ref(&mut want, &a);
+            znx_sub_assign_portable(&mut want, &a);
             assert_eq!(got, want, "znx_sub_assign_neon mismatch at n={n}");
         }
     }
@@ -660,7 +661,7 @@ mod tests {
             let mut got = r0.clone();
             let mut want = r0;
             znx_sub_negate_assign_neon(&mut got, &a);
-            znx_sub_negate_assign_ref(&mut want, &a);
+            znx_sub_negate_assign_portable(&mut want, &a);
             assert_eq!(got, want, "znx_sub_negate_assign_neon mismatch at n={n}");
         }
     }
@@ -673,7 +674,7 @@ mod tests {
             let mut got = vec![0i64; n];
             let mut want = vec![0i64; n];
             znx_negate_neon(&mut got, &a);
-            znx_negate_ref(&mut want, &a);
+            znx_negate_portable(&mut want, &a);
             assert_eq!(got, want, "znx_negate_neon mismatch at n={n}");
         }
     }
@@ -686,7 +687,7 @@ mod tests {
             let mut got = r0.clone();
             let mut want = r0;
             znx_negate_assign_neon(&mut got);
-            znx_negate_assign_ref(&mut want);
+            znx_negate_assign_portable(&mut want);
             assert_eq!(got, want, "znx_negate_assign_neon mismatch at n={n}");
         }
     }
@@ -706,15 +707,15 @@ mod tests {
         let mut want = vec![0i64; n];
 
         znx_add_neon(&mut got, &a, &b);
-        znx_add_ref(&mut want, &a, &b);
+        znx_add_portable(&mut want, &a, &b);
         assert_eq!(got, want);
 
         znx_sub_neon(&mut got, &a, &b);
-        znx_sub_ref(&mut want, &a, &b);
+        znx_sub_portable(&mut want, &a, &b);
         assert_eq!(got, want);
 
         znx_negate_neon(&mut got, &a);
-        znx_negate_ref(&mut want, &a);
+        znx_negate_portable(&mut want, &a);
         assert_eq!(got, want);
     }
 
@@ -731,7 +732,7 @@ mod tests {
                     let mut got = vec![0i64; n];
                     let mut want = vec![0i64; n];
                     znx_automorphism_rotate_neon(p, k, &mut got, &a);
-                    znx_automorphism_rotate_ref(p, k, &mut want, &a);
+                    znx_automorphism_rotate_portable(p, k, &mut want, &a);
                     assert_eq!(got, want, "znx_automorphism_rotate_neon mismatch at n={n}, p={p}, k={k}");
                 }
             }

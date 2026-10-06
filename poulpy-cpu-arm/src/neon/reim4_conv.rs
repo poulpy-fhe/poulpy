@@ -362,9 +362,9 @@ pub(crate) unsafe fn reim4_real_convolution_1coeff_neon(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::fft64::reim4::{
-        reim4_convolution_1coeff_ref, reim4_convolution_2coeffs_ref, reim4_convolution_by_real_const_1coeff_ref,
-        reim4_convolution_by_real_const_2coeffs_ref,
+    use poulpy_cpu_portable::kernels::fft64::reim4::{
+        reim4_convolution_1coeff_portable, reim4_convolution_2coeffs_portable, reim4_convolution_by_real_const_1coeff_portable,
+        reim4_convolution_by_real_const_2coeffs_portable,
     };
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -395,7 +395,7 @@ mod tests {
             let mut got = [0f64; 8];
             let mut want = [0f64; 8];
             reim4_convolution_1coeff_neon(k, &mut got, &a, a_size, &b, b_size);
-            reim4_convolution_1coeff_ref(k, &mut want, &a, a_size, &b, b_size);
+            reim4_convolution_1coeff_portable(k, &mut want, &a, a_size, &b, b_size);
             close(&got, &want, &format!("conv1coeff k={k}"));
         }
     }
@@ -411,7 +411,7 @@ mod tests {
             let mut got = [0f64; 16];
             let mut want = [0f64; 16];
             reim4_convolution_2coeffs_neon(k, &mut got, &a, a_size, &b, b_size);
-            reim4_convolution_2coeffs_ref(k, &mut want, &a, a_size, &b, b_size);
+            reim4_convolution_2coeffs_portable(k, &mut want, &a, a_size, &b, b_size);
             close(&got, &want, &format!("conv2coeffs k={k}"));
         }
     }
@@ -427,7 +427,7 @@ mod tests {
             let mut got = [0f64; 8];
             let mut want = [0f64; 8];
             reim4_convolution_by_real_const_1coeff_neon(k, &mut got, &a, a_size, &b);
-            reim4_convolution_by_real_const_1coeff_ref(k, &mut want, &a, a_size, &b);
+            reim4_convolution_by_real_const_1coeff_portable(k, &mut want, &a, a_size, &b);
             close(&got, &want, &format!("conv_real_1coeff k={k}"));
         }
     }
@@ -443,7 +443,7 @@ mod tests {
             let mut got = [0f64; 16];
             let mut want = [0f64; 16];
             reim4_convolution_by_real_const_2coeffs_neon(k, &mut got, &a, a_size, &b);
-            reim4_convolution_by_real_const_2coeffs_ref(k, &mut want, &a, a_size, &b);
+            reim4_convolution_by_real_const_2coeffs_portable(k, &mut want, &a, a_size, &b);
             close(&got, &want, &format!("conv_real_2coeffs k={k}"));
         }
     }

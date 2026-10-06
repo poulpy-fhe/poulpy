@@ -69,7 +69,7 @@ At this layer, APIs are expected to be backend-generic. In practice that means:
 
 This module provides open extension points that can be implemented to provide a concrete backend to any crate built on **`poulpy-hal/api`** and **`poulpy-hal/layouts`**, including **`poulpy-core`**, **`poulpy-ckks`**, **`poulpy-bin-fhe`**, or any external project. The required methods define the backend implementation surface. HAL supplies backend-generic compositions in [`oep::derived`](./src/oep/derived.rs) as default bodies for operations that can be expressed using those methods and the supplied scratch. Backends may override these bodies with optimized kernels. Mutation variants whose signatures cannot provide the temporary storage needed by a composition remain required methods; each such exception is documented on its OEP method.
 
-The `poulpy-cpu-ref` crate separately provides portable CPU kernels and host-storage helpers in `hal_defaults`. CPU backends can reuse these helpers while selecting their own low-level kernels; device backends implement the required methods for their native storage and inherit HAL's compatible derived compositions.
+The `poulpy-cpu-portable` crate separately provides portable CPU kernels and host-storage helpers in `hal_defaults`. CPU backends can reuse these helpers while selecting their own low-level kernels; device backends implement the required methods for their native storage and inherit HAL's compatible derived compositions.
 
 
 ---------
@@ -130,12 +130,12 @@ Backend implementation (the CPU helper macros bind required methods to CPU kerne
 
 ```rust
 unsafe impl HalVecZnxImpl for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
 }
 ```
 
-CPU helper in `poulpy-cpu-ref` (excerpt from `HalVecZnxDefault`):
+CPU helper in `poulpy-cpu-portable` (excerpt from `HalVecZnxDefault`):
 
 ```rust
 pub trait HalVecZnxDefault: Backend<ZnxWord = i64>

@@ -4,7 +4,7 @@
 //! path streams one prime plane at a time and reuses extracted input rows
 //! across the output-column loop.
 
-use poulpy_cpu_ref::reference::ntt4x30::ntt::{NttTable, NttTableInv};
+use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_hal::layouts::Ring;
 use std::mem::size_of;
 
@@ -15,10 +15,10 @@ use core::arch::x86_64::{
 };
 
 use poulpy_core::oep::gglwe_product_digit_output_size;
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
+use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
@@ -114,7 +114,7 @@ pub(crate) fn vmp_extract_selected_rows_avx_pm<R: Ring>(
     first_row: usize,
     row_step: usize,
 ) {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();
@@ -731,7 +731,7 @@ fn vmp_apply_dft_to_dft_digits_strided_avx_inner<R: Ring, E: TaskExecutor>(
 #[cfg(test)]
 mod tests {
     use super::extract_1blk_from_contiguous_q120b_avx2;
-    use poulpy_cpu_ref::reference::ntt4x30::mat_vec::extract_1blk_from_contiguous_q120b_ref;
+    use poulpy_cpu_portable::kernels::ntt4x30::mat_vec::extract_1blk_from_contiguous_q120b_portable;
 
     #[test]
     fn extract_1blk_from_contiguous_q120b_avx2_vs_ref() {
@@ -745,7 +745,7 @@ mod tests {
                     let mut dst_ref = vec![0u64; 8 * row_max];
                     let mut dst_avx = vec![0u64; 8 * row_max];
 
-                    extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, &mut dst_ref, &src);
+                    extract_1blk_from_contiguous_q120b_portable(n, row_max, blk, &mut dst_ref, &src);
                     unsafe { extract_1blk_from_contiguous_q120b_avx2(n, row_max, blk, &mut dst_avx, &src) };
 
                     assert_eq!(dst_avx, dst_ref, "n={n}, row_max={row_max}, blk={blk}");

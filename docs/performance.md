@@ -56,7 +56,7 @@ On x86, compact residue storage lets the accelerated NTT backends keep that wide
 
 **Gate-level and bin-FHE work: use `FFT64`.**
 Blind rotation runs at a few limbs on a small ring, where the NTT's wider limbs cannot pay for themselves.
-`FFT64` was several times faster than any NTT backend on this workload, by a margin wide enough that the portable `FFT64Ref` also beat every accelerated NTT backend.
+`FFT64` was several times faster than any NTT backend on this workload, by a margin wide enough that the portable `FFT64Portable` also beat every accelerated NTT backend.
 
 **CKKS and leveled work: use `NTT3x42` where IFMA is available.**
 It was roughly twice as fast as either alternative on a full bootstrap at equal output precision, and fastest on every individual operation from moderate ring degrees upward, with its lead growing as the ring grows.
@@ -68,7 +68,7 @@ At realistic leveled parameters its keys are smaller than `FFT64` keys, while it
 This reduces the FFT advantage on key-switch-heavy work and can put NTT4 ahead on a mixed pipeline such as bootstrapping.
 It is not universal: the FFT's cheaper transform can still win an isolated key-switch or relinearized multiplication, and the margin depends on the ring degree and ISA.
 
-The qualification matters: `NTT4x30Ref` and `NTT4x30Neon` use the 32-byte transformed representation, so their choice against `FFT64` is operation- and machine-dependent.
+The qualification matters: `NTT4x30Portable` and `NTT4x30Neon` use the 32-byte transformed representation, so their choice against `FFT64` is operation- and machine-dependent.
 For AVX2 and AVX-512, start with NTT4 for a full CKKS pipeline and FFT for a small, switch-heavy one, then benchmark the actual circuit.
 
 ## 2. Backend
@@ -78,7 +78,7 @@ Threads multiply what the serial backend gives you; they do not reorder the choi
 
 How much a wider ISA buys depends on how far the workload is from the memory roof.
 On leveled work with many limbs there is arithmetic to accelerate, and each ISA step is worth a solid fraction.
-On gate-level work there is less: the blind rotation already runs close to what a single core can stream, so `FFT64Avx512` and `FFT64Avx` landed within a couple of percent of each other and the scalar `FFT64Ref` only modestly behind.
+On gate-level work there is less: the blind rotation already runs close to what a single core can stream, so `FFT64Avx512` and `FFT64Avx` landed within a couple of percent of each other and the scalar `FFT64Portable` only modestly behind.
 The same workload on `NTT4x30`, which does four times the transforms and sits further from the memory roof, still gained a large factor from SIMD.
 
 Take the widest ISA available, but do not expect it to compensate for the wrong family or limb size.
@@ -105,7 +105,7 @@ The workspace also ships a `profiling` profile â€” release plus debug symbols â€
 To list the instruction sets a machine has, run, with no features or flags:
 
 ```sh
-cargo test -p poulpy-cpu-ref capabilities -- --ignored --nocapture
+cargo test -p poulpy-cpu-portable capabilities -- --ignored --nocapture
 ```
 
 ```text

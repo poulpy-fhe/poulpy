@@ -200,9 +200,9 @@ pub(crate) fn i64_save_1blk_contiguous_neon(n: usize, offset: usize, rows: usize
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::fft64::convolution::{
-        i64_convolution_by_const_1coeff_ref, i64_convolution_by_const_2coeffs_ref, i64_extract_1blk_contiguous_ref,
-        i64_save_1blk_contiguous_ref,
+    use poulpy_cpu_portable::kernels::fft64::convolution::{
+        i64_convolution_by_const_1coeff_portable, i64_convolution_by_const_2coeffs_portable,
+        i64_extract_1blk_contiguous_portable, i64_save_1blk_contiguous_portable,
     };
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -226,7 +226,7 @@ mod tests {
             let mut got = [0i64; 8];
             let mut want = [0i64; 8];
             i64_convolution_by_const_1coeff_neon(k, &mut got, &a, a_size, &b);
-            i64_convolution_by_const_1coeff_ref(k, &mut want, &a, a_size, &b);
+            i64_convolution_by_const_1coeff_portable(k, &mut want, &a, a_size, &b);
             assert_eq!(got, want, "k={k}");
         }
     }
@@ -242,7 +242,7 @@ mod tests {
             let mut got = [0i64; 16];
             let mut want = [0i64; 16];
             i64_convolution_by_const_2coeffs_neon(k, &mut got, &a, a_size, &b);
-            i64_convolution_by_const_2coeffs_ref(k, &mut want, &a, a_size, &b);
+            i64_convolution_by_const_2coeffs_portable(k, &mut want, &a, a_size, &b);
             assert_eq!(got, want, "k={k}");
         }
     }
@@ -258,7 +258,7 @@ mod tests {
         let mut got = vec![0i64; 8 * rows];
         let mut want = vec![0i64; 8 * rows];
         i64_extract_1blk_contiguous_neon(n, offset, rows, blk, &mut got, &src);
-        i64_extract_1blk_contiguous_ref(n, offset, rows, blk, &mut want, &src);
+        i64_extract_1blk_contiguous_portable(n, offset, rows, blk, &mut want, &src);
         assert_eq!(got, want);
     }
 
@@ -273,7 +273,7 @@ mod tests {
         let mut got = vec![0i64; rows * n];
         let mut want = vec![0i64; rows * n];
         i64_save_1blk_contiguous_neon(n, offset, rows, blk, &mut got, &src);
-        i64_save_1blk_contiguous_ref(n, offset, rows, blk, &mut want, &src);
+        i64_save_1blk_contiguous_portable(n, offset, rows, blk, &mut want, &src);
         assert_eq!(got, want);
     }
 }

@@ -27,7 +27,7 @@ use crate::ntt3x42_ifma::{
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
-use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
+use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
@@ -966,7 +966,7 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<R: Ring, E: TaskExecutor>(
 }
 
 pub(crate) struct RotatedOutput<'a, R: Ring> {
-    pub(crate) plan: &'a poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    pub(crate) plan: &'a poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     pub(crate) body: VecZnxDftBackendRef<'a, crate::NTT3x42Ifma<R>>,
     pub(crate) output_size: usize,
 }
@@ -1296,7 +1296,7 @@ pub(crate) fn vmp_extract_selected_rows_ifma<R: Ring>(
     first_row: usize,
     row_step: usize,
 ) {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();

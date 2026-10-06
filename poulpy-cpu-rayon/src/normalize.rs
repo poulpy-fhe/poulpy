@@ -2,9 +2,14 @@
 //! per coefficient, so disjoint coefficient ranges split freely and the carry
 //! reservation is unchanged.
 
-use poulpy_cpu_ref::reference::{
-    ntt4x30::vec_znx_big::{I128NormalizeOps, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_range_raw},
-    vec_znx::{vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_assign_range_raw, vec_znx_normalize_range_raw},
+use poulpy_cpu_portable::kernels::{
+    ntt4x30::vec_znx_big::{
+        I128NormalizeOps, ntt4x30_vec_znx_big_normalize_portable, ntt4x30_vec_znx_big_normalize_range_raw_portable,
+    },
+    vec_znx::{
+        vec_znx_normalize_assign_portable, vec_znx_normalize_assign_range_raw_portable, vec_znx_normalize_portable,
+        vec_znx_normalize_range_raw_portable,
+    },
     znx::{
         I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
@@ -84,7 +89,7 @@ pub fn vec_znx_normalize_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
+        return vec_znx_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     let res_shape = res.shape();
@@ -94,7 +99,7 @@ pub fn vec_znx_normalize_par<B, T>(
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
         let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
         unsafe {
-            vec_znx_normalize_range_raw::<B>(
+            vec_znx_normalize_range_raw_portable::<B>(
                 res_ptr.get(),
                 res_shape,
                 res_base2k,
@@ -139,13 +144,13 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_assign::<B>(base2k, k, res_offset, res, res_col, carry);
+        return vec_znx_normalize_assign_portable::<B>(base2k, k, res_offset, res, res_col, carry);
     }
 
     let res_shape = res.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
-        vec_znx_normalize_assign_range_raw::<B>(
+        vec_znx_normalize_assign_range_raw_portable::<B>(
             res_ptr.get(),
             res_shape,
             base2k,
@@ -183,7 +188,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     if tasks < 2 {
         let mut res_ref: &mut VecZnxBackendMut<'_, B> = res;
         let a_ref: &VecZnxBigBackendRef<'_, B> = a;
-        return ntt4x30_vec_znx_big_normalize::<_, _, B>(
+        return ntt4x30_vec_znx_big_normalize_portable::<_, _, B>(
             &mut res_ref,
             res_base2k,
             res_k,
@@ -203,7 +208,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
         let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_shape(a_data, a_shape);
         unsafe {
-            ntt4x30_vec_znx_big_normalize_range_raw::<_, B>(
+            ntt4x30_vec_znx_big_normalize_range_raw_portable::<_, B>(
                 res_ptr.get(),
                 res_shape,
                 res_base2k,

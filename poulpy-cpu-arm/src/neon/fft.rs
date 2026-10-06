@@ -1,19 +1,19 @@
 //! NEON `f64` FFT/IFFT butterfly kernels for [`FFT64Neon`].
 //!
-//! Sizes `m < 16` delegate to [`fft_ref`] / [`ifft_ref`]; `m == 16` and BFS leaves
+//! Sizes `m < 16` delegate to [`fft_portable`] / [`ifft_portable`]; `m == 16` and BFS leaves
 //! use the NEON-intrinsic [`fft16_neon`] / [`ifft16_neon`].
 
 use core::arch::aarch64::{
     float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
 };
 
-use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
 
 /// Forward FFT in REIM split layout. Mirrors `fft_avx2_fma`.
 pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
         // m ∈ {1, 2, 4, 8} — scalar reference handles the small leaves.
-        fft_ref(m, omg, data);
+        fft_portable(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);
@@ -30,7 +30,7 @@ pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
 /// Inverse FFT in REIM split layout. Mirrors `ifft_avx2_fma`.
 pub(crate) fn ifft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        ifft_ref(m, omg, data);
+        ifft_portable(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);
@@ -552,8 +552,8 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
 // we pair consecutive regs and use `vzip1q`/`vzip2q` to deinterleave / re-
 // interleave the per-lane operands.
 //
-// Algorithm shape lifted from `fft16_ref` / `ifft16_ref`
-// (`poulpy-cpu-ref/src/reference/fft64/reim/{fft,ifft}_ref.rs`).
+// Algorithm shape lifted from `fft16_portable` / `ifft16_portable`
+// (`poulpy-cpu-portable/src/kernels/fft64/reim/{fft,ifft}_portable.rs`).
 
 #[inline(always)]
 unsafe fn cplx_twiddle_neon(
@@ -888,7 +888,7 @@ unsafe fn ifft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref};
+    use poulpy_cpu_portable::kernels::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_portable, ifft_portable};
 
     use super::{fft_neon, ifft_neon};
 
@@ -907,8 +907,8 @@ mod tests {
             ifft_neon(m, inv.omg(), &mut neon);
 
             let mut reference = data.clone();
-            fft_ref(m, fwd.omg(), &mut reference);
-            ifft_ref(m, inv.omg(), &mut reference);
+            fft_portable(m, fwd.omg(), &mut reference);
+            ifft_portable(m, inv.omg(), &mut reference);
 
             let tol = 1e-10f64;
             for i in 0..2 * m {
@@ -923,7 +923,7 @@ mod tests {
         }
     }
 
-    /// NEON FFT matches scalar `fft_ref` within ULP tolerance.
+    /// NEON FFT matches scalar `fft_portable` within ULP tolerance.
     #[test]
     fn fft_neon_vs_ref() {
         for log_m in 0..14 {
@@ -939,7 +939,7 @@ mod tests {
             let mut values_ref = values_neon.clone();
 
             fft_neon(m, fwd.omg(), &mut values_neon);
-            fft_ref(m, fwd.omg(), &mut values_ref);
+            fft_portable(m, fwd.omg(), &mut values_ref);
 
             let max_diff: f64 = 1.0 / ((1u64 << (53 - log_m - 1)) as f64);
             for i in 0..m * 2 {
@@ -954,7 +954,7 @@ mod tests {
         }
     }
 
-    /// NEON IFFT matches scalar `ifft_ref` within ULP tolerance.
+    /// NEON IFFT matches scalar `ifft_portable` within ULP tolerance.
     #[test]
     fn ifft_neon_vs_ref() {
         for log_m in 0..14 {
@@ -970,7 +970,7 @@ mod tests {
             let mut values_ref = values_neon.clone();
 
             ifft_neon(m, inv.omg(), &mut values_neon);
-            ifft_ref(m, inv.omg(), &mut values_ref);
+            ifft_portable(m, inv.omg(), &mut values_ref);
 
             let max_diff: f64 = 1.0 / ((1u64 << (53 - log_m - 1)) as f64);
             for i in 0..m * 2 {
@@ -1004,8 +1004,8 @@ mod tests {
 
         fft_neon(m, fwd.omg(), &mut a_neon);
         fft_neon(m, fwd.omg(), &mut b_neon);
-        fft_ref(m, fwd.omg(), &mut a_ref);
-        fft_ref(m, fwd.omg(), &mut b_ref);
+        fft_portable(m, fwd.omg(), &mut a_ref);
+        fft_portable(m, fwd.omg(), &mut b_ref);
 
         let mut c_neon = vec![0f64; 2 * m];
         let mut c_ref = vec![0f64; 2 * m];
@@ -1017,7 +1017,7 @@ mod tests {
         }
 
         ifft_neon(m, inv.omg(), &mut c_neon);
-        ifft_ref(m, inv.omg(), &mut c_ref);
+        ifft_portable(m, inv.omg(), &mut c_ref);
 
         let tol = 1e-8f64;
         for i in 0..2 * m {

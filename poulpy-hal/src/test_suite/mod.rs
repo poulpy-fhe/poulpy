@@ -4,7 +4,7 @@
 //! backend via the [`backend_test_suite!`](crate::backend_test_suite) and
 //! [`cross_backend_test_suite!`](crate::cross_backend_test_suite) macros.
 //! Tests validate correctness against the reference implementation in
-//! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
+//! [`poulpy-cpu-portable`](https://docs.rs/poulpy-cpu-portable).
 
 use crate::AlignedBuf;
 use crate::layouts::{

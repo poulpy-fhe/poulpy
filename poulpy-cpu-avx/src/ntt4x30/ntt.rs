@@ -26,7 +26,7 @@
 //!
 //! # Algorithm
 //!
-//! Identical to the scalar reference in [`poulpy_cpu_ref::reference::ntt4x30::ntt`],
+//! Identical to the portable scalar implementation in [`poulpy_cpu_portable::kernels::ntt4x30::ntt`],
 //! but the inner loops operate on 4 primes simultaneously via 256-bit SIMD.
 //!
 //! Split-precomputed multiplication:
@@ -56,7 +56,7 @@ use core::arch::x86_64::{
 
 use poulpy_hal::layouts::Ring;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
@@ -1361,11 +1361,11 @@ pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring
 mod tests {
 
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
-        arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        arithmetic::{b_from_znx64_portable, b_to_znx128_portable},
         ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
-        standard::{intt_ref, ntt_ref},
+        standard::{intt_portable, ntt_portable},
     };
 
     /// AVX2 NTT followed by AVX2 iNTT is the identity — mirrors the ref test.
@@ -1382,7 +1382,7 @@ mod tests {
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
 
             let mut data = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut data, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data, &coeffs);
 
             let data_orig = data.clone();
 
@@ -1415,8 +1415,8 @@ mod tests {
 
         let mut da = vec![0u64; 4 * n];
         let mut db = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut da, &a);
-        b_from_znx64_ref::<Primes30>(n, &mut db, &b);
+        b_from_znx64_portable::<Primes30>(n, &mut da, &a);
+        b_from_znx64_portable::<Primes30>(n, &mut db, &b);
 
         unsafe {
             ntt_avx2::<Primes30>(&fwd, &mut da);
@@ -1437,13 +1437,13 @@ mod tests {
         }
 
         let mut result = vec![0i128; n];
-        b_to_znx128_ref::<Primes30>(n, &mut result, &dc);
+        b_to_znx128_portable::<Primes30>(n, &mut result, &dc);
 
         let expected: Vec<i128> = [3, 10, 8, 0, 0, 0, 0, 0].to_vec();
         assert_eq!(result, expected, "AVX2 NTT convolution mismatch");
     }
 
-    /// AVX2 NTT output matches reference NTT output.
+    /// AVX2 NTT output matches portable NTT output.
     ///
     /// Sweeps up to `n = 2^18` so the by-level phase (the only place the fused
     /// kernels differ from the by-block path) is checked bit-for-bit.
@@ -1457,11 +1457,11 @@ mod tests {
 
             let mut data_avx = vec![0u64; 4 * n];
             let mut data_ref = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut data_avx, &coeffs);
-            b_from_znx64_ref::<Primes30>(n, &mut data_ref, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data_avx, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data_ref, &coeffs);
 
             unsafe { ntt_avx2::<Primes30>(&fwd, &mut data_avx) };
-            ntt_ref::<Primes30>(&fwd, &mut data_ref);
+            ntt_portable::<Primes30>(&fwd, &mut data_ref);
 
             for i in 0..4 * n {
                 assert_eq!(data_avx[i], data_ref[i], "n={n} idx={i}: NTT AVX2 vs ref mismatch");
@@ -1485,14 +1485,14 @@ mod tests {
 
             // Shared forward transform so both iNTTs see identical input limbs.
             let mut seed = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut seed, &coeffs);
-            ntt_ref::<Primes30>(&fwd, &mut seed);
+            b_from_znx64_portable::<Primes30>(n, &mut seed, &coeffs);
+            ntt_portable::<Primes30>(&fwd, &mut seed);
 
             let mut data_avx = seed.clone();
             let mut data_ref = seed;
 
             unsafe { intt_avx2::<Primes30>(&inv, &mut data_avx) };
-            intt_ref::<Primes30>(&inv, &mut data_ref);
+            intt_portable::<Primes30>(&inv, &mut data_ref);
 
             for i in 0..4 * n {
                 assert_eq!(data_avx[i], data_ref[i], "n={n} idx={i}: iNTT AVX2 vs ref mismatch");
