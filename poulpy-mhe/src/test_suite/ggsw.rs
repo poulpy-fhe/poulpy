@@ -43,7 +43,7 @@ fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -
         n: layout.n,
         base2k: layout.base2k,
         dnum: Dnum(layout.k().as_u32().div_ceil(layout.base2k.as_u32() * layout.dsize.as_u32())),
-        k_aux: TorusPrecision(layout.base2k.as_u32() + module.log_n() as u32),
+        k_aux: TorusPrecision(layout.dsize.as_u32() * layout.base2k.as_u32() + module.log_n() as u32),
         rank_in: layout.rank,
         rank_out: layout.rank,
         dsize: layout.dsize,
