@@ -11,5 +11,5 @@ macro_rules! register_backend {
     };
 }
 
-register_backend!(crate::FFT64Ref, crate::FFT64Ref, bin_fhe_parity_fft64ref);
-register_backend!(crate::NTT4x30Ref, crate::FFT64Ref, bin_fhe_parity_ntt4x30ref);
+register_backend!(crate::FFT64Ref, poulpy_cpu_oracle::FFT64Oracle, bin_fhe_parity_fft64ref);
+register_backend!(crate::NTT4x30Ref, poulpy_cpu_oracle::NTT4x30Oracle, bin_fhe_parity_ntt4x30ref);
