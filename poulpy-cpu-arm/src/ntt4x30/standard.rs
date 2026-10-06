@@ -10,16 +10,8 @@ use poulpy_cpu_portable::kernels::{
 };
 
 use super::NTT4x30Neon;
-#[cfg(target_arch = "aarch64")]
-use crate::neon::{
-    ntt4x30_ntt::{intt_neon, ntt_neon},
-    znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate},
-};
-#[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::kernels::{
-    ntt4x30::standard::{intt_portable, ntt_portable},
-    znx::{standard::znx_automorphism_portable as kn_automorphism, znx_automorphism_rotate_portable as kn_automorphism_rotate},
-};
+use crate::neon::znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate};
+use poulpy_cpu_portable::kernels::ntt4x30::standard::{intt_portable, ntt_portable};
 
 impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon {
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
@@ -52,30 +44,18 @@ impl ZnxAutomorphismRotate for NTT4x30Neon {
     }
 }
 
+// The backend transforms packed limbs with its own kernels.
+// These q120 transforms only serve the reference bodies that are generic over the q120 layout.
 impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            ntt_neon::<Primes30>(table, data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            ntt_portable::<Primes30>(table, data);
-        }
+        ntt_portable::<Primes30>(table, data);
     }
 }
 
 impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            intt_neon::<Primes30>(table, data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            intt_portable::<Primes30>(table, data);
-        }
+        intt_portable::<Primes30>(table, data);
     }
 }

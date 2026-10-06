@@ -6,24 +6,25 @@
 //! `y * w - round(y * w' / 2^31) * q` lies in `[-q, q]` for every `|y| <= 2^31`.
 //!
 //! The forward transform is a Cooley-Tukey network with bit-reversed twiddles and no separate twist pass.
-//! Its output order is the one of the q120 kernels, so automorphism plans are shared with them.
+//! Its output order is the one of the portable q120 kernels, so automorphism plans are shared with them.
 //! The inverse transform is the matching Gentleman-Sande network.
 //! Its last level folds in `1/n` and the CRT constant, so its output feeds the reconstruction directly.
 
 use core::arch::aarch64::{
-    int32x4_t, uint64x2_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vdupq_n_u32, vdupq_n_u64, vget_low_u32,
-    vld1q_dup_s32, vld1q_s32, vld1q_s64, vld1q_u32, vminq_u32, vmlal_high_u32, vmlal_u32, vmlsq_s32, vmulq_s32, vqrdmulhq_s32,
-    vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64, vreinterpretq_u32_s32, vreinterpretq_u64_s32,
-    vrshrq_n_s32, vst1q_s32, vst1q_u64, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32, vuzp1q_s32, vuzp1q_u64, vuzp2q_s32,
-    vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
+    int32x4_t, uint64x2_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vdupq_n_u32, vdupq_n_u64, vextq_s32,
+    vget_low_u32, vld1q_dup_s32, vld1q_s32, vld1q_s64, vld1q_u32, vminq_u32, vmlal_high_u32, vmlal_u32, vmlsq_s32, vmulq_s32,
+    vqrdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64, vreinterpretq_u32_s32,
+    vreinterpretq_u64_s32, vrev64q_s32, vrshrq_n_s32, vst1q_s32, vst1q_u64, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32,
+    vuzp1q_s32, vuzp1q_u64, vuzp2q_s32, vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
 };
 
 use poulpy_cpu_portable::kernels::ntt4x30::{
+    conjugate_invariant::BasisChange,
     ntt::modq_pow_portable,
     primes::{PrimeSet, PrimeSetCrt4, Primes30},
 };
 
-use super::ntt4x30_packed::{Q, R1};
+use super::ntt4x30_packed::{Q, R1, add_mod, mont_mul, plane};
 
 /// Smallest degree the kernels accept: the two last levels work on pairs of registers.
 pub(crate) const MIN_N: usize = 8;
@@ -107,10 +108,13 @@ pub(crate) struct Ntt32Table {
     /// Indexed by `prepared`, then by prime.
     conv: [[ConvConst; 4]; 2],
     fin: [FinalConst; 4],
+    /// Basis changes of the conjugate-invariant ring: into the negacyclic basis, and back.
+    ci: Option<[[CiPlane; 4]; 2]>,
 }
 
 impl Ntt32Table {
-    pub(crate) fn new(n: usize) -> Self {
+    /// Tables of degree `n`, with the basis changes of the conjugate-invariant ring when `conjugate_invariant` is set.
+    pub(crate) fn new(n: usize, conjugate_invariant: bool) -> Self {
         assert!(n.is_power_of_two() && (MIN_N..=1 << Primes30::MAX_LOG_N).contains(&n));
         let psi: [u32; 4] =
             std::array::from_fn(|p| modq_pow_portable(Primes30::OMEGA[p], (1i64 << Primes30::MAX_LOG_N) / n as i64, Q[p]));
@@ -141,7 +145,95 @@ impl Ntt32Table {
                 cwp: quotient(cw, q),
             }
         });
-        Self { n, fwd, inv, conv, fin }
+        let ci =
+            conjugate_invariant.then(|| std::array::from_fn(|inverse| std::array::from_fn(|p| CiPlane::new(n, p, inverse == 1))));
+        Self {
+            n,
+            fwd,
+            inv,
+            conv,
+            fin,
+            ci,
+        }
+    }
+}
+
+/// Basis change of the conjugate-invariant ring for one prime and one direction.
+///
+/// Coefficient `j` becomes `d[j] * a[j] + c[j] * a[n - j]`, and coefficient `0` is kept.
+/// The factors are stored multiplied by `2^32`, and a second time in mirrored order for the coefficients `n - j`.
+struct CiPlane {
+    d: Vec<u32>,
+    c: Vec<u32>,
+    /// `d[n - j]` and `c[n - j]` at index `j`.
+    dm: Vec<u32>,
+    cm: Vec<u32>,
+    q: u32,
+    /// `2^-32 mod q`.
+    r_inv: u32,
+}
+
+impl CiPlane {
+    fn new(n: usize, p: usize, inverse: bool) -> Self {
+        let q = Q[p];
+        let basis = BasisChange::new(n, q as u64, Primes30::OMEGA[p] as u64, Primes30::MAX_LOG_N, inverse);
+        let prepared = |x: u64| mul_mod(x as u32, R1[p], q);
+        let d: Vec<u32> = basis.factors().iter().map(|f| prepared(f[0])).collect();
+        let c: Vec<u32> = basis.factors().iter().map(|f| prepared(f[1])).collect();
+        let mirror = |v: &[u32]| (0..n).map(|j| v[(n - j) % n]).collect();
+        Self {
+            dm: mirror(&d),
+            cm: mirror(&c),
+            d,
+            c,
+            q,
+            r_inv: modq_pow_portable(R1[p], -1, q),
+        }
+    }
+
+    /// One coefficient: `d * a + c * b`, canonical, for prepared factors and any signed `a`, `b`.
+    fn scalar(&self, d: u32, c: u32, a: i32, b: i32) -> i32 {
+        let q = self.q as i64;
+        let term = |x: i32, w: u32| (x as i64).rem_euclid(q) * w as i64 % q * self.r_inv as i64 % q;
+        ((term(a, d) + term(b, c)) % q) as i32
+    }
+
+    /// Applies the basis change to one plane, in place.
+    ///
+    /// Inputs are signed residues of magnitude below `2 * q`, outputs are canonical, coefficient `0` excepted, which is kept.
+    unsafe fn apply(&self, a: *mut i32, n: usize) {
+        unsafe {
+            let c = plane(Q.iter().position(|&q| q == self.q).unwrap());
+            let mul = |x: int32x4_t, w: *const u32| vreinterpretq_s32_u32(mont_mul(vreinterpretq_u32_s32(x), vld1q_u32(w), &c));
+            let reverse = |x: int32x4_t| {
+                let x = vrev64q_s32(x);
+                vextq_s32::<2>(x, x)
+            };
+            let half = n / 2;
+            // Coefficients `j..j + 4` against their mirrors `n - j - 3..=n - j`, read before either is written.
+            let mut j = 1;
+            while j + 4 <= half {
+                let lo = a.add(j);
+                let hi = a.add(n - j - 3);
+                let x = vld1q_s32(lo);
+                let y = reverse(vld1q_s32(hi));
+                let q = vreinterpretq_u32_s32(vdupq_n_s32(self.q as i32));
+                let sum = |u: int32x4_t, v: int32x4_t| {
+                    vreinterpretq_s32_u32(add_mod(vreinterpretq_u32_s32(u), vreinterpretq_u32_s32(v), q))
+                };
+                let new_x = sum(mul(x, self.d.as_ptr().add(j)), mul(y, self.c.as_ptr().add(j)));
+                let new_y = sum(mul(y, self.dm.as_ptr().add(j)), mul(x, self.cm.as_ptr().add(j)));
+                vst1q_s32(lo, new_x);
+                vst1q_s32(hi, reverse(new_y));
+                j += 4;
+            }
+            while j <= half {
+                let (x, y) = (*a.add(j), *a.add(n - j));
+                *a.add(j) = self.scalar(self.d[j], self.c[j], x, y);
+                *a.add(n - j) = self.scalar(self.dm[j], self.cm[j], y, x);
+                j += 1;
+            }
+        }
     }
 }
 
@@ -358,23 +450,38 @@ unsafe fn inv_plane(a: *mut i32, src: *const i32, n: usize, tab: &PlaneTable, fi
     }
 }
 
+/// Residues of four signed coefficients modulo one prime, of magnitude below `1.6 * q`.
+///
+/// The coefficient is `hi * 2^32 + lo`, with `lo` read as a signed word and its sign bit carried in `carry`.
+#[inline(always)]
+unsafe fn residues(lo: int32x4_t, hi: int32x4_t, carry: int32x4_t, c: &ConvConst, q: int32x4_t) -> int32x4_t {
+    unsafe {
+        let u = mul_w(hi, vdupq_n_s32(c.k), vdupq_n_s32(c.kp), q);
+        let v = mul_w(lo, vdupq_n_s32(c.s), vdupq_n_s32(c.sp), q);
+        let v = reduce(vaddq_s32(v, vandq_s32(carry, vdupq_n_s32(c.kc))), q);
+        vaddq_s32(u, v)
+    }
+}
+
+/// Low words, high words and carries of four signed coefficients.
+#[inline(always)]
+unsafe fn split_i64(src: *const i64) -> (int32x4_t, int32x4_t, int32x4_t) {
+    unsafe {
+        let a0 = vreinterpretq_s32_s64(vld1q_s64(src));
+        let a1 = vreinterpretq_s32_s64(vld1q_s64(src.add(2)));
+        let lo = vuzp1q_s32(a0, a1);
+        (lo, vuzp2q_s32(a0, a1), vreinterpretq_s32_u32(vcltzq_s32(lo)))
+    }
+}
+
 /// Reduces `n` signed coefficients into four planes of signed residues, multiplied by `2^32` when `prepared` is set.
 unsafe fn from_i64(dst: *mut i32, src: *const i64, n: usize, conv: &[ConvConst; 4]) {
     unsafe {
         let mut i = 0;
         while i < n {
-            let a0 = vreinterpretq_s32_s64(vld1q_s64(src.add(i)));
-            let a1 = vreinterpretq_s32_s64(vld1q_s64(src.add(i + 2)));
-            // x = hi * 2^32 + lo, with lo read as a signed word and its sign bit carried.
-            let lo = vuzp1q_s32(a0, a1);
-            let hi = vuzp2q_s32(a0, a1);
-            let carry = vreinterpretq_s32_u32(vcltzq_s32(lo));
+            let (lo, hi, carry) = split_i64(src.add(i));
             for (p, c) in conv.iter().enumerate() {
-                let q = vdupq_n_s32(Q[p] as i32);
-                let u = mul_w(hi, vdupq_n_s32(c.k), vdupq_n_s32(c.kp), q);
-                let v = mul_w(lo, vdupq_n_s32(c.s), vdupq_n_s32(c.sp), q);
-                let v = reduce(vaddq_s32(v, vandq_s32(carry, vdupq_n_s32(c.kc))), q);
-                vst1q_s32(dst.add(p * n + i), vaddq_s32(u, v));
+                vst1q_s32(dst.add(p * n + i), residues(lo, hi, carry, c, vdupq_n_s32(Q[p] as i32)));
             }
             i += 4;
         }
@@ -392,6 +499,9 @@ pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: 
     unsafe {
         from_i64(d, src.as_ptr(), n, &table.conv[prepared as usize]);
         for (p, &q) in Q.iter().enumerate() {
+            if let Some(ci) = &table.ci {
+                ci[0][p].apply(d.add(p * n), n);
+            }
             fwd_plane(d.add(p * n), n, &table.fwd[p], q as i32);
         }
     }
@@ -483,6 +593,9 @@ pub(crate) unsafe fn intt32(table: &Ntt32Table, dst: *mut i128, src: *const u32,
                 &table.fin[p],
                 q as i32,
             );
+            if let Some(ci) = &table.ci {
+                ci[1][p].apply((work as *mut i32).add(p * n), n);
+            }
         }
         crt(dst, work, n);
     }
@@ -491,23 +604,28 @@ pub(crate) unsafe fn intt32(table: &Ntt32Table, dst: *mut i128, src: *const u32,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NTT4x30Neon;
-    use crate::neon::ntt4x30_packed::{pack_limb, unpack_limb};
-    use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, NttFromZnx64, NttToZnx128, vec_znx_dft::NttModuleHandle};
-    use poulpy_hal::layouts::Module;
+    use poulpy_cpu_portable::NTT4x30Portable;
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        NttDFTExecute, NttFromZnx64, NttToZnx128,
+        ntt::{NttTable, NttTableInv},
+    };
+    use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
 
     fn lcg(state: &mut u64) -> u64 {
         *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         *state ^ (*state >> 29)
     }
 
-    #[test]
-    fn matches_q120_kernels() {
+    /// Checks both transforms against the portable q120 kernels of ring `R`, bit for bit.
+    fn matches_portable<R: Ring>(log_ns: &[usize], new_table: impl Fn(usize) -> (NttTable<Primes30, R>, NttTableInv<Primes30, R>))
+    where
+        NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    {
         let mut state = 11u64;
-        for log_n in [3usize, 4, 5, 6, 10, 13, 14, 15, 16] {
+        for &log_n in log_ns {
             let n = 1 << log_n;
-            let module = Module::<NTT4x30Neon>::new(n as u64);
-            let table = Ntt32Table::new(n);
+            let (fwd, inv) = new_table(n);
+            let table = Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4);
             for round in 0..3 {
                 let src: Vec<i64> = (0..n)
                     .map(|i| match (round, i % 7) {
@@ -521,14 +639,23 @@ mod tests {
                     })
                     .collect();
                 let mut wide = vec![0u64; 4 * n];
-                <NTT4x30Neon>::ntt_from_znx64(&mut wide, &src);
-                <NTT4x30Neon as NttDFTExecute<_>>::ntt_dft_execute(module.get_ntt_table_for(n), &mut wide);
+                <NTT4x30Portable<R> as NttFromZnx64>::ntt_from_znx64(&mut wide, &src);
+                <NTT4x30Portable<R> as NttDFTExecute<_>>::ntt_dft_execute(&fwd, &mut wide);
                 for prepared in [false, true] {
-                    let mut want = vec![0u32; 4 * n];
-                    pack_limb(n, &mut want, &wide, prepared);
                     let mut got = vec![0u32; 4 * n];
                     ntt32(&table, &mut got, &src, prepared);
-                    assert_eq!(got, want, "forward n {n} round {round} prepared {prepared}");
+                    for p in 0..4 {
+                        let q = Q[p] as u128;
+                        let scale = if prepared { 1u128 << 32 } else { 1 };
+                        for i in 0..n {
+                            let want = (wide[4 * i + p] as u128 % q) * scale % q;
+                            assert_eq!(
+                                got[p * n + i] as u128,
+                                want,
+                                "forward n {n} round {round} prepared {prepared}"
+                            );
+                        }
+                    }
                 }
 
                 // Inverse of arbitrary canonical planes, extremes included.
@@ -540,12 +667,12 @@ mod tests {
                             1 => Q[p] - 1,
                             _ => (lcg(&mut state) % Q[p] as u64) as u32,
                         };
+                        wide[4 * i + p] = planes[p * n + i] as u64;
                     }
                 }
-                unpack_limb(n, &mut wide, &planes);
-                <NTT4x30Neon as NttDFTExecute<_>>::ntt_dft_execute(module.get_intt_table_for(n), &mut wide);
+                <NTT4x30Portable<R> as NttDFTExecute<_>>::ntt_dft_execute(&inv, &mut wide);
                 let mut want = vec![0i128; n];
-                <NTT4x30Neon>::ntt_to_znx128(&mut want, n, &wide);
+                <NTT4x30Portable<R> as NttToZnx128>::ntt_to_znx128(&mut want, n, &wide);
                 let mut got = vec![0i128; n];
                 let mut work = vec![0u32; 4 * n];
                 unsafe { intt32(&table, got.as_mut_ptr(), planes.as_ptr(), work.as_mut_ptr()) };
@@ -557,5 +684,25 @@ mod tests {
                 assert_eq!(got, want, "inverse in place n {n} round {round}");
             }
         }
+    }
+
+    #[test]
+    fn matches_portable_standard() {
+        matches_portable::<Standard>(&[3, 4, 5, 6, 10, 13, 14, 15, 16], |n| {
+            (
+                NttTable::<Primes30, Standard>::new(n),
+                NttTableInv::<Primes30, Standard>::new(n),
+            )
+        });
+    }
+
+    #[test]
+    fn matches_portable_conjugate_invariant() {
+        matches_portable::<ConjugateInvariant>(&[3, 4, 5, 6, 10, 13, 14, 15, 16], |n| {
+            (
+                NttTable::<Primes30, ConjugateInvariant>::new(n),
+                NttTableInv::<Primes30, ConjugateInvariant>::new(n),
+            )
+        });
     }
 }

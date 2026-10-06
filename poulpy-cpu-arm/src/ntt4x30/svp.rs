@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use super::{
     NTT4x30Neon,
-    vec_znx_dft::{dft_limb_scaled, dft_tmp_len, packed_limb, packed_limb_mut},
+    vec_znx_dft::{dft_limb_scaled, packed_limb, packed_limb_mut},
 };
 use crate::neon::ntt4x30_packed::{OP_MONT_MUL, limb_op};
 
@@ -46,16 +46,8 @@ pub(crate) fn svp_prepare<R: Ring>(
     let n = res.n();
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
-    let mut tmp = vec![0u64; dft_tmp_len(module, n)];
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    dft_limb_scaled(
-        module,
-        n,
-        &mut data[4 * n * res_col..][..4 * n],
-        a.at(a_col, 0),
-        true,
-        &mut tmp,
-    );
+    dft_limb_scaled(module, n, &mut data[4 * n * res_col..][..4 * n], a.at(a_col, 0), true);
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(

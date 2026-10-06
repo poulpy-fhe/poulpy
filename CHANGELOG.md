@@ -257,6 +257,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30Neon<ConjugateInvariant>` and its Rayon variant run the native 32-bit NTT, with the basis change of the conjugate-invariant ring applied on the packed planes.
+- **Breaking:** the NEON q120 kernels are removed, with the `Ntt*` kernel trait implementations of `NTT4x30Neon` and `NTT4x30NeonRayon` other than `NttDFTExecute`, which forwards to the portable transform for the reference bodies that require it.
+  `examples/bench_neon_vs_ref.rs` no longer compares the q120 transforms.
 - The accumulating DFT-domain automorphism of the NEON NTT4x30 backends runs its modular add on four lanes, after a scalar gather.
 - The fused interleaved-digit product of the NEON NTT4x30 backends skips the rows of leading input limbs that are zero in every column, as the per-digit vector-matrix products of the reference body did, and the NEON forward transform returns zero for a zero limb without running.
   A ciphertext raised to a larger modulus has most of its limbs in this case.

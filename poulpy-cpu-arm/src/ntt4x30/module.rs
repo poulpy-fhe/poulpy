@@ -17,24 +17,28 @@ use super::NTT4x30Neon;
 use crate::neon::ntt4x30_ntt32::{MIN_N, Ntt32Table};
 
 /// Opaque handle for the [`NTT4x30Neon`](super::NTT4x30Neon) backend.
-/// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` and
-/// `q120b × q120b` products.
+/// Holds the tables of the packed NTT for every degree up to `n`.
+/// The q120 plans and metadata are kept for the reference bodies that are generic over the q120 layout.
 #[repr(C)]
 pub struct NTT4x30NeonHandle<R: Ring = Standard> {
     ring_plans: NttPlanSet<Primes30, R>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
-    /// Packed NTT tables by `log2(n)`, present on the standard ring from the smallest degree the kernels accept.
+    /// Packed NTT tables by `log2(n)`, present from the smallest degree the kernels accept.
     packed: Vec<Option<Ntt32Table>>,
 }
 
 impl<R: Ring> NTT4x30NeonHandle<R> {
-    /// Tables of the packed NTT of degree `n`, when this ring and degree have them.
+    /// Tables of the packed NTT of degree `n`.
+    ///
+    /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
     #[inline]
-    pub(crate) fn packed_table(&self, n: usize) -> Option<&Ntt32Table> {
-        self.packed.get(n.trailing_zeros() as usize).and_then(Option::as_ref)
+    pub(crate) fn packed_table(&self, n: usize) -> &Ntt32Table {
+        self.packed
+            .get(n.trailing_zeros() as usize)
+            .and_then(Option::as_ref)
+            .expect("no packed NTT table for this degree")
     }
 }
 
@@ -162,7 +166,7 @@ where
             packed: (0..=n.ilog2())
                 .map(|log_n| {
                     let n = 1usize << log_n;
-                    (R::CYCLOTOMIC_ORDER_FACTOR == 2 && n >= MIN_N).then(|| Ntt32Table::new(n))
+                    (n >= MIN_N).then(|| Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4))
                 })
                 .collect(),
             ring_plans: NttPlanSet::new(n),

@@ -1,9 +1,8 @@
-//! NEON-accelerated NTT4x30 CPU backend (Q120 NTT, CRT over four ~30-bit primes).
+//! NEON-accelerated NTT4x30 CPU backend (CRT over four ~30-bit primes, packed `u32` transform domain).
 
 mod conjugate_invariant;
 pub(crate) mod convolution;
 mod module;
-mod prim;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
 mod standard;

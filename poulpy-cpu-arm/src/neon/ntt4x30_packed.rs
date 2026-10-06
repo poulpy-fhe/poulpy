@@ -7,11 +7,9 @@
 //! A product against a prepared operand then reduces with a single Montgomery step and lands back in the plain domain.
 
 use core::arch::aarch64::{
-    int64x2_t, uint32x2_t, uint32x4_t, uint64x2_t, vadd_u32, vaddq_u32, vandq_u32, vcgtq_u32, vcombine_u32, vdup_n_u32,
-    vdupq_n_s64, vdupq_n_u32, vget_low_s32, vget_low_u32, vhsubq_s32, vld1_u32, vld1q_u32, vld1q_u64, vmin_u32, vminq_u32,
-    vmlal_high_s32, vmlal_s32, vmlal_u32, vmlsl_high_s32, vmlsl_s32, vmovl_high_u32, vmovl_u32, vmovn_u64, vmul_u32, vmull_u32,
-    vmulq_s32, vmulq_u32, vqdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_u32_s32, vshrn_n_u64,
-    vst1q_u32, vst1q_u64, vsub_u32, vsubq_u32, vuzp1q_s32, vuzp1q_u32, vuzp2q_s32, vuzp2q_u32, vzip1q_u32, vzip2q_u32,
+    int64x2_t, uint32x4_t, vaddq_u32, vandq_u32, vcgtq_u32, vdupq_n_s64, vdupq_n_u32, vget_low_s32, vhsubq_s32, vld1q_u32,
+    vminq_u32, vmlal_high_s32, vmlal_s32, vmlsl_high_s32, vmlsl_s32, vmulq_s32, vmulq_u32, vqdmulhq_s32, vreinterpretq_s32_s64,
+    vreinterpretq_s32_u32, vreinterpretq_u32_s32, vst1q_u32, vsubq_u32, vuzp1q_s32, vuzp2q_s32,
 };
 
 use poulpy_cpu_portable::kernels::ntt4x30::primes::{PrimeSet, Primes30};
@@ -59,8 +57,6 @@ pub(crate) const QINV: [u32; 4] = build_qinv();
 pub(crate) const R1: [u32; 4] = build_pow(32);
 /// `2^64 mod Q[p]`.
 pub(crate) const R2: [u32; 4] = build_pow(64);
-/// `2^96 mod Q[p]`.
-pub(crate) const R3: [u32; 4] = build_pow(96);
 
 /// Largest number of products of two centered residues that one `i64` accumulator holds before its Montgomery step.
 ///
@@ -369,102 +365,6 @@ pub(crate) fn limb_to_prepared(n: usize, data: &mut [u32]) {
     }
 }
 
-#[inline(always)]
-unsafe fn reduce_pair(x: uint64x2_t, ch: uint32x2_t, cl: uint32x2_t, q: uint32x2_t, nqinv: uint32x2_t) -> uint32x2_t {
-    unsafe {
-        // y = hi * ch + lo * cl < 2^63 is congruent to x times the scale carried by (ch, cl).
-        let y = vmlal_u32(vmull_u32(vshrn_n_u64::<32>(x), ch), vmovn_u64(x), cl);
-        let m = vmul_u32(vmovn_u64(y), nqinv);
-        // (y + m * q) / 2^32 < 2^31 + q < 4q.
-        let r = vshrn_n_u64::<32>(vmlal_u32(y, m, q));
-        let r = vmin_u32(r, vsub_u32(r, vadd_u32(q, q)));
-        vmin_u32(r, vsub_u32(r, q))
-    }
-}
-
-/// Reduces `n` lazy q120b coefficients into one packed limb.
-///
-/// `src` holds four `u64` per coefficient, one per prime, with any 64-bit value.
-/// `dst` receives the canonical residues, multiplied by `2^32` when `prepared` is set.
-pub(crate) fn pack_limb(n: usize, dst: &mut [u32], src: &[u64], prepared: bool) {
-    assert!(dst.len() >= 4 * n);
-    assert!(src.len() >= 4 * n);
-    // The Montgomery step divides by 2^32, so the constants carry one more factor than the target scale.
-    let (ch, cl) = if prepared { (&R3, &R2) } else { (&R2, &R1) };
-    let nqinv = [
-        QINV[0].wrapping_neg(),
-        QINV[1].wrapping_neg(),
-        QINV[2].wrapping_neg(),
-        QINV[3].wrapping_neg(),
-    ];
-    unsafe {
-        let (ch01, ch23) = (vld1_u32(ch.as_ptr()), vld1_u32(ch.as_ptr().add(2)));
-        let (cl01, cl23) = (vld1_u32(cl.as_ptr()), vld1_u32(cl.as_ptr().add(2)));
-        let (q01, q23) = (vld1_u32(Q.as_ptr()), vld1_u32(Q.as_ptr().add(2)));
-        let (ni01, ni23) = (vld1_u32(nqinv.as_ptr()), vld1_u32(nqinv.as_ptr().add(2)));
-        let s = src.as_ptr();
-        let d = dst.as_mut_ptr();
-        let vecs = n / 4;
-        for i in 0..vecs {
-            let base = s.add(16 * i);
-            let mut r01 = [vdup_n_u32(0); 4];
-            let mut r23 = [vdup_n_u32(0); 4];
-            for k in 0..4 {
-                r01[k] = reduce_pair(vld1q_u64(base.add(4 * k)), ch01, cl01, q01, ni01);
-                r23[k] = reduce_pair(vld1q_u64(base.add(4 * k + 2)), ch23, cl23, q23, ni23);
-            }
-            let a01 = vcombine_u32(r01[0], r01[1]);
-            let b01 = vcombine_u32(r01[2], r01[3]);
-            let a23 = vcombine_u32(r23[0], r23[1]);
-            let b23 = vcombine_u32(r23[2], r23[3]);
-            vst1q_u32(d.add(4 * i), vuzp1q_u32(a01, b01));
-            vst1q_u32(d.add(n + 4 * i), vuzp2q_u32(a01, b01));
-            vst1q_u32(d.add(2 * n + 4 * i), vuzp1q_u32(a23, b23));
-            vst1q_u32(d.add(3 * n + 4 * i), vuzp2q_u32(a23, b23));
-        }
-        for i in 4 * vecs..n {
-            for (p, &q) in Q.iter().enumerate() {
-                let q = q as u128;
-                let scale = if prepared { 1u128 << 32 } else { 1 };
-                *d.add(p * n + i) = ((*s.add(4 * i + p) as u128 % q) * scale % q) as u32;
-            }
-        }
-    }
-}
-
-/// Widens one packed limb into `n` q120b coefficients.
-pub(crate) fn unpack_limb(n: usize, dst: &mut [u64], src: &[u32]) {
-    assert!(dst.len() >= 4 * n);
-    assert!(src.len() >= 4 * n);
-    unsafe {
-        let s = src.as_ptr();
-        let d = dst.as_mut_ptr();
-        let vecs = n / 4;
-        for i in 0..vecs {
-            let p0 = vld1q_u32(s.add(4 * i));
-            let p1 = vld1q_u32(s.add(n + 4 * i));
-            let p2 = vld1q_u32(s.add(2 * n + 4 * i));
-            let p3 = vld1q_u32(s.add(3 * n + 4 * i));
-            let (a01, b01) = (vzip1q_u32(p0, p1), vzip2q_u32(p0, p1));
-            let (a23, b23) = (vzip1q_u32(p2, p3), vzip2q_u32(p2, p3));
-            let out = d.add(16 * i);
-            vst1q_u64(out, vmovl_u32(vget_low_u32(a01)));
-            vst1q_u64(out.add(2), vmovl_u32(vget_low_u32(a23)));
-            vst1q_u64(out.add(4), vmovl_high_u32(a01));
-            vst1q_u64(out.add(6), vmovl_high_u32(a23));
-            vst1q_u64(out.add(8), vmovl_u32(vget_low_u32(b01)));
-            vst1q_u64(out.add(10), vmovl_u32(vget_low_u32(b23)));
-            vst1q_u64(out.add(12), vmovl_high_u32(b01));
-            vst1q_u64(out.add(14), vmovl_high_u32(b23));
-        }
-        for i in 4 * vecs..n {
-            for p in 0..4 {
-                *d.add(4 * i + p) = *s.add(p * n + i) as u64;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,7 +395,6 @@ mod tests {
             assert_eq!(Q[p].wrapping_mul(QINV[p]), 1);
             assert_eq!(R1[p] as u128, (1u128 << 32) % Q[p] as u128);
             assert_eq!(R2[p] as u128, (1u128 << 64) % Q[p] as u128);
-            assert_eq!(R3[p] as u128, (1u128 << 96) % Q[p] as u128);
             // Bounds of the accumulator Montgomery step on centered residues.
             let q = Q[p] as i128;
             let h = (q - 1) / 2;
@@ -534,40 +433,6 @@ mod tests {
             check!(OP_SUB);
             check!(OP_NEG);
             check!(OP_MONT_MUL);
-        }
-    }
-
-    #[test]
-    fn pack_unpack() {
-        let mut state = 7u64;
-        for n in [1usize, 2, 4, 12, 64] {
-            let mut src = vec![0u64; 4 * n];
-            for (i, x) in src.iter_mut().enumerate() {
-                *x = match i % 5 {
-                    0 => u64::MAX,
-                    1 => 0,
-                    _ => lcg(&mut state),
-                };
-            }
-            for prepared in [false, true] {
-                let mut dst = vec![0u32; 4 * n];
-                pack_limb(n, &mut dst, &src, prepared);
-                for p in 0..4 {
-                    let q = Q[p] as u128;
-                    let scale = if prepared { 1u128 << 32 } else { 1 };
-                    for i in 0..n {
-                        assert_eq!(dst[p * n + i] as u128, (src[4 * i + p] as u128 % q) * scale % q);
-                    }
-                }
-            }
-            let limb = canonical_limb(n, &mut state);
-            let mut wide = vec![0u64; 4 * n];
-            unpack_limb(n, &mut wide, &limb);
-            for p in 0..4 {
-                for i in 0..n {
-                    assert_eq!(wide[4 * i + p], limb[p * n + i] as u64);
-                }
-            }
         }
     }
 
