@@ -328,8 +328,7 @@ pub(crate) fn assert_fresh_noise<A: poulpy_core::layouts::LWEInfos>(
     assert_eq!(estimate.precision(), precision);
     assert!(
         (estimate.variance() - expected_variance).abs() <= 1e-12 * expected_variance.max(1.0),
-        "fresh variance {} differs from {expected_variance}",
-        estimate.variance()
+        "fresh variance differs from expected variance"
     );
 }
 
