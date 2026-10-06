@@ -1,7 +1,7 @@
 //! Vector-matrix product for [`NTT4x30Neon`](crate::NTT4x30Neon) on the packed layout.
 //!
 //! The prepared matrix is ordered `block -> output column -> input row`, where a block is four consecutive coefficients.
-//! One row of a block is 16 `u32`: four lanes for each of the four primes, multiplied by `2^32`.
+//! One row of a block is 16 `u32`: four lanes for each of the four primes, multiplied by `2^32` and centered around zero.
 //! The apply path therefore reads the matrix as one contiguous stream, in the order of its inner loop.
 
 use std::mem::size_of;
@@ -20,7 +20,7 @@ use poulpy_hal::{
 };
 
 use crate::NTT4x30Neon;
-use crate::neon::ntt4x30_packed::{DotState, add_mod, dot_rows, planes};
+use crate::neon::ntt4x30_packed::{DotState, Plane, add_mod, center, dot_rows, limb_center, planes};
 use crate::ntt4x30::vec_znx_dft::{dft_limb_scaled, dft_tmp_words, prepare_tmp_words};
 use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
@@ -84,6 +84,7 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
             let pos = n * (row_i * ncols + col_i);
 
             dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true, tmp_b);
+            limb_center(n, tmp_packed);
 
             for blk in 0..n_blocks {
                 let dst = ((blk * ncols + col_i) * nrows + row_i) * ROW;
@@ -125,62 +126,32 @@ pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
     }
 }
 
+/// Blocks processed together.
+///
+/// Inputs are gathered in runs of this many blocks.
+/// One block at a time would touch every input limb for 16 bytes, which costs a large part of the products.
+const GROUP: usize = 8;
+
 /// Scratch space (in bytes) required by the VMP apply kernels, per worker.
 ///
-/// Holds the input rows of one block.
+/// Holds the input rows of one group of blocks.
 pub(crate) fn vmp_apply_tmp_bytes_neon(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
     let row_max = a_size.min(b_rows) * b_cols_in;
-    ROW * row_max.max(1) * size_of::<u32>()
+    ROW * GROUP * row_max.max(1) * size_of::<u32>()
 }
 
-/// Gathers block `blk` of `row_max` input limbs into rows of 16 `u32`.
-#[inline(always)]
-unsafe fn extract_block(n: usize, row_max: usize, blk: usize, a: *const u32, x: *mut u32) {
-    unsafe {
-        for row in 0..row_max {
-            let limb = a.add(row * 4 * n + 4 * blk);
-            let dst = x.add(row * ROW);
-            for p in 0..4 {
-                vst1q_u32(dst.add(4 * p), vld1q_u32(limb.add(p * n)));
-            }
-        }
-    }
-}
-
-/// Computes block `blk` of every active output column.
+/// Gathers `len` blocks of one input limb, from block `blk`, as row `row` of each block, centered.
 ///
-/// # Safety
-/// `res` addresses the output limbs, `a` the `row_max` active input limbs and `pmat` the first active row of the matrix.
-/// `x` addresses `16 * row_max` `u32` of scratch.
+/// Block `b` of the group has its `rows` rows at `x + b * rows * ROW`.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-unsafe fn apply_block<const OVERWRITE: bool>(
-    n: usize,
-    blk: usize,
-    res: *mut u32,
-    a: *const u32,
-    pmat: *const u32,
-    nrows: usize,
-    ncols: usize,
-    row_max: usize,
-    limb_offset: usize,
-    col_max: usize,
-    x: *mut u32,
-) {
+unsafe fn gather_limb(n: usize, blk: usize, len: usize, limb: *const u32, x: *mut u32, row: usize, rows: usize, c: &[Plane; 4]) {
     unsafe {
-        let c = planes();
-        extract_block(n, row_max, blk, a, x);
-        for col_pmat in limb_offset..col_max {
-            let m = pmat.add((blk * ncols + col_pmat) * nrows * ROW);
-            let r = dot_rows(x, m, row_max, &c);
-            let dst = res.add((col_pmat - limb_offset) * 4 * n + 4 * blk);
-            for p in 0..4 {
-                let d = dst.add(p * n);
-                if OVERWRITE {
-                    vst1q_u32(d, r[p]);
-                } else {
-                    vst1q_u32(d, add_mod(vld1q_u32(d), r[p], c[p].q));
-                }
+        for (p, c) in c.iter().enumerate() {
+            let src = limb.add(p * n + 4 * blk);
+            let dst = x.add(row * ROW + 4 * p);
+            for b in 0..len {
+                vst1q_u32(dst.add(b * rows * ROW), center(vld1q_u32(src.add(4 * b)), c));
             }
         }
     }
@@ -223,27 +194,39 @@ unsafe fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
     assert!(pmat_u32.len() >= n_blocks * ncols * nrows * ROW);
     assert!(a_u32.len() >= row_end * 4 * n);
     assert!(res_u32.len() >= (col_max - limb_offset) * 4 * n);
-    let per_worker = ROW * row_max;
+    let cols = col_max - limb_offset;
+    let per_worker = ROW * GROUP * row_max;
     assert!(tmp.len() >= per_worker);
 
     let a_ptr = a_u32[row_start * 4 * n..].as_ptr() as usize;
     let pmat_ptr = pmat_u32[row_start * ROW..].as_ptr() as usize;
     let res_ptr = SendU32Ptr(res_u32.as_mut_ptr());
+    let len = GROUP.min(n_blocks);
 
-    E::for_each_chunked(n_blocks, tmp, per_worker, |x, blk| unsafe {
-        apply_block::<OVERWRITE>(
-            n,
-            blk,
-            res_ptr.get(),
-            a_ptr as *const u32,
-            pmat_ptr as *const u32,
-            nrows,
-            ncols,
-            row_max,
-            limb_offset,
-            col_max,
-            x.as_mut_ptr(),
-        )
+    E::for_each_chunked(n_blocks / len, tmp, per_worker, |buf, group| unsafe {
+        let c = planes();
+        let (a, pmat) = (a_ptr as *const u32, pmat_ptr as *const u32);
+        let x = buf.as_mut_ptr();
+        let blk = group * len;
+        for row in 0..row_max {
+            gather_limb(n, blk, len, a.add(row * 4 * n), x, row, row_max, &c);
+        }
+        for b in 0..len {
+            let xb = x.add(b * row_max * ROW);
+            let block = pmat.add(((blk + b) * ncols + limb_offset) * nrows * ROW);
+            for col in 0..cols {
+                let r = dot_rows(xb, block.add(col * nrows * ROW), row_max, &c);
+                let dst = res_ptr.get().add(col * 4 * n + 4 * (blk + b));
+                for (p, c) in c.iter().enumerate() {
+                    let d = dst.add(p * n);
+                    if OVERWRITE {
+                        vst1q_u32(d, r[p]);
+                    } else {
+                        vst1q_u32(d, add_mod(vld1q_u32(d), r[p], c.q));
+                    }
+                }
+            }
+        }
     });
 
     if OVERWRITE {
@@ -327,9 +310,9 @@ pub(crate) const STRIDED_MAX_DSIZE: usize = 16;
 
 /// Scratch space (in bytes) of the fused interleaved-digit product, per worker.
 ///
-/// Holds the input rows of one block for every digit: the digits partition the input limbs.
+/// Holds the input rows of one group of blocks for every digit: the digits partition the input limbs.
 pub(crate) fn vmp_apply_digits_strided_tmp_bytes_neon(a_cols: usize, a_size: usize) -> usize {
-    ROW * (a_size * a_cols).max(1) * size_of::<u32>()
+    ROW * GROUP * (a_size * a_cols).max(1) * size_of::<u32>()
 }
 
 /// One gadget digit of the interleaved-digit product.
@@ -400,42 +383,44 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
     assert!(pmat_u32.len() >= n_blocks * ncols * nrows * ROW);
     assert!(a_u32.len() >= a_size * cols_in * 4 * n);
     assert!(res_u32.len() >= res_size * cols_out * 4 * n);
-    let per_worker = ROW * total_rows.max(1);
+    let per_worker = ROW * GROUP * total_rows.max(1);
     let tmp: &mut [u32] = cast_slice_mut(tmp);
     assert!(tmp.len() >= per_worker);
 
     let a_ptr = a_u32.as_ptr() as usize;
     let pmat_ptr = pmat_u32.as_ptr() as usize;
     let res_ptr = SendU32Ptr(res_u32.as_mut_ptr());
+    let len = GROUP.min(n_blocks);
 
     if active_limbs != 0 {
-        E::for_each_chunked(n_blocks, tmp, per_worker, |x, blk| unsafe {
+        E::for_each_chunked(n_blocks / len, tmp, per_worker, |buf, group| unsafe {
             let c = planes();
-            let (a, pmat, x) = (a_ptr as *const u32, pmat_ptr as *const u32, x.as_mut_ptr());
+            let (a, pmat) = (a_ptr as *const u32, pmat_ptr as *const u32);
+            let x = buf.as_mut_ptr();
+            let blk = group * len;
             for digit in digits {
                 for row in 0..digit.rows {
                     let flat = (digit.first_limb + (row / cols_in) * dsize) * cols_in + row % cols_in;
-                    let limb = a.add(flat * 4 * n + 4 * blk);
-                    let dst = x.add((digit.x_off + row) * ROW);
-                    for p in 0..4 {
-                        vst1q_u32(dst.add(4 * p), vld1q_u32(limb.add(p * n)));
-                    }
+                    gather_limb(n, blk, len, a.add(flat * 4 * n), x, digit.x_off + row, total_rows, &c);
                 }
             }
-            let block = pmat.add(blk * ncols * nrows * ROW);
-            for limb in 0..active_limbs {
-                for col in 0..cols_out {
-                    let mut state = DotState::new();
-                    for (di, digit) in digits.iter().enumerate() {
-                        if limb < digit.out_limbs {
-                            let m = block.add(((limb + di) * cols_out + col) * nrows * ROW);
-                            state.push_rows(x.add(digit.x_off * ROW), m, digit.rows, &c);
+            for b in 0..len {
+                let xb = x.add(b * total_rows * ROW);
+                let block = pmat.add((blk + b) * ncols * nrows * ROW);
+                for limb in 0..active_limbs {
+                    for col in 0..cols_out {
+                        let mut state = DotState::new();
+                        for (di, digit) in digits.iter().enumerate() {
+                            if limb < digit.out_limbs {
+                                let m = block.add(((limb + di) * cols_out + col) * nrows * ROW);
+                                state = state.push_rows(xb.add(digit.x_off * ROW), m, digit.rows, &c);
+                            }
                         }
-                    }
-                    let r = state.finish(&c);
-                    let dst = res_ptr.get().add((limb * cols_out + col) * 4 * n + 4 * blk);
-                    for (p, &r) in r.iter().enumerate() {
-                        vst1q_u32(dst.add(p * n), r);
+                        let r = state.finish(&c);
+                        let dst = res_ptr.get().add((limb * cols_out + col) * 4 * n + 4 * (blk + b));
+                        for (p, &r) in r.iter().enumerate() {
+                            vst1q_u32(dst.add(p * n), r);
+                        }
                     }
                 }
             }

@@ -2,13 +2,12 @@
 //!
 //! A prepared column is ordered `block -> limb`, where a block is four consecutive coefficients.
 //! One limb of a block is 16 `u32`: four lanes for each of the four primes.
-//! The left operand holds canonical residues.
-//! The right operand holds residues multiplied by `2^32`, with its limbs in reverse order, so both operands of one output limb are read forward.
+//! Both operands hold residues centered around zero, which lets twice as many products share one Montgomery step.
+//! The right operand is also multiplied by `2^32`, and has its limbs in reverse order, so both operands of one output limb are read forward.
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{
-    uint32x4_t, uint64x2_t, vdupq_n_u32, vdupq_n_u64, vget_low_u32, vld1q_dup_u32, vld1q_u32, vmlal_high_u32, vmlal_u32,
-    vst1q_u32, vzip1q_u32, vzip2q_u32,
+    int64x2_t, uint32x4_t, vaddq_u32, vdupq_n_s64, vdupq_n_u32, vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32,
 };
 use poulpy_cpu_portable::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
@@ -21,7 +20,9 @@ use poulpy_hal::layouts::{
 use std::mem::size_of;
 
 use super::vec_znx_dft::{PackedDft, dft_tmp_words, prepare_tmp_words};
-use crate::neon::ntt4x30_packed::{DOT_CHUNK, DOT_SHORT, Plane, add_mod, limb_to_prepared, planes, redc_acc};
+use crate::neon::ntt4x30_packed::{
+    DOT_CHUNK, DOT_SHORT, Plane, add_mod, center, limb_to_prepared, mla_centered, planes, redc_acc,
+};
 use poulpy_hal::layouts::Ring;
 
 /// `u32` per limb of a block.
@@ -92,8 +93,8 @@ unsafe fn load_right<const MODE: u8>(p: *const u32) -> uint32x4_t {
 /// The state is passed and returned by value so that it stays in registers.
 #[derive(Clone, Copy)]
 struct Acc {
-    lo: [uint64x2_t; 4],
-    hi: [uint64x2_t; 4],
+    lo: [int64x2_t; 4],
+    hi: [int64x2_t; 4],
     out: [uint32x4_t; 4],
     count: usize,
     flushed: bool,
@@ -103,7 +104,7 @@ impl Acc {
     #[inline(always)]
     unsafe fn new() -> Self {
         unsafe {
-            let zero = vdupq_n_u64(0);
+            let zero = vdupq_n_s64(0);
             Self {
                 lo: [zero; 4],
                 hi: [zero; 4],
@@ -117,13 +118,14 @@ impl Acc {
     #[inline(always)]
     unsafe fn flush(self, c: &[Plane; 4]) -> Self {
         unsafe {
+            // `count` is in units of products of centered residues: a pairwise product weighs four.
             let short = self.count <= DOT_SHORT;
             let mut out = self.out;
             for (p, c) in c.iter().enumerate() {
                 let r = redc_acc(self.lo[p], self.hi[p], c, short);
                 out[p] = if self.flushed { add_mod(out[p], r, c.q) } else { r };
             }
-            let zero = vdupq_n_u64(0);
+            let zero = vdupq_n_s64(0);
             Self {
                 lo: [zero; 4],
                 hi: [zero; 4],
@@ -148,23 +150,24 @@ impl Acc {
         unsafe {
             let mut row = 0;
             while row < rows {
-                if self.count == DOT_CHUNK {
+                // The sum of two centered residues is twice as large, so a pairwise product weighs four plain ones.
+                let weight = if PAIRWISE { 4 } else { 1 };
+                if self.count + weight > DOT_CHUNK {
                     self = self.flush(c);
                 }
-                let end = row + (rows - row).min(DOT_CHUNK - self.count);
-                self.count += end - row;
+                let end = row + (rows - row).min((DOT_CHUNK - self.count) / weight);
+                self.count += weight * (end - row);
                 let (mut lo, mut hi) = (self.lo, self.hi);
                 while row < end {
-                    for (p, c) in c.iter().enumerate() {
+                    for p in 0..4 {
                         let o = ROW * row + 4 * p;
                         let mut xv = vld1q_u32(a0.add(o));
                         let mut mv = load_right::<MODE>(b0.add(o));
                         if PAIRWISE {
-                            xv = add_mod(xv, vld1q_u32(a1.add(o)), c.q);
-                            mv = add_mod(mv, load_right::<MODE>(b1.add(o)), c.q);
+                            xv = vaddq_u32(xv, vld1q_u32(a1.add(o)));
+                            mv = vaddq_u32(mv, load_right::<MODE>(b1.add(o)));
                         }
-                        lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
-                        hi[p] = vmlal_high_u32(hi[p], xv, mv);
+                        mla_centered(&mut lo[p], &mut hi[p], xv, mv);
                     }
                     row += 1;
                 }
@@ -272,12 +275,19 @@ pub(crate) fn cnv_prepare_tmp_bytes<R: Ring>(n: usize) -> usize {
     prepare_tmp_words::<R>(n) * size_of::<u64>()
 }
 
-/// Scatters one packed limb into row `limb` of every block of a prepared column.
-fn scatter_prepared_limb(dst: &mut [u32], src: &[u32], n: usize, size: usize, limb: usize) {
-    for blk in 0..n / 4 {
-        let off = packed_row_offset(size, limb, blk);
-        for p in 0..4 {
-            dst[off + 4 * p..off + 4 * p + 4].copy_from_slice(&src[p * n + 4 * blk..p * n + 4 * blk + 4]);
+/// Scatters one packed limb of canonical residues into row `limb` of every block of a prepared column, centered.
+///
+/// `src` keeps its canonical residues.
+fn scatter_centered_limb(dst: &mut [u32], src: &[u32], n: usize, size: usize, limb: usize) {
+    assert!(src.len() >= 4 * n);
+    assert!(dst.len() >= packed_row_offset(size, limb, n / 4 - 1) + ROW);
+    unsafe {
+        let c = planes();
+        for blk in 0..n / 4 {
+            let row = dst.as_mut_ptr().add(packed_row_offset(size, limb, blk));
+            for (p, c) in c.iter().enumerate() {
+                vst1q_u32(row.add(4 * p), center(vld1q_u32(src.as_ptr().add(p * n + 4 * blk)), c));
+            }
         }
     }
 }
@@ -333,13 +343,13 @@ fn prepare<BE, E: TaskExecutor>(
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
             module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none(), tmp_b);
             if let Some(dst) = dst_l {
-                scatter_prepared_limb(dst, tmp_packed, n, size, limb);
+                scatter_centered_limb(dst, tmp_packed, n, size, limb);
                 if dst_r.is_some() {
                     limb_to_prepared(n, tmp_packed);
                 }
             }
             if let Some(dst) = dst_r {
-                scatter_prepared_limb(dst, tmp_packed, n, size, size - 1 - limb);
+                scatter_centered_limb(dst, tmp_packed, n, size, size - 1 - limb);
             }
         } else {
             if let Some(dst) = dst_l {

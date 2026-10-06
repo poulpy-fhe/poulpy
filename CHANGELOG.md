@@ -257,6 +257,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- The NEON NTT4x30 inner products of the vector-matrix product and the convolution multiply residues centered around zero, on signed accumulators: 24 products share one Montgomery step, where 12 canonical ones did.
+  The prepared matrix and both prepared convolution operands store centered residues.
+- The NEON NTT4x30 vector-matrix products gather their input limbs in runs of eight blocks of four coefficients.
+  Gathering one block at a time touched every input limb for 16 bytes and cost up to a fifth of the product.
 - `NTT4x30NeonRayon` raises its `ScratchWorkers` caps to 32 for every family, from 8 (4 for prepare), which left most of a wide pool idle in the vector-matrix product, the convolution and the inverse transform.
   The scratch of the NEON NTT4x30 transforms is sized by what the native NTT needs on the standard ring: half the previous size for the inverse transform and a third for the prepare kernels, so the larger caps reserve about as much as before.
 - `NTT4x30Neon` and `NTT4x30NeonRayon` override `cnv_apply_dft_sum` with a fused kernel: the terms of a sum are accumulated together, sixteen at a time, so an output limb is reduced and stored once per group where the derived body reduced, read and wrote it for every term.
