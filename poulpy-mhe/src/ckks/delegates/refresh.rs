@@ -1,0 +1,63 @@
+use poulpy_core::{
+    EncryptionInfos,
+    layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
+};
+use poulpy_hal::{
+    layouts::{Backend, Module, ScratchArena},
+    source::Source,
+};
+
+use crate::ckks::{api::CKKSRefreshMHEProtocol, layouts::CKKSRefreshShareOwned, oep::CKKSRefreshMHEProtocolImpl};
+
+impl<BE: Backend + CKKSRefreshMHEProtocolImpl> CKKSRefreshMHEProtocol<BE> for Module<BE> {
+    fn mhe_ckks_refresh_share_gen_tmp_bytes<A, B>(&self, ct_infos: &A, res_infos: &B) -> usize
+    where
+        A: GLWEInfos,
+        B: GLWEInfos,
+    {
+        BE::mhe_ckks_refresh_share_gen_tmp_bytes(self, ct_infos, res_infos)
+    }
+
+    fn mhe_ckks_refresh_share_gen<C, S, E>(
+        &self,
+        res: &mut CKKSRefreshShareOwned<BE>,
+        mask: &C,
+        sk: &S,
+        log_bound: usize,
+        seed: [u8; 32],
+        enc_infos: &E,
+        source_xm: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        C: GLWEMaskToBackendRef<BE> + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        E: EncryptionInfos,
+    {
+        BE::mhe_ckks_refresh_share_gen(self, res, mask, sk, log_bound, seed, enc_infos, source_xm, source_xe, scratch)
+    }
+
+    fn mhe_ckks_refresh_share_aggregate(&self, res: &mut CKKSRefreshShareOwned<BE>, a: &CKKSRefreshShareOwned<BE>) {
+        BE::mhe_ckks_refresh_share_aggregate(self, res, a)
+    }
+
+    fn mhe_ckks_refresh_share_finalize_tmp_bytes<A>(&self, res_infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::mhe_ckks_refresh_share_finalize_tmp_bytes(self, res_infos)
+    }
+
+    fn mhe_ckks_refresh_share_finalize<R, C>(
+        &self,
+        res: &mut R,
+        ct: &C,
+        share: &CKKSRefreshShareOwned<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::mhe_ckks_refresh_share_finalize(self, res, ct, share, scratch)
+    }
+}

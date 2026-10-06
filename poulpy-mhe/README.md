@@ -28,6 +28,8 @@ Each protocol has its own share type, a wrapper of these PATs:
 - `GLWEEncToShareShare`: a rank-0 core `GLWE`, the public share of an
   encryption-to-shares conversion; `GLWEShareToEncShare`: a
   `GLWEPatCompressed`, the share of a shares-to-encryption conversion.
+- `ckks::CKKSRefreshShare`: an encryption-to-shares and a shares-to-encryption
+  part, the share of a CKKS refresh.
 
 Finalization produces canonical output without changing the PAT or share.
 Allocate both through `MHEModuleAlloc` on a `Module`.
@@ -53,14 +55,26 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
   are generated from the ciphertext's mask alone, a core `GLWEMask`.
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext on the torus.
+- `ckks::CKKSRefreshMHEProtocol`: the collective CKKS refresh of a ciphertext
+  to a larger precision, keeping its integer plaintext, in one round. The
+  private integer masks statistically hide the noisy plaintext; each masked
+  decryption share adds automatic Gaussian noise of sigma 3.2, and each
+  re-encryption share retains its encryption noise. The `ckks` module holds
+  the CKKS-specific protocols, layered as the crate.
 
 ## Smudging
 
-Key switching and encryption-to-shares take a caller-selected `SmudgingNoise`
-flood, a discrete Gaussian or a uniform distribution on consecutive integers,
-sampled on the share's own precision grid. Size it with the
-[smudging contract](docs/mhe-contracts.md#smudging); small test parameters do
-not establish security.
+Key switching and encryption-to-shares take a caller-selected
+`SmudgingNoise` flood, a discrete Gaussian or a uniform distribution on
+consecutive integers, sampled on the share's own precision grid. Size it with
+the [smudging contract](docs/mhe-contracts.md#smudging); small test parameters
+do not establish security.
+
+CKKS refresh uses bounded private masks and ordinary noise instead of a flood.
+The caller sizes the masks to hide the noisy plaintext and prevent wrap during
+the modulus raise. Refresh retains the input error, so a later release of the
+approximate plaintext needs separate protection. See the
+[refresh contract](docs/mhe-contracts.md#ckks-refresh).
 
 ## Security
 

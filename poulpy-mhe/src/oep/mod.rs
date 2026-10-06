@@ -31,5 +31,6 @@ macro_rules! impl_mhe_reference_full {
         $crate::impl_mhe_public_key_reference!($be);
         $crate::impl_mhe_sharing_reference!($be);
         $crate::impl_mhe_tensor_key_reference!($be);
+        $crate::impl_mhe_ckks_refresh_reference!($be);
     };
 }

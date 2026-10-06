@@ -277,6 +277,29 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn ckks_refresh() {
+                $crate::ckks::test_suite::refresh::test_ckks_refresh(&Module::<$backend>::new(1024));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid share: bound outside the ciphertext precision")]
+            fn ckks_refresh_bound() {
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_bound(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext, share and output layouts differ")]
+            fn ckks_refresh_finalize_layout_mismatch() {
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            #[should_panic(expected = "invalid finalization: ciphertext more precise than the output")]
+            fn ckks_refresh_finalize_precision() {
+                $crate::ckks::test_suite::refresh::test_ckks_refresh_finalize_precision(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             fn glwe_tensor_key() {
                 $crate::test_suite::tensor_key::test_glwe_tensor_key(&Module::<$backend>::new(256));
             }
