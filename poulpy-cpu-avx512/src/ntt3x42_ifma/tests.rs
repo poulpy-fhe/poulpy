@@ -21,7 +21,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
@@ -52,7 +52,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx_dft,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
@@ -74,7 +74,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx_dft_large,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<12, base2k: 50, n: 8 },
         tests = {
@@ -87,7 +87,7 @@ mod ntt3x42_ifma_tests {
     #[cfg(feature = "enable-rayon")]
     cross_backend_test_suite! {
         mod vec_znx_dft_rayon,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT3x42Ifma,
         backend_test = crate::NTT3x42IfmaRayon,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 50, n: 8 }, 256),
         tests = {
@@ -99,7 +99,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod svp,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
@@ -111,7 +111,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod vmp,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
@@ -125,7 +125,7 @@ mod ntt3x42_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx_big,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 50, n: 8 }, 256),
         tests = {
@@ -249,7 +249,7 @@ mod ntt3x42_ifma_tests {
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {
         mod ntt_n1024,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<10, base2k: 50, n: 8 },
         tests = {
@@ -262,7 +262,7 @@ mod ntt3x42_ifma_tests {
     // n = 8192: exercises multiple breadth-first outer levels.
     cross_backend_test_suite! {
         mod ntt_n8192,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<13, base2k: 50, n: 8 },
         tests = {
@@ -275,7 +275,7 @@ mod ntt3x42_ifma_tests {
     // n = 16384: large size where the working set exceeds L1.
     cross_backend_test_suite! {
         mod ntt_n16384,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<14, base2k: 50, n: 8 },
         tests = {
@@ -288,7 +288,7 @@ mod ntt3x42_ifma_tests {
     // n = 32768: large size where the working set exceeds L2 on typical cores.
     cross_backend_test_suite! {
         mod ntt_n32768,
-        backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+        backend_ref =  crate::NTT4x30Avx512,
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<15, base2k: 50, n: 8 },
         tests = {
@@ -468,6 +468,20 @@ fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
     test_convolution_sum(&module, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::MIN_DEGREE, 12);
     test_convolution_sum(&module, module.n(), 12);
+}
+
+#[test]
+fn test_convolution_sum_ntt3x42_ifma_streaming() {
+    let module = Module::<NTT3x42Ifma>::new(1 << 16);
+    test_convolution_sum(&module, module.n(), 52);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_sum_ntt3x42_ifma_rayon_streaming() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 16);
+    let pool = ::rayon::ThreadPoolBuilder::new().num_threads(16).build().unwrap();
+    pool.install(|| test_convolution_sum(&module, module.n(), 52));
 }
 
 #[cfg(feature = "enable-rayon")]

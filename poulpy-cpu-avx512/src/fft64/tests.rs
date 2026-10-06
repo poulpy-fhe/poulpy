@@ -11,7 +11,7 @@ use crate::FFT64Avx512;
 
 cross_backend_test_suite! {
     mod vec_znx,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 16 }, 256),
     tests = {
@@ -42,7 +42,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 16 }, 256),
     tests = {
@@ -54,7 +54,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 16 }, 256),
     tests = {
@@ -83,7 +83,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 16 }, 256),
     tests = {
@@ -105,7 +105,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 16 }, 256),
     tests = {
@@ -245,7 +245,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref =  crate::FFT64Avx512,
     backend_test = crate::FFT64Avx512Rayon,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 12, n: 16 }, 256),
     tests = {

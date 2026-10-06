@@ -42,7 +42,7 @@ fn glwe_copy() {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
@@ -114,7 +114,7 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
@@ -188,7 +188,7 @@ poulpy_core::core_parity_test_suite! {
 // sweep instead of forgoing the suite.
 poulpy_core::core_parity_test_suite! {
     mod core_parity_rank1_only,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
@@ -237,13 +237,13 @@ mod tuning {
 }
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64avx,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30avx,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );

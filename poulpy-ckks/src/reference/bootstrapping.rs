@@ -73,7 +73,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
@@ -91,7 +91,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
@@ -214,7 +214,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -269,6 +269,33 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             ))
             .max(eval_mod_tmp);
 
+        // CoeffsToSlots always reads the raised ciphertext. SlotsToCoeffs runs
+        // in place on the input before ModUp in the S2C-first pipeline.
+        // Otherwise it reads the EvalMod outputs and writes `ct_out`, whose
+        // allocation can be wider than its `k`.
+        let out_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                k: ct_out.max_k(),
+                ..boot_layout.glwe_layout
+            },
+            meta: boot_layout.meta,
+        };
+        let (s2c_dst, s2c_src) = match ctx.pipeline() {
+            BootstrappingPipeline::C2SFirst => (&out_layout, &boot_layout),
+            BootstrappingPipeline::S2CFirst => (&in_layout, &in_layout),
+        };
+        nested = nested
+            .max(self.ckks_dft_tmp_bytes(
+                &boot_layout,
+                &boot_layout,
+                ctx.coeffs_to_slots(),
+                &keys_layout.automorphism_key,
+            ))
+            .max(self.ckks_dft_tmp_bytes(s2c_dst, s2c_src, ctx.slots_to_coeffs(), &keys_layout.automorphism_key));
+        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
+            nested = nested.max(self.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, &keys_layout.automorphism_key));
+        }
+
         if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
             carved += in_ct_bytes;
         }
@@ -296,7 +323,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,

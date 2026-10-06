@@ -202,7 +202,7 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64neon,
     crate::FFT64CINeon,
     crate::FFT64Neon,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = poulpy_cpu_portable::FFT64CIPortable
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
@@ -210,7 +210,7 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30neon,
     crate::NTT4x30CINeon,
     crate::NTT4x30Neon,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
@@ -218,7 +218,7 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64neonrayon,
     crate::FFT64CINeonRayon,
     crate::FFT64NeonRayon,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = crate::FFT64CINeon
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
@@ -226,7 +226,7 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30neonrayon,
     crate::NTT4x30CINeonRayon,
     crate::NTT4x30NeonRayon,
-    reference = (poulpy_cpu_oracle::FFT64CIOracle, poulpy_cpu_oracle::NTT4x30CIOracle)
+    reference = crate::NTT4x30CINeon
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
@@ -234,7 +234,7 @@ poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64neon,
     crate::FFT64CINeon,
     crate::FFT64Neon,
-    reference = poulpy_cpu_oracle::FFT64CIOracle
+    reference = poulpy_cpu_portable::FFT64CIPortable
 );
 
 #[cfg(all(test, feature = "enable-neon"))]
@@ -242,7 +242,7 @@ poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30neon,
     crate::NTT4x30CINeon,
     crate::NTT4x30Neon,
-    reference = poulpy_cpu_oracle::FFT64CIOracle
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
@@ -250,7 +250,7 @@ poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64neonrayon,
     crate::FFT64CINeonRayon,
     crate::FFT64NeonRayon,
-    reference = poulpy_cpu_oracle::FFT64CIOracle
+    reference = crate::FFT64CINeon
 );
 
 #[cfg(all(test, feature = "enable-rayon"))]
@@ -258,7 +258,7 @@ poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30neonrayon,
     crate::NTT4x30CINeonRayon,
     crate::NTT4x30NeonRayon,
-    reference = poulpy_cpu_oracle::FFT64CIOracle
+    reference = crate::NTT4x30CINeon
 );
 
 #[cfg(all(test, feature = "enable-neon", feature = "enable-ckks"))]

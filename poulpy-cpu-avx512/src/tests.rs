@@ -54,7 +54,7 @@ fn glwe_copy() {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
@@ -89,7 +89,7 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
@@ -160,11 +160,17 @@ poulpy_core::core_parity_test_suite! {
 }
 
 // Exercise the rank-one specialization at degrees above the general suites.
+// Rank-two fallback coverage stays in the small-ring suites, so backend
+// comparisons at these degrees only sweep the specialized rank-one path.
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_fused,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -177,6 +183,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -184,9 +194,13 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_fused_n16,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<16, base2k: 52, n: 1<<16 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -195,9 +209,13 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_fused,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -206,9 +224,13 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_fused_n16,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<16, base2k: 52, n: 1<<16 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -221,6 +243,10 @@ poulpy_core::core_parity_test_suite! {
     backend_ref = crate::NTT3x42Ifma,
     backend_test = crate::NTT3x42IfmaRayon,
     params = TestParams { size: 1<<15, base2k: 52, n: 1<<15 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: None,
+    },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
@@ -229,7 +255,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
@@ -337,13 +363,13 @@ mod tuning {
 }
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64avx512,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30avx512,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
@@ -351,7 +377,7 @@ poulpy_core::core_encryption_parity_test_suite!(
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt3x42ifma,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );

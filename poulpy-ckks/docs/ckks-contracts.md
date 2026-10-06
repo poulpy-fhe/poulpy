@@ -73,11 +73,13 @@ different size from the reference. EvalMod's query dispatches through
 `CKKSEvalModImpl::ckks_eval_mod_tmp_bytes_impl`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.
 
-DFT and polynomial evaluation retain the shared `CKKSAllOpsTmpBytes` workflow
-bounds. They do not expose separate per-method scratch APIs. Reference and
-derived bodies must account for the selected constituent operations within
-those bounds. PaCo and SHIP coefficient-encoding hooks report their own
-workspace requirements.
+DFT preparation uses `ckks_prepare_dft_matrix_tmp_bytes`; raw evaluation and
+format wrappers use `ckks_dft_tmp_bytes`. Bootstrap sizing includes the selected
+DFT queries. Their reference budgets include selected Core and CKKS operations.
+Bootstrap compilation is staged for the same reason: the preparation budget depends on the generated matrices, so `BootstrappingContext::compile_unprepared` returns them unprepared, `prepare_tmp_bytes` reports the selected budget, and `prepare` produces the context.
+`compile` runs both stages on one arena, which must then also cover that budget.
+Polynomial evaluation retains the shared `CKKSAllOpsTmpBytes` bounds. PaCo and
+SHIP coefficient-encoding hooks report their own workspace requirements.
 
 The paired harness gives each implementation its own advertised scratch
 capacity, poisons it, and checks surrounding guards through explicit transfers.
@@ -119,3 +121,7 @@ also tests complete pipelines. Passing these cases establishes evidence for the
 covered parameters, not a proof for every possible circuit or layout. Concrete
 registrations, runtime selection, and commands belong in the
 [repository README](../../README.md) and backend test modules.
+
+Conditional DFT overrides can call the corresponding composition in
+`oep::defaults`. The fallback bypasses the format wrapper while retaining
+selected DFT evaluation and arithmetic operations.

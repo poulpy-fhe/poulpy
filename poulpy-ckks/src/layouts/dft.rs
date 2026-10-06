@@ -12,9 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::{
     LinearTransformationPrepared,
-    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
+    layouts::{
+        GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy,
+        optimal_bsgs_giant_step,
+    },
 };
-use poulpy_hal::layouts::{Backend, galois_element};
+use poulpy_hal::layouts::{Backend, Module, galois_element};
 
 use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintextOwned};
 
@@ -728,8 +731,23 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     }
 
     /// The per-factor right operands, in evaluation order.
-    pub(crate) fn factor_operands(&self) -> &[R] {
+    pub fn factor_operands(&self) -> &[R] {
         &self.inner.factors
+    }
+
+    /// Replaces the factor representation, preserving the resolved plan and markers.
+    /// Checks factor count, diagonal layouts, encoded widths, slot kinds and that no
+    /// diagonal is repeated. Callers must preserve the diagonal values.
+    pub fn try_with_factor_operands<P>(
+        &self,
+        module: &Module<BE>,
+        factors: Vec<LinearTransformation<P>>,
+    ) -> crate::CKKSResult<DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>>
+    where
+        P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta,
+    {
+        check_factor_operands(module, self.plan(), &factors)?;
+        Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(self.plan().clone(), factors)))
     }
 
     /// Number of factor matrices (one linear transformation each).
@@ -747,6 +765,91 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     pub fn consumed_bits(&self) -> usize {
         self.plan().consumed_bits()
     }
+}
+
+impl<BE: Backend, Dir: DftDirection, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>
+where
+    P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta,
+{
+    /// Builds a typed matrix from a resolved plan and its factors in evaluation order.
+    /// Checks direction, format, ring capacity, factor count, diagonal layouts,
+    /// encoded widths, slot kinds and that no diagonal is repeated.
+    /// The caller must supply the diagonal values described by the plan.
+    pub fn try_from_factor_operands(
+        module: &Module<BE>,
+        plan: DFTPlan,
+        factors: Vec<LinearTransformation<P>>,
+    ) -> crate::CKKSResult<Self> {
+        crate::ckks_ensure!(plan.kind() == Dir::KIND, "DFT direction does not match its marker");
+        crate::ckks_ensure!(plan.format() == Fmt::FORMAT, "DFT format does not match its marker");
+        check_factor_operands(module, &plan, &factors)?;
+        Ok(Self::from_factors(DFTMatrixFactors::new(plan, factors)))
+    }
+}
+
+fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta>(
+    module: &Module<BE>,
+    plan: &DFTPlan,
+    factors: &[LinearTransformation<P>],
+) -> crate::CKKSResult<()> {
+    crate::ckks_ensure!(plan.log_slots() < module.log_n(), "DFT exceeds module slot capacity");
+    crate::ckks_ensure!(
+        plan.format() != DFTOutputFormat::RepackImagAsReal || plan.log_slots() + 1 < module.log_n(),
+        "dense DFT requires Split instead of Repack"
+    );
+    crate::ckks_ensure!(
+        factors.len() == plan.num_factors(),
+        "DFT factor count does not match its plan"
+    );
+    let mut base2k = None;
+    for factor in factors {
+        let first = factor.first_diagonal_plaintext();
+        crate::ckks_ensure!(first.is_some(), "DFT factor has no diagonals");
+        let first = first.unwrap();
+        let n = first.n().as_usize();
+        crate::ckks_ensure!(
+            n.is_power_of_two() && n >= BE::MIN_DEGREE && n <= module.n(),
+            "DFT diagonal degree does not embed in the module"
+        );
+        let expected_base2k = *base2k.get_or_insert(first.base2k());
+        // Preparation allocates one slot per (giant, baby) pair, so a repeated
+        // pair would overwrite the diagonal prepared before it.
+        let mut entries = BTreeSet::new();
+        for giant in &factor.giant_steps {
+            for diagonal in &giant.diagonals {
+                let pt = &diagonal.plaintext;
+                crate::ckks_ensure!(factor.baby_steps.contains(&diagonal.baby), "DFT diagonal has no baby step");
+                crate::ckks_ensure!(
+                    entries.insert((giant.rot, diagonal.baby)),
+                    "DFT factor repeats the diagonal (giant rot {}, baby {})",
+                    giant.rot,
+                    diagonal.baby
+                );
+                crate::ckks_ensure!(
+                    pt.n() == first.n()
+                        && pt.rank().as_usize() == 0
+                        && pt.base2k() == expected_base2k
+                        && pt.k() == plan.coeffs_meta().k
+                        && pt.lt_log_scale() == plan.coeffs_meta().log_delta(),
+                    "DFT diagonal layout does not match its plan"
+                );
+                // Preparation stores `size()` whole limbs and reports their full bit width.
+                // Preserve the exact encoded width so convolution offsets cannot change.
+                crate::ckks_ensure!(
+                    pt.encoded_k().as_usize() == pt.size() * expected_base2k.as_usize(),
+                    "DFT diagonal is encoded across {} bits but its precision {} selects {} limbs",
+                    pt.encoded_k().as_usize(),
+                    pt.k().as_usize(),
+                    pt.size()
+                );
+                crate::ckks_ensure!(
+                    pt.encoded_k() == first.encoded_k() && pt.lt_slots() == first.lt_slots(),
+                    "DFT factor diagonals do not share one encoded width and slot kind"
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {

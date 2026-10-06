@@ -11,10 +11,10 @@ macro_rules! register_backend {
     };
 }
 
-register_backend!(crate::FFT64Neon, poulpy_cpu_oracle::FFT64Oracle, bin_fhe_parity_fft64neon);
+register_backend!(crate::FFT64Neon, poulpy_cpu_portable::FFT64Portable, bin_fhe_parity_fft64neon);
 register_backend!(
     crate::NTT4x30Neon,
-    poulpy_cpu_oracle::NTT4x30Oracle,
+    poulpy_cpu_portable::NTT4x30Portable,
     bin_fhe_parity_ntt4x30neon
 );
 #[cfg(feature = "enable-rayon")]

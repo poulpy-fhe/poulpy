@@ -321,9 +321,13 @@ impl Backend for OpaqueBackend<'_> {
     }
     unsafe fn destroy(_: NonNull<()>) {}
 }
+thread_local! { static SYNCHRONIZE_CALLS: Cell<usize> = const { Cell::new(0) }; }
 unsafe impl HalModuleImpl for OpaqueBackend<'_> {
     fn new(n: u64) -> Module<Self> {
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }
+    }
+    fn synchronize(_: &Module<Self>) {
+        SYNCHRONIZE_CALLS.set(SYNCHRONIZE_CALLS.get() + 1);
     }
 }
 unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
@@ -738,4 +742,96 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     assert_eq!(opaque_lut_coefficients(&wrapped), expected);
     assert_eq!(direct.drift(), 4);
     assert!(matches!(direct.rotation_direction(), LookUpTableRotationDirection::Right));
+}
+
+unsafe impl poulpy_core::oep::GLWEExternalProductImpl for OpaqueBackend<'static> {
+    fn glwe_external_product_internal_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGSWInfos>(
+        _: &Module<Self>,
+        _: &R,
+        _: &A,
+        _: &B,
+    ) -> usize {
+        256
+    }
+
+    fn glwe_external_product_dft<'r, A: GLWEToBackendRef<Self>>(
+        _: &Module<Self>,
+        _: &mut VecZnxDftBackendMut<'r, Self>,
+        _: &A,
+        _: &GGSWPreparedBackendRef<'_, Self>,
+        _: &mut ScratchArena<'_, Self>,
+    ) {
+        panic!("opaque DFT dispatch probe")
+    }
+
+    fn glwe_external_product_tmp_bytes<R: GLWEInfos, A: GLWEInfos, G: GGSWInfos>(_: &Module<Self>, _: &R, _: &A, _: &G) -> usize {
+        panic!("unused public external product probe")
+    }
+
+    fn glwe_external_product<R: GLWEToBackendMut<Self> + GLWEInfos, A: GLWEToBackendRef<Self> + GLWEInfos>(
+        _: &Module<Self>,
+        _: &mut R,
+        _: &A,
+        _: &GGSWPreparedBackendRef<'_, Self>,
+        _: &mut ScratchArena<'_, Self>,
+    ) {
+        panic!("unused public external product probe")
+    }
+
+    fn glwe_external_product_assign<R: GLWEToBackendMut<Self> + GLWEInfos>(
+        _: &Module<Self>,
+        _: &mut R,
+        _: &GGSWPreparedBackendRef<'_, Self>,
+        _: &mut ScratchArena<'_, Self>,
+    ) {
+        panic!("unused public external product probe")
+    }
+}
+
+// Resolving dispatch must not require host access or contiguous DFT limbs.
+const _: () = {
+    #[allow(dead_code)]
+    fn opaque_external_product_dft(
+        module: &Module<OpaqueBackend<'static>>,
+        res: &mut VecZnxDftBackendMut<'_, OpaqueBackend<'static>>,
+        a: &GLWE<OpaqueOwned, i64>,
+        key: &GGSWPreparedBackendRef<'_, OpaqueBackend<'static>>,
+        scratch: &mut ScratchArena<'_, OpaqueBackend<'static>>,
+    ) {
+        use poulpy_core::GLWEExternalProductInternal;
+        module.glwe_external_product_dft(res, a, key, scratch);
+    }
+};
+
+#[test]
+fn synchronize_dispatches_to_the_backend_hook() {
+    let module = Module::<OpaqueBackend<'static>>::new(32);
+    SYNCHRONIZE_CALLS.set(0);
+    module.synchronize();
+    assert_eq!(SYNCHRONIZE_CALLS.get(), 1);
+    // The default hook of a backend that completes each call is a no-op.
+    Module::<crate::FFT64Portable>::new(32).synchronize();
+    assert_eq!(SYNCHRONIZE_CALLS.get(), 1);
+}
+
+#[test]
+fn external_product_dft_query_accepts_opaque_noncontiguous_backend() {
+    use poulpy_core::GLWEExternalProductInternal;
+    let module = Module::<OpaqueBackend<'static>>::new(32);
+    const { assert!(!<OpaqueBackend as Backend>::DFT_LIMBS_CONTIGUOUS) };
+    let ct = GLWELayout {
+        n: Degree(32),
+        base2k: Base2K(16),
+        k: TorusPrecision(32),
+        rank: Rank(1),
+    };
+    let key = GGSWLayout {
+        n: ct.n,
+        base2k: ct.base2k,
+        rank: ct.rank,
+        k_aux: TorusPrecision(16),
+        dnum: Dnum(2),
+        dsize: Dsize(1),
+    };
+    assert_eq!(module.glwe_external_product_internal_tmp_bytes(&ct, &ct, &key), 256);
 }

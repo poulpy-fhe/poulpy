@@ -362,10 +362,14 @@ where
         let compile = module
             .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &atk, &atk, &pt)
             .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
-        let ctx = with_scratch::<B, _>(compile, |scratch| {
-            BootstrappingContext::<B, F>::compile(module, b.into(), &plan, scratch)
+        // Staged compilation: preparation runs with exactly its advertised scratch.
+        let unprepared = with_scratch::<B, _>(compile, |scratch| {
+            BootstrappingContext::<B, F>::compile_unprepared(module, b.into(), &plan, scratch)
         })
         .unwrap();
+        let ctx = with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
+            unprepared.prepare(module, scratch)
+        });
         let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
         let ct_in = fixture_ciphertext(module, &in_layout, 89);
         if functional {

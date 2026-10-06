@@ -10,7 +10,7 @@ use crate::NTT4x30Neon;
 
 cross_backend_test_suite! {
     mod vec_znx,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50, n: 8 },
     tests = {
@@ -41,7 +41,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50, n: 8 },
     tests = {
@@ -53,7 +53,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50, n: 8 },
     tests = {
@@ -82,7 +82,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50, n: 8 },
     tests = {
@@ -103,7 +103,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50, n: 8 },
     tests = {
@@ -211,7 +211,7 @@ backend_test_suite! {
 // n = 1024: last size that uses by-block only.
 cross_backend_test_suite! {
     mod ntt_n1024,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<10, base2k: 50, n: 8 },
     tests = {
@@ -224,7 +224,7 @@ cross_backend_test_suite! {
 // n = 8192: large size exercising many by-level stages.
 cross_backend_test_suite! {
     mod ntt_n8192,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<13, base2k: 50, n: 8 },
     tests = {
@@ -237,7 +237,7 @@ cross_backend_test_suite! {
 // n = 16384: largest size before the AVX NTT switches to by-level mode only.
 cross_backend_test_suite! {
     mod ntt_n16384,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<14, base2k: 50, n: 8 },
     tests = {
@@ -250,7 +250,7 @@ cross_backend_test_suite! {
 // n = 32768: largest size (still by-level only) included in the test suite.
 cross_backend_test_suite! {
     mod ntt_n32768,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<15, base2k: 50, n: 8 },
     tests = {
@@ -291,7 +291,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref =  crate::NTT4x30Neon,
     backend_test = crate::NTT4x30NeonRayon,
     params = TestParams { size: 1<<14, base2k: 50, n: 8 },
     tests = {

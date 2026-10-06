@@ -107,11 +107,11 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
-// Paired OEP validation. Serial backends validate against portable implementations;
+// Paired OEP validation. Serial backends follow AVX -> AVX-512 -> IFMA.
 // Rayon backends validate against their serial counterparts.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_fft64avx512_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -138,7 +138,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_fft64avx512_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -165,14 +165,14 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64avx512_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt4x30avx512_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
@@ -199,7 +199,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt4x30avx512_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -226,7 +226,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30avx512_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -234,7 +234,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt3x42ifma_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
@@ -262,7 +262,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt3x42ifma_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -290,7 +290,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt3x42ifma_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -490,7 +490,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 // Explicit rank-2 contracts. A caller can select another supported rank through params.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_fft64avx512_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -505,14 +505,14 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
     backend_test = crate::FFT64Avx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt4x30avx512_rank2,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -527,7 +527,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
     backend_test = crate::NTT4x30Avx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -535,7 +535,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ntt3x42ifma_rank2,
-    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -551,7 +551,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt3x42ifma_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = crate::NTT4x30Avx512,
     backend_test = crate::NTT3x42Ifma,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -631,7 +631,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 // Conjugate-invariant backends run the ring-generic suites against the same pairs.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
     backend_test = crate::FFT64CIAvx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -649,7 +649,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
     backend_test = crate::FFT64CIAvx512,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -667,14 +667,14 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
     backend_test = crate::FFT64CIAvx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
     backend_test = crate::NTT4x30CIAvx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
@@ -692,7 +692,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
     backend_test = crate::NTT4x30CIAvx512,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -710,7 +710,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
     backend_test = crate::NTT4x30CIAvx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -718,7 +718,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = crate::NTT4x30CIAvx512,
     backend_test = crate::NTT3x42CIIfma,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
@@ -737,7 +737,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = crate::NTT4x30CIAvx512,
     backend_test = crate::NTT3x42CIIfma,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
@@ -756,7 +756,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = crate::NTT4x30CIAvx512,
     backend_test = crate::NTT3x42CIIfma,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -901,7 +901,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
     backend_test = crate::FFT64CIAvx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -914,14 +914,14 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
     backend_test = crate::FFT64CIAvx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_rank2,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
     backend_test = crate::NTT4x30CIAvx512,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -934,7 +934,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
     backend_test = crate::NTT4x30CIAvx512,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -942,7 +942,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_rank2,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
+    backend_ref = crate::NTT4x30CIAvx512,
     backend_test = crate::NTT3x42CIIfma,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
@@ -956,7 +956,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = crate::NTT4x30CIAvx512,
     backend_test = crate::NTT3x42CIIfma,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }

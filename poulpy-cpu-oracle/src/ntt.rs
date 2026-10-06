@@ -7,7 +7,7 @@
 
 use poulpy_hal::layouts::{CrtWord, LaneElem, PrimeSet};
 
-use crate::family::{Family, bitrev};
+use crate::family::{DFTFamily, bitrev};
 
 /// Four 30-bit primes `2^30 - c 2^19 + 1` with `2^19`-th roots of unity.
 pub struct Primes30;
@@ -142,7 +142,7 @@ fn lanes_mut(a: &mut [Residues]) -> &mut [u64] {
     bytemuck::cast_slice_mut(a)
 }
 
-impl Family for Ntt4x30 {
+impl DFTFamily for Ntt4x30 {
     type Dft = Residues;
     type Big = i128;
     type Table = NttTable;
@@ -182,6 +182,16 @@ impl Family for Ntt4x30 {
         intt(table, lanes_mut(&mut values));
         for (r, v) in res.iter_mut().zip(&values) {
             *r = crt(&table.crt, &v.0);
+        }
+    }
+
+    fn dft_embed(res: &mut [Residues], a: &[Residues]) {
+        assert!(a.len().is_power_of_two());
+        assert!(res.len().is_power_of_two() && res.len() >= a.len());
+        let gap = res.len() / a.len();
+        // Raising each evaluation root to N/n repeats bit-reversed source slots.
+        for (dst, &value) in res.chunks_exact_mut(gap).zip(a) {
+            dst.fill(value);
         }
     }
 

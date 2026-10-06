@@ -12,6 +12,7 @@ use crate::{FFT64Oracle, NTT4x30Oracle};
 mod ckks_tests;
 mod conjugate_invariant;
 mod derived_scratch;
+mod dft_embedding;
 
 #[test]
 fn test_convolution_by_const_fft64_oracle() {

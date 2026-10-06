@@ -15,6 +15,26 @@ pub trait ModuleNew<B: Backend> {
     fn new(n: u64) -> Self;
 }
 
+/// Waits for the deferred work of a [`Module`](crate::layouts::Module).
+///
+/// ```text
+/// op         synchronize()
+/// class      support
+/// mutation   none
+/// domain     -
+/// ensures    every operation previously submitted through this module has completed
+/// fallback   default body: no-op, for backends that complete each call before returning
+/// override   required for a backend that defers execution
+/// test       none
+/// ```
+pub trait ModuleSynchronize<B: Backend> {
+    /// Returns once every operation previously submitted through this module has completed.
+    ///
+    /// Results are already observable without it, since transfers to the host
+    /// wait for the storage they read. Call it to bound a timed region.
+    fn synchronize(&self);
+}
+
 /// Queries the ring degree `N` of a [`Module`](crate::layouts::Module).
 ///
 /// ```text
