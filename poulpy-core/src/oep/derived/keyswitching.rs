@@ -38,7 +38,7 @@ mod gglwe {
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         assert_eq!(
             res.rank_in(),
             a.rank_in(),
@@ -92,7 +92,7 @@ mod gglwe {
         M: GLWEKeyswitch<BE>,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         let mut res = res.to_backend_mut();
 
         assert_eq!(
@@ -175,7 +175,7 @@ mod ggsw {
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         let mut res_backend = res.to_backend_mut();
         let a_backend = a.to_backend_ref();
 
@@ -210,7 +210,7 @@ mod ggsw {
         M: ModuleN + GLWEKeyswitch<BE> + GGSWExpandRows<BE>,
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         let mut res_backend = res.to_backend_mut();
 
         assert!(

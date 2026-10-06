@@ -23,7 +23,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_sub_into_impl(self, dst, a, b, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -33,7 +33,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_sub_assign_impl(self, dst, a, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -46,7 +46,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_sub_one_assign_impl(self, dst, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -57,7 +57,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_into_impl(self, dst, a, pt, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -67,7 +67,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_assign_impl(self, dst, pt, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -90,7 +90,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -107,7 +107,7 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

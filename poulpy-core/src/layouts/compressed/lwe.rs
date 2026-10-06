@@ -22,7 +22,7 @@ use crate::{
 /// PRNG seed during decompression.
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWECompressed<D: Data, W: ZnxWord> {
-    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -33,8 +33,8 @@ pub type LWECompressedBackendRef<'a, BE> = LWECompressed<<BE as Backend>::BufRef
 pub type LWECompressedBackendMut<'a, BE> = LWECompressed<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWECompressed<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.encryption_metadata
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
     }
 
     fn base2k(&self) -> Base2K {
@@ -88,7 +88,7 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWECompressed {
-            encryption_metadata: None,
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(1, 1, size),
             k,
             base2k,
@@ -112,7 +112,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.encryption_metadata = crate::EncryptionMetadata::read_optional(reader)?;
+        self.noise = crate::ComponentNoise::read_optional(reader)?;
         self.k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         reader.read_exact(&mut self.seed)?;
@@ -122,7 +122,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWECompressed<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        crate::EncryptionMetadata::write_optional(self.encryption_metadata, writer)?;
+        crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.k.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_all(&self.seed)?;
@@ -141,7 +141,10 @@ where
         R: LWEToBackendMut<Self::Backend> + LWEInfos + SetBase2k,
         O: LWECompressedToBackendRef<Self::Backend>,
     {
-        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
+        let noise = other.to_backend_ref().noise();
+        crate::layouts::validate_noise_components(noise.as_ref(), res.n().as_usize() + 1)
+            .expect("noise component count does not match the decompressed LWE");
+        res.set_noise(noise);
         let other = other.to_backend_ref();
 
         {
@@ -171,7 +174,7 @@ pub trait LWECompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> LWECompressedToBackendRef<BE> for LWECompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
@@ -183,7 +186,7 @@ impl<BE: Backend> LWECompressedToBackendRef<BE> for LWECompressed<BE::OwnedBuf, 
 impl<BE: Backend> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
@@ -195,7 +198,7 @@ impl<BE: Backend> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'_
 impl<BE: Backend> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
         LWECompressed {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
@@ -206,22 +209,22 @@ impl<BE: Backend> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMu
 
 pub trait LWECompressedToBackendMut<BE: Backend>: LWECompressedToBackendRef<BE> {
     /// Backend hook for recording or propagating derived encryption provenance.
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients and copies the current layout and provenance metadata.
     /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_encryption_metadata` hook.
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> LWECompressedToBackendMut<BE> for LWECompressed<BE::OwnedBuf, BE::ZnxWord> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
         LWECompressed {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
@@ -231,13 +234,13 @@ impl<BE: Backend> LWECompressedToBackendMut<BE> for LWECompressed<BE::OwnedBuf, 
 }
 
 impl<BE: Backend> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
         LWECompressed {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECopy, GLWEShift,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -25,7 +25,8 @@ pub trait CKKSCopyReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         crate::ckks_copy_stamp_unary(self, "copy", dst, src, scratch)?;
-        dst.set_encryption_metadata(src.encryption_metadata());
+        let rank = dst.to_backend_ref().rank().as_usize();
+        dst.set_noise(src.noise().map(|noise| noise.with_rank(rank)));
         Ok(())
     }
 }

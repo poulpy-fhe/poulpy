@@ -13,7 +13,7 @@ use crate::{
 };
 use poulpy_core::{
     GetDistribution,
-    layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos},
+    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos},
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -112,10 +112,16 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let metadata = ct.encryption_metadata().expect("CKKS encryption must record provenance");
+    let metadata = ct.noise().expect("CKKS encryption must record provenance");
     assert_eq!(metadata.parties(), 1);
     assert_eq!(metadata.secret_distribution().base(), *sk.dist());
-    assert_eq!(metadata.initial_noise_std_dev(), poulpy_core::DEFAULT_SIGMA_XE);
+    assert_eq!(metadata.rank(), ct.rank().as_usize());
+    assert_eq!(metadata.body().std_dev(), poulpy_core::DEFAULT_SIGMA_XE);
+    assert!(metadata.components()[1..].iter().all(|component| component.variance() == 0.0));
+    assert_eq!(
+        metadata.phase_noise(ct.n().as_usize()).std_dev(),
+        poulpy_core::DEFAULT_SIGMA_XE
+    );
     assert_ct_meta(
         "encrypt_decrypt",
         &ct,

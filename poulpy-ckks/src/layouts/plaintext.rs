@@ -89,7 +89,7 @@ where
 
     fn set_canonical(&mut self, _canonical: bool) {}
 
-    fn set_encryption_metadata(&mut self, _metadata: Option<poulpy_core::EncryptionMetadata>) {}
+    fn set_noise(&mut self, _metadata: Option<poulpy_core::ComponentNoise>) {}
 }
 
 /// Backend-owned CKKS plaintext: the backend's buffer type and its coefficient word.
@@ -137,7 +137,7 @@ impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE>
 
     fn set_canonical(&mut self, _canonical: bool) {}
 
-    fn set_encryption_metadata(&mut self, _metadata: Option<poulpy_core::EncryptionMetadata>) {}
+    fn set_noise(&mut self, _metadata: Option<poulpy_core::ComponentNoise>) {}
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> Deref for CKKSPlaintext<D, W, R> {

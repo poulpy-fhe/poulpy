@@ -31,7 +31,7 @@ where
     {
         BE::execute_bdd_circuit::<C, G, O>(self, out, inputs, circuit, scratch);
         for ct in out {
-            ct.set_encryption_metadata(None);
+            ct.set_noise(None);
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -49,7 +49,7 @@ where
     {
         BE::execute_bdd_circuit_multi_thread::<C, G, O>(self, threads, out, inputs, circuit, scratch);
         for ct in out {
-            ct.set_encryption_metadata(None);
+            ct.set_noise(None);
         }
     }
 }

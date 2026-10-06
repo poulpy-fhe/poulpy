@@ -37,7 +37,7 @@ impl_decryption_delegate!(
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch);
-        pt.set_encryption_metadata(None);
+        pt.set_noise(None);
     }
 );
 
@@ -92,7 +92,7 @@ impl_decryption_delegate!(
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         BE::lwe_matrix_decrypt(self, res, pt, sk, scratch);
-        pt.set_encryption_metadata(None);
+        pt.set_noise(None);
     }
 );
 
@@ -118,6 +118,6 @@ impl_decryption_delegate!(
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_tensor_decrypt(self, res, pt, sk, sk_tensor, scratch);
-        pt.set_encryption_metadata(None);
+        pt.set_noise(None);
     }
 );

@@ -18,8 +18,8 @@ use crate::layouts::{
 pub struct GLWEToLWEKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for GLWEToLWEKeyPrepared<D, B> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.0.encryption_metadata()
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
     }
 
     fn base2k(&self) -> Base2K {
@@ -150,8 +150,8 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWEToLWEKeyPrepared<
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        <_ as GGLWEPreparedToBackendMut<B>>::set_encryption_metadata(&mut self.0.key, metadata);
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.0.key, metadata);
     }
 
     fn to_backend_mut(&mut self) -> crate::layouts::GGLWEPreparedBackendMut<'_, B> {
@@ -207,7 +207,7 @@ where
 pub trait GLWEToLWEKeyPreparedToBackendMut<B: Backend> {
     /// Borrows coefficients and copies the current layout and provenance metadata.
     /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_encryption_metadata` hook.
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GLWEToLWEKeyPreparedBackendMut<'_, B>;
 }
 

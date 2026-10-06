@@ -47,7 +47,7 @@ impl LWEMatrixInfos for LWEMatrixLayout {
 /// `body[row]` is `b_row`; `mask[col][row]` is `A[row, col]`.
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWEMatrix<D: Data, W: ZnxWord> {
-    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) body: VecZnx<D, W>,
     pub(crate) mask: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
@@ -58,8 +58,8 @@ pub type LWEMatrixBackendRef<'a, BE> = LWEMatrix<<BE as Backend>::BufRef<'a>, <B
 pub type LWEMatrixBackendMut<'a, BE> = LWEMatrix<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWEMatrix<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.encryption_metadata
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
     }
     fn n(&self) -> Degree {
         Degree(self.mask.cols() as u32)
@@ -116,7 +116,7 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
         let body_shape = self.body.shape();
         let mask_shape = self.mask.shape();
         LWEMatrix {
-            encryption_metadata: self.encryption_metadata,
+            noise: self.noise.clone(),
             body: VecZnx::from_shape(self.body.into_data(), body_shape),
             mask: VecZnx::from_shape(self.mask.into_data(), mask_shape),
             base2k: self.base2k,
@@ -131,7 +131,7 @@ impl<D: HostDataRef, W: ZnxWord> LWEMatrix<D, W> {
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         LWEMatrix {
-            encryption_metadata: self.encryption_metadata,
+            noise: self.noise.clone(),
             body: self.body.to_host_owned::<BE>(),
             mask: self.mask.to_host_owned::<BE>(),
             base2k: self.base2k,
@@ -147,7 +147,7 @@ pub trait LWEMatrixToBackendRef<BE: Backend> {
 impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE> {
         LWEMatrix {
-            encryption_metadata: self.encryption_metadata,
+            noise: self.noise.clone(),
             body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.body),
             mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.mask),
             base2k: self.base2k,
@@ -158,22 +158,24 @@ impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxW
 
 pub trait LWEMatrixToBackendMut<BE: Backend>: LWEMatrixToBackendRef<BE> {
     /// Backend hook for propagating derived encryption provenance.
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients and copies the current layout and provenance metadata.
     /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_encryption_metadata` hook.
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::LWEInfos::n(self).as_usize() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE> {
         LWEMatrix {
-            encryption_metadata: self.encryption_metadata,
+            noise: self.noise.clone(),
             body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.body),
             mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.mask),
             base2k: self.base2k,

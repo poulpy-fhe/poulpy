@@ -52,7 +52,7 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     {
         BE::ckks_fold_impl(self, folded, ins, inbound, scratch)?;
         for ct in folded {
-            GLWEToBackendMut::<BE>::set_encryption_metadata(ct, None);
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
         }
         Ok(())
     }
@@ -71,10 +71,10 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     {
         BE::ckks_unfold_impl(self, outs, folded, outbound, automorphisms, scratch)?;
         for ct in outs {
-            GLWEToBackendMut::<BE>::set_encryption_metadata(&mut ct.inner, None);
+            GLWEToBackendMut::<BE>::set_noise(&mut ct.inner, None);
         }
         for ct in folded {
-            GLWEToBackendMut::<BE>::set_encryption_metadata(ct, None);
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
         }
         Ok(())
     }

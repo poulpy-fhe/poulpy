@@ -83,11 +83,11 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWE<D2, W>) {
-        dst.encryption_metadata = self.encryption_metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
         move_vec_znx(&self.data, &mut dst.data);
         dst.canonical = self.canonical;
+        dst.noise = self.noise.clone();
     }
 }
 
@@ -124,11 +124,11 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut LWE<D2, W>) {
-        dst.encryption_metadata = self.encryption_metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: LWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: LWE k");
         move_vec_znx(&self.body, &mut dst.body);
         move_vec_znx(&self.mask, &mut dst.mask);
+        dst.noise = self.noise.clone();
     }
 }
 
@@ -139,11 +139,11 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GGLWE<D2, W>) {
-        dst.encryption_metadata = self.encryption_metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.dsize, dst.dsize, "transfer_into: GGLWE dsize");
         move_mat_znx(&self.data, &mut dst.data);
+        dst.noise = self.noise.clone();
     }
 }
 
@@ -154,11 +154,11 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GGSW<D2, W>) {
-        dst.encryption_metadata = self.encryption_metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGSW base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
         assert_eq!(self.dsize, dst.dsize, "transfer_into: GGSW dsize");
         move_mat_znx(&self.data, &mut dst.data);
+        dst.noise = self.noise.clone();
     }
 }
 
@@ -218,11 +218,11 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWETensor<D2, W>) {
-        dst.encryption_metadata = self.encryption_metadata;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWETensor base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
         assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");
         move_vec_znx(&self.data, &mut dst.data);
+        dst.noise = self.noise.clone();
     }
 }
 

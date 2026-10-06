@@ -69,8 +69,8 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
 pub struct GLWEToLWEKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEToLWEKey<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.0.encryption_metadata()
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
     }
 
     fn base2k(&self) -> Base2K {

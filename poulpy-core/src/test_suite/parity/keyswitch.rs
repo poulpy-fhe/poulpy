@@ -212,11 +212,15 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
 
                     let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-                    a_ref.encryption_metadata =
-                        Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.5)));
+                    a_ref.noise = Some(crate::ComponentNoise::from_secret(
+                        crate::Distribution::TernaryProb(0.5),
+                        rank_in,
+                    ));
                     let mut key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
-                    key_ref_coeffs.encryption_metadata =
-                        Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(1.0)));
+                    key_ref_coeffs.noise = Some(crate::ComponentNoise::from_secret(
+                        crate::Distribution::TernaryProb(1.0),
+                        rank_out,
+                    ));
 
                     let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
                     a_ref.transfer_into(&mut a_test);
@@ -243,9 +247,9 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     module_ref.glwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
                     module_test.glwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
 
-                    assert_eq!(res_ref.encryption_metadata(), None);
-                    assert_eq!(res_test.encryption_metadata(), None);
-                    assert_ne!(res_ref.encryption_metadata(), a_ref.encryption_metadata());
+                    assert_eq!(res_ref.noise(), None);
+                    assert_eq!(res_test.noise(), None);
+                    assert_ne!(res_ref.noise(), a_ref.noise());
                     let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                     res_test.transfer_into(&mut have);
                     assert_glwe_eq!(
@@ -556,7 +560,7 @@ where
             VmpPMat<BE::OwnedBuf, BE::DftWord, BE>: VmpPMatToBackendRef<BE>,
         {
             GGLWEPrepared {
-                encryption_metadata: None,
+                noise: None,
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
                 dsize: layout.dsize,

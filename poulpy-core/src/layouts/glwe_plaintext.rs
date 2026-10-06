@@ -263,7 +263,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -276,13 +276,13 @@ impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPlaintext<D, BE::ZnxWord
 where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         let _ = metadata; /* Plaintexts do not carry encryption provenance. */
     }
 
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -301,7 +301,7 @@ pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
 impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -318,7 +318,7 @@ pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBac
 impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -334,7 +334,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMu
 }
 
 impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         let _ = metadata; /* Plaintexts do not carry encryption provenance. */
     }
 
@@ -358,7 +358,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
-    pub(crate) fn record_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+    pub(crate) fn record_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         let _ = metadata;
     }
 }

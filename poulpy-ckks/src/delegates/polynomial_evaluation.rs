@@ -33,7 +33,7 @@ where
         H: GetTensorKey<BE>,
     {
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis_impl::<R, B, A, G, H>(self, res, poly, power_basis, tsk, scratch)?;
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         Ok(())
     }
 
@@ -54,7 +54,7 @@ where
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_eval_poly_real_const_coeffs_impl::<R, S, B, H>(self, dst, src, bsgs, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }
@@ -86,7 +86,7 @@ where
             tsk,
             scratch,
         )?;
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         Ok(())
     }
 
@@ -106,7 +106,7 @@ where
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_eval_poly_complex_const_coeffs_impl::<R, S, C, H>(self, dst, src, poly, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

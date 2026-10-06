@@ -15,7 +15,7 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_mul_i_into_impl(self, dst, src, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -24,7 +24,7 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_mul_i_assign_impl(self, dst, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -38,7 +38,7 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_div_i_into_impl(self, dst, src, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -47,7 +47,7 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_div_i_assign_impl(self, dst, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

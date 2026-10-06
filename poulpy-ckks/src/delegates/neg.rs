@@ -17,7 +17,7 @@ impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_neg_into_impl(self, dst, src, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -26,7 +26,7 @@ impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_neg_assign_impl(self, dst)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

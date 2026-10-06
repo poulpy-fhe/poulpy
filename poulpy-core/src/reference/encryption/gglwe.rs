@@ -75,11 +75,12 @@ where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
             sk.to_backend_ref().dist,
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
         let sk_ref = sk.to_backend_ref();

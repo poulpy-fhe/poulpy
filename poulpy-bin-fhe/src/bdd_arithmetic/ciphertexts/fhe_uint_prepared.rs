@@ -212,8 +212,8 @@ where
 }
 
 impl<D: Data, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepared<D, T, B> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.bits.first().and_then(LWEInfos::encryption_metadata)
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.bits.first().and_then(LWEInfos::noise)
     }
 
     fn base2k(&self) -> poulpy_core::layouts::Base2K {

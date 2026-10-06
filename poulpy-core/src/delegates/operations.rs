@@ -41,7 +41,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE>,
     {
         BE::glwe_add_into(self, res, a, b);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_add_assign<R, A>(&self, res: &mut R, a: &A)
     where
@@ -49,7 +49,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_add_assign(self, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -62,14 +62,14 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_negate(self, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_negate_assign<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_negate_assign(self, res);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -83,7 +83,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE>,
     {
         BE::glwe_sub(self, res, a, b);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_sub_assign<R, A>(&self, res: &mut R, a: &A)
     where
@@ -91,7 +91,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_sub_assign(self, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
@@ -99,7 +99,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_sub_negate_assign(self, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -111,7 +111,7 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_zero(self, res);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -126,9 +126,10 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        let metadata = a.to_backend_ref().encryption_metadata();
+        let rank = res.to_backend_ref().rank().as_usize();
+        let metadata = a.to_backend_ref().noise().map(|noise| noise.with_rank(rank));
         BE::glwe_copy(self, res, a, scratch);
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
     }
 );
 
@@ -157,7 +158,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_mul_const(self, cnv_offset, res, a, b, b_coeff, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_mul_const_assign<R, B>(
         &self,
@@ -171,7 +172,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_mul_const_assign(self, cnv_offset, res, b, b_coeff, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -193,7 +194,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -201,7 +202,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -230,7 +231,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_tensor_apply(self, cnv_offset, res, a, b, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_tensor_square_apply<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -238,7 +239,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -247,7 +248,7 @@ impl_operations_delegate!(
         H: GetTensorKey<BE>,
     {
         BE::glwe_tensor_relinearize(self, res, a, tsk, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
     where
@@ -271,14 +272,14 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_rotate(self, k, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_rotate_assign(self, k, res, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -294,14 +295,14 @@ impl_operations_delegate!(
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
         BE::ggsw_rotate(self, k, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn ggsw_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
         BE::ggsw_rotate_assign(self, k, res, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -314,14 +315,14 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_mul_xp_minus_one(self, k, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_mul_xp_minus_one_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_mul_xp_minus_one_assign(self, k, res, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -336,14 +337,14 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_rsh(self, k, res, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_lsh_assign(self, res, k, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -351,7 +352,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_lsh(self, res, a, k, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_lsh_add<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -359,7 +360,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_lsh_add(self, res, a, k, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_lsh_sub<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -367,7 +368,7 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_lsh_sub(self, res, a, k, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -383,14 +384,14 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_normalize(self, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_normalize_assign(self, res, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -422,7 +423,7 @@ impl_operations_delegate!(
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace(self, res, skip, a, keys, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     },
     fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -430,7 +431,7 @@ impl_operations_delegate!(
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace_assign(self, res, skip, keys, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -461,6 +462,6 @@ impl_operations_delegate!(
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_pack(self, res, a, log_gap_out, keys, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );

@@ -21,7 +21,7 @@ where
         BE: Backend<ZnxWord = i64>,
     {
         BE::execute_bdd_circuit_2w_to_1w::<C, H, T>(self, out, circuit, a, b, key, scratch);
-        GLWEToBackendMut::<BE>::set_encryption_metadata(out, None);
+        GLWEToBackendMut::<BE>::set_noise(out, None);
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, circuit: &C, res_infos: &R, ggsw_infos: &G, key: &H) -> usize
@@ -71,6 +71,6 @@ where
         BE: Backend<ZnxWord = i64>,
     {
         BE::execute_bdd_circuit_2w_to_1w_multi_thread::<C, H, T>(self, threads, out, circuit, a, b, key, scratch);
-        GLWEToBackendMut::<BE>::set_encryption_metadata(out, None);
+        GLWEToBackendMut::<BE>::set_noise(out, None);
     }
 }

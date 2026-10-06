@@ -331,7 +331,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWE {
-            encryption_metadata: None,
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -370,7 +370,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let n = self.ring_degree().as_usize();
         let cols = (rank + 1).as_usize();
         GLWE {
-            encryption_metadata: None,
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
@@ -383,7 +383,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGLWE {
-            encryption_metadata: None,
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -429,7 +429,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGSW {
-            encryption_metadata: None,
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -524,7 +524,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let pairs = (((cols + 1) * cols) >> 1).max(1);
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWETensor {
-            encryption_metadata: None,
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), pairs, size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -544,7 +544,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         assert!(infos.rank().as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (n, rank, size) = (infos.n().as_usize(), infos.rank().as_usize(), infos.size());
         GLWEPublicKey {
-            encryption_metadata: None,
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
                 n,
@@ -713,7 +713,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let n = infos.n().as_usize();
         LWE {
-            encryption_metadata: None,
+            noise: None,
             body: vec_znx_alloc_zeroed::<B>(1, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(n, 1, size),
             base2k: infos.base2k(),
@@ -728,7 +728,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let rows = infos.rows();
         LWEMatrix {
-            encryption_metadata: None,
+            noise: None,
             body: vec_znx_alloc_zeroed::<B>(rows, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(rows, infos.n().as_usize(), size),
             k: infos.k(),
@@ -1498,6 +1498,14 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         .saturating_add(extra_live_limbs);
     let product_limbs = gadget_product_limbs(key_base2k, product_terms);
     work_size.min(live_limbs.saturating_add(product_limbs))
+}
+
+/// Checks the component count before storing or serializing known noise.
+pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, components: usize) -> std::io::Result<()> {
+    if let Some(noise) = noise {
+        noise.validate_components(components)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

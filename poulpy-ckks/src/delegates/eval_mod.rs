@@ -32,7 +32,7 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         H: GetTensorKey<BE>,
     {
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)?;
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         Ok(())
     }
 }

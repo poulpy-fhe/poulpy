@@ -255,8 +255,8 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRT, W> {
 }
 
 impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKey<D, BRT, W> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.keys.first().and_then(LWEInfos::encryption_metadata)
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.keys.first().and_then(LWEInfos::noise)
     }
 
     fn base2k(&self) -> Base2K {

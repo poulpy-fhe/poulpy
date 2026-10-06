@@ -100,6 +100,9 @@ where
     let rank = RANK.as_usize() as f64;
     let variance = 2.0 * rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
     super::fixtures::assert_fresh_noise(&ct, variance + DEFAULT_SIGMA_XE.powi(2), K);
+    let mut components = vec![DEFAULT_SIGMA_XE.powi(2); RANK.as_usize() + 1];
+    components[0] += rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE.powi(2);
+    super::fixtures::assert_noise_components(&ct, &components);
     let bound = variance.sqrt().log2() - K.as_usize() as f64 + 1.25_f64.log2();
     let noise: f64 = module.glwe_noise(&ct, &pt, &sk_ideal, &mut scratch.borrow()).std().log2();
     assert!(noise <= bound, "noise {noise} above bound {bound}");
@@ -169,6 +172,9 @@ where
                 module.mhe_glwe_public_key_share_aggregate(&mut aggregate, &share);
             }
             assert_noise_tag(&aggregate, base, i + 1, (i + 1) as f64 * sigma2, key_k);
+            let mut components = vec![0.0; RANK.as_usize() + 1];
+            components[0] = (i + 1) as f64 * sigma2;
+            super::fixtures::assert_noise_components(&aggregate, &components);
             secrets.push(prepared);
         }
 
@@ -217,6 +223,9 @@ where
                 &mut scratch.borrow(),
             );
             assert_noise_tag(&ct, base, 1, sigma2, k);
+            let mut sk_components = vec![0.0; RANK.as_usize() + 1];
+            sk_components[0] = sigma2;
+            super::fixtures::assert_noise_components(&ct, &sk_components);
 
             for (parties, pk) in [(1, &single_prepared), (PARTIES, &collective_prepared)] {
                 let count = parties as f64;
@@ -280,6 +289,13 @@ where
                 assert!(ordinary > sigma2);
                 module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
+                if extra_bits <= 1 {
+                    let fresh = sigma2 * (-2.0 * ordinary_delta as f64).exp2();
+                    let component_rounding = if extra_bits == 0 { 0.0 } else { 0.25 };
+                    let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
+                    components[0] += inherited;
+                    super::fixtures::assert_noise_components(&ct, &components);
+                }
                 module.glwe_encrypt_pk_at_col(
                     &mut ct,
                     &zero_pt,
@@ -316,6 +332,13 @@ where
                         &mut scratch.borrow(),
                     );
                     assert_noise_tag(&ct, base, parties, without_body + variance, k);
+                    if extra_bits <= 1 {
+                        let fresh = sigma2 * (-2.0 * smudged_delta as f64).exp2();
+                        let component_rounding = if extra_bits == 0 { 0.0 } else { 0.25 };
+                        let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
+                        components[0] = inherited + variance + component_rounding;
+                        super::fixtures::assert_noise_components(&ct, &components);
+                    }
                 }
             }
             // Reusing a collective-PK ciphertext for SK encryption must clear
@@ -334,11 +357,11 @@ where
 }
 
 fn assert_noise_tag(value: &impl LWEInfos, base: Distribution, parties: usize, variance: f64, k: TorusPrecision) {
-    let metadata = value.encryption_metadata().expect("fresh encryption must record provenance");
+    let metadata = value.noise().expect("fresh encryption must record provenance");
     assert_eq!(metadata.secret_distribution().base(), base);
     assert_eq!(metadata.parties(), parties as u64);
     super::fixtures::assert_fresh_noise(value, variance, k);
-    assert!((metadata.fresh_noise().std_dev() - variance.sqrt()).abs() <= variance.sqrt() * 1e-12);
+    assert!((metadata.phase_noise(value.n().as_usize()).std_dev() - variance.sqrt()).abs() <= variance.sqrt() * 1e-12);
 }
 
 /// Finalizing a share without a samplable distribution panics; a fresh share has `NONE`.

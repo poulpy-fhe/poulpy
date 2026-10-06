@@ -36,12 +36,12 @@ where
     {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
+        let metadata = super::aggregate_metadata(res.noise(), a.noise());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.vec_znx_add_assign(res_be.data_mut(), 0, a_be.data(), 0);
         drop(res_be);
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
     }
 
     fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
@@ -63,7 +63,7 @@ where
         }
         // Seeded masks are uniform digits, already canonical.
         self.fill_glwe_mask_from_seed(res, *pat.seed());
-        res.set_encryption_metadata(pat.encryption_metadata());
+        res.set_noise(pat.noise());
     }
 }
 
@@ -96,7 +96,7 @@ where
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
+        let metadata = super::aggregate_metadata(res.noise(), a.noise());
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
@@ -106,7 +106,7 @@ where
             }
         }
         drop(res_be);
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
     }
 
     fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
@@ -132,7 +132,7 @@ where
             }
         }
         drop(res_be);
-        res.set_encryption_metadata(pat.encryption_metadata());
+        res.set_noise(pat.noise());
     }
 }
 
@@ -160,8 +160,7 @@ where
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
-        let metadata =
-            super::aggregate_common_key_metadata(res.encryption_metadata(), a.encryption_metadata(), res.n().as_usize());
+        let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
         let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
@@ -171,7 +170,7 @@ where
             }
         }
         drop(res_be);
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
     }
 
     fn gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize {
@@ -196,6 +195,6 @@ where
             }
         }
         drop(res_be);
-        res.set_encryption_metadata(pat.encryption_metadata());
+        res.set_noise(pat.noise());
     }
 }

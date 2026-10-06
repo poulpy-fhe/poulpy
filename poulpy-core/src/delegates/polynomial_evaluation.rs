@@ -27,7 +27,7 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
     {
         let result = BE::glwe_eval_baby_step::<Ops, V, P, A, G>(self, ops, res, parity, coeffs, power_basis, scratch);
         if result.is_ok() {
-            res.set_encryption_metadata(None);
+            res.set_noise(None);
         }
         result
     }
@@ -53,7 +53,7 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
     {
         let result = BE::glwe_eval_giant_steps::<Ops, R, B, V, P, A, G, H>(self, ops, res, baby_steps, power_basis, tsk, scratch);
         if result.is_ok() {
-            res.set_encryption_metadata(None);
+            res.set_noise(None);
         }
         result
     }

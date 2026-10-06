@@ -70,11 +70,12 @@ where
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        let metadata = Some(crate::EncryptionMetadata::from_secret_at(
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
             sk.to_backend_ref().dist,
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
         assert_eq!(res.rank(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(

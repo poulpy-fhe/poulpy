@@ -18,7 +18,7 @@ use crate::{
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) encryption_metadata: Option<crate::EncryptionMetadata>,
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: VecZnxDft<D, B::DftWord, B>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -28,8 +28,8 @@ pub type GLWEPreparedBackendRef<'a, B> = GLWEPrepared<<B as Backend>::BufRef<'a>
 pub type GLWEPreparedBackendMut<'a, B> = GLWEPrepared<<B as Backend>::BufMut<'a>, B>;
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.encryption_metadata
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
     }
 
     fn base2k(&self) -> Base2K {
@@ -76,7 +76,7 @@ where
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         GLWEPrepared {
-            encryption_metadata: None,
+            noise: None,
             data: self.vec_znx_dft_alloc(n, (infos.rank() + 1).into(), infos.size()),
             base2k: infos.base2k(),
             k: infos.k(),
@@ -112,7 +112,9 @@ where
         R: GLWEPreparedToBackendMut<B>,
         O: GLWEToBackendRef<B> + GLWEInfos,
     {
-        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
+        let rank = res.to_backend_mut().rank().as_usize();
+        let noise = other.to_backend_ref().noise().map(|noise| noise.with_rank(rank));
+        res.set_noise(noise);
         let (mut other_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(other);
         let other = if other.is_canonical() {
             other.to_backend_ref()
@@ -149,7 +151,7 @@ pub trait GLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         GLWEPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -159,22 +161,24 @@ impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
 
 pub trait GLWEPreparedToBackendMut<B: Backend> {
     /// Backend hook for recording or propagating derived encryption provenance.
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients and copies the current layout and provenance metadata.
     /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_encryption_metadata` hook.
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B>;
 }
 
 impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self),
+            noise: crate::layouts::LWEInfos::noise(&self),
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

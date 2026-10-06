@@ -101,7 +101,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
             extension_factor,
             scratch,
         );
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         &self,
@@ -126,7 +126,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
             extension_factor,
             scratch,
         );
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         &self,
@@ -179,7 +179,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
         L: LWEToBackendRef<BE> + LWEInfos,
     {
         <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_prepared(self, res, lwe, key, plan, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> CircuitBootstrappingKeyEncryptSk<BRA, BE>

@@ -40,7 +40,7 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 k: src.k().into(),
             })?;
         BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -57,7 +57,7 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
                 k: dst.k().into(),
             })?;
         BE::ckks_conjugate_assign_impl(self, dst, &key, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

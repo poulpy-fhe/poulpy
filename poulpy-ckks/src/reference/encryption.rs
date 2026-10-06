@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
-use poulpy_core::{EncryptionMetadata, GetDistribution};
+use poulpy_core::{ComponentNoise, GetDistribution};
 use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
@@ -54,7 +54,8 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         // propagate the carries before returning (the crate's digit contract
         // for every DFT-domain op).
         self.glwe_normalize_assign(ct, scratch);
-        ct.set_encryption_metadata(Some(EncryptionMetadata::from_secret_at(*sk.to_backend_ref().dist(), ct.k())));
+        let noise = ComponentNoise::from_secret_at(*sk.to_backend_ref().dist(), ct.k(), ct.to_backend_ref().rank().as_usize());
+        ct.set_noise(Some(noise));
         Ok(())
     }
 

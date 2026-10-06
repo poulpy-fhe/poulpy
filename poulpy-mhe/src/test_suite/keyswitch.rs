@@ -91,10 +91,11 @@ where
         super::fixtures::assert_collective_metadata(&acc, PARTIES);
         let rounding = if share_k < layout.k { 1.0 } else { 0.0 };
         super::fixtures::assert_fresh_noise(&acc, PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding), share_k);
+        super::fixtures::assert_noise_components(&acc, &[PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding)]);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
         module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-        assert_eq!(res.encryption_metadata(), None);
+        assert_eq!(res.noise(), None);
         assert!(res.is_canonical());
         assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, share_k, &mut scratch);
     }
@@ -194,7 +195,7 @@ where
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&share_layout);
         module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-        assert_eq!(res.encryption_metadata(), None);
+        assert_eq!(res.noise(), None);
         assert!(res.is_canonical());
         // Each party's pk encryption adds 2 * rank * n * 0.5 * PARTIES * sigma^2, as in the pk test.
         let n = module.n() as f64;

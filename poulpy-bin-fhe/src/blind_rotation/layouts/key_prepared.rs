@@ -90,8 +90,8 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> BlindRotationKeyInfos for Blin
 }
 
 impl<D: Data, BRT: BlindRotationAlgo, B: Backend> LWEInfos for BlindRotationKeyPrepared<D, BRT, B> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.data.first().and_then(LWEInfos::encryption_metadata)
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.data.first().and_then(LWEInfos::noise)
     }
 
     fn base2k(&self) -> Base2K {

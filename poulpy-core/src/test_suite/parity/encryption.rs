@@ -57,17 +57,20 @@ pub(crate) struct Snapshot {
     pub(crate) metadata: Vec<usize>,
     pub(crate) bytes: Vec<u8>,
 }
-pub(crate) fn assert_fresh_encryption_metadata(value: &impl LWEInfos) {
-    assert_encryption_metadata(value, crate::DEFAULT_SIGMA_XE.powi(2));
+pub(crate) fn assert_fresh_noise(value: &impl LWEInfos) {
+    assert_noise(value, crate::DEFAULT_SIGMA_XE.powi(2));
+    let noise = value.noise().unwrap();
+    assert_eq!(noise.body().variance(), crate::DEFAULT_SIGMA_XE.powi(2));
+    assert!(noise.masks().iter().all(|component| component.variance() == 0.0));
 }
 
-fn assert_encryption_metadata(value: &impl LWEInfos, variance: f64) {
-    let metadata = value.encryption_metadata().expect("encryption must record its provenance");
+fn assert_noise(value: &impl LWEInfos, variance: f64) {
+    let metadata = value.noise().expect("encryption must record its provenance");
     assert_eq!(metadata.parties(), 1);
     assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(2.0 / 3.0));
     assert_eq!(metadata.secret_distribution().parties(), 1);
-    assert_eq!(metadata.fresh_noise().precision(), value.k());
-    assert!((metadata.initial_noise_variance() - variance).abs() <= variance * 1e-12);
+    assert_eq!(metadata.precision(), value.k());
+    assert!((metadata.phase_noise(value.n().as_usize()).variance() - variance).abs() <= variance * 1e-12);
 }
 
 pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
@@ -75,9 +78,16 @@ pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static 
     if label == "encrypt_pk" || label == "encrypt_zero_pk" {
         let variance = (2.0 * view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0)
             * crate::DEFAULT_SIGMA_XE.powi(2);
-        assert_encryption_metadata(&view, variance);
+        assert_noise(&view, variance);
+        let noise = LWEInfos::noise(&view).unwrap();
+        assert_eq!(noise.rank(), view.rank().as_usize());
+        let sigma2 = crate::DEFAULT_SIGMA_XE.powi(2);
+        let body = (view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0) * sigma2;
+        assert!((noise.body().variance() - body).abs() <= body * 1e-12);
+        assert!(noise.masks().iter().all(|component| component.variance() == sigma2));
     } else if label.contains("encrypt") || label == "public_key_generate" {
-        assert_fresh_encryption_metadata(&view);
+        assert_fresh_noise(&view);
+        assert_eq!(LWEInfos::noise(&view).unwrap().rank(), view.rank().as_usize());
     }
     let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
     B::copy_view_to_host(view.data.data(), &mut bytes);
@@ -310,7 +320,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
             );
             assert_eq!(pkp.dist(), pk.dist());
-            assert_eq!(pkp.encryption_metadata(), pk.encryption_metadata());
+            assert_eq!(pkp.noise(), pk.noise());
             poison_glwe::<B, _>(&mut out);
             module.glwe_encrypt_pk(
                 &mut out,
@@ -413,7 +423,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
 fn snapshot_lwe<B: Backend, G: LWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = LWEToBackendRef::<B>::to_backend_ref(value);
     if label == "lwe_encrypt_sk" {
-        assert_fresh_encryption_metadata(&view);
+        assert_fresh_noise(&view);
+        assert_eq!(LWEInfos::noise(&view).unwrap().rank(), view.n().as_usize());
     }
     let mut bytes = vec![0; view.body.n() * view.body.cols() * view.body.size() * size_of::<i64>()];
     B::copy_view_to_host(view.body.data(), &mut bytes);

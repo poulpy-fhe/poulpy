@@ -34,7 +34,7 @@ where
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
 
@@ -105,7 +105,7 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     for value in res.iter_mut() {
-        value.set_encryption_metadata(None);
+        value.set_noise(None);
     }
     let a = a.to_backend_ref();
     let n = operand_degree(module.n(), &[a.n()]);
@@ -172,7 +172,7 @@ where
     R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
     let a = a.to_backend_ref();
     let mut res = res.to_backend_mut();
     let n = operand_degree(module.n(), &[a.n()]);
@@ -274,7 +274,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
     let res_infos = GLWELayout {
         n: res.n(),
         base2k: res.base2k(),
@@ -493,7 +493,7 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
         }
     }
     drop(res_backend);
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -617,7 +617,7 @@ where
         R: crate::layouts::LWEToBackendMut<BE> + crate::layouts::LWEInfos,
         A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         crate::reference::conversion::lwe_sample_extract_reference::<BE, _, _, _>(self, res, a)
     }
 
@@ -640,7 +640,7 @@ where
         R: crate::layouts::GLWEToBackendMut<BE> + crate::layouts::GLWEInfos,
         A: crate::layouts::LWEToBackendRef<BE> + crate::layouts::LWEInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         crate::reference::conversion::glwe_from_lwe_reference::<BE, _, _, _>(self, res, lwe, ksk, scratch)
     }
 
@@ -677,7 +677,7 @@ where
         R: crate::layouts::LWEMatrixToBackendMut<BE> + crate::layouts::LWEMatrixInfos,
         A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         crate::reference::conversion::glwe_expand_lwe_matrix_reference::<BE, _, _, _>(self, res, a, scratch)
     }
 }
@@ -731,7 +731,7 @@ where
     ) where
         R: crate::layouts::GGSWToBackendMut<BE> + crate::layouts::GGSWInfos,
     {
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         crate::reference::conversion::ggsw_expand_row_reference::<BE, _, _>(self, res, tsk, scratch)
     }
 }

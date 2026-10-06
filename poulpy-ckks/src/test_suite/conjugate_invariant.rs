@@ -554,7 +554,7 @@ where
         .unwrap();
     assert_eq!((extended.meta(), extended.k()), (ct.meta(), ct.k()));
     assert!(extended.is_canonical());
-    assert_eq!(extended.encryption_metadata(), None);
+    assert_eq!(extended.noise(), None);
     // Decoding follows the module's slots, so the standard side is decoded only at its own degree.
     if standard.n() == standard_params.n {
         assert_output!(standard, standard_params, extended, standard_sk, standard_scratch);
@@ -566,7 +566,7 @@ where
         .unwrap();
     assert_eq!((back.log_delta(), back.slots()), (ct.log_delta(), SlotsKind::Real));
     assert!(back.is_canonical());
-    assert_eq!(back.encryption_metadata(), None);
+    assert_eq!(back.noise(), None);
     assert_output!(ci, params, back, ci_sk, scratch);
 
     let mut wrong_degree = alloc_ct(&params, &standard, params.k);
@@ -699,7 +699,7 @@ where
             .unwrap();
 
         for ct in &folded {
-            assert_eq!(ct.encryption_metadata(), None, "folded provenance, {label}");
+            assert_eq!(ct.noise(), None, "folded provenance, {label}");
         }
 
         let embedded_msgs: Vec<Vec<f64>> = msgs.iter().map(|msg| embed(msg)).collect();
@@ -751,7 +751,7 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
-            assert_eq!(out.encryption_metadata(), None, "unfolded provenance {i}, {label}");
+            assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
             let got = decrypt_coeffs::<BE, f64>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n);
         }

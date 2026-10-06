@@ -42,7 +42,7 @@ impl_external_product_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_external_product_assign(self, res, rhs, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_external_product<R, A>(
@@ -57,7 +57,7 @@ impl_external_product_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_external_product(self, res, lhs, rhs, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -85,7 +85,7 @@ impl_external_product_delegate!(
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         BE::gglwe_external_product(self, res, a, b, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn gglwe_external_product_assign<R>(
@@ -98,7 +98,7 @@ impl_external_product_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
         BE::gglwe_external_product_assign(self, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -126,7 +126,7 @@ impl_external_product_delegate!(
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
         BE::ggsw_external_product(self, res, a, b, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn ggsw_external_product_assign<R>(
@@ -139,7 +139,7 @@ impl_external_product_delegate!(
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
         BE::ggsw_external_product_assign(self, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 

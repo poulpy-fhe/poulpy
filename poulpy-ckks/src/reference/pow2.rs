@@ -91,7 +91,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         let mut meta = dst.meta();
         meta.log_delta += bits;
         dst.set_meta(meta);
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

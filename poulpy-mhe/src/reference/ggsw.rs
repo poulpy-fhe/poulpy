@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionMetadata, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
+    ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
@@ -163,9 +163,9 @@ where
                 self.gglwe_compressed_encrypt_sk(&mut res.circ_s[j], &zero, sk, seeds.new_seed(), source_xe, &mut scratch_2);
                 let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
-                GGLWECompressedToBackendMut::<BE>::set_encryption_metadata(
+                GGLWECompressedToBackendMut::<BE>::set_noise(
                     circ_u,
-                    Some(EncryptionMetadata::from_secret_at(*u.to_backend_ref().dist(), circ_u.k())),
+                    Some(ComponentNoise::from_secret_at(*u.to_backend_ref().dist(), circ_u.k(), r)),
                 );
                 for row in 0..dnum {
                     for i in 0..r {
@@ -246,7 +246,7 @@ where
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
         assert!(
-            match (share.encryption_metadata(), key.encryption_metadata()) {
+            match (share.noise(), key.noise()) {
                 (Some(share), Some(key)) => share.same_secret(&key),
                 (None, None) => true,
                 _ => false,
@@ -298,7 +298,7 @@ where
             }
         }
         drop(res_be);
-        res.set_encryption_metadata(metadata);
+        res.set_noise(metadata);
     }
 }
 
@@ -311,68 +311,67 @@ fn glwe_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
     }
 }
 
-/// The first column retains its direct encryption error. Every other column
-/// contains E_s * U - E_u * S and the switching key's error. Store the largest
-/// column estimate, including canonical rounding, at the output precision.
-fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, key: &K) -> Option<EncryptionMetadata> {
-    let metadata = share.encryption_metadata()?;
+/// Retain each component's largest variance across gadget columns. The first
+/// column carries direct body noise. Other columns carry E_s * U in the body
+/// and E_u in each mask, followed by switching-key and rounding errors.
+fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, key: &K) -> Option<ComponentNoise> {
+    let metadata = share.noise()?;
     let k = share.k();
-    let mut variance = metadata.fresh_noise().variance_at(k);
     let rank = share.rank().as_usize();
+    let mut components: Vec<_> = metadata
+        .components()
+        .iter()
+        .map(|noise| FreshNoiseEstimate::new(noise.variance_at(k), k))
+        .collect();
     if rank == 0 {
-        return Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, k)));
+        return Some(metadata.with_components(components));
     }
     let n = share.n().as_usize();
-    let secret_second_moment = metadata
-        .secret_distribution()
-        .coefficient_second_moment(n)
-        .unwrap_or(f64::INFINITY);
     let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
     let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
     // Bounded balanced digits require no uniform-digit assumption. Fold their
     // squared magnitude into the precision rescaling to avoid a vanishing
     // key variance times an overflowing digit bound when the product is finite.
     // Full key coverage means there is no gadget truncation residue.
-    let key_variance = key.encryption_metadata().map_or(f64::INFINITY, |metadata| {
-        if metadata.fresh_noise().variance() == 0.0 {
-            return 0.0;
-        }
-        k.as_usize()
-            .checked_add(digit_bits - 1)
-            .and_then(|precision| u32::try_from(precision).ok())
-            .map_or(f64::INFINITY, |precision| {
-                metadata.fresh_noise().variance_at(TorusPrecision(precision))
-            })
-    });
-    let switching_variance = rank as f64 * n as f64 * digits as f64 * key_variance;
-    let rounding_variance = if key.k() > k {
-        (1.0 + rank as f64 * n as f64 * secret_second_moment) / 4.0
-    } else {
-        0.0
-    };
+    let key_noise = key.noise();
+    let switching_precision = k
+        .as_usize()
+        .checked_add(digit_bits - 1)
+        .and_then(|precision| u32::try_from(precision).ok())
+        .map(TorusPrecision);
+    let switching_components: Vec<_> = (0..=rank)
+        .map(|component| {
+            let variance = key_noise.as_ref().map_or(f64::INFINITY, |noise| {
+                let estimate = noise.components()[component];
+                if estimate.variance() == 0.0 {
+                    0.0
+                } else {
+                    switching_precision.map_or(f64::INFINITY, |precision| estimate.variance_at(precision))
+                }
+            });
+            rank as f64 * n as f64 * digits as f64 * variance
+        })
+        .collect();
+    let rounding = if key.k() > k { 0.25 } else { 0.0 };
     for (circ_s, circ_u) in share.circ_s.iter().zip(&share.circ_u) {
-        let s = circ_s.encryption_metadata();
-        let u = circ_u.encryption_metadata();
-        let column_variance = match (s, u) {
+        let (body, mask) = match (circ_s.noise(), circ_u.noise()) {
             (Some(s), Some(u)) => {
                 let ephemeral_second_moment = u.secret_distribution().coefficient_second_moment(n).unwrap_or(f64::INFINITY);
-                let v_s = s.fresh_noise().variance_at(k);
-                let v_u = u.fresh_noise().variance_at(k);
+                let v_s = s.phase_noise(n).variance_at(k);
+                let v_u = u.phase_noise(n).variance_at(k);
                 let e_s_times_u = if v_s == 0.0 || ephemeral_second_moment == 0.0 {
                     0.0
                 } else {
-                    v_s * ephemeral_second_moment
+                    rank as f64 * n as f64 * v_s * ephemeral_second_moment
                 };
-                let e_u_times_s = if v_u == 0.0 || secret_second_moment == 0.0 {
-                    0.0
-                } else {
-                    v_u * secret_second_moment
-                };
-                rank as f64 * n as f64 * (e_s_times_u + e_u_times_s) + switching_variance + rounding_variance
+                (e_s_times_u, v_u)
             }
-            _ => f64::INFINITY,
+            _ => (f64::INFINITY, f64::INFINITY),
         };
-        variance = variance.max(column_variance);
+        for (component, (noise, switching)) in components.iter_mut().zip(&switching_components).enumerate() {
+            let circular = if component == 0 { body } else { mask };
+            *noise = FreshNoiseEstimate::new(noise.variance().max(circular + switching + rounding), k);
+        }
     }
-    Some(metadata.with_fresh_noise(FreshNoiseEstimate::new(variance, k)))
+    Some(metadata.with_components(components))
 }

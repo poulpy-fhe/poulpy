@@ -126,8 +126,8 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> 
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKey<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.key.encryption_metadata()
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.key.noise()
     }
 
     fn n(&self) -> Degree {

@@ -31,8 +31,8 @@ where
 impl<D: Data, W: ZnxWord> Eq for GLWETensorKeyShare<D, W> where GGLWEPat<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyShare<D, W> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.key.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.key.noise()
     }
 
     fn n(&self) -> Degree {
@@ -93,8 +93,8 @@ impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GLWETensorKeyShare<D, BE::Z
 where
     GGLWEPat<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
-    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.key, metadata);
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GGLWEToBackendMut::<BE>::set_noise(&mut self.key, metadata);
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {

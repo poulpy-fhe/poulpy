@@ -27,7 +27,7 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_rotate_by_into_impl(self, dst, src, k, keys, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -37,7 +37,7 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_rotate_by_assign_impl(self, dst, k, keys, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

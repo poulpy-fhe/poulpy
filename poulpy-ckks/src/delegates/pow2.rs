@@ -23,7 +23,7 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -32,7 +32,7 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -42,7 +42,7 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_double_into_impl(self, dst, src, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -62,7 +62,7 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -71,7 +71,7 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_div_pow2_assign_impl(self, dst, bits)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

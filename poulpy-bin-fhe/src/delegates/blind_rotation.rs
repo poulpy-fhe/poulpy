@@ -34,7 +34,7 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationExecuteImpl<BRA>> BlindRotationExe
         L: LWEToBackendRef<BE> + LWEInfos,
     {
         BE::blind_rotation_execute(self, res, lwe, lut, brk, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }
 

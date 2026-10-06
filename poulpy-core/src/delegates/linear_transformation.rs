@@ -88,6 +88,6 @@ where
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }

@@ -1,5 +1,5 @@
 //! Evaluation-key and gadget encryption compositions with controlled sampling.
-use super::encryption::{EncryptionParityBackend, Snapshot, assert_fresh_encryption_metadata, secret, source_snapshot};
+use super::encryption::{EncryptionParityBackend, Snapshot, assert_fresh_noise, secret, source_snapshot};
 use super::{ParityShapes, poisoned_scratch};
 use crate::{api::*, layouts::*};
 use poulpy_hal::{
@@ -11,8 +11,9 @@ use poulpy_hal::{
 fn gglwe_snapshot<B: Backend, G: GGLWEToBackendRef<B> + GGLWEInfos>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
     if label.contains("encrypt") {
-        assert_fresh_encryption_metadata(value);
-        assert_eq!(view.encryption_metadata(), value.encryption_metadata());
+        assert_fresh_noise(value);
+        assert_eq!(LWEInfos::noise(value).unwrap().rank(), value.rank().as_usize());
+        assert_eq!(view.noise(), value.noise());
     }
     let data = view.data.data();
     let mut bytes = vec![0; B::len_bytes_ref(data)];
@@ -34,8 +35,9 @@ fn gglwe_snapshot<B: Backend, G: GGLWEToBackendRef<B> + GGLWEInfos>(label: &'sta
 fn ggsw_snapshot<B: Backend, G: GGSWToBackendRef<B> + GGSWInfos>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
     if label.contains("encrypt") {
-        assert_fresh_encryption_metadata(value);
-        assert_eq!(view.encryption_metadata(), value.encryption_metadata());
+        assert_fresh_noise(value);
+        assert_eq!(LWEInfos::noise(value).unwrap().rank(), value.rank().as_usize());
+        assert_eq!(view.noise(), value.noise());
     }
     let data = view.data.data();
     let mut bytes = vec![0; B::len_bytes_ref(data)];
@@ -142,7 +144,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &out,
             &mut poisoned_scratch::<B>(module.gglwe_prepare_tmp_bytes(&key)).arena(),
         );
-        assert_eq!(prepared.encryption_metadata(), out.encryption_metadata());
+        assert_eq!(prepared.noise(), out.noise());
         result.push(source_snapshot("gglwe_encrypt_sk_sources", &mut e, &mut a));
         let mut compact = module.gglwe_compressed_alloc_from_infos(&key);
         poison_compressed::<B, _>(&mut compact);
@@ -155,10 +157,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.gglwe_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
         result.push(seeds_snapshot("gglwe_compressed_seeds", &compact.seed));
-        GGLWEToBackendMut::<B>::set_encryption_metadata(&mut out, None);
+        GGLWEToBackendMut::<B>::set_noise(&mut out, None);
         module.decompress_gglwe(&mut out, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(out.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(out.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("gglwe_compressed_encrypt_sk", &out));
         result.push(source_snapshot("gglwe_compressed_sources", &mut e, &mut a));
         let g = GGSWLayout {
@@ -188,7 +190,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &out,
             &mut poisoned_scratch::<B>(module.ggsw_prepare_tmp_bytes(&g)).arena(),
         );
-        assert_eq!(prepared.encryption_metadata(), out.encryption_metadata());
+        assert_eq!(prepared.noise(), out.noise());
         result.push(source_snapshot("ggsw_encrypt_sk_sources", &mut e, &mut a));
         let mut compact = module.ggsw_compressed_alloc_from_infos(&g);
         poison_compressed_ggsw::<B, _>(&mut compact);
@@ -201,10 +203,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.ggsw_compressed_encrypt_sk_tmp_bytes(&g)).arena(),
         );
         result.push(seeds_snapshot("ggsw_compressed_seeds", &compact.seed));
-        GGSWToBackendMut::<B>::set_encryption_metadata(&mut out, None);
+        GGSWToBackendMut::<B>::set_noise(&mut out, None);
         module.decompress_ggsw(&mut out, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(out.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(out.noise(), compact.noise());
         result.push(ggsw_snapshot::<B, _>("ggsw_compressed_encrypt_sk", &out));
         result.push(source_snapshot("ggsw_compressed_sources", &mut e, &mut a));
         let mut switching = module.glwe_switching_key_alloc_from_infos(&key);
@@ -238,10 +240,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
         result.push(seeds_snapshot("switching_compressed_seeds", &compact.key.seed));
-        GGLWEToBackendMut::<B>::set_encryption_metadata(&mut switching, None);
+        GGLWEToBackendMut::<B>::set_noise(&mut switching, None);
         module.decompress_glwe_switching_key(&mut switching, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(switching.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(switching.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("glwe_switching_key_compressed_encrypt_sk", &switching));
         result.push(source_snapshot("switching_compressed_sources", &mut e, &mut a));
         let mut auto = module.glwe_automorphism_key_alloc_from_infos(&key);
@@ -268,10 +270,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
         result.push(seeds_snapshot("automorphism_compressed_seeds", &compact.key.seed));
-        GGLWEToBackendMut::<B>::set_encryption_metadata(&mut auto, None);
+        GGLWEToBackendMut::<B>::set_noise(&mut auto, None);
         module.decompress_automorphism_key(&mut auto, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(auto.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(auto.noise(), compact.noise());
         assert_eq!(auto.p, -5);
         result.push(gglwe_snapshot::<B, _>("glwe_automorphism_key_compressed_encrypt_sk", &auto));
         result.push(source_snapshot("automorphism_compressed_sources", &mut e, &mut a));
@@ -304,10 +306,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(&tk)).arena(),
         );
         result.push(seeds_snapshot("tensor_compressed_seeds", &compact.0.seed));
-        GGLWEToBackendMut::<B>::set_encryption_metadata(&mut tensor, None);
+        GGLWEToBackendMut::<B>::set_noise(&mut tensor, None);
         module.decompress_tensor_key(&mut tensor, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(tensor.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(tensor.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("glwe_tensor_key_compressed_encrypt_sk", &tensor));
         result.push(source_snapshot("tensor_compressed_sources", &mut e, &mut a));
         let mut rows = module.gglwe_to_ggsw_key_alloc_from_infos(&key);
@@ -339,10 +341,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         for row in &compact.keys {
             result.push(seeds_snapshot("row_key_compressed_seeds", &row.seed));
         }
-        GGLWEToGGSWKeyToBackendMut::<B>::set_encryption_metadata(&mut rows, None);
+        GGLWEToGGSWKeyToBackendMut::<B>::set_noise(&mut rows, None);
         module.decompress_gglwe_to_ggsw_key(&mut rows, &compact);
-        assert!(compact.encryption_metadata().is_some());
-        assert_eq!(rows.encryption_metadata(), compact.encryption_metadata());
+        assert!(compact.noise().is_some());
+        assert_eq!(rows.noise(), compact.noise());
         let mut prepared_rows = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&rows);
         module.gglwe_to_ggsw_key_prepare(
             &mut prepared_rows,
@@ -350,7 +352,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_prepare_tmp_bytes(&rows)).arena(),
         );
         for (prepared, plain) in prepared_rows.keys.iter().zip(&rows.keys) {
-            assert_eq!(prepared.encryption_metadata(), plain.encryption_metadata());
+            assert_eq!(prepared.noise(), plain.noise());
         }
         for row in &rows.keys {
             result.push(gglwe_snapshot::<B, _>("gglwe_to_ggsw_key_compressed_encrypt_sk", row));

@@ -81,7 +81,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 k: k.into(),
             })?;
         BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -98,7 +98,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 k: k.into(),
             })?;
         BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -127,7 +127,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 k: k.into(),
             })?;
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -144,7 +144,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 k: k.into(),
             })?;
         BE::ckks_square_into_impl(self, dst, a, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -160,7 +160,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
                 k: k.into(),
             })?;
         BE::ckks_square_assign_impl(self, dst, tsk, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -199,7 +199,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -215,7 +215,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)?;
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

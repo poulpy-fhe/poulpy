@@ -33,7 +33,7 @@ where
     {
         BE::fhe_uint_prepare::<K, T>(self, res, bits, key, scratch);
         for bit in &mut res.bits {
-            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+            GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -50,7 +50,7 @@ where
     {
         BE::fhe_uint_prepare_custom::<K, T>(self, res, bits, bit_start, bit_count, key, scratch);
         for bit in &mut res.bits {
-            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+            GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -68,7 +68,7 @@ where
     {
         BE::fhe_uint_prepare_custom_multi_thread::<K, T>(self, threads, res, bits, bit_start, bit_count, key, scratch);
         for bit in &mut res.bits {
-            GGSWPreparedToBackendMut::<BE>::set_encryption_metadata(bit, None);
+            GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
         }
     }
 }

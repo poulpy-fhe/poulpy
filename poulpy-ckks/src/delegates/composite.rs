@@ -87,7 +87,7 @@ where
                 }
             }
         }
-        dst.set_encryption_metadata(None);
+        dst.set_noise(None);
         Ok(())
     }
 }

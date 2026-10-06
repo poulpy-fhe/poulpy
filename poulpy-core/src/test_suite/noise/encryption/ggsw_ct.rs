@@ -177,12 +177,14 @@ where
                 &mut enc_scratch.borrow(),
             );
 
-            let metadata = ct.encryption_metadata().unwrap();
-            assert_eq!(metadata.fresh_noise().precision(), ct.k());
-            assert!(metadata.initial_noise_variance() > DEFAULT_SIGMA_XE.powi(2));
+            let metadata = LWEInfos::noise(&ct).unwrap();
+            assert_eq!(metadata.precision(), ct.k());
+            assert_eq!(metadata.rank(), rank);
+            assert!(metadata.masks().iter().all(|term| term.variance() > 0.0));
+            assert!(metadata.phase_noise(n).variance() > DEFAULT_SIGMA_XE.powi(2));
             let mut prepared = module.ggsw_prepared_alloc_from_infos(&ct);
             module.ggsw_prepare(&mut prepared, &ct, &mut scratch.borrow());
-            assert_eq!(prepared.encryption_metadata(), Some(metadata));
+            assert_eq!(prepared.noise(), Some(metadata));
 
             // Sum_l u_l e_l has rank terms, as Sum_j e_j s_j does.
             let noise_want: f64 = ((2.0 * rank as f64 * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2()

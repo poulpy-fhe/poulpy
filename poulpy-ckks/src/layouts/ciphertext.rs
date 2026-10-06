@@ -131,8 +131,8 @@ impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSCiphertext<D, W, R> {
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSCiphertext<D, W, R> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.inner.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.inner.noise()
     }
 
     fn base2k(&self) -> Base2K {
@@ -225,8 +225,8 @@ where
         self.inner.set_canonical(canonical)
     }
 
-    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
-        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
     }
 }
 
@@ -250,8 +250,8 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
 }
 
 impl<BE: Backend> LWEInfos for CKKSCiphertextViewRef<'_, BE> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.inner.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.inner.noise()
     }
 
     fn base2k(&self) -> Base2K {
@@ -343,8 +343,8 @@ impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
         GLWEToBackendMut::<BE>::set_canonical(&mut self.inner, canonical)
     }
 
-    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
-        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
     }
 }
 

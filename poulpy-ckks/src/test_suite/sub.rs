@@ -505,10 +505,10 @@ where
     );
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    let provenance = ct.encryption_metadata();
+    let provenance = ct.noise();
     assert!(provenance.is_some());
     module.ckks_sub_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
-    assert_eq!(ct.encryption_metadata(), None);
+    assert_eq!(ct.noise(), None);
     assert_ct_meta("sub_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_pt_vec_assign",
@@ -562,8 +562,8 @@ where
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_vec_into", &ct_res, &ct1);
-    assert!(ct1.encryption_metadata().is_some());
-    assert_eq!(ct_res.encryption_metadata(), None);
+    assert!(ct1.noise().is_some());
+    assert_eq!(ct_res.noise(), None);
     assert_decrypt_precision(
         "sub_pt_vec_into",
         &params,

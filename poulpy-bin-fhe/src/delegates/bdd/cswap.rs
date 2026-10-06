@@ -21,7 +21,7 @@ where
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::cswap::<A, B>(self, res_a, res_b, s, scratch);
-        res_a.set_encryption_metadata(None);
-        res_b.set_encryption_metadata(None);
+        res_a.set_noise(None);
+        res_b.set_noise(None);
     }
 }

@@ -60,7 +60,7 @@ macro_rules! view_wrapper {
         }
 
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::layouts::LWEInfos for $name<'a, BE> {
-            fn encryption_metadata(&self) -> Option<$crate::EncryptionMetadata> { $crate::layouts::LWEInfos::encryption_metadata(&self.inner) }
+            fn noise(&self) -> Option<$crate::ComponentNoise> { $crate::layouts::LWEInfos::noise(&self.inner) }
 
             fn base2k(&self) -> $crate::layouts::Base2K {
                 $crate::layouts::LWEInfos::base2k(&self.inner)
@@ -278,7 +278,7 @@ impl<BE: Backend> GGSWInfos for GGSWPreparedViewMut<'_, BE> {
 impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
             body: vec_znx_backend_ref_from_mut::<BE>(&self.inner.body),
@@ -288,8 +288,10 @@ impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
 }
 
 impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.mask.n() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.inner.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
@@ -298,7 +300,7 @@ impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
         let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
         let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
         LWE {
-            encryption_metadata: self.inner.encryption_metadata,
+            noise: self.inner.noise.clone(),
             base2k,
             k,
             body,
@@ -333,7 +335,7 @@ macro_rules! impl_glwe_to_backend {
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
                 let $this = self;
                 GLWE {
-                    encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+                    noise: crate::layouts::LWEInfos::noise(&self.inner),
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical: $canonical,
@@ -343,15 +345,15 @@ macro_rules! impl_glwe_to_backend {
         }
 
         impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for $name<'a, BE> {
-            fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-                self.inner.record_encryption_metadata(metadata);
+            fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+                self.inner.record_noise(metadata);
             }
 
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 let $this = &*self;
                 let canonical = $canonical;
                 GLWE {
-                    encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+                    noise: crate::layouts::LWEInfos::noise(&self.inner),
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical,
@@ -377,7 +379,7 @@ impl_glwe_to_backend!(GLWETensorViewMut, |_this| true, |_this, _canonical| ());
 impl<BE: Backend> GLWEToBackendRef<BE> for GLWEViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
             canonical: self.inner.canonical,
@@ -457,7 +459,7 @@ impl<BE: Backend> GLWESecretPreparedToBackendMut<BE> for GLWESecretPreparedViewM
 impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -467,13 +469,15 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
+            .expect("noise component count does not match the ciphertext");
+        self.inner.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -485,7 +489,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
 impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
         GGLWEPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -497,13 +501,15 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
 }
 
 impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
+            .expect("noise component count does not match the ciphertext");
+        self.inner.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE> {
         GGLWEPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -517,7 +523,7 @@ impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE>
 impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -527,13 +533,15 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
+            .expect("noise component count does not match the ciphertext");
+        self.inner.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -545,7 +553,7 @@ impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
 impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, BE> {
         GGSWPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -555,13 +563,15 @@ impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<'_, BE> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
-        self.inner.encryption_metadata = metadata;
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
+            .expect("noise component count does not match the ciphertext");
+        self.inner.noise = metadata;
     }
 
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE> {
         GGSWPrepared {
-            encryption_metadata: crate::layouts::LWEInfos::encryption_metadata(&self.inner),
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,

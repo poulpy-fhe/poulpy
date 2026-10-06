@@ -69,8 +69,8 @@ impl<D: Data, W: ZnxWord> GGSWShare<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGSWShare<D, W> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.col0.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.col0.noise()
     }
 
     fn n(&self) -> Degree {

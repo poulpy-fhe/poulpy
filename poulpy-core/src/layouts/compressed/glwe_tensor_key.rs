@@ -31,8 +31,8 @@ impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWETensorKeyCompressed<D, 
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyCompressed<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.0.encryption_metadata()
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
     }
 
     fn n(&self) -> Degree {

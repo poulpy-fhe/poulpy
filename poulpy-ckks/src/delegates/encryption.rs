@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_core::{EncryptionMetadata, GetDistribution};
+use poulpy_core::{ComponentNoise, GetDistribution};
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
@@ -44,7 +44,11 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
             sk.to_backend_ref().n().as_usize(),
         )?;
         BE::ckks_encrypt_sk_impl(self, ct, pt, sk, source_xe, source_xa, scratch)?;
-        ct.set_encryption_metadata(Some(EncryptionMetadata::from_secret_at(*sk.to_backend_ref().dist(), ct.k())));
+        ct.set_noise(Some(ComponentNoise::from_secret_at(
+            *sk.to_backend_ref().dist(),
+            ct.k(),
+            ct.rank().as_usize(),
+        )));
         Ok(())
     }
 }

@@ -12,7 +12,7 @@ pub(crate) fn mhe_ggsw_share_aggregate_derived<BE: GGLWEPatCompressedImpl>(
     // Every part is checked before any is summed, so a rejected share leaves `res` unchanged.
     for (res_part, a_part) in res.parts().zip(a.parts()) {
         assert!(res_part.seed() == a_part.seed(), "invalid aggregation: seeds differ");
-        crate::reference::aggregate_metadata(res_part.encryption_metadata(), a_part.encryption_metadata());
+        crate::reference::aggregate_metadata(res_part.noise(), a_part.noise());
     }
     for (res_part, a_part) in res.parts_mut().zip(a.parts()) {
         BE::gglwe_pat_compressed_aggregate_assign(module, res_part, a_part);

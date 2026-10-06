@@ -22,7 +22,7 @@ use crate::{
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPreparedFactory, GLWEPublicKey,
+        GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPreparedFactory, GLWEPublicKey,
         GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         ModuleCoreCompressedAlloc, Rank,
         compressed::{GLWECompressed, GLWEDecompress, GLWEPublicKeyDecompress},
@@ -178,8 +178,8 @@ where
         );
         assert_canonical(&ct);
         assert_eq!(
-            ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
+            ct.noise(),
+            Some(crate::ComponentNoise::from_secret_at(sk.dist, ct.k(), ct.rank().as_usize()))
         );
 
         let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -277,11 +277,11 @@ where
 
         let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.decompress_glwe(&mut ct, &ct_compressed);
-        assert_eq!(ct.encryption_metadata(), ct_compressed.encryption_metadata());
+        assert_eq!(ct.noise(), ct_compressed.noise());
         assert_canonical(&ct);
         assert_eq!(
-            ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
+            ct.noise(),
+            Some(crate::ComponentNoise::from_secret_at(sk.dist, ct.k(), ct.rank().as_usize()))
         );
 
         let noise_have: f64 = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -364,8 +364,8 @@ where
         module.glwe_encrypt_zero_sk(&mut ct, &sk_prepared, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         assert_canonical(&ct);
         assert_eq!(
-            ct.encryption_metadata(),
-            Some(crate::EncryptionMetadata::from_secret_at(sk.dist, ct.k()))
+            ct.noise(),
+            Some(crate::ComponentNoise::from_secret_at(sk.dist, ct.k(), ct.rank().as_usize()))
         );
 
         // Reproduce the error independently at the ciphertext's partial-limb
@@ -600,7 +600,7 @@ where
             // Independently account for inherited key error, the selected
             // fresh-error grid, and final rounding. The high-precision cases
             // must meet their reduced bound, not the equal-precision bound.
-            let (_, expected_variance) = expected_public_key_noise(rank, n, base2k, k_ct, k_pk);
+            let (_, expected_variance, _) = expected_public_key_noise(rank, n, base2k, k_ct, k_pk);
             let noise_want = expected_variance.sqrt().log2() - k_ct as f64;
             let noise_want_tol: f64 = noise_want + 1.05_f64.log2();
             assert!(
@@ -645,7 +645,7 @@ where
 
 // Independent test calculation for the ternary probability-1/2 fixtures.
 // Repeated quartering deliberately differs from the planner's integer search.
-fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_pk: usize) -> (usize, f64) {
+fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_pk: usize) -> (usize, f64, Vec<f64>) {
     let fold = rank as f64 * n as f64 * 0.5;
     let inherited = (DEFAULT_SIGMA_XE.powi(2) * (-2.0 * (k_pk - k) as f64).exp2()) * fold;
     let rounding = (1.0 + fold) / 4.0;
@@ -653,7 +653,7 @@ fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_p
     let prefix_variance = fold * (1.0 + fold) * tail.powi(2);
     let mut fresh = DEFAULT_SIGMA_XE.powi(2) * (1.0 + fold);
     let mut sample_k = k;
-    let (combined, work_k) = loop {
+    let (combined, cut, work_k) = loop {
         let work_k = (sample_k.div_ceil(base2k) * base2k).min(k_pk);
         let cut = if work_k == k_pk {
             0.0
@@ -666,18 +666,41 @@ fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_p
             (inherited.sqrt() + cut.sqrt()).powi(2)
         };
         if sample_k == k_pk || combined + fresh <= rounding {
-            break (combined, work_k);
+            break (combined, cut, work_k);
         }
         fresh *= 0.25;
         sample_k += 1;
     };
     let scale = (-2.0 * (sample_k - k) as f64).exp2();
-    // Preserve the existing addition order, including exact serialized bits.
+    // Keep the independently computed phase estimate as a check on the split.
     let variance = combined
         + DEFAULT_SIGMA_XE.powi(2) * fold * scale
         + DEFAULT_SIGMA_XE.powi(2) * scale
         + if work_k > k { rounding } else { 0.0 };
-    (sample_k, variance)
+    let raw_cut = cut / (1.0 + fold);
+    let raw_fresh = DEFAULT_SIGMA_XE.powi(2) * scale;
+    let raw_rounding = if work_k > k { 0.25 } else { 0.0 };
+    let components: Vec<f64> = (0..=rank)
+        .map(|index| {
+            let raw_inherited = if index == 0 { inherited } else { 0.0 };
+            let combined = if cut == 0.0 {
+                raw_inherited
+            } else if inherited == 0.0 {
+                raw_cut
+            } else {
+                // A common Young split bounds inherited/prefix covariance
+                // in each raw coefficient before secret multiplication.
+                raw_inherited
+                    + raw_cut
+                    + raw_inherited * (cut.sqrt() / inherited.sqrt())
+                    + raw_cut * (inherited.sqrt() / cut.sqrt())
+            };
+            combined + raw_fresh + raw_rounding
+        })
+        .collect();
+    let reconstructed = components[0] + n as f64 * 0.5 * components[1..].iter().sum::<f64>();
+    assert!((reconstructed - variance).abs() <= variance * 1e-12);
+    (sample_k, variance, components)
 }
 
 /// `glwe_public_key_generate` and `glwe_encrypt_pk` equal their per-entry formulas replayed from the same sources.
@@ -729,7 +752,7 @@ where
                 k: (k + extra).into(),
                 ..infos
             };
-            let (sample_k, expected_variance) = expected_public_key_noise(rank, n, base2k, k, k + extra);
+            let (sample_k, _, expected_components) = expected_public_key_noise(rank, n, base2k, k, k + extra);
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
                     .glwe_encrypt_pk_tmp_bytes(&infos, &pk_infos)
@@ -759,7 +782,7 @@ where
                     let mut key: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pk_infos);
                     module.glwe_encrypt_zero_sk(&mut key, &sk_prepared, &mut xe, &mut xa, &mut scratch.borrow());
                     module.glwe_normalize_assign(&mut key, &mut scratch.borrow());
-                    key.encryption_metadata = Some(crate::EncryptionMetadata::from_secret_at(*sk.dist(), pk_infos.k));
+                    key.noise = Some(crate::ComponentNoise::from_secret_at(*sk.dist(), pk_infos.k, rank));
                     key
                 })
                 .collect();
@@ -890,12 +913,16 @@ where
                 &mut Source::new([6u8; 32]),
                 &mut scratch.borrow(),
             );
-            want.encryption_metadata = Some(
-                crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k)
-                    .with_fresh_noise(crate::FreshNoiseEstimate::new(expected_variance, infos.k)),
+            want.noise = Some(
+                crate::ComponentNoise::from_secret_at(*sk.dist(), infos.k, rank).with_components(
+                    expected_components
+                        .into_iter()
+                        .map(|variance| crate::FreshNoiseEstimate::new(variance, infos.k))
+                        .collect(),
+                ),
             );
-            assert_eq!(
-                ct, want,
+            assert!(
+                ct == want,
                 "rank={rank}, pk extra precision={extra}, sample precision={sample_k}"
             );
 

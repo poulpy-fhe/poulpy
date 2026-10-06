@@ -39,7 +39,7 @@ impl_automorphism_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_automorphism(self, res, a, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -47,7 +47,7 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_assign(self, res, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_add<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -56,7 +56,7 @@ impl_automorphism_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_add(self, res, a, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_add_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -64,7 +64,7 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_add_assign(self, res, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_sub<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -73,7 +73,7 @@ impl_automorphism_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_sub(self, res, a, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_sub_negate<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -82,7 +82,7 @@ impl_automorphism_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_sub_negate(self, res, a, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_sub_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -90,7 +90,7 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_sub_assign(self, res, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_sub_negate_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -98,7 +98,7 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -121,7 +121,7 @@ impl_automorphism_delegate!(
         A: GGSWToBackendRef<BE> + GGSWInfos,
     {
         BE::ggsw_automorphism(self, res, a, key, tsk, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn ggsw_automorphism_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
@@ -129,7 +129,7 @@ impl_automorphism_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
         BE::ggsw_automorphism_assign(self, res, key, tsk, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );
 
@@ -157,7 +157,7 @@ impl_automorphism_delegate!(
         A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     {
         BE::glwe_automorphism_key_automorphism(self, res, a, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     fn glwe_automorphism_key_automorphism_assign<R>(
@@ -170,6 +170,6 @@ impl_automorphism_delegate!(
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
     {
         BE::glwe_automorphism_key_automorphism_assign(self, res, key, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 );

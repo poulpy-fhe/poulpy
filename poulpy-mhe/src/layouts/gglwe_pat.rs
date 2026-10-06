@@ -30,8 +30,8 @@ where
 impl<D: Data, W: ZnxWord> Eq for GGLWEPat<D, W> where GGLWE<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPat<D, W> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.inner.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.inner.noise()
     }
 
     fn n(&self) -> Degree {
@@ -92,8 +92,8 @@ impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GGLWEPat<D, BE::ZnxWord>
 where
     GGLWE<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
-    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.inner, metadata);
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GGLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {

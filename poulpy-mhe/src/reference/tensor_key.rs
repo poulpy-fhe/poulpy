@@ -107,12 +107,12 @@ where
                         // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
                         let mut cell = res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2);
                         self.glwe_encrypt_pk_at_col(&mut cell, &pt, 1 + a, pk, source_xu, source_xe, &mut scratch_1.borrow());
-                        metadata = cell.encryption_metadata();
+                        metadata = cell.noise();
                     }
                 }
             }
         }
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(res, metadata);
+        GGLWEToBackendMut::<BE>::set_noise(res, metadata);
         scratch.wipe(tmp_bytes);
     }
 }

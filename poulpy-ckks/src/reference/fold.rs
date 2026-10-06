@@ -789,7 +789,7 @@ fn merge<'s, BE, D, S>(
         module.glwe_add_assign(dst, &shifted);
         module.glwe_normalize_assign(dst, scratch);
     }
-    dst.set_encryption_metadata(None);
+    dst.set_noise(None);
 }
 
 /// Writes the component of `src` at `X^j`, `X^(-j)·src` restricted to `X^g`, into
@@ -819,7 +819,7 @@ where
 {
     let src = src.to_backend_ref();
     let canonical = src.is_canonical();
-    dst.set_encryption_metadata(None);
+    dst.set_noise(None);
     {
         let mut view = dst.to_backend_mut();
         for col in 0..=src.rank().as_usize() {

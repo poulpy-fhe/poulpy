@@ -121,17 +121,23 @@ instance the key rests on. A single ephemeral would give `r + 1` ring-LWE
 samples of degree `n` in one secret, so parameters sized for dimension `n r`
 would not protect it.
 
-## Encryption metadata
+## Component noise
 
 Encryption and construction of fresh collective keys or ciphertexts derive
-`EncryptionMetadata` for their outputs. Secret provenance records the base
-distribution and number of secret contributors. The separate
-`FreshNoiseEstimate` records effective phase variance in integer coefficient
-units at the stored creation precision `k`.
-Its square root is the effective fresh sigma; multiplying that sigma by
+`ComponentNoise` for their outputs. Secret provenance records the base
+distribution and number of secret contributors. The `noise` field and
+`LWEInfos::noise()` accessor hold `rank + 1` terms in `[body, mask_0, ...]`
+order. Each `FreshNoiseEstimate` records coefficient-noise variance before
+secret weighting, in integer units at the common creation precision `k`.
+Secret-key encryption records `sigma_fresh^2` in the body and zero in each
+mask. Scalar LWE stores one term per scalar mask coefficient.
+The square root of each variance is its effective fresh sigma; multiplying that sigma by
 `2^-k` gives its torus scale. `variance_at` and `std_dev_at` express the same
 historical estimate on another precision grid without adding rounding error.
 Positive infinity denotes an unbounded estimate, including numeric overflow.
+`phase_noise(n)` reconstructs the GLWE estimate as
+`body + n*E[S^2]*sum(masks)`; `lwe_phase_noise()` uses scalar products and
+the LWE secret dimension for fixed-weight and block distributions.
 
 Fresh ciphertexts derive their phase-error estimate and sampling precision
 from the key's metadata. Let the output precision be `k`, public-key precision
@@ -166,11 +172,15 @@ The inherited original-key term `I` depends on the key's error and precision;
 truncation introduces `T(d)` in addition to that rescaled error.
 
 Fresh errors are added to the truncated product at `k_sample`, and the result
-is normalized directly to `k` once. Metadata records
+is normalized directly to `k` once. The component terms recover the phase estimate
 `V_ct = C(d) + F*2^(-2*d) + R` at precision `k`, where `R = Q` when `w > k`
 and zero otherwise. Adding final rounding as an independent variance follows
 the library's noise-model approximation; the output-rounding error need not
 actually be independent of the existing phase error.
+Inherited and truncation errors are recorded per component using a common
+Young-inequality split that preserves `C(d)` after secret weighting. Fresh
+body and mask errors are added separately, with `1/4` output-rounding
+variance per component when `w > k`. Intentional flooding affects only the body.
 The threshold makes construction noise no larger than the modeled final
 rounding contribution when attainable, so their sum is at most `2*Q`.
 
@@ -196,7 +206,8 @@ Re-encryption replaces the ciphertext's previous metadata.
 The estimate accounts for inherited public-key error and amplification during
 key generation or protocol finalization. It is a variance model, not an exact
 distribution descriptor for sums or products of errors. A whole GGSW uses the
-largest column estimate. Aggregation can sum independent error variances;
+largest estimate for each component across its columns. Aggregation can sum
+independent error variances;
 when binary ephemerals reuse one public key, a conservative sum of sigmas
 accounts for possible covariance.
 
@@ -210,13 +221,16 @@ arithmetic used during construction.
 
 Copies, compression, preparation and backend transfers preserve the recorded
 estimate and its creation precision, even when the destination's precision
-differs. They also preserve an absent tag on an evaluated ciphertext. Backend
+differs. A copy that changes rank selects the corresponding leading terms
+or appends zero-noise masks. Copies also preserve an absent tag on an evaluated
+ciphertext. Backend
 views copy metadata by value, so an operation that records or clears metadata
 must update the owner through its setter.
 
-Equality includes the fresh estimate and its precision. The `PNM2` wire format
-preserves them and rejects earlier metadata versions; `PNM1` does not contain
-enough information to reconstruct amplified fresh noise.
+Equality includes all component estimates and their precision. The `PNM3` wire
+format preserves them and validates the component count against the ciphertext
+shape. Earlier metadata versions are rejected: `PNM1` lacks amplified fresh
+noise, and `PNM2` stores only a phase estimate without its component breakdown.
 
 ## Testing a replacement
 

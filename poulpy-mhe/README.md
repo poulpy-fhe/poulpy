@@ -56,27 +56,30 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 
 ## Encryption provenance
 
-Keys and ciphertexts expose derived provenance through `encryption_metadata()`.
-The secret's base distribution and party count are separate from `fresh_noise()`,
-an effective phase-error variance estimate tied to its creation precision.
-`variance_at(k)` and `std_dev_at(k)` convert that estimate to another precision.
-Compression, preparation and serialization preserve both parts.
+Keys and ciphertexts expose `ComponentNoise` through `noise()`. Its
+`components()` contains `rank + 1` raw variance estimates in body-then-mask order,
+before multiplication by secret coefficients. It separately records the secret's
+base distribution and party count. `phase_noise(n)` combines those components
+with the secret's second moment; `variance_at(k)` and `std_dev_at(k)` convert
+that estimate to another precision. Compression, preparation and serialization
+preserve the component estimates and provenance.
 
-Secret-share aggregation adds independent error variances and secret party
-counts. Public-key protocols retain the destination secret's party count while
+Secret-share aggregation adds component variances and secret party counts.
+Collective public keys have body variance equal to the sum of their parties'
+encryption variances and zero mask variances. Public-key protocols retain the destination secret's party count while
 combining their generated errors, including inherited public-key error, fresh
 mask error and any selected flood. Tensor-key and GGSW construction record their
-larger phase errors; a GGSW uses its largest column estimate. Noncentered binary
+larger component errors; a GGSW takes each component's maximum across its columns. Noncentered binary
 ephemerals require a conservative covariance bound when reusing a public key.
 The public key's ephemeral sampling law must match its recorded base secret law.
 
 These are fresh construction estimates, not exact distributions or live noise
 tracking after evaluation. Homomorphic operations clear output encryption
-metadata. Key-switch share estimates describe newly generated construction
+noise. Key-switch share estimates describe newly generated construction
 error; finalization clears the ciphertext tag because it also contains the
 input's existing phase error and precision-conversion error. See the
 [fresh-noise contract](docs/mhe-contracts.md#share-metadata) for the model's limits.
-Backend views copy metadata by value, as they do precision and canonical flags,
+Backend views clone the noise snapshot, as they copy precision and canonical flags,
 so pass the owner to a protocol when its metadata must be updated.
 
 ## Smudging

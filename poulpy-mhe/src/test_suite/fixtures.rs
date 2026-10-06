@@ -167,6 +167,9 @@ where
         }
         assert_collective_metadata(&acc, i + 1);
         assert_fresh_noise(&acc, (i + 1) as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2), layout.k);
+        let mut components = vec![0.0; layout.rank.as_usize() + 1];
+        components[0] = (i + 1) as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2);
+        assert_noise_components(&acc, &components);
     }
     let mut encoded = Vec::new();
     acc.write_to(&mut encoded).unwrap();
@@ -312,7 +315,7 @@ pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
 /// The aggregate preserves the base law and records the number of independent
 /// secret contributions, including after conversion to a prepared key.
 pub(crate) fn assert_collective_metadata<A: poulpy_core::layouts::LWEInfos>(infos: &A, parties: usize) {
-    let metadata = infos.encryption_metadata().expect("derived encryption provenance");
+    let metadata = infos.noise().expect("derived encryption provenance");
     assert_eq!(metadata.parties(), parties as u64);
     assert_eq!(metadata.secret_distribution().parties(), parties as u64);
     assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(0.5));
@@ -324,13 +327,29 @@ pub(crate) fn assert_fresh_noise<A: poulpy_core::layouts::LWEInfos>(
     expected_variance: f64,
     precision: TorusPrecision,
 ) {
-    let estimate = infos.encryption_metadata().expect("derived fresh noise").fresh_noise();
+    let noise = infos.noise().expect("derived fresh noise");
+    assert_eq!(noise.components().len(), noise.rank() + 1);
+    assert!(noise.components().iter().all(|component| component.precision() == precision));
+    let estimate = noise.phase_noise(infos.n().as_usize());
     assert_eq!(estimate.precision(), precision);
     assert!(
         (estimate.variance() - expected_variance).abs() <= 1e-12 * expected_variance.max(1.0),
         "fresh variance {} differs from {expected_variance}",
         estimate.variance()
     );
+}
+
+/// Assert raw variances before the mask components are weighted by the secret.
+pub(crate) fn assert_noise_components<A: poulpy_core::layouts::LWEInfos>(infos: &A, expected: &[f64]) {
+    let noise = infos.noise().expect("derived component noise");
+    assert_eq!(noise.components().len(), expected.len());
+    for (component, expected) in noise.components().iter().zip(expected) {
+        assert!(
+            (component.variance() - expected).abs() <= 1e-12 * expected.max(1.0),
+            "component variance {} differs from {expected}",
+            component.variance()
+        );
+    }
 }
 
 /// Independently enumerate the small test precisions. Sampling error quarters

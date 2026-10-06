@@ -63,7 +63,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
 {
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
     assert!(
         res.dnum().as_u32() <= a.dnum().as_u32(),
         "res dnum: {} > a dnum: {}",
@@ -139,7 +139,7 @@ pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R>(
     M: GaloisElement + GLWEKeyswitch<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
 {
-    res.set_encryption_metadata(None);
+    res.set_noise(None);
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
 
     let cols_out: usize = (key.rank_out() + 1).into();

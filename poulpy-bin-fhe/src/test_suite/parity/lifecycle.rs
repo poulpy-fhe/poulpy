@@ -447,8 +447,8 @@ where
                     )
                 },
             );
-            assert!(expected.bits.iter().all(|bit| bit.encryption_metadata().is_some()));
-            assert!(actual.bits.iter().all(|bit| bit.encryption_metadata().is_some()));
+            assert!(expected.bits.iter().all(|bit| LWEInfos::noise(bit).is_some()));
+            assert!(actual.bits.iter().all(|bit| LWEInfos::noise(bit).is_some()));
             assert_eq!(observe(module, &expected), observe(module, &actual));
         }
     }

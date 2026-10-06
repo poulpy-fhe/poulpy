@@ -110,7 +110,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)?;
-        output.set_encryption_metadata(None);
+        output.set_noise(None);
         Ok(())
     }
 
@@ -127,7 +127,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)?;
-        output.set_encryption_metadata(None);
+        output.set_noise(None);
         Ok(())
     }
 
@@ -146,7 +146,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
         paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)?;
-        output.set_encryption_metadata(None);
+        output.set_noise(None);
         Ok(())
     }
 
@@ -165,7 +165,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
         paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)?;
-        output.set_encryption_metadata(None);
+        output.set_noise(None);
         Ok(())
     }
 }

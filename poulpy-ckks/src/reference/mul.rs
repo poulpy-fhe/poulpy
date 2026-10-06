@@ -184,7 +184,7 @@ pub trait CKKSMulReference<BE: Backend> {
             scratch,
             |tmp, dst_ref, s| {
                 glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s);
-                GLWEToBackendMut::<BE>::set_encryption_metadata(tmp, None);
+                GLWEToBackendMut::<BE>::set_noise(tmp, None);
             },
         )
     }

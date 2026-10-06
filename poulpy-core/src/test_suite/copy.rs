@@ -36,15 +36,34 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base = params.base2k;
-    let provenance = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(0.5)));
-    let stale_provenance = Some(crate::EncryptionMetadata::from_secret(crate::Distribution::TernaryProb(1.0)));
+    let provenance = |rank| {
+        Some(crate::ComponentNoise::from_secret(
+            crate::Distribution::TernaryProb(0.5),
+            rank,
+        ))
+    };
+    let stale_provenance = |rank| {
+        Some(crate::ComponentNoise::from_secret(
+            crate::Distribution::TernaryProb(1.0),
+            rank,
+        ))
+    };
     let half = 1i64 << (base - 1);
     // Extremal digits, carries, both signs and rounding ties.
     let digits = [-half, -half + 1, -9, -8, -7, -1, 0, 1, 7, 8, 9, half - 1];
     for src_k in [2 * base, 2 * base - 3] {
-        for (src_rank, dst_rank) in [(0usize, 0usize), (0, 2), (1, 1), (2, 2)] {
+        // Rank-zero shares may carry body noise. Copying them into a larger
+        // rank preserves that term and appends zero-noise mask components.
+        for (src_rank, dst_rank, tagged) in [
+            (0usize, 0usize, false),
+            (0, 0, true),
+            (0, 2, false),
+            (0, 2, true),
+            (1, 1, true),
+            (2, 2, true),
+        ] {
             let mut src: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc(base.into(), src_k.into(), src_rank.into());
-            src.encryption_metadata = if src_rank == 0 { None } else { provenance };
+            src.noise = if tagged { provenance(src_rank) } else { None };
             for col in 0..=src_rank {
                 for limb in 0..src_k.div_ceil(base) {
                     let padding = ((limb + 1) * base).saturating_sub(src_k);
@@ -61,7 +80,7 @@ where
                     let mut dst: GLWE<BE::OwnedBuf, BE::ZnxWord> =
                         module.glwe_alloc(dst_base.into(), (dst_k + dst_base).into(), dst_rank.into());
                     dst.set_k(dst_k.into());
-                    dst.encryption_metadata = stale_provenance;
+                    dst.noise = stale_provenance(dst_rank);
                     dst.data.raw_mut().fill(0x55);
                     let layout = dst.glwe_layout();
                     let tmp_bytes = module.glwe_copy_tmp_bytes(&dst, &src);
@@ -71,7 +90,10 @@ where
                     let mut scratch = ScratchOwned::<BE>::alloc(tmp_bytes);
                     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
                     assert_eq!(dst.glwe_layout(), layout, "copy changed destination layout");
-                    assert_eq!(dst.encryption_metadata(), src.encryption_metadata());
+                    assert!(
+                        dst.noise() == src.noise().map(|noise| noise.with_rank(dst_rank)),
+                        "copy noise: rank {src_rank} -> {dst_rank}, tagged={tagged}"
+                    );
                     assert_eq!(src.data.raw(), original, "copy changed the source");
                     assert_canonical(&dst.data, dst_base, dst_k);
                     for col in 0..=dst_rank {
@@ -113,52 +135,52 @@ where
     assert_eq!(dst.data.raw(), src.data.raw());
 
     // Every evaluation clears freshness, even matching inputs or an identity.
-    src.encryption_metadata = provenance;
+    src.noise = provenance(1);
     module.glwe_rotate(1, &mut dst, &src);
-    assert_eq!(dst.encryption_metadata(), None);
+    assert_eq!(dst.noise(), None);
     module.glwe_add_into(&mut dst, &src, &src);
-    assert_eq!(dst.encryption_metadata(), None);
+    assert_eq!(dst.noise(), None);
     module.glwe_sub_assign(&mut dst, &src);
-    assert_eq!(dst.encryption_metadata(), None);
-    src.encryption_metadata = stale_provenance;
+    assert_eq!(dst.noise(), None);
+    src.noise = stale_provenance(1);
     module.glwe_add_assign(&mut dst, &src);
-    assert_eq!(dst.encryption_metadata(), None);
+    assert_eq!(dst.noise(), None);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_normalize_tmp_bytes());
     module.glwe_normalize(&mut dst, &src, &mut scratch.borrow());
-    assert_eq!(dst.encryption_metadata(), None);
+    assert_eq!(dst.noise(), None);
 
     // Plaintext arithmetic also invalidates the fresh-encryption estimate.
-    src.encryption_metadata = provenance;
+    src.noise = provenance(1);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(dst.data.size()));
     for rank in [0usize, 1] {
         let mut other: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc(base.into(), (2 * base).into(), rank.into());
-        for metadata in [None, provenance, stale_provenance] {
-            other.encryption_metadata = metadata;
+        for metadata in [None, provenance(rank), stale_provenance(rank)] {
+            other.noise = metadata.clone();
             let expected = None;
             module.glwe_add_into(&mut dst, &src, &other);
-            assert_eq!(dst.encryption_metadata(), expected, "add: rank={rank}, metadata={metadata:?}");
+            assert_eq!(dst.noise(), expected, "add: rank={rank}, metadata={metadata:?}");
             module.glwe_add_into(&mut dst, &other, &src);
-            assert_eq!(dst.encryption_metadata(), expected, "reversed add: rank={rank}");
+            assert_eq!(dst.noise(), expected, "reversed add: rank={rank}");
             module.glwe_sub(&mut dst, &src, &other);
-            assert_eq!(dst.encryption_metadata(), expected, "sub: rank={rank}");
+            assert_eq!(dst.noise(), expected, "sub: rank={rank}");
             module.glwe_sub(&mut dst, &other, &src);
-            assert_eq!(dst.encryption_metadata(), expected, "reversed sub: rank={rank}");
-            dst.encryption_metadata = provenance;
+            assert_eq!(dst.noise(), expected, "reversed sub: rank={rank}");
+            dst.noise = provenance(1);
             module.glwe_add_assign(&mut dst, &other);
-            assert_eq!(dst.encryption_metadata(), expected, "add assign: rank={rank}");
-            dst.encryption_metadata = provenance;
+            assert_eq!(dst.noise(), expected, "add assign: rank={rank}");
+            dst.noise = provenance(1);
             module.glwe_sub_assign(&mut dst, &other);
-            assert_eq!(dst.encryption_metadata(), expected, "sub assign: rank={rank}");
-            dst.encryption_metadata = provenance;
+            assert_eq!(dst.noise(), expected, "sub assign: rank={rank}");
+            dst.noise = provenance(1);
             module.glwe_sub_negate_assign(&mut dst, &other);
-            assert_eq!(dst.encryption_metadata(), expected, "sub negate assign: rank={rank}");
+            assert_eq!(dst.noise(), expected, "sub negate assign: rank={rank}");
             let mask = dst.data.at(1, 0).to_vec();
-            dst.encryption_metadata = provenance;
+            dst.noise = provenance(1);
             module.glwe_lsh_add(&mut dst, &other, 1, &mut scratch.borrow());
-            assert_eq!(dst.encryption_metadata(), expected, "shift add: rank={rank}");
-            dst.encryption_metadata = provenance;
+            assert_eq!(dst.noise(), expected, "shift add: rank={rank}");
+            dst.noise = provenance(1);
             module.glwe_lsh_sub(&mut dst, &other, 1, &mut scratch.borrow());
-            assert_eq!(dst.encryption_metadata(), expected, "shift sub: rank={rank}");
+            assert_eq!(dst.noise(), expected, "shift sub: rank={rank}");
             if rank == 0 {
                 assert_eq!(dst.data.at(1, 0), mask, "plaintext shifts changed the mask");
             }

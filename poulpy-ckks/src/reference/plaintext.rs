@@ -42,7 +42,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
-        ct.set_encryption_metadata(None);
+        ct.set_noise(None);
         ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
@@ -73,7 +73,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
-        ct.set_encryption_metadata(None);
+        ct.set_noise(None);
         ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
@@ -107,7 +107,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
-        ct.set_encryption_metadata(None);
+        ct.set_noise(None);
         ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
@@ -133,7 +133,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
-        ct.set_encryption_metadata(None);
+        ct.set_noise(None);
         ct.set_canonical(false);
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);

@@ -47,40 +47,45 @@ follows the
 
 ## Share metadata
 
-A share carries the secret provenance and effective fresh phase-error estimate
-of the core object it finalizes into. The secret distribution records its base
-law and number of independently summed parties. `FreshNoiseEstimate` records a
-separate centered variance and its precision: an estimate `V` at precision `k`
+A share carries `ComponentNoise`: secret provenance and `rank + 1` effective
+fresh component variances, ordered as body followed by masks. Each mask variance
+is stored before secret weighting. The secret distribution records its base law
+and number of independently summed parties. Each `FreshNoiseEstimate` records a
+centered variance and its precision: an estimate `V` at precision `k`
 has torus variance `V * 2^(-2k)`. Rescaling the estimate does not change the stored
 secret count. The estimate is not an assertion that the resulting distribution
-is Gaussian.
+is Gaussian. `phase_noise(n)` computes `V_body + n * E[S²] * sum(V_masks)`.
+Rank-zero shares have one body component even when their secret provenance names
+a nonzero secret distribution.
 
 Seeded share aggregation checks compatible base laws and adds independent
-variances after bringing them to the same precision, while also adding secret
+component variances after bringing them to the same precision, while also adding secret
 party counts. Public-key ciphertext and tensor-key shares retain the destination
-secret count. Their fresh variance includes public-key error multiplied by new
-ephemerals, fresh mask error multiplied by the collective secret, and body noise.
+secret count. Their raw variances include public-key error multiplied by new
+ephemerals, fresh mask error, and body noise. Secret weighting is applied only
+when computing the phase estimate.
 Public-key encryption derives an intermediate sampling precision and multiplies
 only the required prefix of prepared-key limbs. The selector brings inherited
 key error, amplified prefix-truncation error and fresh error below the modeled
 output-rounding variance when possible. Final normalization occurs once, at the
-share's precision; metadata records the resulting phase estimate on that output
+share's precision; `noise()` records the resulting component estimates on that output
 grid. A deliberately selected flood is added afterward at the output precision
 and is excluded from this precision-selection target. Missing or unbounded
 provenance, or an unattainable target, selects the full key precision.
 For a centered base secret law the independent ephemeral contributions give
 additive variances. For a noncentered law, reusing a public key correlates its
-error across shares; the scalar estimate uses the conservative squared sum of
+error across shares; each component uses the conservative squared sum of
 standard deviations. Compatibility checks compare secret provenance, not the
 changing fresh variance. The public key's ephemeral sampling law must equal its
 recorded base secret law; changing that tag independently is rejected before
 share generation mutates output or consumes randomness.
 
-A GGSW's first column carries ordinary aggregated encryption error. Other
-columns also contain the circular terms `E_s * U - E_u * S` and key-switching
-error. Their variance model uses the secret and ephemeral second moments,
-including nonzero means, and bounds each gadget digit by `2^(B-1)`. The stored
-estimate is the largest column estimate. Key coverage is checked before this
+A GGSW's first column carries ordinary aggregated body noise. Other columns
+contain `E_s * U` in the body and `E_u` in each mask, plus each component's
+key-switching and rounding error. Their variance model uses the ephemeral
+second moment, including nonzero means, and bounds each gadget digit by
+`2^(B-1)`. The stored estimate takes each component's maximum over all gadget
+columns. The secret's second moment enters when deriving phase noise. Key coverage is checked before this
 construction, so no gadget truncation residue is omitted.
 
 Private key-switch and encryption-to-shares transcripts record their selected
@@ -90,7 +95,7 @@ uniform flood has variance `(2^(2*bits)-1)/12`; its mean is `-1/2`, and that bia
 is not included in the centered variance. Public key-switching replaces the
 ordinary body error with the flood. These transcripts describe newly generated
 share-construction error at its original grid. Key-switch finalization clears
-the resulting ciphertext's encryption metadata to `None`: the output also
+the resulting ciphertext's `noise()` to `None`: the output also
 contains the input ciphertext's existing error and any precision-conversion
 error, whose composition is not tracked.
 
@@ -100,10 +105,11 @@ conversion error. Its effective model adds one unit of variance at the share's
 precision to the flood variance. Equal or wider shares add no conversion term.
 
 As in core's noise models, precision reduction adds a modeled half-ulp variance
-per ciphertext component, folded against the secret. Adding that rounding term
+per ciphertext component. The components are folded against the secret only
+when deriving phase noise. Adding that rounding term
 independently is an approximation, not a proof that it is uncorrelated with
 other errors. Unknown secret moments produce an infinite estimate while keeping
-secret provenance. Homomorphic operations clear fresh metadata from their
+secret provenance. Homomorphic operations clear fresh component noise from their
 outputs. Copies, preparation, compression and serialization preserve it, and
 fresh key-generation or encryption factories record it after their internal
 arithmetic. Callers still choose protocol parameters using the complete error

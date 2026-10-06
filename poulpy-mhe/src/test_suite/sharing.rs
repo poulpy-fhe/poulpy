@@ -84,6 +84,7 @@ where
                 if i > 0 {
                     module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
                 }
+                super::fixtures::assert_noise_components(&acc, &[(i + 1) as f64 * sigma * sigma]);
             }
             // The masks span the whole torus at the share's precision, top bits and bottom bit.
             for secret in &secrets[1..] {

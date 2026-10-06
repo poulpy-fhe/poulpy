@@ -13,7 +13,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIEmbed<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_ci_embed(self, res, a);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }
 
@@ -32,6 +32,6 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECITrace<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_ci_trace(self, res, a, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }

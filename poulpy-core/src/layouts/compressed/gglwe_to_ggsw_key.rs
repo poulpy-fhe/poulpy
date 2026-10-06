@@ -43,7 +43,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            encryption_metadata: key_i.encryption_metadata,
+            noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -79,7 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            encryption_metadata: key_i.encryption_metadata,
+            noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -93,7 +93,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            encryption_metadata: key_i.encryption_metadata,
+            noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -122,8 +122,8 @@ impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendRef<'a, BE>, ['a, BE:
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
-    fn encryption_metadata(&self) -> Option<crate::EncryptionMetadata> {
-        self.keys.first().and_then(crate::layouts::LWEInfos::encryption_metadata)
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.keys.first().and_then(crate::layouts::LWEInfos::noise)
     }
 
     fn n(&self) -> Degree {
@@ -303,7 +303,7 @@ where
         R: GGLWEToGGSWKeyToBackendMut<Self::Backend>,
         O: GGLWEToGGSWKeyCompressedToBackendRef<Self::Backend>,
     {
-        res.set_encryption_metadata(other.to_backend_ref().encryption_metadata());
+        res.set_noise(other.to_backend_ref().noise());
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
         assert_eq!(res.keys.len(), other.keys.len());
@@ -348,18 +348,20 @@ impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendRef<BE> for GGLWEToGGSWKeyCom
 
 pub trait GGLWEToGGSWKeyCompressedToBackendMut<BE: Backend>: GGLWEToGGSWKeyCompressedToBackendRef<BE> {
     /// Backend hook for recording or propagating derived encryption provenance.
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>);
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients and copies the current layout and provenance metadata.
     /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_encryption_metadata` hook.
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyCompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendMut<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> {
-    fn set_encryption_metadata(&mut self, metadata: Option<crate::EncryptionMetadata>) {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         for key in &mut self.keys {
-            key.encryption_metadata = metadata;
+            crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1)
+                .expect("noise component count does not match the ciphertext");
+            key.noise = metadata.clone();
         }
     }
 

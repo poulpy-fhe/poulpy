@@ -238,7 +238,7 @@ mod trace {
         assert!(skip <= res.log_n(), "trace skip exceeds log_n");
         let Some(first) = trace_rotations(module, res.log_n(), skip).next() else {
             module.glwe_copy(res, a, scratch);
-            res.set_encryption_metadata(None);
+            res.set_noise(None);
             return;
         };
         let atk_layout = keys
@@ -269,7 +269,7 @@ mod trace {
         }
 
         module.glwe_copy(res, &tmp, &mut scratch_1);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 
     pub(crate) fn glwe_trace_assign_derived<BE, M, R, H>(
@@ -293,7 +293,7 @@ mod trace {
         H: GetAutomorphismKey<BE>,
     {
         trace_assign_internal::<M, H, _, BE>(module, res, skip, keys, scratch);
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
     }
 }
 
@@ -479,9 +479,9 @@ mod packing {
         );
 
         for input in a.values_mut() {
-            input.set_encryption_metadata(None);
+            input.set_noise(None);
         }
-        res.set_encryption_metadata(None);
+        res.set_noise(None);
         let mut scratch_local = scratch.borrow();
         let log_n: usize = res.log_n();
         for i in 0..(log_n - log_gap_out) {

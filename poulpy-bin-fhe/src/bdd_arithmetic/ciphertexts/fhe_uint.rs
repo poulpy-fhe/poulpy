@@ -83,8 +83,8 @@ where
 }
 
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, W> {
-    fn encryption_metadata(&self) -> Option<poulpy_core::EncryptionMetadata> {
-        self.bits.encryption_metadata()
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.bits.noise()
     }
 
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
@@ -393,8 +393,8 @@ where
         self.bits.set_canonical(canonical)
     }
 
-    fn set_encryption_metadata(&mut self, metadata: Option<poulpy_core::EncryptionMetadata>) {
-        GLWEToBackendMut::<BE>::set_encryption_metadata(&mut self.bits, metadata);
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GLWEToBackendMut::<BE>::set_noise(&mut self.bits, metadata);
     }
 }
 
@@ -611,6 +611,6 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             module.glwe_copy(&mut current, &tmp.bits, &mut scratch_1);
         }
         module.glwe_copy(self, &current, &mut scratch_1);
-        self.set_encryption_metadata(None);
+        self.set_noise(None);
     }
 }

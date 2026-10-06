@@ -212,7 +212,16 @@ where
         * (2.0 * (k as f64 - key_layout.k().as_usize() as f64)).exp2();
     let rounding_variance = (1.0 + rank_n * parties * 0.5) / 4.0;
     super::fixtures::assert_fresh_noise(&ggsw, circular_variance + switching_variance + rounding_variance, layout.k());
-    assert!(ggsw.encryption_metadata().unwrap().initial_noise_variance() > parties * sigma2);
+    let mut components = vec![parties * sigma2 + 0.25; layout.rank.as_usize() + 1];
+    components[0] = circular_variance / 2.0 + switching_variance + 0.25;
+    super::fixtures::assert_noise_components(&ggsw, &components);
+    assert!(
+        poulpy_core::layouts::LWEInfos::noise(&ggsw)
+            .unwrap()
+            .phase_noise(module.n())
+            .variance()
+            > parties * sigma2
+    );
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_noise_tmp_bytes(layout));
     for row in 0..layout.dnum.as_usize() {
         for col in 0..=layout.rank.as_usize() {
@@ -319,7 +328,7 @@ where
     let ct = encrypt_integers(module, &glwe_layout, &data, &sk, &mut scratch);
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_layout);
     module.glwe_external_product(&mut res, &ct, &ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
-    assert_eq!(res.encryption_metadata(), None);
+    assert_eq!(res.noise(), None);
     let want: Vec<i64> = (0..n)
         .map(|i| if i >= SHIFT { data[i - SHIFT] } else { -data[n + i - SHIFT] })
         .collect();

@@ -2,8 +2,8 @@
 //! finalized aggregate decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionMetadata, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk,
-    GLWEEncryptPk, GLWENoise,
+    ComponentNoise, DEFAULT_SIGMA_XE, Distribution, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk,
+    GLWENoise,
     layouts::{
         GGLWE, GGLWEAtViewRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWEPlaintextLayout, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
@@ -104,10 +104,10 @@ where
                 );
                 module.glwe_pat_compressed_aggregate_assign(&mut view, &share);
                 super::fixtures::assert_collective_metadata(&view, i + 1);
-                view.encryption_metadata()
+                view.noise()
             };
             super::fixtures::assert_collective_metadata(&acc, 1);
-            GLWECompressedToBackendMut::<BE>::set_encryption_metadata(&mut acc, metadata);
+            GLWECompressedToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
             module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
@@ -116,9 +116,13 @@ where
     // Reject inconsistent provenance before changing coefficients or metadata.
     let before = acc.clone();
     let mut mismatched = share.clone();
-    GLWECompressedToBackendMut::<BE>::set_encryption_metadata(
+    GLWECompressedToBackendMut::<BE>::set_noise(
         &mut mismatched,
-        Some(EncryptionMetadata::from_secret_at(Distribution::BinaryProb(0.5), K)),
+        Some(ComponentNoise::from_secret_at(
+            Distribution::BinaryProb(0.5),
+            K,
+            RANK.as_usize(),
+        )),
     );
     super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
         module.glwe_pat_compressed_aggregate_assign(&mut acc, &mismatched);
@@ -250,7 +254,7 @@ where
                     );
                     let mut cell = dst_be.at_view_mut(row, col);
                     module.glwe_encrypt_pk(&mut cell, &pt, &pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
-                    metadata = cell.encryption_metadata();
+                    metadata = cell.noise();
                     module.vec_znx_add_assign(
                         &mut vec_znx_backend_mut::<BE>(pts_want[row * rank_in + col].data_mut()),
                         0,
@@ -260,15 +264,15 @@ where
                 }
             }
         }
-        GGLWEToBackendMut::<BE>::set_encryption_metadata(dst, metadata);
+        GGLWEToBackendMut::<BE>::set_noise(dst, metadata);
         if i == 1 {
             // Backend borrows stand in for the owned PATs.
             let metadata = {
                 let mut view = acc.to_backend_mut();
                 module.gglwe_pat_aggregate_assign(&mut view, &share.to_backend_ref());
-                view.encryption_metadata()
+                view.noise()
             };
-            GGLWEToBackendMut::<BE>::set_encryption_metadata(&mut acc, metadata);
+            GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
             module.gglwe_pat_aggregate_assign(&mut acc, &share);
         }

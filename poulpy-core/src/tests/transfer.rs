@@ -283,9 +283,12 @@ fn module_transfer_glwe_roundtrip() {
     let mut src: GLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
         src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
     fill_bytes(src.data.data_mut());
-    src.encryption_metadata = Some(
-        crate::EncryptionMetadata::from_secret_at(crate::Distribution::TernaryProb(0.3), TorusPrecision(33))
-            .with_fresh_noise(crate::FreshNoiseEstimate::new(1250.0, TorusPrecision(47))),
+    src.noise = Some(
+        crate::ComponentNoise::from_secret_at(crate::Distribution::TernaryProb(0.3), TorusPrecision(33), 2).with_components(
+            [1250.0, 3.0, 7.0]
+                .map(|variance| crate::FreshNoiseEstimate::new(variance, TorusPrecision(47)))
+                .to_vec(),
+        ),
     );
 
     let mut uploaded = dst_module.glwe_alloc_from_infos(&src);
@@ -303,9 +306,12 @@ fn module_transfer_gglwe_roundtrip() {
     let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
         src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
-    src.encryption_metadata = Some(
-        crate::EncryptionMetadata::from_secret_at(crate::Distribution::BinaryFixed(11), TorusPrecision(54))
-            .with_fresh_noise(crate::FreshNoiseEstimate::new(2300.0, TorusPrecision(61))),
+    src.noise = Some(
+        crate::ComponentNoise::from_secret_at(crate::Distribution::BinaryFixed(11), TorusPrecision(54), 2).with_components(
+            [2300.0, 5.0, 9.0]
+                .map(|variance| crate::FreshNoiseEstimate::new(variance, TorusPrecision(61)))
+                .to_vec(),
+        ),
     );
 
     let mut uploaded = dst_module.gglwe_alloc_from_infos(&src);

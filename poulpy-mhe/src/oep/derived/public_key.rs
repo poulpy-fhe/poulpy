@@ -17,14 +17,14 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedI
     assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
     assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-    let metadata = crate::reference::aggregate_metadata(res.encryption_metadata(), a.encryption_metadata());
+    let metadata = crate::reference::aggregate_metadata(res.noise(), a.noise());
     let mut res_be = res.key.to_backend_mut();
     let a = a.key.to_backend_ref();
     for l in 0..a.rank().as_usize() {
         BE::glwe_pat_compressed_aggregate_assign(module, &mut res_be.at_view_mut(l), &a.at_view(l));
     }
     drop(res_be);
-    GLWEPublicKeyCompressedToBackendMut::<BE>::set_encryption_metadata(res, metadata);
+    GLWEPublicKeyCompressedToBackendMut::<BE>::set_noise(res, metadata);
 }
 
 pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedImpl, R>(
@@ -53,5 +53,5 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedIm
         BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), &share.at_view(l), scratch);
     }
     *res.dist_mut() = dist;
-    res.set_encryption_metadata(share.encryption_metadata());
+    res.set_noise(share.noise());
 }
