@@ -4,7 +4,7 @@
 //! AVX-512-IFMA SIMD intrinsics. Their scalar reference companions live in
 //! [`super::reference`] and are used as test oracles.
 
-use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
 use super::bbc_meta::Bbc126IfmaMeta;
 use super::primes::Primes42;
@@ -20,7 +20,7 @@ pub trait Ntt3x42IfmaDFTExecute<Table> {
 
     /// Slot permutation of `X -> X^p` in this transform's layout (shared with NTT4x30).
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        poulpy_cpu_ref::reference::ntt4x30::standard::build_ntt4x30_automorphism_plan(n, p)
+        poulpy_cpu_portable::kernels::ntt4x30::standard::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 

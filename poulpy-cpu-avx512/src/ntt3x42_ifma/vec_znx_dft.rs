@@ -624,7 +624,7 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
     if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
         let mut big: VecZnxBigBackendMut<'_, NTT3x42Ifma<R>> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), shape);
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma<R>>(
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, NTT3x42Ifma<R>>(
             &mut &mut big,
             a_col,
             &add,
@@ -639,7 +639,7 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
             res, res_base2k, res_k, res_offset, res_col, &big, a_base2k, a_col, carry,
         );
     }
-    poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, NTT3x42Ifma<R>>(
+    poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT3x42Ifma<R>>(
         &mut &mut *res,
         res_base2k,
         res_k,
@@ -666,7 +666,7 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     tmp: &mut [u64],
     carry: &mut [i128],
 ) {
-    use poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::I128NormalizeOps;
+    use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::I128NormalizeOps;
     let n = a.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(R::CYCLOTOMIC_ORDER_FACTOR, 2);
@@ -1163,7 +1163,7 @@ pub(crate) fn vec_znx_dft_zero<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// Packed-layout NTT3x42 automorphism fused with accumulation: `res += automorphism(a)`.
 pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
@@ -1220,7 +1220,7 @@ unsafe fn automorphism_add_limb(n: usize, perm: &[u32], dst: &mut [u64], a: &[u6
 
 /// Packed-layout NTT3x42 automorphism.
 pub(crate) fn vec_znx_dft_automorphism<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
@@ -1319,12 +1319,11 @@ mod finish_tests {
                     let mut expected_big = module.vec_znx_big_alloc(n, 2, 5);
                     expected_big.data_mut().copy_from_slice(big.data());
                     if add_size != 0 {
-                        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
-                            &mut &mut expected_big.to_backend_mut(),
-                            1,
-                            &add_ref,
-                            0,
-                        );
+                        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
+                            _,
+                            _,
+                            NTT3x42Ifma,
+                        >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
                     }
                     for k in [0, 1, base2k, base2k + 1, 3 * base2k - 1, 5 * base2k, 6 * base2k] {
                         let mut got = host.vec_znx_alloc(n, 2, 6);
@@ -1348,7 +1347,11 @@ mod finish_tests {
                             &mut scratch.arena(),
                         );
                         let expected_ref = expected_big.to_backend_ref();
-                        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, NTT3x42Ifma>(
+                        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<
+                            _,
+                            _,
+                            NTT3x42Ifma,
+                        >(
                             &mut &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
                             base2k,
                             k,
@@ -1417,12 +1420,11 @@ mod finish_tests {
                         let mut expected_big = module.vec_znx_big_alloc(n, 2, 5);
                         expected_big.data_mut().copy_from_slice(big.data());
                         if add_size != 0 {
-                            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
-                                &mut &mut expected_big.to_backend_mut(),
-                                1,
-                                &add_ref,
-                                0,
-                            );
+                            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
+                                _,
+                                _,
+                                NTT3x42Ifma,
+                            >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
                         }
                         for offset in [
                             -(2 * base2k as i64) - 1,
@@ -1450,9 +1452,16 @@ mod finish_tests {
                                     idft_normalize_consume_ifma::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
                                         &module,
                                         &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
-                                        base2k, k, offset, 1, &mut input.to_backend_mut(), 1, base2k,
+                                        base2k,
+                                        k,
+                                        offset,
+                                        1,
+                                        &mut input.to_backend_mut(),
+                                        1,
+                                        base2k,
                                         (add_size != 0).then_some((&add_ref, 0)),
-                                        &mut vec![0; 3 * n * 5], &mut vec![0; 3 * n],
+                                        &mut vec![0; 3 * n * 5],
+                                        &mut vec![0; 3 * n],
                                     );
                                 } else {
                                     stream_finish::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
@@ -1470,7 +1479,11 @@ mod finish_tests {
                                     );
                                 }
                                 let expected_ref = expected_big.to_backend_ref();
-                                poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, NTT3x42Ifma>(
+                                poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<
+                                    _,
+                                    _,
+                                    NTT3x42Ifma,
+                                >(
                                     &mut &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
                                     base2k,
                                     k,

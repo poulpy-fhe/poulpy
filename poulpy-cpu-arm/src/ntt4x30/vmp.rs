@@ -6,9 +6,9 @@
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
+use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::{
@@ -21,7 +21,7 @@ use poulpy_hal::{
 
 use super::super::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
 use crate::NTT4x30Neon;
-use poulpy_cpu_ref::reference::ntt4x30::ntt::NttTable;
+use poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable;
 use poulpy_hal::layouts::Ring;
 
 #[derive(Clone, Copy)]
@@ -364,7 +364,7 @@ pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
     first_row: usize,
     row_step: usize,
 ) {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();

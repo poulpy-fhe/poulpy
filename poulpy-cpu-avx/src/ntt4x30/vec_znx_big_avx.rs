@@ -22,13 +22,13 @@
 //! `lsh != 0` have dedicated kernels; scalar fallback only when `base2k > 64`
 //! or `n < 4`.
 //!
-//! [`I128NormalizeOps`]: poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps
-//! [`I128BigOps`]: poulpy_cpu_ref::reference::ntt4x30::I128BigOps
+//! [`I128NormalizeOps`]: poulpy_cpu_portable::kernels::ntt4x30::I128NormalizeOps
+//! [`I128BigOps`]: poulpy_cpu_portable::kernels::ntt4x30::I128BigOps
 
 use std::arch::x86_64::*;
 
 use itertools::izip;
-use poulpy_cpu_ref::reference::znx::{get_carry_i128, get_digit_i128};
+use poulpy_cpu_portable::kernels::znx::{get_carry_i128_portable, get_digit_i128_portable};
 
 /// Floor-decompose four shifted i128 values without a signed left shift.
 #[inline(always)]
@@ -89,7 +89,7 @@ pub(super) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND:
             store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
         }
         let end = chunks * 4;
-        poulpy_cpu_ref::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
+        poulpy_cpu_portable::kernels::normalization::nfc_normalize_floor_portable::<CARRY_IN, ROUND>(
             base2k,
             lsh,
             &a[end..],
@@ -132,7 +132,7 @@ pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: b
             store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
         }
         let end = chunks * 4;
-        poulpy_cpu_ref::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
+        poulpy_cpu_portable::kernels::normalization::nfc_normalize_round_portable::<CARRY_IN, PAD>(
             base2k,
             lsh,
             padding,
@@ -151,22 +151,22 @@ pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: b
 pub(super) fn nfc_middle_step_scalar(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k, ai);
-            let co = get_carry_i128(base2k, ai, digit);
+            let digit = get_digit_i128_portable(base2k, ai);
+            let co = get_carry_i128_portable(base2k, ai, digit);
             let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k_lsh, ai);
-            let co = get_carry_i128(base2k_lsh, ai, digit);
+            let digit = get_digit_i128_portable(base2k_lsh, ai);
+            let co = get_carry_i128_portable(base2k_lsh, ai, digit);
             let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     }
 }
@@ -176,23 +176,23 @@ pub(super) fn nfc_middle_step_assign_scalar(base2k: usize, lsh: usize, res: &mut
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            let digit = get_digit_i128(base2k, ri);
-            let co = get_carry_i128(base2k, ri, digit);
+            let digit = get_digit_i128_portable(base2k, ri);
+            let co = get_carry_i128_portable(base2k, ri, digit);
             let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            let digit = get_digit_i128(base2k_lsh, ri);
-            let co = get_carry_i128(base2k_lsh, ri, digit);
+            let digit = get_digit_i128_portable(base2k_lsh, ri);
+            let co = get_carry_i128_portable(base2k_lsh, ri, digit);
             let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     }
 }
@@ -202,13 +202,13 @@ pub(super) fn nfc_final_step_assign_scalar(base2k: usize, lsh: usize, res: &mut 
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            *r = get_digit_i128(base2k, get_digit_i128(base2k, ri) + *c) as i64;
+            *r = get_digit_i128_portable(base2k, get_digit_i128_portable(base2k, ri) + *c) as i64;
         });
     } else {
         let base2k_lsh = base2k - lsh;
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            *r = get_digit_i128(base2k, (get_digit_i128(base2k_lsh, ri) << lsh) + *c) as i64;
+            *r = get_digit_i128_portable(base2k, (get_digit_i128_portable(base2k_lsh, ri) << lsh) + *c) as i64;
         });
     }
 }
@@ -1076,15 +1076,15 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
 ) {
     let extract_tail = |res: &mut [i64], src: &mut [i128]| {
         for (out, source) in res.iter_mut().zip(src) {
-            let digit = get_digit_i128(base2k, *source);
+            let digit = get_digit_i128_portable(base2k, *source);
             let value = (digit as i64).wrapping_shl(lsh as u32);
             *out = if OVERWRITE { value } else { out.wrapping_add(value) };
-            *source = get_carry_i128(base2k, *source, digit);
+            *source = get_carry_i128_portable(base2k, *source, digit);
         }
     };
     if base2k >= 64 || (FINALIZE && res_base2k >= 64) {
         if FINALIZE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_i128_portable::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else {
@@ -1131,7 +1131,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
             }
         }
         if FINALIZE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_i128_portable::<OVERWRITE>(
                 base2k,
                 lsh,
                 res_base2k,
@@ -1319,8 +1319,8 @@ mod tests {
     }
     #[test]
     fn nfc_fused_matches_scalar() {
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30AvxRayon>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30AvxRayon>();
     }
 }

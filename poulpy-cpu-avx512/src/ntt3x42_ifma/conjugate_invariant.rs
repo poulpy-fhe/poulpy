@@ -4,13 +4,13 @@ use core::arch::x86_64::{
     _mm512_add_epi64, _mm512_loadu_si512, _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_storeu_si512,
 };
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttHandleFactory,
-        conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan},
+        conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan_portable},
         vec_znx_dft::NttAutomorphismPlan,
     },
-    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_ref},
+    znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_portable},
 };
 use poulpy_hal::layouts::ConjugateInvariant;
 
@@ -94,12 +94,12 @@ impl poulpy_hal::layouts::MaxBase2k for NTT3x42Ifma<ConjugateInvariant> {
 impl ZnxAutomorphism for NTT3x42Ifma<ConjugateInvariant> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_ref(p, res, a)
+        znx_automorphism_portable(p, res, a)
     }
 }
 
@@ -121,7 +121,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, ConjugateInvariant>> for N
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -135,7 +135,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> fo
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -200,7 +200,7 @@ unsafe fn basis_change<P: PrimeSetNtt3x42Ifma>(plans: &[BasisChangeTable; 3], da
 mod tests {
     use super::*;
     use crate::ntt3x42_ifma::primes::Primes42;
-    use poulpy_cpu_ref::reference::ntt4x30::conjugate_invariant::BasisChange;
+    use poulpy_cpu_portable::kernels::ntt4x30::conjugate_invariant::BasisChange;
     use poulpy_hal::layouts::PrimeSet;
 
     #[test]

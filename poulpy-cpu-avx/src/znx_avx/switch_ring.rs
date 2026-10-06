@@ -11,9 +11,9 @@ pub unsafe fn znx_switch_ring_avx(res: &mut [i64], a: &[i64]) {
         }
 
         if n_in == n_out {
-            use poulpy_cpu_ref::reference::znx::znx_copy_ref;
+            use poulpy_cpu_portable::kernels::znx::znx_copy_portable;
 
-            znx_copy_ref(res, a);
+            znx_copy_portable(res, a);
             return;
         }
 
@@ -48,11 +48,11 @@ pub unsafe fn znx_switch_ring_avx(res: &mut [i64], a: &[i64]) {
         } else {
             // Upsample: res[k * gap_out] = a[k], i.e. res has holes;
 
-            use poulpy_cpu_ref::reference::znx::znx_zero_ref;
+            use poulpy_cpu_portable::kernels::znx::znx_zero_portable;
             let gap_out = n_out / n_in;
 
             // zero then scatter scalar stores
-            znx_zero_ref(res);
+            znx_zero_portable(res);
 
             let mut a_4xi64: *const __m256i = a.as_ptr() as *const __m256i;
 

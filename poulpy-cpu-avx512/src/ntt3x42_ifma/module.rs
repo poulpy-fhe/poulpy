@@ -15,7 +15,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     types::Q126Scalar,
 };
-use poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttHandleFactory;
+use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttHandleFactory;
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{Backend, Module, PrepareHint, Ring, Standard},
@@ -37,7 +37,7 @@ pub struct NTT3x42IfmaHandle<R: Ring = Standard> {
     /// Inverse tables, same indexing.
     pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42, R>>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl<R: Ring> NTT3x42IfmaHandle<R> {
@@ -277,8 +277,8 @@ where
     unsafe { Module::from_nonnull(ptr, n) }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle<R> {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle<R> {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

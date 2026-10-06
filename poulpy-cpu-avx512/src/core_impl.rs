@@ -19,7 +19,7 @@ use poulpy_core::{
     reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_output_size},
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
@@ -843,7 +843,7 @@ where
     }
 }
 
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512);
@@ -851,7 +851,7 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_trace_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Avx512);
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512);
@@ -860,7 +860,7 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 ::poulpy_core::impl_glwe_trace_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
@@ -876,7 +876,7 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -892,7 +892,7 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -924,7 +924,7 @@ mod ifma_rayon_defaults {
     ::poulpy_core::impl_ggsw_external_product_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
-    poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
+    poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
 }
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42IfmaRayon);
@@ -940,16 +940,16 @@ mod ifma_rayon_defaults {
 ::poulpy_core::impl_glwe_trace_derived_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT3x42IfmaRayon);
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64CIAvx512, fft64);
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30CIAvx512, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIAvx512, fft64);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIAvx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42CIIfma, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42CIIfma, ntt4x30);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64CIAvx512Rayon, fft64);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIAvx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30CIAvx512Rayon, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIAvx512Rayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42CIIfmaRayon, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42CIIfmaRayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon", any(feature = "enable-ckks", test)))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ifma_prepared_tensor<R, A, BP>(

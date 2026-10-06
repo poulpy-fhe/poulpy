@@ -1,8 +1,8 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
-use poulpy_cpu_ref::reference::fft64::{
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
+use poulpy_cpu_portable::kernels::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
@@ -14,7 +14,7 @@ use poulpy_hal::layouts::Ring;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
 /// dispatching to NEON-accelerated kernels on AArch64 and the portable
-/// reference kernels otherwise.
+/// portable kernels otherwise.
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
 /// in the CPU CKKS encoding implementation.
@@ -57,7 +57,7 @@ impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            fft_ref(table.m(), table.omg(), data);
+            fft_portable(table.m(), table.omg(), data);
         }
     }
 }
@@ -73,7 +73,7 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            ifft_ref(table.m(), table.omg(), data);
+            ifft_portable(table.m(), table.omg(), data);
         }
     }
 }
@@ -88,7 +88,7 @@ impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
 #[cfg(not(target_arch = "aarch64"))]
 impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
-        fft_ref(table.m(), table.omg(), data);
+        fft_portable(table.m(), table.omg(), data);
     }
 }
 
@@ -102,7 +102,7 @@ impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
 #[cfg(not(target_arch = "aarch64"))]
 impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
-        ifft_ref(table.m(), table.omg(), data);
+        ifft_portable(table.m(), table.omg(), data);
     }
 }
 
@@ -113,11 +113,11 @@ impl<R: Ring> ReimArith for FFT64Neon<R> {
     // bound at large n; the autovec reference is as fast or faster.
     #[inline(always)]
     fn reim_add(res: &mut [f64], a: &[f64], b: &[f64]) {
-        poulpy_cpu_ref::reference::fft64::reim::reim_add_ref(res, a, b);
+        poulpy_cpu_portable::kernels::fft64::reim::reim_add_portable(res, a, b);
     }
     #[inline(always)]
     fn reim_add_assign(res: &mut [f64], a: &[f64]) {
-        poulpy_cpu_ref::reference::fft64::reim::reim_add_assign_ref(res, a);
+        poulpy_cpu_portable::kernels::fft64::reim::reim_add_assign_portable(res, a);
     }
     #[inline(always)]
     fn reim_sub(res: &mut [f64], a: &[f64], b: &[f64]) {
@@ -271,7 +271,7 @@ impl<R: Ring> I64Ops for FFT64Neon<R> {
 #[cfg(not(target_arch = "aarch64"))]
 impl<R: Ring> I64Ops for FFT64Neon<R> {}
 
-impl<R: Ring> poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
+impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)

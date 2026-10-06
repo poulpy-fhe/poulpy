@@ -9,6 +9,10 @@
 //! `enable-core` registers the generic Core compositions.
 
 mod backend;
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe;
+#[cfg(feature = "enable-ckks")]
+mod ckks;
 #[cfg(feature = "enable-core")]
 mod core_impl;
 mod embed;
@@ -29,7 +33,7 @@ mod tests;
 
 pub use backend::{FFT64CIOracle, FFT64Oracle, Handle, NTT4x30CIOracle, NTT4x30Oracle, Oracle};
 pub use family::DFTFamily;
-pub use fft::Fft64;
+pub use fft::{ComplexFft, Fft64};
 pub use ntt::{Ntt4x30, Primes30};
 pub use ring::OracleRing;
 

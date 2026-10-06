@@ -33,8 +33,8 @@ pub unsafe fn znx_automorphism_rotate_avx512(p: i64, k: i64, res: &mut [i64], a:
     assert!(p & 1 == 1);
 
     if n < 8 {
-        use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
-        znx_automorphism_rotate_ref(p, k, res, a);
+        use poulpy_cpu_portable::kernels::znx::znx_automorphism_rotate_portable;
+        znx_automorphism_rotate_portable(p, k, res, a);
         return;
     }
 
@@ -94,7 +94,7 @@ pub unsafe fn znx_automorphism_rotate_avx512(p: i64, k: i64, res: &mut [i64], a:
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::znx_automorphism_rotate_ref;
+    use poulpy_cpu_portable::kernels::znx::znx_automorphism_rotate_portable;
 
     use super::*;
 
@@ -106,7 +106,7 @@ mod tests {
                 let mut r0 = vec![0i64; a.len()];
                 let mut r1 = vec![0i64; a.len()];
                 unsafe {
-                    znx_automorphism_rotate_ref(p, k, &mut r0, &a);
+                    znx_automorphism_rotate_portable(p, k, &mut r0, &a);
                     znx_automorphism_rotate_avx512(p, k, &mut r1, &a);
                 }
                 assert_eq!(r0, r1, "mismatch for p={p}, k={k}");

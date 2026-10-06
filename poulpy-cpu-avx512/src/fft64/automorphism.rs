@@ -12,7 +12,7 @@ use core::arch::x86_64::{
     _mm512_i64gather_pd, _mm512_set1_epi64, _mm512_storeu_pd, _mm512_xor_si512,
 };
 
-use poulpy_cpu_ref::reference::fft64::{standard::fft64_automorphism_ref, vec_znx_dft::Fft64AutomorphismPlan};
+use poulpy_cpu_portable::kernels::fft64::{standard::fft64_automorphism_portable, vec_znx_dft::Fft64AutomorphismPlan};
 
 /// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`; scalar below the 8-slot SIMD width.
 #[inline(always)]
@@ -21,7 +21,7 @@ pub(crate) fn reim_automorphism_avx512(plan: &Fft64AutomorphismPlan, res: &mut [
     assert_eq!(a.len(), res.len());
     assert_eq!(plan.perm.len(), m);
     if m < 8 {
-        return fft64_automorphism_ref(plan, res, a);
+        return fft64_automorphism_portable(plan, res, a);
     }
     let (res_re, res_im) = res.split_at_mut(m);
     let (a_re, a_im) = a.split_at(m);

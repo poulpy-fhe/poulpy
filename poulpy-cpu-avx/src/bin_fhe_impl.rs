@@ -11,8 +11,12 @@ macro_rules! register_backend {
     };
 }
 
-register_backend!(crate::FFT64Avx, poulpy_cpu_ref::FFT64Ref, bin_fhe_parity_fft64avx);
-register_backend!(crate::NTT4x30Avx, poulpy_cpu_ref::NTT4x30Ref, bin_fhe_parity_ntt4x30avx);
+register_backend!(crate::FFT64Avx, poulpy_cpu_portable::FFT64Portable, bin_fhe_parity_fft64avx);
+register_backend!(
+    crate::NTT4x30Avx,
+    poulpy_cpu_portable::NTT4x30Portable,
+    bin_fhe_parity_ntt4x30avx
+);
 #[cfg(feature = "enable-rayon")]
 register_backend!(
     crate::FFT64AvxRayon,

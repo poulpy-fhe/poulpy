@@ -244,7 +244,7 @@ mod ntt3x42_ifma_tests {
     // The planar IFMA NTT runs breadth-first level loops with fused head/tail
     // stages. These sizes cover the scalar-only edges, the fused tail, and
     // larger mixed-width levels, confirming bit-exact agreement with the
-    // reference backend.
+    // oracle.
 
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {
@@ -514,22 +514,22 @@ fn test_ntt3x42_ifma_zeroed_allocation_alignment_and_padding() {
 
 #[test]
 fn large_ring_ntt_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 17);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 17);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 17);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 17);
 }
 
 #[test]
 fn large_ring_ntt_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 18);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 18);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 18);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 18);
 }

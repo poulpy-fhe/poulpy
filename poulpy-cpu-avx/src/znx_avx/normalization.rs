@@ -110,10 +110,10 @@ pub fn znx_extract_digit_addmul_impl_avx<const OVERWRITE: bool>(base2k: usize, l
 
     // tail (scalar)
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_impl_portable;
 
         let off: usize = span << 2;
-        znx_extract_digit_addmul_impl_ref::<OVERWRITE>(base2k, lsh, &mut res[off..], &mut src[off..]);
+        znx_extract_digit_addmul_impl_portable::<OVERWRITE>(base2k, lsh, &mut res[off..], &mut src[off..]);
     }
 }
 
@@ -179,10 +179,10 @@ pub fn znx_normalize_digit_avx(base2k: usize, res: &mut [i64], src: &mut [i64]) 
 
     // scalar tail
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_digit_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_digit_portable;
 
         let off = span << 2;
-        znx_normalize_digit_ref(base2k, &mut res[off..], &mut src[off..]);
+        znx_normalize_digit_portable(base2k, &mut res[off..], &mut src[off..]);
     }
 }
 
@@ -231,9 +231,9 @@ pub fn znx_normalize_first_step_carry_only_avx(base2k: usize, lsh: usize, x: &[i
 
     // tail
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_carry_only_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_first_step_carry_only_portable;
 
-        znx_normalize_first_step_carry_only_ref(base2k, lsh, &x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_first_step_carry_only_portable(base2k, lsh, &x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -301,9 +301,9 @@ pub fn znx_normalize_first_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i
 
     // tail
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_assign_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_first_step_assign_portable;
 
-        znx_normalize_first_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_first_step_assign_portable(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -396,9 +396,15 @@ pub fn znx_normalize_first_step_avx<const OVERWRITE: bool>(
 
     // tail
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_first_step_portable;
 
-        znx_normalize_first_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 2..], &a[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_first_step_portable::<OVERWRITE>(
+            base2k,
+            lsh,
+            &mut x[span << 2..],
+            &a[span << 2..],
+            &mut carry[span << 2..],
+        );
     }
 }
 
@@ -475,9 +481,9 @@ pub fn znx_normalize_middle_step_assign_avx(base2k: usize, lsh: usize, x: &mut [
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_assign_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_middle_step_assign_portable;
 
-        znx_normalize_middle_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_middle_step_assign_portable(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -552,9 +558,9 @@ pub fn znx_normalize_middle_step_carry_only_avx(base2k: usize, lsh: usize, x: &[
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_carry_only_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_middle_step_carry_only_portable;
 
-        znx_normalize_middle_step_carry_only_ref(base2k, lsh, &x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_middle_step_carry_only_portable(base2k, lsh, &x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -653,9 +659,15 @@ pub fn znx_normalize_middle_step_avx<const OVERWRITE: bool>(
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_middle_step_portable;
 
-        znx_normalize_middle_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 2..], &a[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_middle_step_portable::<OVERWRITE>(
+            base2k,
+            lsh,
+            &mut x[span << 2..],
+            &a[span << 2..],
+            &mut carry[span << 2..],
+        );
     }
 }
 
@@ -723,9 +735,9 @@ pub fn znx_normalize_final_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_assign_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_final_step_assign_portable;
 
-        znx_normalize_final_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_final_step_assign_portable(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -812,9 +824,15 @@ pub fn znx_normalize_final_step_avx<const OVERWRITE: bool>(
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_ref;
+        use poulpy_cpu_portable::kernels::znx::znx_normalize_final_step_portable;
 
-        znx_normalize_final_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 2..], &a[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_final_step_portable::<OVERWRITE>(
+            base2k,
+            lsh,
+            &mut x[span << 2..],
+            &a[span << 2..],
+            &mut carry[span << 2..],
+        );
     }
 }
 
@@ -858,7 +876,7 @@ pub fn znx_extract_digit_addmul_normalize_avx<const OVERWRITE: bool>(
             _mm256_storeu_si256(carry.as_mut_ptr().add(i).cast(), output_carry);
         }
     }
-    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+    poulpy_cpu_portable::kernels::znx::znx_extract_digit_addmul_normalize_portable::<OVERWRITE>(
         base2k,
         lsh,
         res_base2k,
@@ -874,19 +892,19 @@ mod tests {
         if !std::is_x86_feature_detected!("avx2") {
             return;
         }
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx>();
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64AvxRayon>();
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30AvxRayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64AvxRayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30AvxRayon>();
         }
     }
 
-    use poulpy_cpu_ref::reference::znx::{
-        get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref,
-        znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_ref,
-        znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_ref,
+    use poulpy_cpu_portable::kernels::znx::{
+        get_carry_i64_portable, get_digit_i64_portable, znx_extract_digit_addmul_portable, znx_normalize_digit_portable,
+        znx_normalize_final_step_assign_portable, znx_normalize_final_step_portable, znx_normalize_first_step_assign_portable,
+        znx_normalize_first_step_portable, znx_normalize_middle_step_assign_portable, znx_normalize_middle_step_portable,
     };
 
     use super::*;
@@ -905,10 +923,10 @@ mod tests {
             -4835376105455195188,
         ];
         let y0: Vec<i64> = vec![
-            get_digit_i64(base2k, x[0]),
-            get_digit_i64(base2k, x[1]),
-            get_digit_i64(base2k, x[2]),
-            get_digit_i64(base2k, x[3]),
+            get_digit_i64_portable(base2k, x[0]),
+            get_digit_i64_portable(base2k, x[1]),
+            get_digit_i64_portable(base2k, x[2]),
+            get_digit_i64_portable(base2k, x[3]),
         ];
         let mut y1: Vec<i64> = vec![0i64; 4];
         unsafe {
@@ -944,10 +962,10 @@ mod tests {
         ];
         let carry: [i64; 4] = [1174467039, -144794816, -1466676977, 513122840];
         let y0: Vec<i64> = vec![
-            get_carry_i64(base2k, x[0], carry[0]),
-            get_carry_i64(base2k, x[1], carry[1]),
-            get_carry_i64(base2k, x[2], carry[2]),
-            get_carry_i64(base2k, x[3], carry[3]),
+            get_carry_i64_portable(base2k, x[0], carry[0]),
+            get_carry_i64_portable(base2k, x[1], carry[1]),
+            get_carry_i64_portable(base2k, x[2], carry[2]),
+            get_carry_i64_portable(base2k, x[3], carry[3]),
         ];
         let mut y1: Vec<i64> = vec![0i64; 4];
         unsafe {
@@ -993,13 +1011,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_first_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_first_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_first_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_first_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_first_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_first_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1039,13 +1057,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_middle_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_middle_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_middle_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_middle_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_middle_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_middle_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1085,13 +1103,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_final_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_final_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_final_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_final_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_final_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_final_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1132,13 +1150,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_first_step_ref::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
+        znx_normalize_first_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_first_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_first_step_ref::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
+        znx_normalize_first_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_first_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1180,13 +1198,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_middle_step_ref::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
+        znx_normalize_middle_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_middle_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_middle_step_ref::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
+        znx_normalize_middle_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_middle_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1228,13 +1246,13 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_final_step_ref::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
+        znx_normalize_final_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_final_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_final_step_ref::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
+        znx_normalize_final_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_final_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1275,13 +1293,13 @@ mod tests {
 
         let base2k: usize = 12;
 
-        znx_extract_digit_addmul_ref(base2k, 0, &mut y0, &mut c0);
+        znx_extract_digit_addmul_portable(base2k, 0, &mut y0, &mut c0);
         znx_extract_digit_addmul_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_extract_digit_addmul_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_extract_digit_addmul_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_extract_digit_addmul_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
@@ -1321,7 +1339,7 @@ mod tests {
 
         let base2k: usize = 12;
 
-        znx_normalize_digit_ref(base2k, &mut y0, &mut c0);
+        znx_normalize_digit_portable(base2k, &mut y0, &mut c0);
         znx_normalize_digit_avx(base2k, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
