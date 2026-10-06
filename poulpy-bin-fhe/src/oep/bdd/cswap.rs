@@ -3,6 +3,8 @@ use poulpy_hal::layouts::*;
 /// Backend implementation contract for [`Cswap`](crate::api::Cswap).
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
 pub unsafe trait CswapImpl: Backend {

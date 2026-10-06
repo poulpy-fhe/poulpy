@@ -1,7 +1,7 @@
 //! Evaluation-key and gadget encryption compositions with controlled sampling.
 use super::encryption::{EncryptionParityBackend, Snapshot, assert_fresh_noise, secret, source_snapshot};
 use super::{ParityShapes, poisoned_scratch};
-use crate::{api::*, layouts::*};
+use crate::{ComponentNoise, Distribution, GetDistributionMut, api::*, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, DataView, DataViewMut, Module, ScalarZnx},
     source::Source,
@@ -18,6 +18,7 @@ fn gglwe_snapshot<B: Backend, G: GGLWEToBackendRef<B> + GGLWEInfos>(label: &'sta
     let data = view.data.data();
     let mut bytes = vec![0; B::len_bytes_ref(data)];
     B::copy_view_to_host(data, &mut bytes);
+    ComponentNoise::write_optional(value.noise().as_ref(), &mut bytes).unwrap();
     Snapshot {
         label,
         metadata: vec![
@@ -42,6 +43,7 @@ fn ggsw_snapshot<B: Backend, G: GGSWToBackendRef<B> + GGSWInfos>(label: &'static
     let data = view.data.data();
     let mut bytes = vec![0; B::len_bytes_ref(data)];
     B::copy_view_to_host(data, &mut bytes);
+    ComponentNoise::write_optional(value.noise().as_ref(), &mut bytes).unwrap();
     Snapshot {
         label,
         metadata: vec![
@@ -116,6 +118,8 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         };
 
         let sk = secret(module, n, rank);
+        let mut sk_in = secret(module, n, rank);
+        *sk_in.dist_mut() = Distribution::TernaryProb(0.5);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
         let mut lwe = module.lwe_secret_alloc(Degree((n / 2) as u32));
@@ -209,11 +213,44 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         assert_eq!(out.noise(), compact.noise());
         result.push(ggsw_snapshot::<B, _>("ggsw_compressed_encrypt_sk", &out));
         result.push(source_snapshot("ggsw_compressed_sources", &mut e, &mut a));
+        let pk_layout = GLWELayout {
+            n: g.n,
+            base2k: g.base2k,
+            k: TorusPrecision(g.k().0 + b as u32),
+            rank: g.rank,
+        };
+        let mut pk = module.glwe_public_key_alloc_from_infos(&pk_layout);
+        module.glwe_public_key_generate(
+            &mut pk,
+            &skp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&pk_layout)).arena(),
+        );
+        let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
+        module.glwe_public_key_prepare(
+            &mut pkp,
+            &pk,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&pk_layout)).arena(),
+        );
+        module.ggsw_encrypt_pk(
+            &mut out,
+            &pt,
+            &pkp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.ggsw_encrypt_pk_tmp_bytes(&g, &pk_layout)).arena(),
+        );
+        let noise = out.noise().unwrap();
+        assert_eq!(noise.precision(), out.k());
+        assert_eq!(noise.secret_distribution(), pkp.noise().unwrap().secret_distribution());
+        result.push(ggsw_snapshot::<B, _>("ggsw_pk_reduced", &out));
+        result.push(source_snapshot("ggsw_pk_sources", &mut e, &mut a));
         let mut switching = module.glwe_switching_key_alloc_from_infos(&key);
         poison_gglwe::<B, _>(&mut switching);
         module.glwe_switching_key_encrypt_sk(
             &mut switching,
-            &sk,
+            &sk_in,
             &sk,
             &mut e,
             &mut a,
@@ -233,7 +270,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         poison_compressed::<B, _>(&mut compact);
         module.glwe_switching_key_compressed_encrypt_sk(
             &mut compact,
-            &sk,
+            &sk_in,
             &sk,
             seed,
             &mut e,

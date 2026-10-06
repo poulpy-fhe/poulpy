@@ -24,8 +24,8 @@
 //!   `i128` limbs into `i64` `VecZnx` output.  Uses an `i128` carry buffer.
 //! - **Automorphism**: [`ntt4x30_vec_znx_big_automorphism`] /
 //!   [`ntt4x30_vec_znx_big_automorphism_assign`] — apply `X → X^p` on `i128` coefficients.
-//! - **Gaussian noise**: [`ntt4x30_vec_znx_big_add_noise_ref`] — add integer
-//!   noise into a specified limb of a `VecZnxBig`.
+//! - **Noise**: [`ntt4x30_vec_znx_big_add_noise_ref`] adds integer samples
+//!   at precision `k` across `ceil(k / base2k)` limbs of a `VecZnxBig`.
 //!
 //! [`fft64`]: crate::reference::fft64
 

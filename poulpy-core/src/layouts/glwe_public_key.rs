@@ -301,11 +301,13 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKey<D, W> {
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidData`], leaving the key's layout
-    /// unchanged, on a stream that is not one row of `r >= 1` encryptions of
-    /// zero of a nonzero degree at its precision.
+    /// Rejects an invalid shape with [`std::io::ErrorKind::InvalidData`] before
+    /// changing the layout. Every read attempt clears the previous metadata.
+    /// The stream must contain one row of `r >= 1` encryptions of zero at the
+    /// destination's rank, with a nonzero degree at its precision.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let metadata = crate::ComponentNoise::read_optional(reader)?;
+        self.noise = None;
+        let metadata = crate::ComponentNoise::read_optional(reader, self.data.cols_out())?;
         let dist = Distribution::read_from(reader)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
@@ -319,6 +321,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
             || rows != 1
             || cols_in == 0
             || cols_in.checked_add(1) != Some(cols_out)
+            || cols_out != self.data.cols_out() as u64
             || size != u64::from(k.0.div_ceil(base2k.0))
         {
             return Err(std::io::Error::new(
@@ -329,7 +332,14 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
         let components = usize::try_from(cols_out)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "noise component count is too large"))?;
         crate::layouts::validate_noise_components(metadata.as_ref(), components)?;
-        self.data.read_from(&mut std::io::Read::chain(header.as_slice(), reader))?;
+        let components = self.data.cols_out();
+        crate::layouts::read_mat_znx_with_shape(
+            &mut self.data,
+            &mut std::io::Read::chain(header.as_slice(), reader),
+            Some(1),
+            Some(components - 1),
+            components,
+        )?;
         self.noise = metadata;
         self.dist = dist;
         self.base2k = base2k;
@@ -340,6 +350,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        self.dist.validate_wire()?;
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         self.dist.write_to(writer)?;

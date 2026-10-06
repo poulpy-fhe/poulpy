@@ -1,7 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{
-    Degree, GGLWEInfos, GLWELayout, GLWEToBackendMut, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef,
-};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
@@ -50,11 +48,7 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        BE::ckks_fold_impl(self, folded, ins, inbound, scratch)?;
-        for ct in folded {
-            GLWEToBackendMut::<BE>::set_noise(ct, None);
-        }
-        Ok(())
+        BE::ckks_fold_impl(self, folded, ins, inbound, scratch)
     }
 
     fn ckks_unfold<S, H>(
@@ -69,13 +63,6 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_unfold_impl(self, outs, folded, outbound, automorphisms, scratch)?;
-        for ct in outs {
-            GLWEToBackendMut::<BE>::set_noise(&mut ct.inner, None);
-        }
-        for ct in folded {
-            GLWEToBackendMut::<BE>::set_noise(ct, None);
-        }
-        Ok(())
+        BE::ckks_unfold_impl(self, outs, folded, outbound, automorphisms, scratch)
     }
 }

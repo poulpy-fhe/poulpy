@@ -29,7 +29,6 @@ where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch);
-        res.set_noise(None);
+        BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch)
     }
 }

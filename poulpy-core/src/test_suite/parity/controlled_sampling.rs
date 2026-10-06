@@ -16,6 +16,8 @@ trait SampleProvider: Send + Sync {
     fn scalar(&self, n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64>;
     fn noise(&self, n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64>;
 }
+// SamplingImpl guarantees that selected columns and spare allocation do not
+// change a seeded draw, so the provider can use minimal single-column buffers.
 struct BackendSamples<B: Backend>(Module<B>);
 impl<B> SampleProvider for BackendSamples<B>
 where

@@ -112,26 +112,28 @@ where
         R: GLWEPreparedToBackendMut<B>,
         O: GLWEToBackendRef<B> + GLWEInfos,
     {
-        let rank = res.to_backend_mut().rank().as_usize();
-        let noise = other.to_backend_ref().noise().map(|noise| noise.with_rank(rank));
-        res.set_noise(noise);
-        let (mut other_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(other);
-        let other = if other.is_canonical() {
-            other.to_backend_ref()
-        } else {
-            self.glwe_normalize(&mut other_tmp, other, &mut scratch.borrow());
-            other_tmp.to_backend_ref()
-        };
-        let mut res = res.to_backend_mut();
+        assert_eq!(res.to_backend_mut().rank(), other.rank(), "glwe_prepare: rank mismatch");
+        let noise = other.to_backend_ref().noise();
+        {
+            let (mut other_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(other);
+            let other = if other.is_canonical() {
+                other.to_backend_ref()
+            } else {
+                self.glwe_normalize(&mut other_tmp, other, &mut scratch.borrow());
+                other_tmp.to_backend_ref()
+            };
+            let mut res = res.to_backend_mut();
 
-        operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-        assert_eq!(res.size(), other.size());
-        assert_eq!(res.k(), other.k());
-        assert_eq!(res.base2k(), other.base2k());
+            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
+            assert_eq!(res.size(), other.size());
+            assert_eq!(res.k(), other.k());
+            assert_eq!(res.base2k(), other.base2k());
 
-        for i in 0..(res.rank() + 1).into() {
-            self.vec_znx_dft_apply(1, 0, &mut res.data, i, &other.data, i);
+            for i in 0..(res.rank() + 1).into() {
+                self.vec_znx_dft_apply(1, 0, &mut res.data, i, &other.data, i);
+            }
         }
+        res.set_noise(noise);
     }
 }
 

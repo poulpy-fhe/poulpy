@@ -36,8 +36,7 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::ggsw_blind_rotation_assign::<R, K>(self, res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-        res.set_noise(None);
+        BE::ggsw_blind_rotation_assign::<R, K>(self, res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation<R, A, K>(
@@ -56,8 +55,7 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::ggsw_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-        res.set_noise(None);
+        BE::ggsw_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
@@ -84,7 +82,6 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::scalar_to_ggsw_blind_rotation::<R, A, K>(self, res, test_vector, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-        res.set_noise(None);
+        BE::scalar_to_ggsw_blind_rotation::<R, A, K>(self, res, test_vector, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
 }

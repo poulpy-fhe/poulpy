@@ -282,6 +282,7 @@ impl_glwe_host_at_for_field!(GLWESwitchingKey<D, W>; key);
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKey<D, W> {
     /// Deserialises from little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.key.noise = None;
         self.input_degree = Degree(reader.read_u32::<LittleEndian>()?);
         self.output_degree = Degree(reader.read_u32::<LittleEndian>()?);
         self.key.read_from(reader)
@@ -291,6 +292,10 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKey<D, W> {
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKey<D, W> {
     /// Serialises in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if let Some(noise) = &self.key.noise {
+            noise.validate_wire()?;
+            noise.validate_components(self.key.data.cols_out())?;
+        }
         writer.write_u32::<LittleEndian>(self.input_degree.into())?;
         writer.write_u32::<LittleEndian>(self.output_degree.into())?;
         self.key.write_to(writer)

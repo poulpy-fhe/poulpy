@@ -55,7 +55,11 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
     /// mask columns.
     pub fn body_as_gglwe(&self) -> GGLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GGLWE {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: self
+                .inner
+                .noise
+                .as_ref()
+                .map(|noise| noise.with_components(vec![noise.body()])),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
@@ -330,18 +334,30 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
-        self.rank_out = Rank(reader.read_u32::<LittleEndian>()?);
-        let seed_len: u32 = reader.read_u32::<LittleEndian>()?;
-        self.seed = vec![[0u8; 32]; seed_len as usize];
-        for s in &mut self.seed {
+        self.noise = None;
+        let noise = crate::ComponentNoise::read_optional(reader, self.rank_out.as_usize() + 1)?;
+        let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        let rank_out = Rank(reader.read_u32::<LittleEndian>()?);
+        if rank_out != self.rank_out {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
+        let seed_len = reader.read_u32::<LittleEndian>()? as usize;
+        if seed_len != self.seed.len() {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
+        let mut seed = vec![[0u8; 32]; seed_len];
+        for s in &mut seed {
             reader.read_exact(s)?;
         }
-        self.data.read_from(reader)?;
+        let (rows, cols_in) = (self.data.rows(), self.data.cols_in());
+        crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, Some(rows), Some(cols_in), 1)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank_out.as_usize() + 1)?;
+        self.k_aux = k_aux;
+        self.base2k = base2k;
+        self.dsize = dsize;
+        self.seed = seed;
         self.noise = noise;
         Ok(())
     }
@@ -525,5 +541,31 @@ fn gglwe_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         rank: gglwe.rank_out,
         data: mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col),
         seed: gglwe.seed[rank_in * row + col],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ComponentNoise, Distribution};
+    use poulpy_hal::layouts::HostBytesBackend;
+
+    #[test]
+    fn body_view_keeps_only_its_component_estimate() {
+        let mut ciphertext = GGLWECompressed::<AlignedBuf, i64>::alloc::<HostBytesBackend>(
+            Degree(8),
+            Base2K(12),
+            Dnum(2),
+            Dsize(1),
+            TorusPrecision(15),
+            Rank(2),
+            Rank(2),
+        );
+        let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), ciphertext.k(), 2);
+        ciphertext.noise = Some(noise.clone());
+        let view = GGLWECompressedToBackendRef::<HostBytesBackend>::to_backend_ref(&ciphertext);
+        let body = view.body_as_gglwe();
+        assert_eq!(body.rank_out(), Rank(0));
+        assert_eq!(body.noise().unwrap().components(), &[noise.body()]);
     }
 }

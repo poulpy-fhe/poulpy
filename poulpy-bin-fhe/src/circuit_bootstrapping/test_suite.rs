@@ -200,7 +200,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
         for col in 0..res.rank().as_usize() + 1 {
             println!(
                 "row:{row} col:{col} -> {}",
-                res.noise(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
+                res.noise_stats(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
             )
@@ -395,7 +395,7 @@ pub fn test_circuit_bootstrapping_to_constant<
         for col in 0..res.rank().as_usize() + 1 {
             println!(
                 "row:{row} col:{col} -> {}",
-                res.noise(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
+                res.noise_stats(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
             )

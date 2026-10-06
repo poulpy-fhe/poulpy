@@ -4,6 +4,8 @@ use poulpy_hal::layouts::*;
 /// Backend implementation contract for [`GGSWBlindRotation`].
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
 pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep::GLWEBlindRotationImpl {

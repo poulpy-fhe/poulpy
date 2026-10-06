@@ -11,6 +11,8 @@ use crate::layouts::{
 /// Backend hook for automorphism-family operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
 pub unsafe trait AutomorphismImpl: Backend + crate::oep::GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {

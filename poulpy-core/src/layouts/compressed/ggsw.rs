@@ -368,18 +368,30 @@ impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
-        self.rank = Rank(reader.read_u32::<LittleEndian>()?);
+        self.noise = None;
+        let noise = crate::ComponentNoise::read_optional(reader, self.rank.as_usize() + 1)?;
+        let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        let rank = Rank(reader.read_u32::<LittleEndian>()?);
+        if rank != self.rank {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
         let seed_len: usize = reader.read_u32::<LittleEndian>()? as usize;
-        self.seed = vec![[0u8; 32]; seed_len];
-        for s in &mut self.seed {
+        if seed_len != self.seed.len() {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
+        let mut seed = vec![[0u8; 32]; seed_len];
+        for s in &mut seed {
             reader.read_exact(s)?;
         }
-        self.data.read_from(reader)?;
+        let (rows, cols_in) = (self.data.rows(), self.data.cols_in());
+        crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, Some(rows), Some(cols_in), 1)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank.as_usize() + 1)?;
+        self.k_aux = k_aux;
+        self.base2k = base2k;
+        self.dsize = dsize;
+        self.seed = seed;
         self.noise = noise;
         Ok(())
     }

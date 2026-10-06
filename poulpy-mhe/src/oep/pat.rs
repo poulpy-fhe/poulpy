@@ -5,6 +5,8 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference sum, including the seed and layout checks, and the
 /// reference canonical ciphertext, masks included, within the queried scratch
 /// budget.
@@ -23,6 +25,8 @@ pub unsafe trait GLWEPatCompressedImpl: Backend {
 }
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference sum, including the seed and layout checks, and the
 /// reference canonical ciphertext, masks included, within the queried scratch
 /// budget.
@@ -41,6 +45,8 @@ pub unsafe trait GGLWEPatCompressedImpl: Backend {
 }
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference sum, including the layout check, and the reference
 /// canonical ciphertext, masks included, within the queried scratch budget.
 pub unsafe trait GGLWEPatImpl: Backend {

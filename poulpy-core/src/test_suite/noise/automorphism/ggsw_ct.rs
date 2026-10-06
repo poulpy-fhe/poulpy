@@ -197,7 +197,7 @@ where
             for row in 0..ct_out_template.dnum().as_usize() {
                 for col in 0..ct_out_template.rank().as_usize() + 1 {
                     let noise = ct_out
-                        .noise(
+                        .noise_stats(
                             module,
                             row,
                             col,
@@ -375,7 +375,7 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     let noise_have: f64 = ct
-                        .noise(
+                        .noise_stats(
                             module,
                             row,
                             col,

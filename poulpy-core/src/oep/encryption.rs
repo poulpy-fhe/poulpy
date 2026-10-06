@@ -20,6 +20,8 @@ use crate::{
 };
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
@@ -147,6 +149,14 @@ pub unsafe trait EncryptionImpl: Backend {
     /// body), or zero when `pt` is `None`: every public-key encryption derives
     /// from it. Without `body_noise`, the body gets no encryption error: the
     /// caller floods it, see [`Self::glwe_encrypt_pk_smudged`].
+    ///
+    /// Overrides must match the reference precision plan: fresh errors at
+    /// `k_sample`, a product using only the leading `ceil(work / base2k)` key
+    /// limbs, and one normalization to `res.k()`. Record the resulting component
+    /// metadata, or `None` when the key has no usable metadata. Smudged encryption
+    /// samples its flood at `res.k()`. Tagged keys must retain their provenance
+    /// distribution; reject mismatches before modifying the output.
+    /// The independently callable reference implementation supplies this plan.
     fn glwe_encrypt_pk_at_col<R, P, K>(
         module: &Module<Self>,
         res: &mut R,

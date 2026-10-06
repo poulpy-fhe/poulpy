@@ -90,8 +90,13 @@ where
                     let mut scratch = ScratchOwned::<BE>::alloc(tmp_bytes);
                     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
                     assert_eq!(dst.glwe_layout(), layout, "copy changed destination layout");
+                    let expected_noise = if dst_k < src_k {
+                        None
+                    } else {
+                        src.noise().map(|noise| noise.with_rank(dst_rank))
+                    };
                     assert!(
-                        dst.noise() == src.noise().map(|noise| noise.with_rank(dst_rank)),
+                        dst.noise() == expected_noise,
                         "copy noise: rank {src_rank} -> {dst_rank}, tagged={tagged}"
                     );
                     assert_eq!(src.data.raw(), original, "copy changed the source");

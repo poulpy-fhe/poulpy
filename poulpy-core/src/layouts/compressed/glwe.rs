@@ -286,12 +286,19 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
 /// Deserializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.rank = Rank(reader.read_u32::<LittleEndian>()?);
-        reader.read_exact(&mut self.seed)?;
-        self.data.read_from(reader)?;
+        self.noise = None;
+        let noise = crate::ComponentNoise::read_optional(reader, self.rank.as_usize() + 1)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let rank = Rank(reader.read_u32::<LittleEndian>()?);
+        if rank != self.rank {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
+        let mut seed = [0u8; 32];
+        reader.read_exact(&mut seed)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank.as_usize() + 1)?;
+        self.base2k = base2k;
+        self.seed = seed;
         self.noise = noise;
         Ok(())
     }
@@ -325,7 +332,7 @@ where
         R: GLWEToBackendMut<Self::Backend> + SetBase2k,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
     {
-        res.set_noise(other.to_backend_ref().noise());
+        let noise = other.to_backend_ref().noise();
         let other = other.to_backend_ref();
         {
             let res = &mut res.to_backend_mut();
@@ -337,6 +344,7 @@ where
         }
         res.set_base2k(other.base2k());
         self.fill_glwe_mask_from_seed(res, other.seed);
+        res.set_noise(noise);
         res.set_canonical(true);
     }
 }

@@ -23,7 +23,7 @@ use crate::{
 
 // Coefficient-word fence: noise measurement ends in `VecZnx::stats`, which is i64-only.
 impl<D: HostDataRef> GGLWE<D, i64> {
-    pub fn noise<M, S, BE>(
+    pub fn noise_stats<M, S, BE>(
         &self,
         module: &M,
         row: usize,

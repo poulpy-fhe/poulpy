@@ -81,6 +81,8 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
     if !res_is_cur {
         module.glwe_copy(res, &tmp_res, &mut scratch_1);
     }
+
+    res.set_noise(None);
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`GLWEBlindRotation::glwe_blind_rotation`].
@@ -103,4 +105,6 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
 {
     module.glwe_copy(res, a, scratch);
     module.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
+
+    res.set_noise(None);
 }

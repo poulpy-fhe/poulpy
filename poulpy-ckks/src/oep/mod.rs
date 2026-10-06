@@ -1,5 +1,9 @@
 //! Backend contracts selected by the public CKKS API through delegates.
 //!
+//! Backend implementations own ciphertext noise metadata: fresh encryption records
+//! its component estimates, exact copies preserve them, and arithmetic clears them.
+//! Preserve reference provenance checks before mutation. Delegates only forward.
+//!
 //! A backend explicitly implements each `*Impl` family. The
 //! `impl_ckks_*_reference!` macros wire lower-layer algorithms from
 //! [`crate::reference`]; a custom implementation can call those algorithms for

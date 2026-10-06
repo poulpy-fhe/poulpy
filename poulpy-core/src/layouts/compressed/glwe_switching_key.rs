@@ -169,6 +169,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.key.noise = None;
         self.input_degree = Degree(reader.read_u32::<LittleEndian>()?);
         self.output_degree = Degree(reader.read_u32::<LittleEndian>()?);
         self.key.read_from(reader)
@@ -177,6 +178,10 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyCompressed<D, W>
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if let Some(noise) = &self.key.noise {
+            noise.validate_wire()?;
+            noise.validate_components(self.key.rank_out.as_usize() + 1)?;
+        }
         writer.write_u32::<LittleEndian>(self.input_degree.into())?;
         writer.write_u32::<LittleEndian>(self.output_degree.into())?;
         self.key.write_to(writer)

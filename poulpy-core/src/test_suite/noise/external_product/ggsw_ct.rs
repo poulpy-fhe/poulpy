@@ -163,7 +163,7 @@ where
             for row in 0..ggsw_out.dnum().as_usize() {
                 for col in 0..ggsw_out.rank().as_usize() + 1 {
                     let noise = ggsw_out
-                        .noise(module, row, col, &pt_in.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &pt_in.to_ref(), &sk_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
@@ -303,7 +303,7 @@ where
             for row in 0..ggsw_out.dnum().as_usize() {
                 for col in 0..ggsw_out.rank().as_usize() + 1 {
                     let noise = ggsw_out
-                        .noise(module, row, col, &pt_in.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &pt_in.to_ref(), &sk_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     let max_noise = max_noise(col);

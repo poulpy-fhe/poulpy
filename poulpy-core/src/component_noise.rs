@@ -143,8 +143,14 @@ impl ComponentNoise {
     }
 
     /// Records fresh secret-key noise: one body term and `rank` zero mask terms.
-    /// For scalar LWE, pass the secret dimension as `rank`.
+    /// For scalar LWE, pass the secret dimension as `rank`. Encapsulated laws
+    /// are recorded as `NONE`, since their process-local labels have no wire form.
     pub fn from_secret_at(base: Distribution, precision: TorusPrecision, rank: usize) -> Self {
+        let base = if matches!(base, Distribution::ENCAPSULATED(_)) {
+            Distribution::NONE
+        } else {
+            base
+        };
         let count = rank.checked_add(1).expect("noise component count overflow");
         let mut components = vec![FreshNoiseEstimate::new(0.0, precision); count];
         components[0] = FreshNoiseEstimate::new(crate::DEFAULT_SIGMA_XE.powi(2), precision);
@@ -181,7 +187,7 @@ impl ComponentNoise {
 
     /// Modeled phase variance after weighting mask terms by the secret.
     ///
-    /// For a ring degree `n`, this is `body + n * E[s^2] * sum(masks)`.
+    /// For a negacyclic ring degree `n`, this is `body + n * E[s^2] * sum(masks)`.
     /// For scalar LWE, use [`Self::lwe_phase_noise`]. Terms may be conservative upper estimates;
     /// this coefficient model does not track arbitrary error covariance.
     pub fn phase_noise(&self, n: usize) -> FreshNoiseEstimate {
@@ -192,10 +198,19 @@ impl ComponentNoise {
     /// Modeled scalar LWE phase variance, using the mask count as secret dimension.
     /// Unlike GLWE, each mask term multiplies one secret coefficient without convolution.
     pub fn lwe_phase_noise(&self) -> FreshNoiseEstimate {
-        self.weighted_phase_noise(self.rank(), 1)
+        self.lwe_phase_noise_with_block(self.rank())
     }
 
-    fn weighted_phase_noise(&self, secret_dimension: usize, convolution_degree: usize) -> FreshNoiseEstimate {
+    /// Scalar LWE phase estimate using the original sampling block dimension.
+    /// For a flattened GLWE with fixed-weight secrets, pass its polynomial degree.
+    pub fn lwe_phase_noise_with_block(&self, secret_dimension: usize) -> FreshNoiseEstimate {
+        self.weighted_phase_noise(secret_dimension, 1)
+    }
+
+    /// Phase estimate with an explicit ring product weight.
+    /// `secret_dimension` is the original sampling block dimension. Use a product
+    /// weight of `n` for negacyclic products or `4*n` as a conservative CI bound.
+    pub fn weighted_phase_noise(&self, secret_dimension: usize, convolution_degree: usize) -> FreshNoiseEstimate {
         let mask_variance: f64 = self.masks().iter().map(FreshNoiseEstimate::variance).sum();
         let weighted_masks = if mask_variance == 0.0 {
             0.0
@@ -235,9 +250,10 @@ impl ComponentNoise {
         self.with_components(components)
     }
 
-    /// Selects leading mask components or appends zero-noise masks for a layout copy.
+    /// Appends zero-noise masks for a layout copy. Panics when reducing rank.
     /// This preserves the recorded estimates and their creation precision.
     pub fn with_rank(&self, rank: usize) -> Self {
+        assert!(rank >= self.rank(), "cannot truncate noise mask components");
         if rank == self.rank() {
             return self.clone();
         }
@@ -297,34 +313,29 @@ impl ComponentNoise {
         Ok(())
     }
 
+    pub(crate) fn validate_wire(&self) -> io::Result<()> {
+        self.secret.base.validate_wire()
+    }
+
     pub(crate) fn write_optional<W: Write>(noise: Option<&Self>, writer: &mut W) -> io::Result<()> {
-        let distribution = match noise.map(|m| m.secret.base) {
-            None => None,
-            Some(Distribution::TernaryFixed(h)) => Some((0, h as u64)),
-            Some(Distribution::TernaryProb(p)) => Some((1, p.to_bits())),
-            Some(Distribution::BinaryFixed(h)) => Some((2, h as u64)),
-            Some(Distribution::BinaryProb(p)) => Some((3, p.to_bits())),
-            Some(Distribution::BinaryBlock(b)) => Some((4, b as u64)),
-            Some(Distribution::ZERO) => Some((5, 0)),
-            Some(Distribution::NONE) => Some((6, 0)),
-            Some(Distribution::ENCAPSULATED(_)) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "secret distribution has no wire representation",
-                ));
-            }
-        };
+        if let Some(noise) = noise {
+            noise.validate_wire()?;
+        }
         writer.write_all(b"PNM3")?;
         match noise {
             None => writer.write_u64::<LittleEndian>(0),
             Some(noise) => {
                 writer.write_u64::<LittleEndian>(noise.parties())?;
-                let (tag, payload) = distribution.unwrap();
-                writer.write_u8(tag)?;
-                writer.write_u64::<LittleEndian>(payload)?;
+                noise.secret.base.write_to(writer)?;
                 writer.write_u32::<LittleEndian>(noise.precision().0)?;
                 writer.write_u64::<LittleEndian>(noise.components.len() as u64)?;
-                for term in noise.components.iter() {
+                let stored = noise
+                    .components
+                    .iter()
+                    .rposition(|term| term.variance_bits != 0)
+                    .map_or(0, |i| i + 1);
+                writer.write_u64::<LittleEndian>(stored as u64)?;
+                for term in &noise.components[..stored] {
                     writer.write_u64::<LittleEndian>(term.variance_bits)?;
                 }
                 Ok(())
@@ -332,7 +343,7 @@ impl ComponentNoise {
         }
     }
 
-    pub(crate) fn read_optional<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
+    pub(crate) fn read_optional<R: Read>(reader: &mut R, expected: usize) -> io::Result<Option<Self>> {
         let mut marker = [0; 4];
         reader.read_exact(&mut marker)?;
         if marker != *b"PNM3" {
@@ -342,42 +353,29 @@ impl ComponentNoise {
         if parties == 0 {
             return Ok(None);
         }
-        let tag = reader.read_u8()?;
-        let payload = reader.read_u64::<LittleEndian>()?;
-        let invalid = || io::Error::new(io::ErrorKind::InvalidData, "invalid secret distribution");
-        let base = match tag {
-            0 => Distribution::TernaryFixed(usize::try_from(payload).map_err(|_| invalid())?),
-            1 | 3 => {
-                let p = f64::from_bits(payload);
-                if !p.is_finite() || !(0.0..=1.0).contains(&p) {
-                    return Err(invalid());
-                }
-                if tag == 1 {
-                    Distribution::TernaryProb(p)
-                } else {
-                    Distribution::BinaryProb(p)
-                }
-            }
-            2 => Distribution::BinaryFixed(usize::try_from(payload).map_err(|_| invalid())?),
-            4 => Distribution::BinaryBlock(usize::try_from(payload).map_err(|_| invalid())?),
-            5 if payload == 0 => Distribution::ZERO,
-            6 if payload == 0 => Distribution::NONE,
-            _ => return Err(invalid()),
-        };
+        let base = Distribution::read_from(reader)?;
         let precision = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        let count = usize::try_from(reader.read_u64::<LittleEndian>()?)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "noise component count overflow"))?;
-        if count == 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "noise must include a body term"));
+        let count = reader.read_u64::<LittleEndian>()?;
+        if count == 0 || count != expected as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "noise component count does not match ciphertext shape",
+            ));
         }
-        // Read terms incrementally instead of allocating an untrusted wire count.
-        let mut components = Vec::new();
-        for _ in 0..count {
+        let stored = reader.read_u64::<LittleEndian>()?;
+        if stored > count {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "noise stored prefix exceeds component count",
+            ));
+        }
+        let mut components = vec![FreshNoiseEstimate::new(0.0, precision); expected];
+        for term in &mut components[..stored as usize] {
             let variance = f64::from_bits(reader.read_u64::<LittleEndian>()?);
             if variance.is_nan() || variance < 0.0 {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid noise component variance"));
             }
-            components.push(FreshNoiseEstimate::new(variance, precision));
+            *term = FreshNoiseEstimate::new(variance, precision);
         }
         Ok(Some(Self {
             secret: SecretDistribution { base, parties },
@@ -415,7 +413,10 @@ mod tests {
         for value in [None, Some(fresh), Some(pk), Some(infinite)] {
             let mut bytes = Vec::new();
             ComponentNoise::write_optional(value.as_ref(), &mut bytes).unwrap();
-            assert!(ComponentNoise::read_optional(&mut bytes.as_slice()).unwrap() == value);
+            assert!(
+                ComponentNoise::read_optional(&mut bytes.as_slice(), value.as_ref().map_or(0, |n| n.components().len())).unwrap()
+                    == value
+            );
         }
     }
 
@@ -478,26 +479,28 @@ mod tests {
             let offset = bytes.len() - 8;
             bytes[offset..].copy_from_slice(&variance.to_bits().to_le_bytes());
             assert_eq!(
-                ComponentNoise::read_optional(&mut bytes.as_slice()).unwrap_err().kind(),
+                ComponentNoise::read_optional(&mut bytes.as_slice(), noise.components().len())
+                    .unwrap_err()
+                    .kind(),
                 io::ErrorKind::InvalidData
             );
         }
         for marker in [b"PNM1", b"PNM2"] {
             let mut bytes = encoded.clone();
             bytes[..4].copy_from_slice(marker);
-            assert!(ComponentNoise::read_optional(&mut bytes.as_slice()).is_err());
+            assert!(ComponentNoise::read_optional(&mut bytes.as_slice(), noise.components().len()).is_err());
         }
         for count in [0, u64::MAX] {
             let mut bytes = encoded[..33].to_vec();
             bytes[25..33].copy_from_slice(&count.to_le_bytes());
-            assert!(ComponentNoise::read_optional(&mut bytes.as_slice()).is_err());
+            assert!(ComponentNoise::read_optional(&mut bytes.as_slice(), noise.components().len()).is_err());
         }
         assert!(noise.validate_components(2).is_ok());
         assert!(noise.validate_components(3).is_err());
     }
 
     #[test]
-    fn rank_changes_preserve_leading_components_and_append_zero_masks() {
+    fn rank_padding_preserves_components_and_appends_zero_masks() {
         let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), TorusPrecision(35), 2).with_components(
             [4.0, 9.0, 16.0]
                 .map(|v| FreshNoiseEstimate::new(v, TorusPrecision(35)))
@@ -511,9 +514,7 @@ mod tests {
                 .iter()
                 .all(|term| term.variance() == 0.0 && term.precision() == noise.precision())
         );
-        let truncated = expanded.with_rank(1);
-        assert!(truncated.components() == &noise.components()[..2]);
-        assert!(truncated.same_secret(&noise));
+        assert!(std::panic::catch_unwind(|| expanded.with_rank(1)).is_err());
     }
 
     #[test]
@@ -537,7 +538,7 @@ mod tests {
         assert_eq!(noise.phase_noise(1), noise.body());
         let mut bytes = Vec::new();
         ComponentNoise::write_optional(Some(&noise), &mut bytes).unwrap();
-        assert!(ComponentNoise::read_optional(&mut bytes.as_slice()).unwrap() == Some(noise));
+        assert!(ComponentNoise::read_optional(&mut bytes.as_slice(), noise.components().len()).unwrap() == Some(noise));
         let zero = ComponentNoise::from_secret(Distribution::ZERO, 1).with_components(vec![
             FreshNoiseEstimate::new(0.0, TorusPrecision(0)),
             FreshNoiseEstimate::new(f64::INFINITY, TorusPrecision(0)),
@@ -546,12 +547,12 @@ mod tests {
     }
 
     #[test]
-    fn encapsulated_distribution_rejection_does_not_write() {
+    fn encapsulated_distribution_normalizes_to_unknown() {
         let noise = ComponentNoise::from_secret(Distribution::ENCAPSULATED("ephemeral"), 1);
-        let mut bytes = vec![0xaa, 0x55];
-        let error = ComponentNoise::write_optional(Some(&noise), &mut bytes).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        assert!(bytes == [0xaa, 0x55]);
+        assert_eq!(noise.secret_distribution().base(), Distribution::NONE);
+        let mut bytes = Vec::new();
+        ComponentNoise::write_optional(Some(&noise), &mut bytes).unwrap();
+        assert_eq!(ComponentNoise::read_optional(&mut bytes.as_slice(), 2).unwrap(), Some(noise));
     }
 
     #[test]
@@ -574,7 +575,7 @@ mod tests {
         let mut wrong = Vec::new();
         let wrong_noise = ComponentNoise::from_secret(Distribution::TernaryProb(0.3), 0);
         ComponentNoise::write_optional(Some(&wrong_noise), &mut wrong).unwrap();
-        wrong.extend_from_slice(&bytes[49..]);
+        wrong.extend_from_slice(&bytes[57..]);
         assert_eq!(
             restored.read_from(&mut wrong.as_slice()).unwrap_err().kind(),
             io::ErrorKind::InvalidData
@@ -586,5 +587,72 @@ mod tests {
             io::ErrorKind::InvalidData
         );
         assert!(output.is_empty());
+    }
+    #[test]
+    fn fresh_lwe_prefix_is_compact_and_keeps_logical_terms() {
+        use crate::layouts::{Base2K, Degree, LWE, LWEInfos};
+        use poulpy_hal::{
+            AlignedBuf,
+            layouts::{ReaderFrom, WriterTo},
+        };
+        let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(2.0 / 3.0), TorusPrecision(35), 1024);
+        let mut metadata = Vec::new();
+        ComponentNoise::write_optional(Some(&noise), &mut metadata).unwrap();
+        assert_eq!(metadata.len(), 49);
+        let mut ciphertext = LWE::<AlignedBuf, i64>::alloc(Degree(1024), Base2K(12), TorusPrecision(35));
+        ciphertext.noise = Some(noise.clone());
+        let mut bytes = Vec::new();
+        ciphertext.write_to(&mut bytes).unwrap();
+        let mut restored = ciphertext.clone();
+        restored.noise = None;
+        restored.read_from(&mut bytes.as_slice()).unwrap();
+        assert!(restored == ciphertext);
+        assert_eq!(restored.noise().unwrap().components().len(), 1025);
+        metadata[25..33].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(
+            ComponentNoise::read_optional(&mut metadata.as_slice(), 1025)
+                .unwrap_err()
+                .to_string()
+                .contains("count")
+        );
+    }
+
+    #[test]
+    fn flattened_fixed_weight_secret_uses_its_original_block_dimension() {
+        let noise = ComponentNoise::from_secret(Distribution::TernaryFixed(16), 128).with_components(vec![
+            FreshNoiseEstimate::new(
+                1.0,
+                TorusPrecision(0)
+            );
+            129
+        ]);
+        assert_eq!(noise.lwe_phase_noise_with_block(64).variance(), 33.0);
+        assert_eq!(noise.lwe_phase_noise().variance(), 17.0);
+    }
+
+    #[test]
+    fn invalid_key_provenance_fails_before_wrapper_headers() {
+        use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKey, GLWESwitchingKey, Rank};
+        use poulpy_hal::{AlignedBuf, layouts::WriterTo};
+        let mut invalid = ComponentNoise::from_secret(Distribution::NONE, 1);
+        invalid.secret.base = Distribution::ENCAPSULATED("hand-built");
+        let mut switching = GLWESwitchingKey::<AlignedBuf, i64>::alloc(
+            Degree(8),
+            Base2K(12),
+            Dnum(2),
+            Dsize(1),
+            TorusPrecision(15),
+            Rank(1),
+            Rank(1),
+        );
+        switching.key.noise = Some(invalid.clone());
+        let mut automorphism =
+            GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), Dnum(2), Dsize(1), TorusPrecision(15), Rank(1));
+        automorphism.key.noise = Some(invalid);
+        let mut bytes = Vec::new();
+        assert!(switching.write_to(&mut bytes).is_err());
+        assert!(bytes.is_empty());
+        assert!(automorphism.write_to(&mut bytes).is_err());
+        assert!(bytes.is_empty());
     }
 }

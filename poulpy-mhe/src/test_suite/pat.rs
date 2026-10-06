@@ -398,10 +398,12 @@ pub(crate) fn assert_gglwe_noise_within<BE, C, S>(
 {
     for row in 0..ct.dnum().as_usize() {
         for col in 0..ct.rank_in().as_usize() {
-            let noise: f64 = module
-                .gglwe_noise(ct, row, col, pt_want, sk, &mut scratch.borrow())
-                .std()
-                .log2();
+            let stats = module.gglwe_noise(ct, row, col, pt_want, sk, &mut scratch.borrow());
+            if let Some(metadata) = ct.noise() {
+                let estimate = metadata.phase_noise(ct.n().as_usize()).variance_at(0u32.into());
+                assert!(stats.second_moment() <= 2.0 * estimate, "GGLWE residual exceeds metadata");
+            }
+            let noise = stats.std().log2();
             assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound {bound}");
         }
     }

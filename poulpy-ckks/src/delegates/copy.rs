@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCopyOps, oep::CKKSCopyImpl};
@@ -14,9 +14,6 @@ impl<BE: Backend + CKKSCopyImpl> CKKSCopyOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_copy_impl(self, dst, src, scratch)?;
-        let rank = dst.to_backend_ref().rank().as_usize();
-        dst.set_noise(src.noise().map(|noise| noise.with_rank(rank)));
-        Ok(())
+        BE::ckks_copy_impl(self, dst, src, scratch)
     }
 }

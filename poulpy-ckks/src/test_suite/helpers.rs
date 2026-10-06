@@ -44,8 +44,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
-        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena,
-        ScratchOwned, ZnxView, ZnxWord,
+        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ReaderFrom, Ring,
+        ScratchArena, ScratchOwned, WriterTo, ZnxView, ZnxWord,
     },
     source::Source,
 };
@@ -791,6 +791,12 @@ where
     module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &mut xe, &mut xa, scratch);
     let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
     module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &mut xe, &mut xa, scratch);
+    let mut bytes = Vec::new();
+    trace.write_to(&mut bytes).unwrap();
+    let mut restored = module.glwe_ci_trace_key_alloc_from_infos(&infos);
+    restored.read_from(&mut bytes.as_slice()).unwrap();
+    assert!(restored == trace);
+    trace = restored;
     let mut embed_prepared = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
     module.glwe_ci_key_prepare(&mut embed_prepared, &embed, scratch);
     let mut trace_prepared = module.glwe_ci_trace_key_prepared_alloc_from_infos(&infos);

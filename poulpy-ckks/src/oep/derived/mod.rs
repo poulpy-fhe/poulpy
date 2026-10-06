@@ -4,3 +4,5 @@ pub(crate) mod dft;
 pub(crate) mod encoding;
 pub(crate) mod polynomial_evaluation;
 pub(crate) mod rotate;
+
+pub(crate) mod conjugate;

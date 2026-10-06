@@ -313,6 +313,7 @@ impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
         GLWEViewRef::from_inner(gglwe_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
     }
 
+    /// Metadata changes on this row view are local; update the owner after changing coefficients.
     pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
     }
@@ -509,10 +510,12 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
 
 /// Backend-native mutable view of one GLWE row.
 pub trait GGLWEAtBackendMut<BE: Backend> {
+    /// Metadata changes on this entry view are local; update the owner after changing coefficients.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
+    /// Metadata changes on this entry view are local; update the owner after changing coefficients.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
@@ -797,12 +800,17 @@ where
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
-        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        self.data.read_from(reader)?;
+        self.noise = None;
+        let components = self.data.cols_out();
+        let noise = crate::ComponentNoise::read_optional(reader, components)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, None, None, components)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols_out())?;
+        self.base2k = base2k;
+        self.dsize = dsize;
+        self.k_aux = k_aux;
         self.noise = noise;
         Ok(())
     }

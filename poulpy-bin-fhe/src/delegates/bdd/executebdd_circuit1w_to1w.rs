@@ -48,8 +48,7 @@ where
         H: GetAutomorphismKey<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::execute_bdd_circuit_1w_to_1w::<C, H, T>(self, out, circuit, a, key, scratch);
-        GLWEToBackendMut::<BE>::set_noise(out, None);
+        BE::execute_bdd_circuit_1w_to_1w::<C, H, T>(self, out, circuit, a, key, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_1w_to_1w_multi_thread<C, H, T>(
@@ -66,7 +65,6 @@ where
         H: GetAutomorphismKey<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::execute_bdd_circuit_1w_to_1w_multi_thread::<C, H, T>(self, threads, out, circuit, a, key, scratch);
-        GLWEToBackendMut::<BE>::set_noise(out, None);
+        BE::execute_bdd_circuit_1w_to_1w_multi_thread::<C, H, T>(self, threads, out, circuit, a, key, scratch)
     }
 }

@@ -12,6 +12,8 @@ use poulpy_hal::{
 };
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference share and finalization within the queried scratch
 /// budgets.
 pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
@@ -54,6 +56,8 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
 }
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference share and finalization within the queried scratch
 /// budgets.
 pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {

@@ -14,18 +14,14 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_i_into_impl(self, dst, src, scratch)?;
-        dst.set_noise(None);
-        Ok(())
+        BE::ckks_mul_i_into_impl(self, dst, src, scratch)
     }
 
     fn ckks_mul_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_mul_i_assign_impl(self, dst, scratch)?;
-        dst.set_noise(None);
-        Ok(())
+        BE::ckks_mul_i_assign_impl(self, dst, scratch)
     }
 
     fn ckks_div_i_tmp_bytes(&self, res_size: usize) -> usize {
@@ -37,17 +33,13 @@ impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_div_i_into_impl(self, dst, src, scratch)?;
-        dst.set_noise(None);
-        Ok(())
+        BE::ckks_div_i_into_impl(self, dst, src, scratch)
     }
 
     fn ckks_div_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_div_i_assign_impl(self, dst, scratch)?;
-        dst.set_noise(None);
-        Ok(())
+        BE::ckks_div_i_assign_impl(self, dst, scratch)
     }
 }

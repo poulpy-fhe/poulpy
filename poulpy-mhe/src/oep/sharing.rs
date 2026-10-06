@@ -13,6 +13,8 @@ use crate::{
 };
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference share and finalization within the queried scratch
 /// budgets.
 pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
@@ -56,6 +58,8 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
 }
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference share within the queried scratch budget.
 pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, secret_infos: &B) -> usize

@@ -12,6 +12,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// [`impl_ckks_eval_mod_reference`] wires both to the callable reference circuit.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the

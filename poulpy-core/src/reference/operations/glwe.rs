@@ -1852,7 +1852,11 @@ where
                 && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
         };
         let rank = res.to_backend_ref().rank().as_usize();
-        let noise = a.to_backend_ref().noise().map(|noise| noise.with_rank(rank));
+        let noise = if res.to_backend_ref().k() >= a.to_backend_ref().k() {
+            a.to_backend_ref().noise().map(|noise| noise.with_rank(rank))
+        } else {
+            None
+        };
         res.set_noise(noise);
         res.set_canonical(!raw || a.is_canonical());
         let mut res = res.to_backend_mut();

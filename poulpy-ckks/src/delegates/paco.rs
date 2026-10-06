@@ -109,9 +109,7 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)?;
-        output.set_noise(None);
-        Ok(())
+        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_into<K, Src>(
@@ -126,9 +124,7 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)?;
-        output.set_noise(None);
-        Ok(())
+        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
@@ -145,9 +141,7 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)?;
-        output.set_noise(None);
-        Ok(())
+        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_into<K, Src>(
@@ -164,8 +158,6 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)?;
-        output.set_noise(None);
-        Ok(())
+        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 }

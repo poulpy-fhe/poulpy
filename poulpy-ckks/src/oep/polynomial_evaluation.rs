@@ -13,6 +13,8 @@ use crate::{
 };
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must satisfy the contracts of the polynomial-evaluation
 /// API, including the invariants of the underlying add/mul/copy kernels.
@@ -63,6 +65,8 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
 /// Complex-coefficient polynomial evaluation (`re + i·im`), standard ring only.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Same contract as [`CKKSPolynomialEvaluationImpl`].
 pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationImpl + super::CKKSImagImpl {

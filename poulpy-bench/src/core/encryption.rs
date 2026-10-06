@@ -73,6 +73,11 @@ where
         rank: Rank(cp.rank),
     };
 
+    let pk_infos = GLWELayout {
+        k: TorusPrecision(cp.k + cp.base2k),
+        ..infos
+    };
+
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
     let mut source_xs = Source::new([0u8; 32]);
@@ -88,15 +93,15 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .glwe_encrypt_pk_tmp_bytes(&infos, &infos)
-            .max(module.glwe_public_key_generate_tmp_bytes(&infos))
-            .max(module.glwe_public_key_prepare_tmp_bytes(&infos)),
+            .glwe_encrypt_pk_tmp_bytes(&infos, &pk_infos)
+            .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
+            .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
     );
 
-    let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
+    let mut pk = module.glwe_public_key_alloc_from_infos(&pk_infos);
     module.glwe_public_key_generate(&mut pk, &sk_prepared, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
+    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
 
     let pt = module.glwe_plaintext_alloc_from_infos(&infos);

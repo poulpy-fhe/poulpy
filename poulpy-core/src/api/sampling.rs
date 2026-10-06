@@ -8,7 +8,8 @@ use crate::{Distribution, Noise};
 /// Overwrites one column of a `ScalarZnx` with a sample of `dist`, drawn in
 /// place by the backend.
 ///
-/// See [`SamplingImpl`](crate::oep::SamplingImpl) for the distributions and the
+/// See [`Distribution`] for distribution semantics and
+/// [`SamplingImpl`](crate::oep::SamplingImpl) for the
 /// treatment of `NONE` / `ENCAPSULATED`.
 pub trait ScalarZnxFillDistribution<BE: Backend> {
     fn scalar_znx_fill_distribution(

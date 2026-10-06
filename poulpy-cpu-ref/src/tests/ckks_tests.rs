@@ -49,7 +49,13 @@ ckks_backend_rank2_test_suite!(
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::{bootstrapping_preset_keys_roundtrip, bootstrapping_presets_meet_precision};
+
+    #[test]
+    #[ignore = "generates a full-size preset key set; opt in with --ignored"]
+    fn ntt4x30_preset_keys_roundtrip() {
+        bootstrapping_preset_keys_roundtrip::<crate::NTT4x30Ref>(52);
+    }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]

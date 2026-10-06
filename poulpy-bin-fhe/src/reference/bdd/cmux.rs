@@ -129,6 +129,8 @@ pub fn cmux_reference<BE, R, T, F>(
         );
     }
     module.glwe_copy(res, &tmp_in, &mut scratch_norm);
+
+    res.set_noise(None);
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign_neg`].
@@ -209,6 +211,8 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
         );
     }
     module.glwe_copy(res, &tmp, &mut scratch_norm);
+
+    res.set_noise(None);
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign`].
@@ -281,4 +285,6 @@ pub fn cmux_assign_reference<BE, R, A>(
         );
     }
     module.glwe_copy(res, &tmp, &mut scratch_norm);
+
+    res.set_noise(None);
 }

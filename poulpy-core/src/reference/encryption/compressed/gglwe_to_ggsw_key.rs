@@ -75,50 +75,52 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
-        res.set_noise(metadata);
-        assert_eq!(res.rank(), sk.rank());
-        assert_eq!(res.n(), sk.n());
-        assert!(
-            scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GGLWEToGGSWKeyCompressedEncryptSk::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res)
-        );
-        let tmp_bytes: usize = self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res);
         {
-            let mut res = res.to_backend_mut();
-            let rank: usize = res.rank_out().as_usize();
+            assert_eq!(res.rank(), sk.rank());
+            assert_eq!(res.n(), sk.n());
+            assert!(
+                scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GGLWEToGGSWKeyCompressedEncryptSk::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res)
+            );
+            let tmp_bytes: usize = self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res);
+            {
+                let mut res = res.to_backend_mut();
+                let rank: usize = res.rank_out().as_usize();
 
-            let scratch = scratch.borrow();
-            let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(sk.n(), res.rank());
-            let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(sk.n().as_usize().into(), res.rank());
-            let (mut sk_ij, scratch_3) = scratch_2.take_scalar_znx_scratch(sk.n().as_usize(), rank);
-            let (mut tensor_scratch, scratch_4) = scratch_3.split_at(self.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
-            self.glwe_secret_prepare(&mut sk_prepared, sk);
-            self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
+                let scratch = scratch.borrow();
+                let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(sk.n(), res.rank());
+                let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(sk.n().as_usize().into(), res.rank());
+                let (mut sk_ij, scratch_3) = scratch_2.take_scalar_znx_scratch(sk.n().as_usize(), rank);
+                let (mut tensor_scratch, scratch_4) = scratch_3.split_at(self.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
+                self.glwe_secret_prepare(&mut sk_prepared, sk);
+                self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
-            let (mut enc_scratch, _scratch_5) = scratch_4.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(&res));
-            let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_tensor.data());
+                let (mut enc_scratch, _scratch_5) = scratch_4.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(&res));
+                let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_tensor.data());
 
-            let mut source_xa = Source::new(seed_xa);
+                let mut source_xa = Source::new(seed_xa);
 
-            for i in 0..rank {
-                {
-                    let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_ij);
-                    for j in 0..rank {
-                        let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
-                        let idx: usize = lo * rank + hi - (lo * (lo + 1) / 2);
-                        self.vec_znx_copy(&mut sk_ij_backend, j, &sk_tensor_backend, idx);
+                for i in 0..rank {
+                    {
+                        let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_ij);
+                        for j in 0..rank {
+                            let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
+                            let idx: usize = lo * rank + hi - (lo * (lo + 1) / 2);
+                            self.vec_znx_copy(&mut sk_ij_backend, j, &sk_tensor_backend, idx);
+                        }
                     }
+
+                    let (seed_xa_tmp, _) = source_xa.branch();
+
+                    let mut ct = res.at_view_mut(i);
+
+                    self.gglwe_compressed_encrypt_sk(&mut ct, &sk_ij, &sk_prepared, seed_xa_tmp, source_xe, &mut enc_scratch);
                 }
-
-                let (seed_xa_tmp, _) = source_xa.branch();
-
-                let mut ct = res.at_view_mut(i);
-
-                self.gglwe_compressed_encrypt_sk(&mut ct, &sk_ij, &sk_prepared, seed_xa_tmp, source_xe, &mut enc_scratch);
             }
+            scratch.wipe(tmp_bytes);
         }
-        scratch.wipe(tmp_bytes);
+        res.set_noise(metadata);
     }
 }

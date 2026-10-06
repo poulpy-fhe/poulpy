@@ -100,8 +100,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
             log_domain,
             extension_factor,
             scratch,
-        );
-        res.set_noise(None);
+        )
     }
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         &self,
@@ -125,8 +124,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
             log_domain,
             extension_factor,
             scratch,
-        );
-        res.set_noise(None);
+        )
     }
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         &self,
@@ -178,8 +176,7 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_prepared(self, res, lwe, key, plan, scratch);
-        res.set_noise(None);
+        <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_prepared(self, res, lwe, key, plan, scratch)
     }
 }
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> CircuitBootstrappingKeyEncryptSk<BRA, BE>

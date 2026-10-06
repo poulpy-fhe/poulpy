@@ -165,14 +165,7 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
     P: GLWEToBackendRef<BE> + GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(
-        res,
-        pk,
-        crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
-    )
-    .noise;
     BE::glwe_encrypt_pk_at_col(module, res, Some((pt, 0)), true, pk, source_xu, source_xe, scratch);
-    res.set_noise(metadata);
 }
 
 pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: GLWEInfos, K: GLWEInfos>(
@@ -236,16 +229,9 @@ pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(
-        res,
-        pk,
-        crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
-    )
-    .noise;
     BE::glwe_encrypt_pk_at_col::<R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K>(
         module, res, None, true, pk, source_xu, source_xe, scratch,
     );
-    res.set_noise(metadata);
 }
 
 pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos, K: GLWEInfos>(
@@ -276,14 +262,12 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
-    res.set_noise(
-        crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(
-            res,
-            pk,
-            crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
-        )
-        .noise,
-    );
+    let metadata = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(
+        res,
+        pk,
+        crate::fresh_noise_model::PublicKeyBodyNoise::Sampled,
+    )
+    .noise;
     operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
@@ -321,6 +305,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
         }
     }
     scratch.wipe(tmp_bytes);
+    res.set_noise(metadata);
 }
 
 pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize

@@ -123,10 +123,13 @@ would not protect it.
 
 ## Component noise
 
+Delegates only forward calls. Backend overrides must preserve the reference
+and derived implementations' metadata updates and validate provenance before
+mutation, as specified by their OEP safety contracts.
+
 Encryption and construction of fresh collective keys or ciphertexts derive
 `ComponentNoise` for their outputs. Secret provenance records the base
-distribution and number of secret contributors. The `noise` field and
-`LWEInfos::noise()` accessor hold `rank + 1` terms in `[body, mask_0, ...]`
+distribution and number of secret contributors. The `LWEInfos::noise()` accessor exposes `rank + 1` terms in `[body, mask_0, ...]`
 order. Each `FreshNoiseEstimate` records coefficient-noise variance before
 secret weighting, in integer units at the common creation precision `k`.
 Secret-key encryption records `sigma_fresh^2` in the body and zero in each
@@ -135,18 +138,24 @@ The square root of each variance is its effective fresh sigma; multiplying that 
 `2^-k` gives its torus scale. `variance_at` and `std_dev_at` express the same
 historical estimate on another precision grid without adding rounding error.
 Positive infinity denotes an unbounded estimate, including numeric overflow.
-`phase_noise(n)` reconstructs the GLWE estimate as
+`phase_noise(n)` reconstructs the standard negacyclic GLWE estimate as
 `body + n*E[S^2]*sum(masks)`; `lwe_phase_noise()` uses scalar products and
-the LWE secret dimension for fixed-weight and block distributions.
+the LWE secret dimension for fixed-weight and block distributions. After flattening
+a rank greater than one fixed-weight GLWE secret, use
+`lwe_phase_noise_with_block(n)` with its original polynomial dimension.
+For conjugate-invariant products, `weighted_phase_noise(n, 4*n)` bounds
+every coefficient, including coefficient zero; the average weight is about `2*n`.
 
 Fresh ciphertexts derive their phase-error estimate and sampling precision
 from the key's metadata. Let the output precision be `k`, public-key precision
 be `k + a`, rank be `r`, and degree be `n`. Write `V_pk` for a public-key entry's
 variance on the key's grid, `q_u = E[u^2]` for the ephemeral second moment, and
 `q_S = E[S^2]` for the destination secret's second moment. In output-grid
-coefficient units, define:
+coefficient units, define the following negacyclic model (replace each product
+weight `n` by `4*n` for the conjugate-invariant bound, retaining `n` when
+computing the secret law's coefficient moments):
 
-- `I = r*n*q_u*V_pk*2^(-2*a)`, the inherited public-key error;
+- `I = r*n*q_u*V_pk*2^(-2*a)`, the inherited public-key error; this assumes centered laws or zero inherited mask errors. Noncentered laws with inherited mask error record an unbounded estimate and use full key precision;
 - `F = (1 + r*n*q_S)*sigma_fresh^2`, the fresh body and mask error before rescaling;
 - `Q = (1 + r*n*q_S)/4`, the modeled output-rounding variance.
 
@@ -173,16 +182,17 @@ truncation introduces `T(d)` in addition to that rescaled error.
 
 Fresh errors are added to the truncated product at `k_sample`, and the result
 is normalized directly to `k` once. The component terms recover the phase estimate
-`V_ct = C(d) + F*2^(-2*d) + R` at precision `k`, where `R = Q` when `w > k`
-and zero otherwise. Adding final rounding as an independent variance follows
+`V_ct = C(d) + F*2^(-2*d) + R` at precision `k`, where `R = Q + M^2` when `w > k`
+and zero otherwise. For a noncentered secret, ties round up and the bias bound is
+`M = 2^(-(w-k+1)) * (1 + r*n*abs(E[S]))`; centered secrets use `M = 0`. Adding final rounding as an independent variance follows
 the library's noise-model approximation; the output-rounding error need not
 actually be independent of the existing phase error.
 Inherited and truncation errors are recorded per component using a common
 Young-inequality split that preserves `C(d)` after secret weighting. Fresh
-body and mask errors are added separately, with `1/4` output-rounding
-variance per component when `w > k`. Intentional flooding affects only the body.
+body and mask errors are added separately, with `1/4 + M^2/(1 + r*n*q_S)` output-rounding
+second moment per component when `w > k`. Intentional flooding affects only the body.
 The threshold makes construction noise no larger than the modeled final
-rounding contribution when attainable, so their sum is at most `2*Q`.
+rounding contribution when attainable, so the estimate is at most `2*Q + M^2`.
 
 For a centered base secret with coefficient variance `v`, a public key built
 from `P` independent shares has `V_pk = P*sigma_fresh^2` and `q_S = P*v`;
@@ -212,24 +222,32 @@ when binary ephemerals reuse one public key, a conservative sum of sigmas
 accounts for possible covariance.
 
 This metadata describes fresh encryption. Homomorphic operations clear the
-entire output tag to `None`, even when the inputs have identical tags or the
+entire output metadata to `None`, even when the inputs have identical metadata or the
 operation happens to leave the value unchanged. This includes arithmetic with
 plaintexts, normalization, key switching, rotations, extraction and evaluation
 conversions. Noise composition is deferred to a later release. Fresh encryption
 and key-generation factories record their output metadata after any internal
 arithmetic used during construction.
 
-Copies, compression, preparation and backend transfers preserve the recorded
-estimate and its creation precision, even when the destination's precision
-differs. A copy that changes rank selects the corresponding leading terms
-or appends zero-noise masks. Copies also preserve an absent tag on an evaluated
-ciphertext. Backend views clone the component noise metadata, so an operation
+Copies at equal or wider precision, compression, preparation and backend
+transfers preserve the recorded estimate and its creation precision. Narrowing
+copies clear metadata because re-quantization adds error. Rank padding appends
+zero-noise masks; preparation requires equal ranks. Copies also preserve absent
+metadata on evaluated ciphertexts. Backend views clone the component noise metadata, so an operation
 that records or clears it must update the owner through its setter.
 
 Equality includes all component estimates and their precision. The `PNM3` wire
 format preserves them and validates the component count against the ciphertext
-shape. Earlier metadata versions are rejected: `PNM1` lacks amplified fresh
-noise, and `PNM2` stores only a phase estimate without its component breakdown.
+shape. The metadata block stores the lossless distribution tag and payload, contributor
+count, precision, logical component count, and the prefix through the last
+nonzero variance. Readers restore zero suffix terms after validating the shape.
+Readers require the destination's existing component count even when metadata
+is absent, and validate payload headers before changing that count. Compressed
+readers also require the existing seed count and matrix entry shape. Failed
+reads clear metadata while preserving the component count, so retrying a read
+cannot turn a prior untrusted shape into a metadata allocation bound.
+Unsupported metadata markers are rejected. ENCAPSULATED provenance is recorded
+as NONE, retaining an unknown-law estimate without serializing a process-local tag.
 
 ## Testing a replacement
 
@@ -264,12 +282,12 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core --no-deps --features enable-
 
 `VecZnxAddNoise` dispatches to the mandatory `SamplingImpl`. It adds
 one independent integer sample per coefficient, scaled by `2^-k` at the
-destination's precision `k`, to a canonical input column. Each sample is
+destination's precision `k`, to a column with sufficient signed-word headroom. Each sample is
 decomposed across all necessary balanced limbs; drawing independent Gaussian
 limbs or shifting a small machine-word sample is not equivalent. Other columns
-remain untouched, and padding below the sampling precision contributes zero. Adding two bounded
-balanced digits leaves enough headroom for normalization; the result is
-unnormalized and callers must normalize before another smudging addition.
+remain untouched, and padding below the sampling precision contributes zero. Each sum of an existing digit and the sampled balanced digit must fit its signed
+word. The result is unnormalized; repeated additions are valid while that
+headroom remains. Normalization restores balanced digits.
 
 Secret-key encryption uses `Noise::ENCRYPTION` at the output precision;
 public-key encryption uses the derived intermediate sampling precision before

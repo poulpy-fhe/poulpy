@@ -11,6 +11,8 @@ use super::derived::ggsw as derived;
 use crate::{layouts::GGSWShareOwned, oep::GGLWEPatCompressedImpl};
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Reproduce the reference share, mask seeds included, and the reference
 /// finalized GGSW, within the queried scratch budgets.
 pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {

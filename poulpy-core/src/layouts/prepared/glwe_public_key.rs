@@ -40,6 +40,8 @@ impl<D: Data, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
 }
 
 impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
+    /// Changing this law requires matching noise provenance. Public-key encryption
+    /// rejects a mismatch when metadata is present; untagged keys skip that check.
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }

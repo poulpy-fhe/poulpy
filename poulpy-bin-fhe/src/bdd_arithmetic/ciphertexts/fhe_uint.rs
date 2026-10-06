@@ -168,7 +168,7 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
 }
 
 impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
-    pub fn noise<S, M, BE>(&self, module: &M, want: u32, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
+    pub fn noise_stats<S, M, BE>(&self, module: &M, want: u32, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
         Self: GLWEToBackendRef<BE>,

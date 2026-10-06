@@ -63,8 +63,7 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_private_keyswitch_share_finalize(self, res, ct, share, scratch);
-        res.set_noise(None);
+        BE::mhe_glwe_private_keyswitch_share_finalize(self, res, ct, share, scratch)
     }
 }
 
@@ -130,7 +129,6 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::mhe_glwe_public_keyswitch_share_finalize(self, res, ct, share, scratch);
-        res.set_noise(None);
+        BE::mhe_glwe_public_keyswitch_share_finalize(self, res, ct, share, scratch)
     }
 }

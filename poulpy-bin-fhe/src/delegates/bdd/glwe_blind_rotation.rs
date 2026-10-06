@@ -36,8 +36,7 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::glwe_blind_rotation_assign::<R, K>(self, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-        res.set_noise(None);
+        BE::glwe_blind_rotation_assign::<R, K>(self, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
@@ -56,7 +55,6 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::glwe_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-        res.set_noise(None);
+        BE::glwe_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
     }
 }

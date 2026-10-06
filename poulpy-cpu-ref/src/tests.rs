@@ -629,10 +629,12 @@ fn test_hal_serialization_fft64_ref() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
+    use poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples;
+    use poulpy_cpu_oracle::{FFT64Oracle, NTT4x30Oracle, test_suite::controlled_sampling_module};
     // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [361366931415411389, 2323305491726113724, 11024004680182431904];
-    const NTT4X30: [u64; 3] = [1840252358009039011, 13829066379894909201, 1037071979051952606];
+    const FFT64: [u64; 3] = [15206321185833343840, 16014056909502571106, 12098182843825841058];
+    const NTT4X30: [u64; 3] = [3710393567399427478, 13637453161361644367, 8699844452920164836];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Ref>::new(256), 17),
@@ -640,6 +642,15 @@ fn test_glwe_public_key_rank1_golden() {
         ),
         (FFT64, NTT4X30)
     );
+    let fft_oracle = with_backend_samples(Module::<FFT64Ref>::new(256), |_| {
+        let oracle: Module<FFT64Oracle> = controlled_sampling_module(256);
+        glwe_public_key_rank1_digests(&oracle, 17)
+    });
+    let ntt_oracle = with_backend_samples(Module::<NTT4x30Ref>::new(256), |_| {
+        let oracle: Module<NTT4x30Oracle> = controlled_sampling_module(256);
+        glwe_public_key_rank1_digests(&oracle, 52)
+    });
+    assert_eq!((fft_oracle, ntt_oracle), (FFT64, NTT4X30));
 }
 
 #[cfg(feature = "enable-core")]

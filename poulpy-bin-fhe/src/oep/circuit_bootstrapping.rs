@@ -20,6 +20,8 @@ use poulpy_hal::{
 /// Backend contract for circuit bootstrapping.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Preserve the canonical circuit, metadata, and input invariants. Execution must
 /// stay within the selected scratch query; validate overrides with caller-selected parity.
 pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64> {
@@ -164,6 +166,8 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
 /// Backend contract for circuit bootstrapping.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Preserve the canonical circuit, metadata, and input invariants. Execution must
 /// stay within the selected scratch query; validate overrides with caller-selected parity.
 pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
@@ -185,6 +189,8 @@ pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: B
 /// Backend contract for circuit bootstrapping.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Preserve the canonical circuit, metadata, and input invariants. Execution must
 /// stay within the selected scratch query; validate overrides with caller-selected parity.
 pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {

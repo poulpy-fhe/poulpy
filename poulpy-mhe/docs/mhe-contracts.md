@@ -47,14 +47,20 @@ follows the
 
 ## Share metadata
 
+Backend overrides own metadata stamping and provenance checks; delegates only
+forward calls. The OEP safety contracts require reference-equivalent metadata
+and rejection of invalid provenance before mutation.
+
 A share carries `ComponentNoise`: secret provenance and `rank + 1` effective
 fresh component variances, ordered as body followed by masks. Each mask variance
 is stored before secret weighting. The secret distribution records its base law
 and number of independently summed parties. Each `FreshNoiseEstimate` records a
-centered variance and its precision: an estimate `V` at precision `k`
+effective second-moment estimate and its precision: an estimate `V` at precision `k`
 has torus variance `V * 2^(-2k)`. Rescaling the estimate does not change the stored
 secret count. The estimate is not an assertion that the resulting distribution
-is Gaussian. `phase_noise(n)` computes `V_body + n * E[S²] * sum(V_masks)`.
+is Gaussian. For the standard negacyclic ring, `phase_noise(n)` computes
+`V_body + n * E[S²] * sum(V_masks)`. Conjugate-invariant public-key encryption
+uses `weighted_phase_noise(n, 4*n)` to cover coefficient zero.
 Rank-zero shares have one body component even when their secret provenance names
 a nonzero secret distribution.
 
@@ -84,7 +90,7 @@ A GGSW's first column carries ordinary aggregated body noise. Other columns
 contain `E_s * U` in the body and `E_u` in each mask, plus each component's
 key-switching and rounding error. Their variance model uses the ephemeral
 second moment, including nonzero means, and bounds each gadget digit by
-`2^(B-1)`. The stored estimate takes each component's maximum over all gadget
+`2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for `B = dsize*b`. The stored estimate takes each component's maximum over all gadget
 columns. The secret's second moment enters when deriving phase noise. Key coverage is checked before this
 construction, so no gadget truncation residue is omitted.
 
@@ -102,10 +108,14 @@ error, whose composition is not tracked.
 When private key switching generates a share narrower than the received mask,
 subtracting the two cropped inner products and normalizing also introduces
 conversion error. Its effective model adds one unit of variance at the share's
-precision to the flood variance. Equal or wider shares add no conversion term.
+precision to the flood variance. Public key-switch shares add the same term
+when narrower than the received mask and the public key has the share precision;
+a wider key already includes core's conversion estimate. Equal or wider shares
+add no conversion term.
 
 As in core's noise models, precision reduction adds a modeled half-ulp variance
-per ciphertext component. The components are folded against the secret only
+per ciphertext component. For noncentered secrets, core also adds the squared
+tie-rounding bias bound described in the core contracts. The components are folded against the secret only
 when deriving phase noise. Adding that rounding term
 independently is an approximation, not a proof that it is uncorrelated with
 other errors. Unknown secret moments produce an infinite estimate while keeping

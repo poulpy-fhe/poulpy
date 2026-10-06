@@ -102,7 +102,7 @@ where
             for row in 0..ksk.dnum().as_usize() {
                 for col in 0..ksk.rank_in().as_usize() {
                     let noise_have = ksk
-                        .noise(module, row, col, &pt_want.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &pt_want.to_ref(), &sk_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     assert!(noise_have <= max_noise, "noise_have: {noise_have} > max_noise: {max_noise}")
@@ -207,7 +207,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
             for row in 0..ksk.dnum().as_usize() {
                 for col in 0..ksk.rank_in().as_usize() {
                     let noise_have = ksk
-                        .noise(module, row, col, &pt_want.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &pt_want.to_ref(), &sk_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     assert!(noise_have <= max_noise, "noise_have: {noise_have} > max_noise: {max_noise}")

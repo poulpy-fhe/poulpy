@@ -1,5 +1,9 @@
 //! Backend extension points for multiparty operations.
 //!
+//! Backend implementations reproduce the reference component noise metadata,
+//! including aggregation and finalization. Preserve reference provenance checks
+//! before mutation. Delegates only forward.
+//!
 //! A backend selects the reference implementation with the `impl_mhe_*_reference!`
 //! opt-ins or implements an `*Impl` contract itself. An override must compute the
 //! same result as the reference and pass parity against a validated backend; the

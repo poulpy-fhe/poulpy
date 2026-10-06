@@ -460,6 +460,7 @@ where
             self.ckks_mul_add_pt_const_into(res, xpow, last_coeffs, 0, scratch)?;
         }
 
+        res.set_noise(None);
         Ok(())
     }
 
@@ -593,6 +594,7 @@ where
             self.ckks_add_assign(res, &im_fold, scratch)?;
         }
 
+        res.set_noise(None);
         Ok(())
     }
 }

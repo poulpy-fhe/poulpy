@@ -114,4 +114,8 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
             module.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
         },
     );
+
+    for bit in &mut res.bits {
+        GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
+    }
 }

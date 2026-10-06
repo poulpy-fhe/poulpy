@@ -4,7 +4,7 @@
 //! seed equality alone does not imply identical samples across backends.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, unnormalized_twin};
 use crate::{
-    Distribution, GetDistribution, GetDistributionMut,
+    ComponentNoise, Distribution, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
@@ -91,6 +91,7 @@ pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static 
     }
     let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
     B::copy_view_to_host(view.data.data(), &mut bytes);
+    ComponentNoise::write_optional(view.noise().as_ref(), &mut bytes).unwrap();
     Snapshot {
         label,
         metadata: vec![
@@ -230,10 +231,15 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         );
         // The mask phase is the decryption without the body: of the ciphertext's
         // mask in place and of an allocated copy; the unnormalized twin's is rejected.
-        let mut phase = module.glwe_plaintext_alloc_from_infos(&infos);
+        let mut phase = module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..infos });
+        GLWEToBackendMut::<B>::set_noise(
+            &mut phase,
+            Some(crate::ComponentNoise::from_secret_at(*sk.dist(), infos.k, 0)),
+        );
         poison_glwe::<B, _>(&mut phase);
         let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_inner_product_tmp_bytes(&infos));
         module.glwe_mask_inner_product(&mut phase, &out, &skp, &mut mask_scratch().arena());
+        assert!(phase.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_inner_product", &phase));
         let mut mask = module.glwe_mask_alloc_from_infos(&infos);
         for j in 0..rank {
@@ -281,69 +287,92 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(snapshot_glwe::<B, _>("encrypt_zero_sk", &out));
         results.push(source_snapshot("encrypt_zero_sk_sources", &mut e, &mut a));
 
-        for compressed in [false, true] {
-            let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
-            for l in 0..pk.rank().as_usize() {
-                poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
-            }
-            if compressed {
-                let mut pk_compressed = module.glwe_public_key_compressed_alloc_from_infos(&infos);
-                module.glwe_public_key_compressed_generate(
-                    &mut pk_compressed,
-                    &skp,
-                    [89; 32],
-                    &mut e,
-                    &mut poisoned_scratch::<B>(module.glwe_public_key_compressed_generate_tmp_bytes(&infos)).arena(),
+        for gap in [0, 1, base2k, 3 * base2k] {
+            let pk_infos = GLWELayout {
+                k: TorusPrecision(infos.k.0 + gap as u32),
+                ..infos
+            };
+            let mut wide_pt = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+                n: infos.n,
+                base2k: infos.base2k,
+                k: TorusPrecision(pk_infos.k.0 + base2k as u32),
+            });
+            module.vec_znx_fill_uniform_source(
+                base2k,
+                wide_pt.k().as_usize(),
+                &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(&mut wide_pt.data),
+                0,
+                &mut Source::new([68; 32]),
+            );
+            for compressed in [false, true] {
+                let mut pk = module.glwe_public_key_alloc_from_infos(&pk_infos);
+                for l in 0..pk.rank().as_usize() {
+                    poison_glwe::<B, _>(&mut GLWEPublicKeyAtViewMut::<B>::at_view_mut(&mut pk, l));
+                }
+                if compressed {
+                    let mut pk_compressed = module.glwe_public_key_compressed_alloc_from_infos(&pk_infos);
+                    module.glwe_public_key_compressed_generate(
+                        &mut pk_compressed,
+                        &skp,
+                        [89; 32],
+                        &mut e,
+                        &mut poisoned_scratch::<B>(module.glwe_public_key_compressed_generate_tmp_bytes(&pk_infos)).arena(),
+                    );
+                    module.decompress_glwe_public_key(&mut pk, &pk_compressed);
+                } else {
+                    module.glwe_public_key_generate(
+                        &mut pk,
+                        &skp,
+                        &mut e,
+                        &mut a,
+                        &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&pk_infos)).arena(),
+                    );
+                }
+                for l in 0..pk.rank().as_usize() {
+                    results.push(snapshot_glwe::<B, _>(
+                        "public_key_generate",
+                        &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
+                    ));
+                }
+                results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
+                assert_eq!(pk.dist(), sk.dist());
+                let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
+                module.glwe_public_key_prepare(
+                    &mut pkp,
+                    &pk,
+                    &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)).arena(),
                 );
-                module.decompress_glwe_public_key(&mut pk, &pk_compressed);
-            } else {
-                module.glwe_public_key_generate(
-                    &mut pk,
-                    &skp,
+                assert_eq!(pkp.dist(), pk.dist());
+                assert_eq!(pkp.noise(), pk.noise());
+                poison_glwe::<B, _>(&mut out);
+                module.glwe_encrypt_pk(
+                    &mut out,
+                    &wide_pt,
+                    &pkp,
                     &mut e,
                     &mut a,
-                    &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&infos)).arena(),
+                    &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
                 );
-            }
-            for l in 0..pk.rank().as_usize() {
                 results.push(snapshot_glwe::<B, _>(
-                    "public_key_generate",
-                    &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
+                    if gap == 0 { "encrypt_pk" } else { "pk_reduced" },
+                    &out,
                 ));
+                results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
+                poison_glwe::<B, _>(&mut out);
+                module.glwe_encrypt_zero_pk(
+                    &mut out,
+                    &pkp,
+                    &mut e,
+                    &mut a,
+                    &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
+                );
+                results.push(snapshot_glwe::<B, _>(
+                    if gap == 0 { "encrypt_zero_pk" } else { "pk_zero_reduced" },
+                    &out,
+                ));
+                results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
             }
-            results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
-            assert_eq!(pk.dist(), sk.dist());
-            let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
-            module.glwe_public_key_prepare(
-                &mut pkp,
-                &pk,
-                &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
-            );
-            assert_eq!(pkp.dist(), pk.dist());
-            assert_eq!(pkp.noise(), pk.noise());
-            poison_glwe::<B, _>(&mut out);
-            module.glwe_encrypt_pk(
-                &mut out,
-                &pt,
-                &pkp,
-                &mut e,
-                &mut a,
-                &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
-            );
-            results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
-            results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
-            poison_glwe::<B, _>(&mut out);
-            module.glwe_encrypt_zero_pk(
-                &mut out,
-                &pkp,
-                &mut e,
-                &mut a,
-                &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
-            );
-            results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
-            results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
         }
-
         let mut compressed = module.glwe_compressed_alloc_from_infos(&infos);
         poison_glwe_compressed::<B, _>(&mut compressed);
         module.glwe_compressed_encrypt_sk(
@@ -371,9 +400,14 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.decompress_glwe(&mut zero, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
         results.push(source_snapshot("compressed_zero_sources", &mut e, &mut a));
+        assert!(out.noise().is_some());
+        let previous_metadata = out.noise();
         module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
+        assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_seed", &out));
+        GLWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
         module.fill_glwe_mask_from_source(&mut out, &mut a);
+        assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
         let mut lsk = module.lwe_secret_alloc((n * rank).into());
@@ -499,9 +533,14 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             metadata: vec![view.base2k().as_usize(), view.k().as_usize()],
             bytes,
         });
+        assert!(out.noise().is_some());
+        let previous_metadata = out.noise();
         module.fill_lwe_mask_from_seed(base2k, &mut out, [103; 32]);
+        assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_seed", &out));
+        LWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
         module.fill_lwe_mask_from_source(base2k, &mut out, &mut a);
+        assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_source", &out));
         results.push(source_snapshot("lwe_mask_sources", &mut e, &mut a));
         // LWECompressed has a public decompressor but no compressed encrypt

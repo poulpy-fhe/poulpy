@@ -55,6 +55,19 @@ fn noise(c: &mut Criterion) {
             })
         });
     }
+    group.bench_function("encryption_carried_k273", |b| {
+        b.iter(|| {
+            module.vec_znx_add_noise(
+                30,
+                273,
+                &mut VecZnxToBackendMut::<FFT64Ref>::to_backend_mut(&mut destination),
+                0,
+                Noise::ENCRYPTION,
+                &mut source,
+            );
+            black_box(&destination);
+        })
+    });
     group.finish();
 }
 

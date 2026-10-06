@@ -1,14 +1,15 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, ReaderFrom, ScratchOwned, WriterTo},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
+    Distribution, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
+    GLWESwitchingKeyEncryptSk, GetDistributionMut,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -73,6 +74,7 @@ where
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
                 module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
+                *sk_out.dist_mut() = Distribution::ENCAPSULATED("roundtrip");
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
@@ -86,13 +88,20 @@ where
                     &mut scratch.arena(),
                 );
 
+                let mut bytes = Vec::new();
+                ksk.write_to(&mut bytes).unwrap();
+                let mut restored = module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
+                restored.read_from(&mut bytes.as_slice()).unwrap();
+                assert!(restored == ksk);
+                assert_eq!(ksk.noise().unwrap().secret_distribution().base(), Distribution::NONE);
+
                 let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
@@ -225,7 +234,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
@@ -362,7 +371,7 @@ where
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,

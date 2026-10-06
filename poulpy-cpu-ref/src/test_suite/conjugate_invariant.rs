@@ -490,6 +490,7 @@ mod tests {
         };
         let module = poulpy_hal::layouts::Module::<crate::NTT4x30CIRef>::new(256);
         poulpy_core::test_suite::noise::encryption::test_glwe_encrypt_sk(&params, &module);
+        poulpy_core::test_suite::noise::encryption::test_glwe_encrypt_pk(&params, &module);
         poulpy_core::test_suite::noise::automorphism::test_glwe_automorphism(&params, &module);
         poulpy_core::test_suite::noise::encryption::test_gglwe_automorphism_key_encrypt_sk(&params, &module);
         poulpy_core::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism(

@@ -87,7 +87,6 @@ where
         P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch);
-        res.set_noise(None);
+        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 }

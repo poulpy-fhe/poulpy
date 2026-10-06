@@ -44,23 +44,29 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        let mut res = res.to_backend_mut();
-        let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
-        for col in 1..res.data.cols() {
-            self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
+        {
+            let mut res = res.to_backend_mut();
+            let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
+            for col in 1..res.data.cols() {
+                self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
+            }
         }
+        res.set_noise(None);
     }
 
     fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_canonical(true);
-        let mut res = res.to_backend_mut();
-        let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
-        for col in 0..res.data.cols() {
-            self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source);
+        {
+            res.set_canonical(true);
+            let mut res = res.to_backend_mut();
+            let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
+            for col in 0..res.data.cols() {
+                self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source);
+            }
         }
+        res.set_noise(None);
     }
 }
 
@@ -156,35 +162,37 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
+        {
+            let res = &mut res.to_backend_mut();
+            let pt_backend = pt.to_backend_ref();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            {
+                let mut res_ref = &mut *res;
+                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+            }
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                Some((pt_backend, 0)),
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        }
         res.set_noise(metadata);
         res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-        let pt_backend = pt.to_backend_ref();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
-        {
-            let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
-        }
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            res.k().as_usize(),
-            &mut res.data,
-            Some((pt_backend, 0)),
-            sk,
-            source_xe,
-            scratch,
-        );
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 
     fn glwe_encrypt_zero_sk_reference<R, S>(
@@ -203,34 +211,36 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
+        {
+            let res = &mut res.to_backend_mut();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            {
+                let mut res_ref = &mut *res;
+                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+            }
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                None,
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        }
         res.set_noise(metadata);
         res.set_canonical(false);
-        let res = &mut res.to_backend_mut();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
-        {
-            let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
-        }
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            res.k().as_usize(),
-            &mut res.data,
-            None,
-            sk,
-            source_xe,
-            scratch,
-        );
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 
     fn glwe_encrypt_sk_with_mask_reference<R, P, S>(
@@ -250,31 +260,33 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
+        {
+            let res = &mut res.to_backend_mut();
+            let pt_backend = pt.to_backend_ref();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                Some((pt_backend, 0)),
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        }
         res.set_noise(metadata);
         res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-        let pt_backend = pt.to_backend_ref();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            res.k().as_usize(),
-            &mut res.data,
-            Some((pt_backend, 0)),
-            sk,
-            source_xe,
-            scratch,
-        );
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 }
 
@@ -411,111 +423,115 @@ where
                 crate::fresh_noise_model::PublicKeyBodyNoise::Omitted
             },
         );
-        res.set_noise(plan.noise);
-        res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-
-        assert_eq!(res.base2k(), pk.base2k());
-        assert_eq!(res.n(), pk.n());
-        assert_eq!(res.rank(), pk.rank());
-        assert!(pk.k() >= res.k(), "invalid public key: less precise than the output");
-        if let Some((pt, _)) = &pt {
-            assert_eq!(pt.base2k(), pk.base2k());
-            assert_eq!(pt.n(), pk.n());
-        }
-
-        let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
-        assert!(
-            pk.data.cols_out() == pk.data.cols_in() + 1,
-            "invalid public key: entry count differs from its rank"
-        );
-        let n: usize = operand_degree(self.n(), &[res.n(), pk.n()]);
-        let base2k: usize = pk.base2k().into();
-        let work_size: usize = plan.work_precision.as_usize().div_ceil(base2k);
-        // Plaintexts may be more precise than the selected key prefix. Keep
-        // their previously supported tail before the final normalization;
-        // IDFT zero-extends the narrower product into this wider accumulator.
-        let big_size = work_size.max(pt.as_ref().map_or(0, |(pt, _)| pt.size().min(pk.size())));
-        let res_k: usize = res.k().as_usize();
-        let rank: usize = pk.data.cols_in();
-
-        // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
-        let dist: Distribution = match pk.dist() {
-            Distribution::NONE => panic!(
-                "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
-                 Self::generate"
-            ),
-            Distribution::ENCAPSULATED(_) => panic!("invalid public key: secret is tagged for encapsulation"),
-            // A zero ephemeral leaves the ciphertext as the message plus fresh noise.
-            Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
-                panic!("invalid public key: zero ephemeral distribution")
-            }
-            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if p.is_nan() || *p <= 0.0 => {
-                panic!("invalid public key: zero ephemeral distribution")
-            }
-            dist => *dist,
-        };
-
-        let scratch = scratch.borrow();
-        let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
-        let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
-        for l in 0..rank {
-            self.scalar_znx_fill_distribution(&mut u.to_backend_mut(), l, dist, source_xu);
-            self.vec_znx_dft_apply(
-                1,
-                0,
-                &mut u_dft.to_backend_mut(),
-                l,
-                &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
-                l,
-            );
-        }
-
-        let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, work_size);
-        self.vmp_apply_dft_to_dft(
-            &mut res_dft.to_backend_mut(),
-            &u_dft.to_backend_ref(),
-            &pk.data,
-            0,
-            &mut scratch_1.borrow(),
-        );
-
         {
-            let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, big_size);
-            for i in 0..rank + 1 {
-                self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
-                if i > 0 || body_noise {
-                    // The product keeps only leading whole limbs of the key. Add
-                    // fresh error at the selected grid, then normalize once.
-                    self.vec_znx_big_add_noise(
-                        base2k,
-                        plan.sample_precision.as_usize(),
-                        &mut ci_big,
-                        0,
-                        Noise::ENCRYPTION,
-                        source_xe,
-                    );
-                }
+            let res_ref = res.to_backend_ref();
 
-                if let Some((pt, col)) = &pt
-                    && *col == i
-                {
-                    self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
-                }
+            assert_eq!(res_ref.base2k(), pk.base2k());
+            assert_eq!(res_ref.n(), pk.n());
+            assert_eq!(res_ref.rank(), pk.rank());
+            assert!(pk.k() >= res_ref.k(), "invalid public key: less precise than the output");
+            if let Some((pt, _)) = &pt {
+                assert_eq!(pt.base2k(), pk.base2k());
+                assert_eq!(pt.n(), pk.n());
+            }
 
-                self.vec_znx_big_normalize(
-                    &mut res.data,
-                    base2k,
-                    res_k,
+            let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
+            assert!(
+                pk.data.cols_out() == pk.data.cols_in() + 1,
+                "invalid public key: entry count differs from its rank"
+            );
+            let n: usize = operand_degree(self.n(), &[res_ref.n(), pk.n()]);
+            let base2k: usize = pk.base2k().into();
+            let work_size: usize = plan.work_precision.as_usize().div_ceil(base2k);
+            // Plaintexts may be more precise than the selected key prefix. Keep
+            // their previously supported tail before the final normalization;
+            // IDFT zero-extends the narrower product into this wider accumulator.
+            let big_size = work_size.max(pt.as_ref().map_or(0, |(pt, _)| pt.size().min(pk.size())));
+            let res_k: usize = res_ref.k().as_usize();
+            let rank: usize = pk.data.cols_in();
+
+            // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
+            let dist: Distribution = match pk.dist() {
+                Distribution::NONE => panic!(
+                    "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
+                 Self::generate"
+                ),
+                Distribution::ENCAPSULATED(_) => panic!("invalid public key: secret is tagged for encapsulation"),
+                // A zero ephemeral leaves the ciphertext as the message plus fresh noise.
+                Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
+                    panic!("invalid public key: zero ephemeral distribution")
+                }
+                Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if p.is_nan() || *p <= 0.0 => {
+                    panic!("invalid public key: zero ephemeral distribution")
+                }
+                dist => *dist,
+            };
+
+            drop(res_ref);
+            let res = &mut res.to_backend_mut();
+            let scratch = scratch.borrow();
+            let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
+            let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
+            for l in 0..rank {
+                self.scalar_znx_fill_distribution(&mut u.to_backend_mut(), l, dist, source_xu);
+                self.vec_znx_dft_apply(
+                    1,
                     0,
-                    i,
-                    &ci_big.to_backend_ref(),
-                    base2k,
-                    0,
-                    &mut scratch_2,
+                    &mut u_dft.to_backend_mut(),
+                    l,
+                    &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
+                    l,
                 );
             }
+
+            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, work_size);
+            self.vmp_apply_dft_to_dft(
+                &mut res_dft.to_backend_mut(),
+                &u_dft.to_backend_ref(),
+                &pk.data,
+                0,
+                &mut scratch_1.borrow(),
+            );
+
+            {
+                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, big_size);
+                for i in 0..rank + 1 {
+                    self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
+                    if i > 0 || body_noise {
+                        // The product keeps only leading whole limbs of the key. Add
+                        // fresh error at the selected grid, then normalize once.
+                        self.vec_znx_big_add_noise(
+                            base2k,
+                            plan.sample_precision.as_usize(),
+                            &mut ci_big,
+                            0,
+                            Noise::ENCRYPTION,
+                            source_xe,
+                        );
+                    }
+
+                    if let Some((pt, col)) = &pt
+                        && *col == i
+                    {
+                        self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
+                    }
+
+                    self.vec_znx_big_normalize(
+                        &mut res.data,
+                        base2k,
+                        res_k,
+                        0,
+                        i,
+                        &ci_big.to_backend_ref(),
+                        base2k,
+                        0,
+                        &mut scratch_2,
+                    );
+                }
+            }
         }
+        res.set_noise(plan.noise);
+        res.set_canonical(true);
     }
 }
 

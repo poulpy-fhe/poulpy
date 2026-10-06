@@ -1,18 +1,50 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
+    prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
+    fn ckks_conjugate_rotate_into_impl<Dst, Src, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        k: i64,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>,
+    {
+        super::derived::conjugate::conjugate_rotate(module, dst, src, k, keys, scratch)
+    }
+
+    fn ckks_conjugate_with_keys_assign_impl<Dst, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>,
+    {
+        super::derived::conjugate::conjugate_assign(module, dst, keys, scratch)
+    }
+
     fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_conjugate_into_impl<Dst, Src>(

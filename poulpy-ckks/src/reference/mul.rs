@@ -14,7 +14,7 @@ use poulpy_hal::{
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::SlotsKind;
+use crate::{CKKSCompositionError, CKKSError, SlotsKind};
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     ensure_plaintext_degree_embeds, layouts::CKKSPreparedRight,
@@ -69,6 +69,13 @@ pub trait CKKSMulReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k().max(b.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
         tensor_mul_core(
@@ -86,7 +93,9 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::BeforeApply,
             scratch,
             |tmp, _dst, s| self.glwe_tensor_apply(cnv_offset, tmp, a, b, s),
-        )
+        )?;
+        dst.set_noise(None);
+        Ok(())
     }
 
     fn ckks_mul_assign_reference<Dst, A, T>(
@@ -102,6 +111,13 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(a.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
         tensor_mul_core(
@@ -119,7 +135,9 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::AfterApply,
             scratch,
             |tmp, dst_ref, s| self.glwe_tensor_apply(cnv_offset, tmp, dst_ref, a, s),
-        )
+        )?;
+        dst.set_noise(None);
+        Ok(())
     }
 
     fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
@@ -163,6 +181,15 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(TorusPrecision(u32::try_from(prepared.k).map_err(|_| {
+            CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k))
+        })?));
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_prepared_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
         // Size the intermediate from the right operand's `k` rather than
@@ -186,7 +213,9 @@ pub trait CKKSMulReference<BE: Backend> {
                 glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s);
                 GLWEToBackendMut::<BE>::set_noise(tmp, None);
             },
-        )
+        )?;
+        dst.set_noise(None);
+        Ok(())
     }
 
     fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
@@ -231,6 +260,13 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
         tensor_mul_core(
@@ -247,7 +283,9 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::BeforeApply,
             scratch,
             |tmp, _dst, s| self.glwe_tensor_square_apply(cnv_offset, tmp, a, s),
-        )
+        )?;
+        dst.set_noise(None);
+        Ok(())
     }
 
     fn ckks_square_assign_reference<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -256,6 +294,13 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
         tensor_mul_core(
@@ -274,7 +319,9 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::AfterApply,
             scratch,
             |tmp, dst_ref, s| self.glwe_tensor_square_apply(cnv_offset, tmp, dst_ref, s),
-        )
+        )?;
+        dst.set_noise(None);
+        Ok(())
     }
 
     fn ckks_mul_pt_vec_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
@@ -331,6 +378,7 @@ pub trait CKKSMulReference<BE: Backend> {
         dst.set_log_sparsity(a.log_sparsity().min(pt.log_sparsity()));
         dst.set_slots(a.slots().join(pt.slots()));
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -358,6 +406,7 @@ pub trait CKKSMulReference<BE: Backend> {
             dst.set_slots(slots);
             self.glwe_mul_plain(cnv_offset, dst, &input, pt, &mut op_scratch);
         });
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -387,6 +436,7 @@ pub trait CKKSMulReference<BE: Backend> {
         dst.set_slots(a.slots());
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -410,6 +460,7 @@ pub trait CKKSMulReference<BE: Backend> {
             dst.set_log_delta(res_log_delta);
             self.glwe_mul_const(cnv_offset, dst, &input, cnst, cnst_coeff, &mut op_scratch);
         });
+        dst.set_noise(None);
         Ok(())
     }
 }

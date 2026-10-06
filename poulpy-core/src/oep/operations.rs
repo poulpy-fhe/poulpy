@@ -11,6 +11,8 @@ use crate::layouts::{
 /// Backend-provided GLWE constant-multiplication operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must respect the provided layout metadata, conversion offset, and scratch-space
 /// contracts, and must not read or write outside the specified backend-owned buffers.
 pub unsafe trait GLWEMulConstImpl: Backend {
@@ -48,6 +50,8 @@ pub unsafe trait GLWEMulConstImpl: Backend {
 /// Backend-provided GLWE-by-plaintext multiplication operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must interpret the plaintext and ciphertext layouts consistently with the
 /// backend and preserve all aliasing and buffer-bound invariants.
 pub unsafe trait GLWEMulPlainImpl: Backend {
@@ -84,6 +88,8 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
 /// Backend-provided GLWE tensoring and relinearization operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve tensor layout semantics, respect the temporary-size contracts,
 /// and only touch backend-owned storage regions that belong to the supplied operands.
 pub unsafe trait GLWETensoringImpl: Backend {
@@ -136,6 +142,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
 /// Backend-provided GLWE addition operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
 pub unsafe trait GLWEAddImpl: Backend {
     fn glwe_add_into<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
@@ -153,6 +161,8 @@ pub unsafe trait GLWEAddImpl: Backend {
 /// Backend-provided GLWE negation operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
 pub unsafe trait GLWENegateImpl: Backend {
     fn glwe_negate<R, A>(module: &Module<Self>, res: &mut R, a: &A)
@@ -168,6 +178,8 @@ pub unsafe trait GLWENegateImpl: Backend {
 /// Backend-provided GLWE subtraction operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
 pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
     fn glwe_sub<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
@@ -193,6 +205,8 @@ pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
 /// Backend-provided GLWE zeroing operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must zero every polynomial column in the GLWE without violating layout or
 /// backend buffer invariants.
 pub unsafe trait GLWEZeroImpl: Backend {
@@ -204,6 +218,8 @@ pub unsafe trait GLWEZeroImpl: Backend {
 /// Backend-provided GLWE copy operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must honor [`crate::GLWECopy`]'s rounding and layout contract,
 /// stay within the advertised scratch size, and respect all backend buffer bounds.
 pub unsafe trait GLWECopyImpl: Backend {
@@ -218,6 +234,8 @@ pub unsafe trait GLWECopyImpl: Backend {
 /// Backend-provided GLWE rotation operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must perform rotations according to the polynomial layout without violating
 /// scratch-space, aliasing, or buffer-bound guarantees.
 pub unsafe trait GLWERotateImpl: Backend {
@@ -236,6 +254,8 @@ pub unsafe trait GLWERotateImpl: Backend {
 /// Backend-provided GGSW rotation operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must preserve the GGSW structure for the backend and may only use scratch space
 /// and in-place mutation in ways compatible with the advertised contracts.
 pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
@@ -262,6 +282,8 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
 /// Backend-provided multiplication by `X^p - 1` operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
 pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
@@ -278,6 +300,8 @@ pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
 /// Backend-provided GLWE shift operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must respect the polynomial/ciphertext layout and scratch requirements, and may
 /// not read or write beyond the backend-owned regions described by the inputs.
 pub unsafe trait GLWEShiftImpl: Backend {
@@ -310,6 +334,8 @@ pub unsafe trait GLWEShiftImpl: Backend {
 /// Backend-provided GLWE normalization operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must return views that remain valid for the advertised lifetime, preserve
 /// normalization semantics, and avoid aliasing or out-of-bounds access across temporary buffers.
 pub unsafe trait GLWENormalizeImpl: Backend {
@@ -328,6 +354,8 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Backend-provided GLWE trace operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
 pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
@@ -373,6 +401,8 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
 /// Backend-provided GLWE packing operations.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect
 /// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
 pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GLWEAddImpl {

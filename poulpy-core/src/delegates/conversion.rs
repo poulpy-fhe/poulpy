@@ -29,8 +29,7 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::lwe_sample_extract(self, res, a);
-        res.set_noise(None);
+        BE::lwe_sample_extract(self, res, a)
     }
 );
 
@@ -57,8 +56,7 @@ impl_conversion_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
     {
-        BE::glwe_from_lwe(self, res, lwe, ksk, scratch);
-        res.set_noise(None);
+        BE::glwe_from_lwe(self, res, lwe, ksk, scratch)
     }
 );
 
@@ -86,8 +84,7 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::lwe_from_glwe(self, res, a, a_idx, key, scratch);
-        res.set_noise(None);
+        BE::lwe_from_glwe(self, res, a, a_idx, key, scratch)
     }
 );
 
@@ -107,10 +104,7 @@ impl_conversion_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_expand_lwe(self, res, a, scratch);
-        for value in res {
-            value.set_noise(None);
-        }
+        BE::glwe_expand_lwe(self, res, a, scratch)
     }
 );
 
@@ -132,8 +126,7 @@ impl_conversion_delegate!(
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_expand_lwe_matrix(self, res, a, scratch);
-        res.set_noise(None);
+        BE::glwe_expand_lwe_matrix(self, res, a, scratch)
     }
 );
 
@@ -160,8 +153,7 @@ impl_conversion_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        BE::ggsw_from_gglwe(self, res, a, tsk, scratch);
-        res.set_noise(None);
+        BE::ggsw_from_gglwe(self, res, a, tsk, scratch)
     }
 );
 
@@ -185,7 +177,6 @@ impl_conversion_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        BE::ggsw_expand_row(self, res, tsk, scratch);
-        res.set_noise(None);
+        BE::ggsw_expand_row(self, res, tsk, scratch)
     }
 );

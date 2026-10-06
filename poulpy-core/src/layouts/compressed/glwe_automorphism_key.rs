@@ -139,6 +139,7 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKeyCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.key.noise = None;
         self.p = reader.read_u64::<LittleEndian>()? as i64;
         self.key.read_from(reader)
     }
@@ -146,6 +147,10 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKeyCompressed<D,
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEAutomorphismKeyCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if let Some(noise) = &self.key.noise {
+            noise.validate_wire()?;
+            noise.validate_components(self.key.rank_out.as_usize() + 1)?;
+        }
         writer.write_u64::<LittleEndian>(self.p as u64)?;
         self.key.write_to(writer)
     }

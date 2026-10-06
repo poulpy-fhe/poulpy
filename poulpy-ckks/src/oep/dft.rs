@@ -24,6 +24,8 @@ use crate::{
 /// Backend hook for the homomorphic-DFT family.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
 pub unsafe trait DFTImpl:

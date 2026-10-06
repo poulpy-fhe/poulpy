@@ -329,10 +329,13 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
-        self.data.read_from(reader)?;
+        self.noise = None;
+        let components = self.data.cols();
+        let noise = crate::ComponentNoise::read_optional(reader, components)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, components)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols())?;
+        self.set_base2k(base2k);
         self.noise = noise;
         self.canonical = true;
         Ok(())
@@ -506,6 +509,24 @@ mod tests {
         assert_eq!(glwe.noise(), Some(single.clone()));
         GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, Some(aggregate.clone()));
         assert_eq!(glwe.noise(), Some(aggregate.clone()));
+    }
+
+    #[test]
+    fn failed_rank_change_read_clears_old_metadata() {
+        use crate::{ComponentNoise, Distribution};
+        let mut source = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        source.noise = Some(ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), source.k(), 1));
+        let mut receiver = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(2));
+        receiver.noise = Some(ComponentNoise::from_secret_at(
+            Distribution::TernaryProb(0.3),
+            receiver.k(),
+            2,
+        ));
+        let mut bytes = Vec::new();
+        source.write_to(&mut bytes).unwrap();
+        assert!(receiver.read_from(&mut bytes.as_slice()).is_err());
+        assert!(receiver.noise().is_none());
+        receiver.write_to(&mut Vec::new()).unwrap();
     }
 
     #[test]

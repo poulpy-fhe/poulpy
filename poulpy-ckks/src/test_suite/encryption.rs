@@ -12,8 +12,8 @@ use crate::{
     layouts::CKKSModuleAlloc,
 };
 use poulpy_core::{
-    GetDistribution,
-    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos},
+    GLWEDecrypt, GLWENoise, GLWENormalize, GLWESub, GetDistribution,
+    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, IntPolyInfos, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -91,7 +91,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + GLWENoise<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -113,6 +113,7 @@ where
         &mut scratch.borrow(),
     );
     let metadata = ct.noise().expect("CKKS encryption must record provenance");
+    assert_eq!(metadata.precision(), ct.k());
     assert_eq!(metadata.parties(), 1);
     assert_eq!(metadata.secret_distribution().base(), *sk.dist());
     assert_eq!(metadata.rank(), ct.rank().as_usize());
@@ -122,6 +123,48 @@ where
         metadata.phase_noise(ct.n().as_usize()).std_dev(),
         poulpy_core::DEFAULT_SIGMA_XE
     );
+    let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    host_pt.set_meta(params.prec().meta());
+    encoder.encode_reim(&mut host_pt, &re1, &im1).unwrap();
+    // CKKS aligns the encoded integer message to the ciphertext's torus grid.
+    let mut message = vec![0i128; params.n];
+    host_pt.inner.decode_vec_i128(&mut message, host_pt.encoded_k());
+    let mut pt_want = module.glwe_plaintext_alloc_from_infos(&ct);
+    pt_want.encode_vec_i128(&message, ct.k());
+    let mut residual = module.glwe_plaintext_alloc_from_infos(&ct);
+    let mut integer_error = vec![0i64; params.n];
+    let mut noise_scratch = ScratchOwned::<BE>::alloc(module.glwe_noise_tmp_bytes(&ct));
+    let mut measured = 0.0;
+    let mut modeled = 0.0;
+    for trial in 0..16 {
+        let fresh;
+        let ciphertext = if trial == 0 {
+            &ct
+        } else {
+            fresh = ckks_encrypt(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                params.k,
+                &re1,
+                &im1,
+                &mut scratch.borrow(),
+            );
+            &fresh
+        };
+        let noise = ciphertext.noise().unwrap();
+        assert_eq!(noise.precision(), ciphertext.k());
+        module.glwe_decrypt(ciphertext, &mut residual, &sk, &mut noise_scratch.borrow());
+        module.glwe_sub_assign(&mut residual, &pt_want);
+        module.glwe_normalize_assign(&mut residual, &mut noise_scratch.borrow());
+        residual.decode_vec_i64(&mut integer_error, ciphertext.k());
+        measured += integer_error.iter().map(|&e| (e as f64).powi(2)).sum::<f64>() / params.n as f64;
+        modeled += noise.phase_noise(params.n).variance_at(ciphertext.k());
+    }
+    let ratio = measured / modeled;
+    assert!((0.75..=1.25).contains(&ratio), "CKKS empirical/model second moment={ratio}");
     assert_ct_meta(
         "encrypt_decrypt",
         &ct,

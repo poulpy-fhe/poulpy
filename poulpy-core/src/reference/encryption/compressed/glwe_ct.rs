@@ -81,33 +81,34 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
-        res.set_noise(metadata);
-        res.seed_mut().copy_from_slice(&seed_xa);
-
         {
-            let mut res_backend = res.to_backend_mut();
-            assert!(
-                scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
-                "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
-            );
+            {
+                let mut res_backend = res.to_backend_mut();
+                assert!(
+                    scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
+                    "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
+                    scratch.available(),
+                    self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
+                );
 
-            let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-            self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
-            self.glwe_encrypt_sk_internal(
-                res_backend.base2k().into(),
-                full_ct.k().as_usize(),
-                &mut full_ct.data,
-                Some((pt.to_backend_ref(), 0)),
-                sk,
-                source_xe,
-                &mut scratch_1,
-            );
-            let full_ct_ref = full_ct.to_backend_ref();
-            self.vec_znx_copy(&mut res_backend.data, 0, &full_ct_ref.data, 0);
+                let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
+                self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
+                self.glwe_encrypt_sk_internal(
+                    res_backend.base2k().into(),
+                    full_ct.k().as_usize(),
+                    &mut full_ct.data,
+                    Some((pt.to_backend_ref(), 0)),
+                    sk,
+                    source_xe,
+                    &mut scratch_1,
+                );
+                let full_ct_ref = full_ct.to_backend_ref();
+                self.vec_znx_copy(&mut res_backend.data, 0, &full_ct_ref.data, 0);
+            }
+            scratch.wipe(self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
         }
-        scratch.wipe(self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
+        res.seed_mut().copy_from_slice(&seed_xa);
+        res.set_noise(metadata);
     }
 
     fn glwe_compressed_encrypt_zero_sk_reference<R, S>(
@@ -126,45 +127,46 @@ where
             crate::layouts::LWEInfos::k(&res.to_backend_ref()),
             crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
         ));
-        res.set_noise(metadata);
-        res.seed_mut().copy_from_slice(&seed_xa);
-
-        let mut res_backend = res.to_backend_mut();
-        assert!(
-            scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
-            "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
-        );
-
-        let tmp_bytes: usize = self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend);
         {
-            let (base2k, size): (usize, usize) = (res_backend.base2k().into(), res_backend.size());
-            let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-            self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
-            self.glwe_encrypt_sk_internal(
-                base2k,
-                res_backend.k().as_usize(),
-                &mut full_ct.data,
-                None,
-                sk,
-                source_xe,
-                &mut scratch_1,
+            let mut res_backend = res.to_backend_mut();
+            assert!(
+                scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
+                "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
             );
-            // Without a plaintext the internal leaves the body unnormalized.
-            let full_ct_ref = full_ct.to_backend_ref();
-            self.vec_znx_normalize(
-                &mut res_backend.data,
-                base2k,
-                size * base2k,
-                0,
-                0,
-                &full_ct_ref.data,
-                base2k,
-                0,
-                &mut scratch_1,
-            );
+
+            let tmp_bytes: usize = self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend);
+            {
+                let (base2k, size): (usize, usize) = (res_backend.base2k().into(), res_backend.size());
+                let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
+                self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
+                self.glwe_encrypt_sk_internal(
+                    base2k,
+                    res_backend.k().as_usize(),
+                    &mut full_ct.data,
+                    None,
+                    sk,
+                    source_xe,
+                    &mut scratch_1,
+                );
+                // Without a plaintext the internal leaves the body unnormalized.
+                let full_ct_ref = full_ct.to_backend_ref();
+                self.vec_znx_normalize(
+                    &mut res_backend.data,
+                    base2k,
+                    size * base2k,
+                    0,
+                    0,
+                    &full_ct_ref.data,
+                    base2k,
+                    0,
+                    &mut scratch_1,
+                );
+            }
+            scratch.wipe(tmp_bytes);
         }
-        scratch.wipe(tmp_bytes);
+        res.seed_mut().copy_from_slice(&seed_xa);
+        res.set_noise(metadata);
     }
 }

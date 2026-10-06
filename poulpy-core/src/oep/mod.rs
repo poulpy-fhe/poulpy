@@ -1,5 +1,9 @@
 //! Open extension points for `poulpy-core`.
 //!
+//! Backend implementations own ciphertext noise metadata: fresh encryption records
+//! its component estimates, exact copies preserve them, and arithmetic clears them.
+//! Preserve reference provenance checks before mutation. Delegates only forward.
+//!
 //! Public [`crate::api`] operations dispatch through backend `*Impl` traits.
 //! Each backend implements these traits explicitly, either with its own methods
 //! or with the forwarding macros provided here.

@@ -3,7 +3,7 @@
 //! smudging noise.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
+    DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
     layouts::{
         Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
         GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -113,6 +113,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
         + GLWENoise<BE>
@@ -122,7 +123,11 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     // Public key switching also supports a different destination rank and precision.
-    for (rank_out, k_out) in [(RANK, K), (Rank(1), TorusPrecision(K.0 + BASE2K.0))] {
+    for (rank_out, k_out, key_gap) in [
+        (RANK, K, BASE2K.0),
+        (Rank(1), TorusPrecision(K.0 + BASE2K.0), BASE2K.0),
+        (RANK, TorusPrecision(K.0 - BASE2K.0), 0),
+    ] {
         let layout = glwe_layout(module);
         let share_layout = GLWELayout {
             rank: rank_out,
@@ -131,7 +136,7 @@ where
         };
         // A public key more precise than the share exercises the share scratch query for real.
         let pk_layout = GLWELayout {
-            k: TorusPrecision(k_out.0 + BASE2K.0),
+            k: TorusPrecision(k_out.0 + key_gap),
             ..share_layout
         };
 
@@ -143,6 +148,7 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_encrypt_sk_tmp_bytes(&layout)
+                .max(module.glwe_decrypt_tmp_bytes(&layout))
                 .max(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes())
                 .max(module.glwe_normalize_tmp_bytes())
                 .max(module.glwe_noise_tmp_bytes(&share_layout)),
@@ -213,10 +219,28 @@ where
             k_out.as_usize(),
             pk_layout.k.as_usize(),
         );
-        assert!(sample_delta > 0 && sample_delta < BASE2K.as_usize());
-        let fresh = PARTIES as f64 * (per_share + SIGMA_FLOOD.powi(2));
+        assert!(sample_delta == 0 && key_gap == 0 || sample_delta > 0 && sample_delta < BASE2K.as_usize());
+        let conversion = if k_out < K && key_gap == 0 { 1.0 } else { 0.0 };
+        let fresh = PARTIES as f64 * (per_share + SIGMA_FLOOD.powi(2) + conversion);
         super::fixtures::assert_fresh_noise(&acc, fresh, k_out);
         assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, share_layout.k, &mut scratch);
+        // The share estimate excludes the input ciphertext's existing error.
+        let mut input_phase = module.glwe_plaintext_alloc_from_infos(&share_layout);
+        module.glwe_decrypt(
+            &ct,
+            &mut input_phase,
+            &ideal_secret(module, &parties_in),
+            &mut scratch.borrow(),
+        );
+        let measured = module
+            .glwe_noise(&res, &input_phase, &sk_out, &mut scratch.borrow())
+            .second_moment();
+        let estimate = acc.noise().unwrap().phase_noise(module.n()).variance_at(0u32.into());
+        assert!(
+            measured > 0.4 * estimate && measured < 1.8 * estimate,
+            "public key-switch residual/model={}",
+            measured / estimate
+        );
 
         // Changing a valid ephemeral law must not invalidate the aggregation
         // covariance model or mutate an existing transcript on rejection.

@@ -352,7 +352,7 @@ pub(crate) fn assert_noise_components<A: poulpy_core::layouts::LWEInfos>(infos: 
     }
 }
 
-/// Independently enumerate the small test precisions. Sampling error quarters
+/// Enumerate the small test precisions for formula regression checks. Sampling error quarters
 /// per bit, while the omitted balanced PK tail changes at limb boundaries.
 pub(crate) fn expected_pk_variance(
     inherited: f64,

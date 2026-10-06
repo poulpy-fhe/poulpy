@@ -236,14 +236,13 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
 mod tests {
     use super::*;
     use crate::{FFT64Oracle, NTT4x30Oracle};
-    use poulpy_hal::layouts::*;
 
     #[test]
     fn independent_gaussian_matches_discrete_pmf() {
         const COUNT: usize = 32_000;
-        for sigma in [0.75, 3.2] {
+        for (sigma, bound) in [(0.75, 4i64), (3.2, 19)] {
             let sampler = Gaussian::new(sigma, 6);
-            let bound = i64::try_from(&sampler.bound).unwrap();
+            assert_eq!(sampler.bound, UBig::from(bound as u64));
             let mut histogram = vec![0usize; (2 * bound + 1) as usize];
             let mut source = Source::new([38; 32]);
             for _ in 0..COUNT {
@@ -262,73 +261,13 @@ mod tests {
         }
     }
 
-    fn full_width<BE>()
-    where
-        BE: SamplingImpl + poulpy_hal::oep::HalModuleImpl + Backend<ZnxWord = i64, OwnedBuf = poulpy_hal::AlignedBuf>,
-        BE::BigWord: Int,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-    {
-        const N: usize = 256;
-        const K: usize = 173;
-        const BASE: usize = 17;
-        let module = Module::<BE>::new(N as u64);
-        for noise in [
-            Noise::Gaussian {
-                sigma: 2f64.powi(132),
-                cutoff_factor: 6,
-            },
-            Noise::Uniform { bits: 135 },
-        ] {
-            let active = K.div_ceil(BASE);
-            let padding = active * BASE - K;
-            let mut result = VecZnx::from_data(
-                BE::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(N, 2, active + 1)),
-                N,
-                2,
-                active + 1,
-            );
-            for limb in 0..=active {
-                result.at_mut(0, limb).fill(91);
-            }
-            BE::vec_znx_add_noise(
-                &module,
-                BASE,
-                K,
-                &mut vec_znx_backend_mut::<BE>(&mut result),
-                1,
-                noise,
-                [64; 32],
-            );
-            let mut low_bits = [0usize; 8];
-            let mut wide = 0;
-            let mut negative = 0;
-            for i in 0..N {
-                let integer = (0..active).fold(IBig::ZERO, |n, limb| (n << BASE) + IBig::from(result.at(1, limb)[i]));
-                assert_eq!(&integer % (IBig::ONE << padding), IBig::ZERO);
-                let sample = integer >> padding;
-                negative += usize::from(sample < IBig::ZERO);
-                let (_, magnitude) = sample.into_parts();
-                wide += usize::from(magnitude > (UBig::ONE << 128));
-                assert!(magnitude <= UBig::ONE << 135);
-                low_bits[usize::try_from(&magnitude & UBig::from(7u8)).unwrap()] += 1;
-            }
-            assert!(wide > 220);
-            assert!((80..176).contains(&negative));
-            assert!(low_bits.iter().all(|&count| count > 12));
-            for limb in 0..=active {
-                assert!(result.at(0, limb).iter().all(|&x| x == 91));
-            }
-            assert!(result.at(1, active).iter().all(|&x| x == 0));
-        }
-    }
-
     #[test]
     fn fft_full_width_noise_reaches_unit_grid() {
-        full_width::<FFT64Oracle>();
+        poulpy_core::test_suite::sampling::test_full_width_noise(&Module::<FFT64Oracle>::new(256));
     }
 
     #[test]
     fn ntt_full_width_noise_reaches_unit_grid() {
-        full_width::<NTT4x30Oracle>();
+        poulpy_core::test_suite::sampling::test_full_width_noise(&Module::<NTT4x30Oracle>::new(256));
     }
 }

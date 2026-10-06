@@ -102,10 +102,15 @@ pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
 
-use std::marker::PhantomData;
+use std::{
+    io::{Error, ErrorKind, Read, Result as IoResult},
+    marker::PhantomData,
+};
 
 use crate::dist::Distribution;
-use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec_znx_alloc_zeroed};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, MatZnx, Module, ReaderFrom, ScalarZnx, VecZnx, ZnxWord, vec_znx_alloc_zeroed,
+};
 
 /// Backend-indexed ownership aliases for the non-prepared layouts.
 ///
@@ -1506,6 +1511,73 @@ pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, c
         noise.validate_components(components)?;
     }
     Ok(())
+}
+
+/// Preflights the dimensions used to derive a later metadata allocation before
+/// the HAL reader commits its shape. The payload may change on a failed read,
+/// but the destination's component count remains trusted across retries.
+pub(crate) fn read_vec_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read>(
+    data: &mut VecZnx<D, W>,
+    reader: &mut R,
+    degree: Option<usize>,
+    cols: usize,
+) -> IoResult<()> {
+    let mut header = [0u8; 32];
+    reader.read_exact(&mut header)?;
+    let fields = read_shape_fields::<4>(&header)?;
+    if fields[0] == 0 || degree.is_some_and(|n| n != fields[0]) || fields[1] != cols {
+        return Err(invalid_serialized_shape());
+    }
+    validate_serialized_size::<W>(&fields[..3], fields[3])?;
+    data.read_from(&mut Read::chain(header.as_slice(), reader))
+}
+
+pub(crate) fn read_mat_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read>(
+    data: &mut MatZnx<D, W>,
+    reader: &mut R,
+    rows: Option<usize>,
+    cols_in: Option<usize>,
+    cols_out: usize,
+) -> IoResult<()> {
+    let mut header = [0u8; 48];
+    reader.read_exact(&mut header)?;
+    let fields = read_shape_fields::<6>(&header)?;
+    if fields[0] == 0
+        || rows.is_some_and(|rows| rows != fields[2])
+        || cols_in.is_some_and(|cols| cols != fields[3])
+        || fields[4] != cols_out
+    {
+        return Err(invalid_serialized_shape());
+    }
+    // Match the HAL's product order, including zero dimensions, so malformed
+    // headers cannot reach its checked-product panic through an earlier zero.
+    validate_serialized_size::<W>(&[fields[2], fields[3], fields[0], fields[4], fields[1]], fields[5])?;
+    data.read_from(&mut Read::chain(header.as_slice(), reader))
+}
+
+fn read_shape_fields<const N: usize>(header: &[u8]) -> IoResult<[usize; N]> {
+    let mut fields = [0; N];
+    for (field, bytes) in fields.iter_mut().zip(header.chunks_exact(8)) {
+        *field = usize::try_from(u64::from_le_bytes(bytes.try_into().unwrap())).map_err(|_| invalid_serialized_shape())?;
+    }
+    Ok(fields)
+}
+
+fn validate_serialized_size<W: ZnxWord>(dimensions: &[usize], size: usize) -> IoResult<()> {
+    let expected = dimensions
+        .iter()
+        .try_fold(std::mem::size_of::<W>(), |product, dimension| product.checked_mul(*dimension));
+    if expected != Some(size) {
+        return Err(invalid_serialized_shape());
+    }
+    Ok(())
+}
+
+pub(crate) fn invalid_serialized_shape() -> Error {
+    Error::new(
+        ErrorKind::InvalidData,
+        "serialized shape does not match the destination component shape",
+    )
 }
 
 #[cfg(test)]

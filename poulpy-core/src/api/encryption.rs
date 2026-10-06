@@ -22,6 +22,7 @@ use crate::{
 };
 
 pub trait GLWEMaskFill<BE: Backend> {
+    /// Clears the previous noise metadata.
     /// Fills the mask columns `1..=rank` of `res`, uniform at its radix and `k`, from `source_xa`.
     fn fill_glwe_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
@@ -39,11 +40,13 @@ pub trait GLWEMaskFill<BE: Backend> {
 }
 
 pub trait LWEFillMask<BE: Backend> {
+    /// Clears the previous noise metadata.
     /// Fill the LWE mask from `source_xa`.
     fn fill_lwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>;
 
+    /// Clears the previous noise metadata.
     /// Fill the LWE mask from a deterministic seed.
     fn fill_lwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
@@ -129,6 +132,9 @@ pub trait GLWEEncryptSk<BE: Backend> {
 /// an unattainable target or unavailable estimate selects the key's precision.
 /// The product uses only the key limbs needed for `k_sample`, then is normalized
 /// once to `k`. The prepared key itself is unchanged.
+/// A public key carrying noise metadata must keep its ephemeral distribution
+/// equal to the metadata provenance base. A mismatch panics before mutation.
+/// Untagged keys skip this provenance check.
 pub trait GLWEEncryptPk<BE: Backend> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
@@ -269,6 +275,9 @@ pub trait GGSWEncryptSk<BE: Backend> {
 /// error. `u` and `e_1, .., e_r` are drawn as [`GLWEEncryptPk`] draws them.
 /// Sampling precision is selected from inherited, key-truncation and fresh mask errors;
 /// the deliberate flood is excluded from that target and added at output `k`.
+/// A public key carrying noise metadata must keep its ephemeral distribution
+/// equal to the metadata provenance base. A mismatch panics before mutation.
+/// Untagged keys skip this provenance check.
 pub trait GLWEEncryptPkSmudged<BE: Backend> {
     fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
@@ -298,6 +307,9 @@ pub trait GLWEEncryptPkSmudged<BE: Backend> {
 /// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt` at limb
 /// `(dsize - 1) + row * dsize` into column `col`, entries in row then column
 /// order.
+/// A public key carrying noise metadata must keep its ephemeral distribution
+/// equal to the metadata provenance base. A mismatch panics before mutation.
+/// Untagged keys skip this provenance check.
 pub trait GGSWEncryptPk<BE: Backend> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize

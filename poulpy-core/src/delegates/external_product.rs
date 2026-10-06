@@ -41,8 +41,7 @@ impl_external_product_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
-        BE::glwe_external_product_assign(self, res, rhs, scratch);
-        res.set_noise(None);
+        BE::glwe_external_product_assign(self, res, rhs, scratch)
     }
 
     fn glwe_external_product<R, A>(
@@ -56,8 +55,7 @@ impl_external_product_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_external_product(self, res, lhs, rhs, scratch);
-        res.set_noise(None);
+        BE::glwe_external_product(self, res, lhs, rhs, scratch)
     }
 );
 
@@ -84,8 +82,7 @@ impl_external_product_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
-        BE::gglwe_external_product(self, res, a, b, scratch);
-        res.set_noise(None);
+        BE::gglwe_external_product(self, res, a, b, scratch)
     }
 
     fn gglwe_external_product_assign<R>(
@@ -97,8 +94,7 @@ impl_external_product_delegate!(
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
-        BE::gglwe_external_product_assign(self, res, a, scratch);
-        res.set_noise(None);
+        BE::gglwe_external_product_assign(self, res, a, scratch)
     }
 );
 
@@ -125,8 +121,7 @@ impl_external_product_delegate!(
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
-        BE::ggsw_external_product(self, res, a, b, scratch);
-        res.set_noise(None);
+        BE::ggsw_external_product(self, res, a, b, scratch)
     }
 
     fn ggsw_external_product_assign<R>(
@@ -138,8 +133,7 @@ impl_external_product_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
-        BE::ggsw_external_product_assign(self, res, a, scratch);
-        res.set_noise(None);
+        BE::ggsw_external_product_assign(self, res, a, scratch)
     }
 );
 

@@ -48,6 +48,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
             self.glwe_automorphism(dst, src, key, scratch);
         }
 
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -62,6 +63,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos,
     {
         self.glwe_automorphism_assign(dst, key, scratch);
+        dst.set_noise(None);
         Ok(())
     }
 }

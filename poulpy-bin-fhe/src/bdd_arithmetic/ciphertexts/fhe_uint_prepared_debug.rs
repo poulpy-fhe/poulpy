@@ -107,7 +107,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> GGSWInfos for FheUintPrepar
 }
 
 impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
-    pub fn noise<S, M, BE>(
+    pub fn noise_stats<S, M, BE>(
         &self,
         module: &M,
         row: usize,
@@ -134,7 +134,7 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<AlignedBuf, T, i64> {
             );
             pt_want.at_mut(0, 0)[0] = want.bit(i) as i64;
             let mut scratch_bit = scratch.borrow();
-            stats.push(ggsw.noise(module, row, col, &pt_want.to_ref(), sk, &mut scratch_bit));
+            stats.push(ggsw.noise_stats(module, row, col, &pt_want.to_ref(), sk, &mut scratch_bit));
         }
         stats
     }

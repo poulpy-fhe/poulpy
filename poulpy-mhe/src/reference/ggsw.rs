@@ -248,8 +248,7 @@ where
         assert!(
             match (share.noise(), key.noise()) {
                 (Some(share), Some(key)) => share.same_secret(&key),
-                (None, None) => true,
-                _ => false,
+                _ => true,
             },
             "invalid finalization: output key provenance differs"
         );
@@ -328,6 +327,7 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
     }
     let n = share.n().as_usize();
     let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
+    let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2());
     let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
     // Bounded balanced digits require no uniform-digit assumption. Fold their
     // squared magnitude into the precision rescaling to avoid a vanishing
@@ -349,7 +349,7 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
                     switching_precision.map_or(f64::INFINITY, |precision| estimate.variance_at(precision))
                 }
             });
-            rank as f64 * n as f64 * digits as f64 * variance
+            rank as f64 * n as f64 * digits as f64 * variance * digit_factor.powi(2)
         })
         .collect();
     let rounding = if key.k() > k { 0.25 } else { 0.0 };

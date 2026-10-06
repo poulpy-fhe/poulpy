@@ -461,6 +461,9 @@ where
                 }
             }
         }
+        for ct in folded {
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
+        }
         Ok(())
     }
 
@@ -574,6 +577,12 @@ where
                     R::from_standard(module, &mut outs[re..end], part, &keys, scratch)?;
                 }
             }
+        }
+        for ct in outs {
+            GLWEToBackendMut::<BE>::set_noise(&mut ct.inner, None);
+        }
+        for ct in folded {
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
         }
         Ok(())
     }

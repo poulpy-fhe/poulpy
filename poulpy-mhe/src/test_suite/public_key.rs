@@ -123,7 +123,9 @@ where
         + GLWEPublicKeyGenerate<BE>
         + GLWEEncryptSk<BE>
         + GLWEEncryptPk<BE>
-        + GLWEEncryptPkSmudged<BE>,
+        + GLWEEncryptPkSmudged<BE>
+        + GLWENoise<BE>
+        + VecZnxAddScalarAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let key_k = TorusPrecision(K.0 + 2 * BASE2K.0);
@@ -138,6 +140,7 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_sk_tmp_bytes(&key_layout)
+            .max(module.glwe_noise_tmp_bytes(&key_layout))
             .max(module.glwe_encrypt_pk_tmp_bytes(&key_layout, &key_layout))
             .max(module.glwe_encrypt_pk_smudged_tmp_bytes(&key_layout, &key_layout))
             .max(module.glwe_public_key_generate_tmp_bytes(&key_layout))
@@ -146,7 +149,15 @@ where
             .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes()),
     );
 
-    for base in [Distribution::TernaryProb(0.5), Distribution::BinaryProb(0.5)] {
+    for base in [
+        Distribution::TernaryProb(0.5),
+        Distribution::TernaryProb(2.0 / 3.0),
+        Distribution::BinaryProb(0.5),
+    ] {
+        let second = match base {
+            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) => p,
+            _ => unreachable!(),
+        };
         let mut secrets = Vec::new();
         let mut aggregate = module.glwe_public_key_share_alloc_from_infos(&key_layout);
         let mut share = module.glwe_public_key_share_alloc_from_infos(&key_layout);
@@ -175,7 +186,7 @@ where
             let mut components = vec![0.0; RANK.as_usize() + 1];
             components[0] = (i + 1) as f64 * sigma2;
             super::fixtures::assert_noise_components(&aggregate, &components);
-            secrets.push(prepared);
+            secrets.push((sk, prepared));
         }
 
         let mut encoded = Vec::new();
@@ -194,7 +205,7 @@ where
         let mut single: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
         module.glwe_public_key_generate(
             &mut single,
-            &secrets[0],
+            &secrets[0].1,
             &mut Source::new([120; 32]),
             &mut Source::new([121; 32]),
             &mut scratch.borrow(),
@@ -204,6 +215,7 @@ where
         module.glwe_public_key_prepare(&mut single_prepared, &single, &mut scratch.borrow());
         assert_noise_tag(&single_prepared, base, 1, sigma2, key_k);
 
+        let collective_secret = ideal_secret(module, &secrets);
         for k in [key_k, TorusPrecision(key_k.0 - 1), TorusPrecision(K.0 - BASE2K.0)] {
             let layout = GLWELayout { k, ..key_layout };
             let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
@@ -217,7 +229,7 @@ where
             module.glwe_encrypt_sk(
                 &mut ct,
                 &pt,
-                &secrets[0],
+                &secrets[0].1,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -236,15 +248,15 @@ where
                 } else {
                     0.0
                 };
-                let secret_second = count * 0.5 + count * (count - 1.0) * mean * mean;
+                let secret_second = count * second + count * (count - 1.0) * mean * mean;
                 let key_grid_scale = (2.0 * (k.as_usize() as f64 - key_k.as_usize() as f64)).exp2();
-                let inherited = rank_n * 0.5 * count * sigma2 * key_grid_scale;
+                let inherited = rank_n * second * count * sigma2 * key_grid_scale;
                 let mask_error = rank_n * secret_second * sigma2;
                 let phase_fold = 1.0 + rank_n * secret_second;
                 let rounding = phase_fold / 4.0;
                 let extra_bits = (key_k.0 - k.0) as usize;
                 let prefix_amplification = if mean == 0.0 {
-                    rank_n * 0.5 * phase_fold
+                    rank_n * second * phase_fold
                 } else {
                     (rank_n * 0.5_f64.sqrt() * (1.0 + rank_n * secret_second.sqrt())).powi(2)
                 };
@@ -261,6 +273,18 @@ where
                 };
                 let (ordinary_delta, ordinary) = expected(mask_error + sigma2);
                 let (smudged_delta, without_body) = expected(mask_error);
+                let bias_squared = |delta: usize| {
+                    let work = ((k.as_usize() + delta).div_ceil(BASE2K.as_usize()) * BASE2K.as_usize()).min(key_k.as_usize());
+                    if work > k.as_usize() && mean != 0.0 {
+                        ((-(work as f64 - k.as_usize() as f64 + 1.0)).exp2() * (1.0 + rank_n * count * mean)).powi(2)
+                    } else {
+                        0.0
+                    }
+                };
+                let ordinary_bias = bias_squared(ordinary_delta);
+                let smudged_bias = bias_squared(smudged_delta);
+                let ordinary = ordinary + ordinary_bias;
+                let without_body = without_body + smudged_bias;
                 if extra_bits > BASE2K.as_usize() {
                     // The three-bit candidate omits too much of the PK. One
                     // more bit crosses the limb boundary and meets the target
@@ -270,7 +294,7 @@ where
                     let work_limbs = (k.as_usize() + ordinary_delta).div_ceil(BASE2K.as_usize());
                     assert_eq!(work_limbs, 3);
                     assert_eq!(key_k.as_usize().div_ceil(BASE2K.as_usize()), 5);
-                    assert!(ordinary - rounding <= rounding);
+                    assert!(ordinary - ordinary_bias - rounding <= rounding);
                     let tail = 0.5 / (1.0 - (-(BASE2K.as_usize() as f64)).exp2());
                     let previous_work_k = (k.as_usize() + 3).div_ceil(BASE2K.as_usize()) * BASE2K.as_usize();
                     let previous_tail =
@@ -290,8 +314,37 @@ where
                 module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 if extra_bits <= 1 {
+                    let decrypt_key = if parties == 1 { &secrets[0].1 } else { &collective_secret };
+                    let mut measured = 0.0;
+                    for _ in 0..32 {
+                        module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                        measured += module
+                            .glwe_noise(&ct, &pt, decrypt_key, &mut scratch.borrow())
+                            .second_moment();
+                    }
+                    let estimate = ct.noise().unwrap().phase_noise(module.n()).variance_at(0u32.into());
+                    let ratio = measured / (32.0 * estimate);
+                    assert!(
+                        ratio
+                            > (if extra_bits == 0 {
+                                0.5
+                            } else if mean == 0.0 {
+                                0.25
+                            } else {
+                                0.15
+                            })
+                            && ratio < 1.35,
+                        "collective phase ratio={ratio}, base={base:?}, parties={parties}, gap={extra_bits}"
+                    );
+                }
+
+                if extra_bits <= 1 {
                     let fresh = sigma2 * (-2.0 * ordinary_delta as f64).exp2();
-                    let component_rounding = if extra_bits == 0 { 0.0 } else { 0.25 };
+                    let component_rounding = if extra_bits == 0 {
+                        0.0
+                    } else {
+                        0.25 + ordinary_bias / phase_fold
+                    };
                     let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
                     components[0] += inherited;
                     super::fixtures::assert_noise_components(&ct, &components);
@@ -334,7 +387,11 @@ where
                     assert_noise_tag(&ct, base, parties, without_body + variance, k);
                     if extra_bits <= 1 {
                         let fresh = sigma2 * (-2.0 * smudged_delta as f64).exp2();
-                        let component_rounding = if extra_bits == 0 { 0.0 } else { 0.25 };
+                        let component_rounding = if extra_bits == 0 {
+                            0.0
+                        } else {
+                            0.25 + smudged_bias / phase_fold
+                        };
                         let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
                         components[0] = inherited + variance + component_rounding;
                         super::fixtures::assert_noise_components(&ct, &components);
@@ -346,7 +403,7 @@ where
             module.glwe_encrypt_sk(
                 &mut ct,
                 &pt,
-                &secrets[0],
+                &secrets[0].1,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

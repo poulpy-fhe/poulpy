@@ -431,10 +431,16 @@ impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let noise = crate::ComponentNoise::read_optional(reader)?;
-        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
-        self.body.read_from(reader)?;
-        self.mask.read_from(reader)?;
+        self.noise = None;
+        let degree = self.mask.n();
+        let noise = crate::ComponentNoise::read_optional(reader, degree + 1)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        if base2k.0 == 0 {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
+        crate::layouts::read_vec_znx_with_shape(&mut self.body, reader, Some(1), 1)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.mask, reader, Some(degree), 1)?;
+        self.set_base2k(base2k);
         self.validate_shape()?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.mask.n() + 1)?;
         self.noise = noise;

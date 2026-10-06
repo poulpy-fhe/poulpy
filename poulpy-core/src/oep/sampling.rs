@@ -5,7 +5,7 @@ use crate::{Distribution, Noise};
 /// Backend-provided secret and noise sampling.
 ///
 /// Scalar sampling overwrites the chosen column with the requested secret
-/// distribution; `NONE` and `ENCAPSULATED` must panic. Noise sampling adds an
+/// distribution as defined by [`Distribution`]; `NONE` and `ENCAPSULATED` must panic. Noise sampling adds an
 /// integer distributed according to [`Noise`], multiplied by `2^-k`, to the
 /// chosen column. Digits use radix `2^base2k`; padding below precision `k`
 /// stays zero. A sample that fits in one digit changes only the last limb.
@@ -14,6 +14,10 @@ use crate::{Distribution, Noise};
 ///
 /// Each delegate derives a private child seed. Fixed seeds are reproducible
 /// within a backend, but distinct backends may use different random streams.
+/// For a fixed seed, degree and law (and noise precision/radix), the sampled
+/// values must not depend on the selected column, number of columns, allocated
+/// limb count or existing destination values. Controlled-sampling parity relies
+/// on this independence.
 /// Every backend must implement these methods, including full-width noise.
 /// A Gaussian with bound `B = floor(cutoff_factor * sigma) <= 64` may use a
 /// 128-bit cumulative table with statistical distance at most `B * 2^-128`.

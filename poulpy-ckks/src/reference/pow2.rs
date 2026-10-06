@@ -35,6 +35,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, 0, scratch)?;
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -44,6 +45,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_lsh_assign(dst, bits, scratch);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -53,12 +55,17 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        if !ckks_unary_exact(dst, src) {
-            return self.ckks_mul_pow2_into_reference(dst, src, 1, scratch);
-        }
-        self.glwe_add_into(dst, src, src);
-        dst.set_meta(src.meta());
-        dst.set_log_budget(src.log_budget());
+        let result: Result<()> = (|| {
+            if !ckks_unary_exact(dst, src) {
+                return self.ckks_mul_pow2_into_reference(dst, src, 1, scratch);
+            }
+            self.glwe_add_into(dst, src, src);
+            dst.set_meta(src.meta());
+            dst.set_log_budget(src.log_budget());
+            Ok(())
+        })();
+        result?;
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -77,6 +84,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         // The `bits` charged to the budget move under `log_delta` inside the
         // stamp, so the shift normalizes at the width the result reports.
         crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
+        dst.set_noise(None);
         Ok(())
     }
 

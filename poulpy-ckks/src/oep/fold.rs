@@ -10,6 +10,8 @@ use crate::{
 /// Backend override hook for [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must answer for the fold they register with
 /// [`CKKSFoldImpl`]: its key elements, layouts and scratch.
@@ -33,6 +35,8 @@ pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
 /// Backend override hook for [`CKKSFoldOps`](crate::api::CKKSFoldOps) on inputs of ring `R`.
 ///
 /// # Safety
+/// Ciphertext outputs must reproduce the reference noise metadata and provenance
+/// checks, including clearing invalidated estimates. Delegates only forward calls.
 ///
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference fold, honor all key layouts, and stay within the

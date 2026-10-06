@@ -99,4 +99,6 @@ pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data,
         glwe_decrypt_backend_inner(module, &res_backend, &mut pt_backend, &sk_grouped_ref, &mut scratch_1);
     }
     scratch.wipe(tmp_bytes);
+
+    pt.set_noise(None);
 }

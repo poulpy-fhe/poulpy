@@ -1,6 +1,6 @@
 //! Fresh encryption error estimates. These do not track evaluated noise.
 
-use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::{Backend, Ring};
 
 use crate::{
     ComponentNoise, Distribution, FreshNoiseEstimate, GetDistribution, Noise, SecretDistribution,
@@ -185,6 +185,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
     res: &R,
     pk_precision: TorusPrecision,
     ephemeral: Distribution,
+    product_weight: usize,
     body_noise: PublicKeyBodyNoise,
 ) -> PublicKeyEncryptionPlan {
     assert!(pk_precision >= res.k(), "invalid public key: less precise than the output");
@@ -209,16 +210,22 @@ fn public_key_phase_plan<R: GLWEInfos>(
         rank,
         "invalid public key: noise component count differs from its rank"
     );
-    let rank_n = rank as f64 * n as f64;
+    let rank_n = rank as f64 * product_weight as f64;
     let ephemeral_second = base_moments(ephemeral, n).map_or(f64::INFINITY, |(_, second)| second);
     let secret_second = metadata
         .secret_distribution()
         .coefficient_second_moment(n)
         .unwrap_or(f64::INFINITY);
-    let inherited = scaled_variance(
-        metadata.phase_noise(n).variance_at(res.k()),
-        scaled_variance(ephemeral_second, rank_n),
-    );
+    let secret_mean = metadata.secret_distribution().coefficient_mean(n);
+    let correlated_masks = secret_mean != Some(0.0) && metadata.masks().iter().any(|term| term.variance() != 0.0);
+    let inherited = if correlated_masks {
+        f64::INFINITY
+    } else {
+        scaled_variance(
+            metadata.weighted_phase_noise(n, product_weight).variance_at(res.k()),
+            scaled_variance(ephemeral_second, rank_n),
+        )
+    };
     let secret_fold = scaled_variance(secret_second, rank_n);
     let fresh_mask = noise_variance(Noise::ENCRYPTION);
     let fresh_body = if matches!(body_noise, PublicKeyBodyNoise::Sampled) {
@@ -256,7 +263,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
     };
     let sample_precision = if ephemeral_second.is_finite()
         && secret_second.is_finite()
-        && metadata.phase_noise(n).variance().is_finite()
+        && metadata.weighted_phase_noise(n, product_weight).variance().is_finite()
         && truncation_variance.is_finite()
     {
         public_key_sample_precision(res.k(), pk_precision, inherited, fresh, rounding, truncation)
@@ -281,13 +288,33 @@ fn public_key_phase_plan<R: GLWEInfos>(
         truncation / (1.0 + secret_fold)
     };
     let ephemeral_fold = scaled_variance(ephemeral_second, rank_n);
-    let component_rounding = if work_precision > res.k() { 0.25 } else { 0.0 };
+    let component_rounding = if work_precision > res.k() {
+        // Ties round up. Noncentered secrets can add that bias coherently.
+        let bias = secret_mean.map_or(f64::INFINITY, |mean| {
+            if mean == 0.0 {
+                0.0
+            } else {
+                (-(f64::from(work_precision.0 - res.k().0) + 1.0)).exp2() * (1.0 + rank_n * mean.abs())
+            }
+        });
+        if bias.is_finite() {
+            0.25 + bias.powi(2) / (1.0 + secret_fold)
+        } else {
+            f64::INFINITY
+        }
+    } else {
+        0.0
+    };
     let components = metadata
         .components()
         .iter()
         .enumerate()
         .map(|(index, component)| {
-            let component_inherited = scaled_variance(component.variance_at(res.k()), ephemeral_fold);
+            let component_inherited = if correlated_masks && index == 0 {
+                f64::INFINITY
+            } else {
+                scaled_variance(component.variance_at(res.k()), ephemeral_fold)
+            };
             let combined = combine_inherited_component(component_inherited, component_truncation, inherited, truncation);
             let fresh = if index == 0 { body_at_output + flood } else { mask_at_output };
             FreshNoiseEstimate::new(combined + fresh + component_rounding, res.k())
@@ -309,13 +336,32 @@ where
     R: GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
 {
-    public_key_phase_plan(pk.noise(), res, pk.k(), *pk.to_backend_ref().dist(), body_noise)
+    let ring_factor = <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
+    let product_weight = res.n().as_usize() * ring_factor * ring_factor;
+    public_key_phase_plan(
+        pk.noise(),
+        res,
+        pk.k(),
+        *pk.to_backend_ref().dist(),
+        product_weight,
+        body_noise,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::layouts::{Base2K, Degree, GLWELayout, Rank};
+
+    fn public_key_phase_plan<R: GLWEInfos>(
+        metadata: Option<ComponentNoise>,
+        res: &R,
+        pk_precision: TorusPrecision,
+        ephemeral: Distribution,
+        body_noise: PublicKeyBodyNoise,
+    ) -> PublicKeyEncryptionPlan {
+        super::public_key_phase_plan(metadata, res, pk_precision, ephemeral, res.n().as_usize(), body_noise)
+    }
 
     #[test]
     fn collective_binary_moments_include_the_mean() {
@@ -358,13 +404,16 @@ mod tests {
         let result = plan.noise.unwrap();
         let sigma2 = noise_variance(Noise::ENCRYPTION);
         // Three binary parties have E[S²] = 3, while a new ephemeral has E[u²] = 1/2.
-        let expected = 128.0 * 0.5 * (3.0 * sigma2 / 256.0) + (1.0 + 128.0 * 3.0) * sigma2 / 64.0 + (1.0 + 128.0 * 3.0) / 4.0;
+        let bias_squared = (193.0_f64 / 32.0).powi(2);
+        let component_rounding = 0.25 + bias_squared / 385.0;
+        let expected =
+            bias_squared + 128.0 * 0.5 * (3.0 * sigma2 / 256.0) + (1.0 + 128.0 * 3.0) * sigma2 / 64.0 + (1.0 + 128.0 * 3.0) / 4.0;
         assert_eq!(result.parties(), 3);
         assert_eq!(result.components().len(), layout.rank.as_usize() + 1);
-        let body = 128.0 * 0.5 * (3.0 * sigma2 / 256.0) + sigma2 / 64.0 + 0.25;
+        let body = 128.0 * 0.5 * (3.0 * sigma2 / 256.0) + sigma2 / 64.0 + component_rounding;
         assert!((result.body().variance() - body).abs() < 1e-12);
         for component in &result.components()[1..] {
-            assert_eq!(component.variance(), sigma2 / 64.0 + 0.25);
+            assert_eq!(component.variance(), sigma2 / 64.0 + component_rounding);
         }
         assert_eq!(result.phase_noise(layout.n.as_usize()).precision(), layout.k);
         assert!((result.phase_noise(layout.n.as_usize()).variance() - expected).abs() < 1e-10);
@@ -528,7 +577,12 @@ mod tests {
                         };
                         let combined = combine_inherited_errors(inherited, cut);
                         let sampled = sigma2 * (-2.0 * (expected - k) as f64).exp2();
-                        let rounding = if work > k { 0.25 } else { 0.0 };
+                        let bias = if work > k && matches!(base, Distribution::BinaryProb(_)) {
+                            (-(f64::from(work - k) + 1.0)).exp2() * 33.0
+                        } else {
+                            0.0
+                        };
+                        let rounding = if work > k { 0.25 + bias.powi(2) / 33.0 } else { 0.0 };
                         let expected_phase = combined + 33.0 * (sampled + rounding);
                         let noise = plan.noise.unwrap();
                         assert_eq!(noise.components().len(), 2);
@@ -624,6 +678,39 @@ mod tests {
         assert_eq!(result.body().variance(), 64.0 * 4.0);
         assert_eq!(result.components()[1].variance(), 64.0 * 9.0 + sigma2);
         assert_eq!(result.components()[2].variance(), 64.0 * 16.0 + sigma2);
+    }
+
+    #[test]
+    fn noncentered_inherited_masks_require_an_unbounded_estimate() {
+        let layout = GLWELayout {
+            n: Degree(64),
+            base2k: Base2K(8),
+            k: TorusPrecision(32),
+            rank: Rank(1),
+        };
+        let base = Distribution::BinaryProb(0.5);
+        let metadata = ComponentNoise::from_secret_at(base, TorusPrecision(64), 1).with_components(vec![
+            FreshNoiseEstimate::new(4.0, TorusPrecision(64)),
+            FreshNoiseEstimate::new(1.0, TorusPrecision(64)),
+        ]);
+        let plan = public_key_phase_plan(Some(metadata), &layout, TorusPrecision(64), base, PublicKeyBodyNoise::Sampled);
+        assert_eq!(plan.sample_precision, TorusPrecision(64));
+        assert!(plan.noise.unwrap().phase_noise(64).variance().is_infinite());
+    }
+
+    #[test]
+    fn invariant_ring_uses_a_bound_for_coefficient_zero() {
+        let layout = GLWELayout {
+            n: Degree(256),
+            base2k: Base2K(8),
+            k: TorusPrecision(32),
+            rank: Rank(1),
+        };
+        let base = Distribution::TernaryProb(0.5);
+        let metadata = ComponentNoise::from_secret_at(base, layout.k, 1);
+        let plan = super::public_key_phase_plan(Some(metadata), &layout, layout.k, base, 4 * 256, PublicKeyBodyNoise::Sampled);
+        let variance = plan.noise.unwrap().weighted_phase_noise(256, 4 * 256).variance();
+        assert!((variance - 1025.0 * noise_variance(Noise::ENCRYPTION)).abs() < 1e-9);
     }
 
     #[test]

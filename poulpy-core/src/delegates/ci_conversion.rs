@@ -12,8 +12,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIEmbed<BE> for Module<BE> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_ci_embed(self, res, a);
-        res.set_noise(None);
+        BE::glwe_ci_embed(self, res, a)
     }
 }
 
@@ -31,7 +30,6 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECITrace<BE> for Module<BE> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_ci_trace(self, res, a, scratch);
-        res.set_noise(None);
+        BE::glwe_ci_trace(self, res, a, scratch)
     }
 }

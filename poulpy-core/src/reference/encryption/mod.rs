@@ -61,6 +61,8 @@ pub const DEFAULT_SIGMA_XE: f64 = match crate::Noise::ENCRYPTION {
     crate::Noise::Uniform { .. } => unreachable!(),
 };
 
-/// Truncation bound for the discrete Gaussian error distribution, defined as 6.0 * [DEFAULT_SIGMA_XE].
-/// Samples are rejected if their absolute value exceeds this bound.
-pub const DEFAULT_BOUND_XE: f64 = 6.0 * DEFAULT_SIGMA_XE;
+/// Maximum absolute sample of the default encryption error distribution.
+pub const DEFAULT_BOUND_XE: f64 = match crate::Noise::ENCRYPTION {
+    crate::Noise::Gaussian { sigma, cutoff_factor } => (sigma * cutoff_factor as f64) as u64 as f64,
+    crate::Noise::Uniform { .. } => unreachable!(),
+};

@@ -55,6 +55,8 @@ pub(crate) fn ggsw_blind_rotation_assign_derived<BE, R, K>(
             );
         }
     }
+
+    res.set_noise(None);
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ggsw_blind_rotation_derived<BE, R, A, K>(
@@ -91,4 +93,6 @@ pub(crate) fn ggsw_blind_rotation_derived<BE, R, A, K>(
             );
         }
     }
+
+    res.set_noise(None);
 }

@@ -133,9 +133,9 @@ fn cumulative_table(sigma: f64, bound: usize) -> Vec<u128> {
             let scaled_hi = &cum_hi << 128;
             let floor = &scaled_lo / &total_hi;
             let value = u128::try_from(&floor).unwrap_or(u128::MAX);
-            // Certify error <= one unit of 128-bit probability. This also
-            // handles tails smaller than 2^-128 without unbounded precision.
-            if scaled_hi > (&floor + 1u8) * &total_lo {
+            // The true cumulative probability is below one, so a saturated
+            // floor is certified even when the decoupled upper bound exceeds one.
+            if value != u128::MAX && scaled_hi > (&floor + 1u8) * &total_lo {
                 break;
             }
             table.push(value);
@@ -376,13 +376,21 @@ impl NoiseWord for i128 {
 
 // Small table draws and their padding fit i128 even at radix 2^63.
 // Fixed word carries keep this path independent of the sampled value.
-fn place_small<R: ZnxViewMut>(res: &mut R, col: usize, index: usize, base2k: usize, size: usize, shift: usize, sample: i64)
-where
+fn place_small<R: ZnxViewMut>(
+    res: &mut R,
+    col: usize,
+    index: usize,
+    base2k: usize,
+    size: usize,
+    shift: usize,
+    limbs: usize,
+    sample: i64,
+) where
     R::Scalar: NoiseWord,
 {
     let mut value = (sample as i128) << shift;
     let half = 1i128 << (base2k - 1);
-    for limb in (0..size).rev() {
+    for limb in (size - limbs..size).rev() {
         let carry = (value + half) >> base2k;
         let digit = value - (carry << base2k);
         res.at_mut(col, limb)[index].add_noise_digit(digit as i64);
@@ -474,13 +482,21 @@ where
                 if (table.len() as u128) << shift < 1u128 << (base2k - 1) {
                     add_table(res.at_mut(col, size - 1), shift, table, source);
                 } else {
+                    // Padding and balanced carries can add two radix digits.
+                    // Radix two needs full sign propagation because +1 is not a digit.
+                    let bound_bits = usize::BITS as usize - table.len().leading_zeros() as usize;
+                    let limbs = if base2k == 1 {
+                        size
+                    } else {
+                        size.min(2 + bound_bits / base2k)
+                    };
                     for index in 0..res.n() {
                         if index % 64 == 0 {
                             signs = source.next_u64();
                         }
                         let sample = sample_table(table, source, signs & 1);
                         signs >>= 1;
-                        place_small(res, col, index, base2k, size, shift, sample);
+                        place_small(res, col, index, base2k, size, shift, limbs, sample);
                     }
                 }
             } else {
@@ -496,12 +512,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FFT64Ref, NTT4x30Ref};
+    use crate::FFT64Ref;
+    #[cfg(feature = "enable-core")]
+    use crate::NTT4x30Ref;
+    #[cfg(feature = "enable-core")]
     use poulpy_core::{VecZnxAddNoise, VecZnxBigAddNoise};
-    use poulpy_hal::{api::*, layouts::*};
+    #[cfg(feature = "enable-core")]
+    use poulpy_hal::api::*;
+    use poulpy_hal::layouts::*;
 
-    fn assert_pmf(sigma: f64, cutoff_factor: usize, mut sample: impl FnMut() -> i64) {
-        let bound = (sigma * cutoff_factor as f64).floor() as i64;
+    fn assert_pmf(sigma: f64, bound: i64, mut sample: impl FnMut() -> i64) {
         let draws = 200_000usize;
         let mut counts = vec![0usize; (2 * bound + 1) as usize];
         for _ in 0..draws {
@@ -533,12 +553,12 @@ mod tests {
     #[test]
     fn table_probability_mass_function() {
         let mut source = Source::new([31; 32]);
-        assert_pmf(3.2, 6, || {
+        assert_pmf(3.2, 19, || {
             let sign = source.next_u64() & 1;
             sample_table(&ENCRYPTION_CDT, &mut source, sign)
         });
         let table = cumulative_table(0.75, 4);
-        assert_pmf(0.75, 6, || {
+        assert_pmf(0.75, 4, || {
             let sign = source.next_u64() & 1;
             sample_table(&table, &mut source, sign)
         });
@@ -546,10 +566,10 @@ mod tests {
 
     #[test]
     fn rejection_probability_mass_functions() {
-        for sigma in [4.0, 3.2] {
+        for (sigma, bound) in [(4.0, 24), (3.2, 19)] {
             let gaussian = RejectionGaussian::new(sigma, 6);
             let mut source = Source::new([43; 32]);
-            assert_pmf(sigma, 6, || i64::try_from(gaussian.sample(&mut source)).unwrap());
+            assert_pmf(sigma, bound, || i64::try_from(gaussian.sample(&mut source)).unwrap());
         }
     }
 
@@ -559,6 +579,8 @@ mod tests {
         assert_eq!(dyadic(f64::from_bits(1)), (UBig::ONE, UBig::ONE << 1074));
         assert_eq!(dyadic(2f64.powi(128)), (UBig::ONE << 128, UBig::ONE));
         assert_eq!(cumulative_table(0.01, 1), vec![u128::MAX]);
+        assert_eq!(cumulative_table(2f64.powi(-60), 4), vec![u128::MAX; 4]);
+        assert_eq!(cumulative_table(1.0, 64).len(), 64);
         assert!(cumulative_table(f64::from_bits(1), 0).is_empty());
     }
 
@@ -613,6 +635,7 @@ mod tests {
         value >> padding
     }
 
+    #[cfg(feature = "enable-core")]
     #[test]
     fn gaussian_reconstructs_beyond_128_bits_and_preserves_columns() {
         let module = Module::<FFT64Ref>::new(64);
@@ -648,6 +671,66 @@ mod tests {
         }
         assert!(res.at(1, size - 1).iter().all(|x| *x == 0));
         assert_eq!(parent.new_seed(), expected_parent.new_seed());
+    }
+
+    #[test]
+    fn carried_tables_replay_exactly() {
+        for (base2k, k) in [(3usize, 20usize), (5, 11), (12, 49), (17, 69), (52, 209), (63, 253)] {
+            for (noise, table) in [
+                (Noise::ENCRYPTION, ENCRYPTION_CDT.to_vec()),
+                (
+                    Noise::Gaussian {
+                        sigma: 5.2,
+                        cutoff_factor: 6,
+                    },
+                    cumulative_table(5.2, 31),
+                ),
+            ] {
+                let size = k.div_ceil(base2k);
+                let mut res = VecZnx::from_data(
+                    <FFT64Ref as Backend>::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(193, 2, size + 1)),
+                    193,
+                    2,
+                    size + 1,
+                );
+                for limb in 0..=size {
+                    res.at_mut(0, limb).fill(91);
+                }
+                let mut source = Source::new([61; 32]);
+                let mut replay = Source::new([61; 32]);
+                add_noise(base2k, k, &mut res, 1, noise, &mut source);
+                let mut signs = 0;
+                for index in 0..res.n() {
+                    if index % 64 == 0 {
+                        signs = replay.next_u64();
+                    }
+                    let sample = sample_table(&table, &mut replay, signs & 1);
+                    signs >>= 1;
+                    assert_eq!(reconstruct(&res, 1, index, base2k, k), IBig::from(sample));
+                    for limb in 0..size {
+                        let digit = res.at(1, limb)[index];
+                        assert!((-(1i64 << (base2k - 1))..1i64 << (base2k - 1)).contains(&digit));
+                    }
+                }
+                for limb in 0..=size {
+                    assert!(res.at(0, limb).iter().all(|&x| x == 91));
+                }
+                assert!(res.at(1, size).iter().all(|&x| x == 0));
+                assert_eq!(source.new_seed(), replay.new_seed());
+            }
+        }
+    }
+
+    #[test]
+    fn gaussian_bounds_are_exact_dyadic_floors() {
+        for (sigma, cutoff, bound) in [
+            (3.2, 6, 19u8),
+            (15.25, 6, 91),
+            (8.0 - 2f64.powi(-50), 1, 7),
+            (f64::from_bits(1), 6, 0),
+        ] {
+            assert_eq!(RejectionGaussian::new(sigma, cutoff).bound, UBig::from(bound));
+        }
     }
 
     #[test]
@@ -698,6 +781,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "enable-core")]
     #[test]
     fn narrow_radix_gaussian_carries_and_wide_backend_match() {
         let fft = Module::<FFT64Ref>::new(64);

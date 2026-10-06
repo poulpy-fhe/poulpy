@@ -25,10 +25,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch);
-        for ct in res {
-            ct.set_noise(None);
-        }
+        BE::glwe_blind_retrieval_statefull::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_retrieval_statefull_rev<R, K>(
@@ -42,9 +39,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch);
-        for ct in res {
-            ct.set_noise(None);
-        }
+        BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
     }
 }

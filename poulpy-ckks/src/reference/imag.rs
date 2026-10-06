@@ -45,6 +45,7 @@ pub trait CKKSImagReference<BE: Backend> {
             self.glwe_lsh(dst, src, offset, scratch);
             self.glwe_rotate_assign(k, dst, scratch);
         }
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -56,6 +57,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let k = (dst.to_backend_mut().n().as_usize() / 2) as i64;
         self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -88,6 +90,7 @@ pub trait CKKSImagReference<BE: Backend> {
             self.glwe_lsh(dst, src, offset, scratch);
             self.glwe_rotate_assign(k, dst, scratch);
         }
+        dst.set_noise(None);
         Ok(())
     }
 
@@ -99,6 +102,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let k = -((dst.to_backend_mut().n().as_usize() / 2) as i64);
         self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
+        dst.set_noise(None);
         Ok(())
     }
 }

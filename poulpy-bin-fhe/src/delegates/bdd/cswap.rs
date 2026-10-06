@@ -20,8 +20,6 @@ where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::cswap::<A, B>(self, res_a, res_b, s, scratch);
-        res_a.set_noise(None);
-        res_b.set_noise(None);
+        BE::cswap::<A, B>(self, res_a, res_b, s, scratch)
     }
 }

@@ -447,8 +447,13 @@ where
                     )
                 },
             );
-            assert!(expected.bits.iter().all(|bit| LWEInfos::noise(bit).is_some()));
-            assert!(actual.bits.iter().all(|bit| LWEInfos::noise(bit).is_some()));
+            for (expected_bit, actual_bit) in expected.bits.iter().zip(&actual.bits) {
+                let expected_noise = expected_bit.noise().expect("reference bit is missing metadata");
+                let actual_noise = actual_bit.noise().expect("delegated bit is missing metadata");
+                assert_eq!(expected_noise, actual_noise);
+                assert_eq!(expected_noise.precision(), expected_bit.k());
+                assert_eq!(actual_noise.precision(), actual_bit.k());
+            }
             assert_eq!(observe(module, &expected), observe(module, &actual));
         }
     }

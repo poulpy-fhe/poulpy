@@ -291,6 +291,7 @@ pub trait GLWEMulXpMinusOne<BE: Backend> {
 /// source may be copied into a higher-rank destination, whose mask is zeroed.
 /// Equal-layout copies also preserve unnormalized digits verbatim; normalizing
 /// such an intermediate remains the caller's responsibility.
+/// Exact copies preserve noise metadata; narrowing the torus precision clears it.
 pub trait GLWECopy<BE: Backend> {
     /// Scratch for the given source and destination layouts (zero for the
     /// equal-radix, non-narrowing path).
