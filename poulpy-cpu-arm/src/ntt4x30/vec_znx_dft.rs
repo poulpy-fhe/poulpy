@@ -114,10 +114,10 @@ pub(crate) fn dft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: 
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
-    if let Some(src) = src {
-        dft_limb_scaled(module, n, dst, src, false, tmp);
-    } else {
-        dst.fill(0);
+    match src {
+        // A zero limb transforms to zero: the scan stops at the first nonzero coefficient.
+        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled(module, n, dst, src, false, tmp),
+        _ => dst.fill(0),
     }
 }
 

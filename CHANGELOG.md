@@ -257,6 +257,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- The fused interleaved-digit product of the NEON NTT4x30 backends skips the rows of leading input limbs that are zero in every column, as the per-digit vector-matrix products of the reference body did, and the NEON forward transform returns zero for a zero limb without running.
+  A ciphertext raised to a larger modulus has most of its limbs in this case.
 - The NEON `i128` normalization step computes each carry as one rounding shift of the wrapping sum, in place of a digit subtraction with its borrow, which removes a quarter of its instructions.
 - The NEON NTT4x30 inner products of the vector-matrix product and the convolution multiply residues centered around zero, on signed accumulators: 24 products share one Montgomery step, where 12 canonical ones did.
   The prepared matrix and both prepared convolution operands store centered residues.

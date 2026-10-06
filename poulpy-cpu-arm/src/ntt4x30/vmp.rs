@@ -320,7 +320,9 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_neon(a_cols: usize, a_size: usi
 struct Digit {
     /// First input limb, the next ones follow every `dsize` limbs.
     first_limb: usize,
-    /// Input rows, and their offset in the gathered block.
+    /// Leading input rows skipped because their limbs are zero.
+    skip: usize,
+    /// Remaining input rows, and their offset in the gathered block.
     rows: usize,
     x_off: usize,
     /// Output limbs this digit contributes to.
@@ -352,11 +354,28 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
     let ncols = cols_out * key_size;
     let (a_size, res_size) = (a.size(), res.size());
 
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u32: &[u32] = cast_slice(pmat.data());
+    assert!(a_u32.len() >= a_size * cols_in * 4 * n);
+
+    // Leading input limbs that are zero in every column contribute nothing: their rows are skipped.
+    // A ciphertext raised to a larger modulus has most of its limbs in this case.
+    let zero_limbs = a_u32
+        .chunks_exact(cols_in * 4 * n)
+        .take(a_size)
+        .take_while(|limb| limb.iter().all(|&x| x == 0))
+        .count();
+
     let mut digits = [Digit::default(); STRIDED_MAX_DSIZE];
     let mut total_rows = 0;
     let mut active_limbs = 0;
     for (di, digit) in digits[..dsize].iter_mut().enumerate() {
-        let rows = ((a_size + di) / dsize).min(dnum) * cols_in;
+        let first_limb = dsize - di - 1;
+        let all_rows = ((a_size + di) / dsize).min(dnum) * cols_in;
+        // Row `j * cols_in + col` reads limb `first_limb + j * dsize`.
+        let skip = (zero_limbs.saturating_sub(first_limb).div_ceil(dsize) * cols_in).min(all_rows);
+        let rows = all_rows - skip;
         // The first digit overwrites every limb the key covers, the next ones read the key `di` limbs ahead.
         let out_limbs = if di == 0 {
             res_size.min(key_size)
@@ -364,7 +383,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
             gglwe_product_digit_output_size(res_size, key_size, dsize, di, product_limbs).min(key_size.saturating_sub(di))
         };
         *digit = Digit {
-            first_limb: dsize - di - 1,
+            first_limb,
+            skip,
             rows,
             x_off: total_rows,
             out_limbs,
@@ -376,12 +396,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
     }
     let digits = &digits[..dsize];
 
-    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
-    let a_u32: &[u32] = cast_slice(a.raw());
-    let pmat_u32: &[u32] = cast_slice(pmat.data());
     let n_blocks = n / 4;
     assert!(pmat_u32.len() >= n_blocks * ncols * nrows * ROW);
-    assert!(a_u32.len() >= a_size * cols_in * 4 * n);
     assert!(res_u32.len() >= res_size * cols_out * 4 * n);
     let per_worker = ROW * GROUP * total_rows.max(1);
     let tmp: &mut [u32] = cast_slice_mut(tmp);
@@ -400,7 +416,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
             let blk = group * len;
             for digit in digits {
                 for row in 0..digit.rows {
-                    let flat = (digit.first_limb + (row / cols_in) * dsize) * cols_in + row % cols_in;
+                    let source = digit.skip + row;
+                    let flat = (digit.first_limb + (source / cols_in) * dsize) * cols_in + source % cols_in;
                     gather_limb(n, blk, len, a.add(flat * 4 * n), x, digit.x_off + row, total_rows, &c);
                 }
             }
@@ -412,7 +429,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
                         let mut state = DotState::new();
                         for (di, digit) in digits.iter().enumerate() {
                             if limb < digit.out_limbs {
-                                let m = block.add(((limb + di) * cols_out + col) * nrows * ROW);
+                                let m = block.add((((limb + di) * cols_out + col) * nrows + digit.skip) * ROW);
                                 state = state.push_rows(xb.add(digit.x_off * ROW), m, digit.rows, &c);
                             }
                         }
