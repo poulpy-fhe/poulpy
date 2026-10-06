@@ -1579,14 +1579,16 @@ mod canonical_precision_tests {
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64ref,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
-    backend_test = crate::FFT64Ref
+    backend_test = crate::FFT64Ref,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30ref,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
-    backend_test = crate::NTT4x30Ref
+    backend_test = crate::NTT4x30Ref,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
 );
 
 // Encryption on a module of twice the operand degree samples and computes as a
@@ -1596,6 +1598,7 @@ poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_sub_degree_fft64ref,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Ref,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = TestParams { size: 1<<7, n: 1<<7, base2k: 12 },
     test_size = 1<<8,
 );

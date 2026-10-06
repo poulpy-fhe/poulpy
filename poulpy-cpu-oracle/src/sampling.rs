@@ -140,14 +140,43 @@ where
     }
 }
 
+fn uses_controlled_sampling<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>) -> bool {
+    // This flag is fixed before the module is exposed to callers or workers.
+    unsafe { (*module.ptr()).controlled_sampling }
+}
+
+fn add_controlled_noise<R: ZnxViewMut>(base2k: usize, k: usize, res: &mut R, col: usize, noise: Noise, seed: [u8; 32], big: bool)
+where
+    R::Scalar: Int,
+{
+    noise.validate();
+    assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
+    assert!(
+        k > 0 && k.div_ceil(base2k) <= res.size(),
+        "noise precision exceeds destination allocation"
+    );
+    assert!(col < res.cols(), "noise column exceeds destination allocation");
+    let samples = poulpy_core::test_suite::parity::controlled_sampling::noise_samples(res.n(), base2k, k, noise, seed, big);
+    for (limb, digits) in samples.chunks(res.n()).enumerate() {
+        for (dst, &digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
+            *dst = dst.add(R::Scalar::from(digit));
+        }
+    }
+}
+
 unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
     fn scalar_znx_fill_distribution(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
     ) {
+        if uses_controlled_sampling(module) {
+            let samples = poulpy_core::test_suite::parity::controlled_sampling::scalar_samples(res.n(), dist, seed);
+            res.at_mut(res_col, 0).copy_from_slice(&samples);
+            return;
+        }
         let mut source = Source::new(seed);
         match dist {
             Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),
@@ -175,7 +204,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
             res.n().is_power_of_two() && res.n() <= module.n(),
             "noise degree outside module"
         );
-        add_noise(base2k, k, res, res_col, noise, seed);
+        if uses_controlled_sampling(module) {
+            add_controlled_noise(base2k, k, res, res_col, noise, seed, false);
+        } else {
+            add_noise(base2k, k, res, res_col, noise, seed);
+        }
     }
 
     fn vec_znx_big_add_noise(
@@ -191,7 +224,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
             res.n().is_power_of_two() && res.n() <= module.n(),
             "noise degree outside module"
         );
-        add_noise(base2k, k, res, res_col, noise, seed);
+        if uses_controlled_sampling(module) {
+            add_controlled_noise(base2k, k, res, res_col, noise, seed, true);
+        } else {
+            add_noise(base2k, k, res, res_col, noise, seed);
+        }
     }
 }
 

@@ -126,13 +126,16 @@ pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8;
 ///
 /// `params` is optional and defaults to degree 256 with radix 12. Callers may
 /// select another supported degree; both modules use the supplied module size.
+/// Optional `reference_factory = fn(u64) -> Module<backend_ref>` constructs a
+/// comparison module with explicit sampling opt-ins. It defaults to `Module::new`.
 #[macro_export]
 macro_rules! core_encryption_parity_test_suite {
-    (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
+    (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(, reference_factory = $reference_factory:expr)? $(,)?) => {
         $crate::core_encryption_parity_test_suite!(
             mod $name,
             backend_ref = $backend_ref,
             backend_test = $backend_test,
+            $(reference_factory = $reference_factory,)?
             params = ::poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 },
         );
     };
@@ -140,6 +143,7 @@ macro_rules! core_encryption_parity_test_suite {
         mod $name:ident,
         backend_ref = $backend_ref:ty,
         backend_test = $backend_test:ty,
+        $(reference_factory = $reference_factory:expr,)?
         params = $params:expr
         $(, test_size = $test_size:expr)? $(,)?
     ) => {
@@ -167,7 +171,9 @@ macro_rules! core_encryption_parity_test_suite {
                         size
                     } as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
+                        let reference: Module<$backend_ref> = $crate::core_encryption_parity_test_suite!(
+                            @reference $backend_ref, params.size as u64 $(, $reference_factory)?
+                        );
                         test_glwe_encryption_parity(
                             &params,
                             &ParityShapes::default(),
@@ -190,7 +196,9 @@ macro_rules! core_encryption_parity_test_suite {
                         size
                     } as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
+                        let reference: Module<$backend_ref> = $crate::core_encryption_parity_test_suite!(
+                            @reference $backend_ref, params.size as u64 $(, $reference_factory)?
+                        );
                         test_key_encryption_parity(
                             &params,
                             &ParityShapes::default(),
@@ -213,7 +221,9 @@ macro_rules! core_encryption_parity_test_suite {
                         size
                     } as u64),
                     |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
+                        let reference: Module<$backend_ref> = $crate::core_encryption_parity_test_suite!(
+                            @reference $backend_ref, params.size as u64 $(, $reference_factory)?
+                        );
                         test_lwe_encryption_parity(
                             &params,
                             &ParityShapes::default(),
@@ -224,5 +234,11 @@ macro_rules! core_encryption_parity_test_suite {
                 );
             }
         }
+    };
+    (@reference $backend_ref:ty, $size:expr) => {
+        ::poulpy_hal::layouts::Module::<$backend_ref>::new($size)
+    };
+    (@reference $backend_ref:ty, $size:expr, $factory:expr) => {
+        ($factory)($size)
     };
 }

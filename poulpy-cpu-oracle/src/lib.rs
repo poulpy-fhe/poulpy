@@ -24,6 +24,9 @@ mod sampling;
 #[cfg(feature = "enable-core")]
 mod scalar_znx_fill;
 
+#[cfg(feature = "enable-core")]
+pub mod test_suite;
+
 #[cfg(test)]
 mod tests;
 
