@@ -144,9 +144,13 @@ pub unsafe trait CKKSMulImpl: Backend {
 }
 
 /// Implements this contract with the callable reference algorithms.
+/// `prepared_tensor` optionally selects the prepared tensor product implementation.
 #[macro_export]
 macro_rules! impl_ckks_mul_reference {
     ($be:ty) => {
+        $crate::impl_ckks_mul_reference!($be, prepared_tensor = ::poulpy_core::glwe_tensor_apply_prepared_right);
+    };
+    ($be:ty, prepared_tensor = $prepared_tensor:path) => {
         unsafe impl $crate::oep::CKKSMulImpl for $be {
             fn ckks_mul_tmp_bytes_impl<
                 R: ::poulpy_core::layouts::GLWEInfos,
@@ -259,7 +263,16 @@ macro_rules! impl_ckks_mul_reference {
                     + ::poulpy_core::layouts::GLWEInfos,
                 T: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
-                $crate::reference::mul::CKKSMulReference::ckks_mul_prepared_assign_reference(module, dst, prepared, tsk, scratch)
+                $crate::reference::mul::ckks_mul_prepared_assign_with_tensor(
+                    module,
+                    dst,
+                    prepared,
+                    tsk,
+                    scratch,
+                    |offset, tensor, a, b, b_size, scratch| {
+                        $prepared_tensor(module, offset, tensor, a, b, b_size, scratch);
+                    },
+                )
             }
 
             fn ckks_square_into_impl<Dst, A, T>(

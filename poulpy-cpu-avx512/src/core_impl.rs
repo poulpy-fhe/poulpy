@@ -950,6 +950,112 @@ poulpy_cpu_ref::impl_cpu_core_defaults!(super::FFT64CIAvx512Rayon, fft64);
 poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT4x30CIAvx512Rayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_cpu_ref::impl_cpu_core_defaults!(super::NTT3x42CIIfmaRayon, ntt4x30);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon", any(feature = "enable-ckks", test)))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ifma_prepared_tensor<R, A, BP>(
+    module: &Module<NTT3x42IfmaRayon>,
+    offset: usize,
+    res: &mut R,
+    a: &A,
+    b: &BP,
+    b_size: usize,
+    scratch: &mut ScratchArena<'_, NTT3x42IfmaRayon>,
+) where
+    R: GLWEToBackendMut<NTT3x42IfmaRayon> + GLWEInfos,
+    A: GLWEToBackendRef<NTT3x42IfmaRayon> + GLWEInfos,
+    BP: CnvPVecRToBackendRef<NTT3x42IfmaRayon>,
+{
+    if res.n().as_usize() != 65536
+        || res.rank().as_usize() != 1
+        || a.rank().as_usize() != 1
+        || res.base2k().as_usize() != 52
+        || a.base2k().as_usize() != 52
+        || res.size() < 16
+    {
+        poulpy_core::glwe_tensor_apply_prepared_right(module, offset, res, a, b, b_size, scratch);
+        return;
+    }
+    type BE = NTT3x42IfmaRayon;
+    let n = res.n().as_usize();
+    let base = a.base2k().as_usize();
+    let a_size = a.k().as_usize().div_ceil(base);
+    let result_base = res.base2k().as_usize();
+    let result_k = res.k().as_usize();
+    // Preserve the prepared product's rounding before the pairwise subtraction.
+    let full_k = res.size() * result_base;
+    let (mut normalized, mut work) = scratch.borrow().take_glwe_scratch(a);
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut normalized, a, &mut work);
+        normalized.to_backend_ref()
+    };
+    res.set_canonical(true);
+    let (mut left, mut work) = work.take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_left(&mut left, a.data(), &mut work);
+    let (high, low) = cnv_offset_to_limb_offset(offset, base);
+    let size = normalize_input_limb_bound_with_offset(a_size + b_size - high, res.size(), result_base, base, low);
+    let (mut dft, mut work) = work.take_vec_znx_dft_scratch(n, 1, size);
+    for (input, output) in [(0, 0), (1, 2)] {
+        module.cnv_apply_dft(
+            high,
+            &mut dft,
+            0,
+            &left.to_backend_ref(),
+            input,
+            &b.to_backend_ref(),
+            input,
+            &mut work,
+        );
+        BE::tensor_finish(
+            module,
+            res.to_backend_mut().data_mut(),
+            result_base,
+            full_k,
+            low,
+            output,
+            &mut dft,
+            0,
+            base,
+            &mut work,
+        );
+    }
+    module.cnv_pairwise_apply_dft(
+        high,
+        &mut dft,
+        0,
+        &left.to_backend_ref(),
+        &b.to_backend_ref(),
+        0,
+        1,
+        &mut work,
+    );
+    let (mut pairwise, mut work) = work.take_vec_znx_scratch(n, 1, res.size());
+    BE::tensor_finish(
+        module,
+        &mut pairwise,
+        result_base,
+        full_k,
+        low,
+        0,
+        &mut dft,
+        0,
+        base,
+        &mut work,
+    );
+    {
+        let mut pairwise = pairwise.to_backend_mut();
+        let r = res.to_backend_ref();
+        module.vec_znx_sub_assign(&mut pairwise, 0, r.data(), 0);
+        module.vec_znx_sub_assign(&mut pairwise, 0, r.data(), 2);
+    }
+    module.vec_znx_normalize_assign(result_base, result_k, 0, &mut pairwise, 0, &mut work);
+    module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
+    for col in [0, 2] {
+        module.vec_znx_normalize_assign(result_base, result_k, 0, res.to_backend_mut().data_mut(), col, &mut work);
+    }
+}
+
 #[cfg(all(test, feature = "enable-ifma"))]
 mod relinearize_tests {
     use super::*;
@@ -1034,4 +1140,82 @@ mod relinearize_tests {
     check_relinearize!(consume_relinearize_serial, NTT3x42Ifma);
     #[cfg(feature = "enable-rayon")]
     check_relinearize!(consume_relinearize_parallel, NTT3x42IfmaRayon);
+}
+
+#[cfg(all(test, feature = "enable-ifma", feature = "enable-rayon"))]
+mod prepared_tensor_tests {
+    use super::*;
+    use poulpy_core::{
+        glwe_prepare_right, glwe_tensor_apply_prepared_right, glwe_tensor_apply_prepared_right_tmp_bytes,
+        layouts::{GLWELayout, ModuleCoreAlloc, SetK},
+    };
+    use poulpy_hal::{
+        api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxFillUniformSourceAll},
+        layouts::ScratchOwned,
+        source::Source,
+    };
+
+    #[test]
+    fn prepared_tensor_matches_reference() {
+        type BE = NTT3x42IfmaRayon;
+        let mut source = Source::new([67; 32]);
+        for (n, rank, base) in [(65536usize, 1usize, 52usize), (256, 2, 26)] {
+            let module = Module::<BE>::new(n as u64);
+            let layout = GLWELayout {
+                n: n.into(),
+                base2k: base.into(),
+                k: (20 * base - 3).into(),
+                rank: rank.into(),
+            };
+            let mut a = module.glwe_alloc_from_infos(&layout);
+            let mut b = module.glwe_alloc_from_infos(&layout);
+            b.set_k((17 * base - 1).into());
+            let b_size = b.size();
+            module.vec_znx_fill_uniform_source_all(base, a.k().as_usize(), a.data_mut(), &mut source);
+            module.vec_znx_fill_uniform_source_all(base, b.k().as_usize(), b.data_mut(), &mut source);
+            a.set_canonical(true);
+            b.set_canonical(true);
+            let mut right = module.cnv_pvec_right_alloc(n, rank + 1, b_size, PrepareHint::Reuse);
+            let prep_bytes = module.glwe_bytes_of_from_infos(&b)
+                + module
+                    .cnv_prepare_right_tmp_bytes(b_size, b_size)
+                    .max(module.glwe_normalize_tmp_bytes());
+            let mut prep_scratch = ScratchOwned::<BE>::alloc(prep_bytes);
+            glwe_prepare_right(&module, &mut right, &b, b.k().as_usize(), &mut prep_scratch.borrow());
+            for lazy in [false, true] {
+                if lazy {
+                    for col in 0..rank + 1 {
+                        module.vec_znx_add_assign(
+                            GLWEToBackendMut::<BE>::to_backend_mut(&mut a).data_mut(),
+                            col,
+                            GLWEToBackendRef::<BE>::to_backend_ref(&b).data(),
+                            col,
+                        );
+                    }
+                    a.set_canonical(false);
+                }
+                for (k, offset) in [
+                    (16 * base, 0),
+                    (16 * base - 1, base - 1),
+                    (15 * base + 1, base),
+                    (16 * base + 3, base + 1),
+                    (15 * base - 1, 2 * base),
+                    (16 * base - 1, 23 * base + 7),
+                ] {
+                    let output = GLWELayout { k: k.into(), ..layout };
+                    let mut got = module.glwe_tensor_alloc_from_infos(&output);
+                    let mut expected = module.glwe_tensor_alloc_from_infos(&output);
+                    module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);
+                    let bytes = glwe_tensor_apply_prepared_right_tmp_bytes(&module, &got, &a, a.size(), b_size);
+                    let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+                    ifma_prepared_tensor(&module, offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
+                    glwe_tensor_apply_prepared_right(&module, offset, &mut expected, &a, &right, b_size, &mut scratch.borrow());
+                    assert_eq!(
+                        got, expected,
+                        "n={n}, rank={rank}, base={base}, lazy={lazy}, k={k}, offset={offset}"
+                    );
+                }
+            }
+        }
+    }
 }

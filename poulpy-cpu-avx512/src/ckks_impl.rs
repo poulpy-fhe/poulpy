@@ -120,7 +120,10 @@ poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(super::NTT4x30Avx512Rayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_ref::impl_cpu_ckks_defaults!(super::NTT3x42IfmaRayon);
+poulpy_cpu_ref::impl_cpu_ckks_defaults!(
+    super::NTT3x42IfmaRayon,
+    prepared_tensor = crate::core_impl::ifma_prepared_tensor
+);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_conjugate_reference!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
