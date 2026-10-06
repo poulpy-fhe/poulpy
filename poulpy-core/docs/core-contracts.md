@@ -123,9 +123,16 @@ would not protect it.
 
 ## Component noise
 
-Delegates only forward calls. Backend overrides must preserve the reference
-and derived implementations' metadata updates and validate provenance before
-mutation, as specified by their OEP safety contracts.
+Only the metadata an operation leaves on its outputs is specified; backend
+views, temporaries and nested calls may carry anything. Secret-key encryption,
+key generation included, records `ComponentNoise::from_secret_at` with the
+encrypting secret's distribution and the output's `k` and rank (scalar LWE: its
+dimension). Public-key encryption draws its fresh errors at the
+`sample_precision`, uses the key up to the `work_precision` and records the
+`noise` of `public_key_encryption_plan`. Copies at equal or wider precision
+(zero masks appended for a wider rank), preparation, compression, decompression
+and transfers keep the source's estimate. Every other operation leaves `None`.
+Provenance checks run before any mutation, and delegates only forward calls.
 
 Encryption and construction of fresh collective keys or ciphertexts derive
 `ComponentNoise` for their outputs. Secret provenance records the base

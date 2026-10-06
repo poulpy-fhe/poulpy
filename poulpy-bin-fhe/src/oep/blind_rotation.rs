@@ -15,8 +15,7 @@ use poulpy_hal::{layouts::*, source::Source};
 /// Backend implementation of the blind-rotation operation family.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_execute_tmp_bytes<G, B>(
@@ -93,8 +92,7 @@ macro_rules! impl_bin_fhe_blind_rotation_execute_reference {
 /// Backend implementation of the blind-rotation operation family.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize;
@@ -154,8 +152,7 @@ macro_rules! impl_bin_fhe_blind_rotation_key_encrypt_reference {
 /// Backend implementation of the blind-rotation operation family.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -222,8 +219,7 @@ macro_rules! impl_bin_fhe_blind_rotation_key_compressed_reference {
 /// Backend implementation of the blind-rotation operation family.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_key_prepared_alloc<A>(
@@ -296,8 +292,7 @@ pub unsafe trait BlindRotationModSwitchImpl: Backend<ZnxWord = i64> {
 /// Backend coefficient-domain key decompression.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Reproduce the source key metadata and mask sampling circuit within the budget.
 pub unsafe trait BlindRotationKeyDecompressImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_key_decompress_tmp_bytes<A: BlindRotationKeyInfos>(module: &Module<Self>, infos: &A) -> usize;

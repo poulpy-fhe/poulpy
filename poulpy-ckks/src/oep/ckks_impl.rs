@@ -21,8 +21,7 @@ use super::{
 /// standard-only families, so conjugate-invariant backends do not implement it.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 ///
 /// Implementations must satisfy the contracts of all bundled `CKKS*Impl`
 /// traits, including the HAL-level invariants implied by their method

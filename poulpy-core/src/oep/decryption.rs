@@ -10,8 +10,7 @@ use crate::layouts::{
 /// Backend-provided decryption operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must interpret ciphertexts, plaintexts, and secrets according to their layout
 /// metadata, avoid out-of-bounds or aliased writes, and only use scratch space within the
 /// advertised temporary-size contracts.

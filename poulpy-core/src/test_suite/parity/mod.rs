@@ -64,8 +64,12 @@ use poulpy_hal::{
 };
 
 use crate::{
+    ComponentNoise, Distribution,
     api::{GLWEMaskFill, TransferInto},
-    layouts::{BackendGGLWE, BackendGLWE, GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc},
+    layouts::{
+        BackendGGLWE, BackendGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
+    },
     test_suite::keys::fill_by_digit,
 };
 
@@ -113,7 +117,8 @@ pub(crate) fn poisoned_scratch<B: Backend>(bytes: usize) -> poulpy_hal::layouts:
 }
 
 /// Allocates a GLWE on the reference module and fills it with uniform noise,
-/// canonical at the `k` it reports.
+/// canonical at the `k` it reports. It carries a fresh noise estimate, so an
+/// evaluation output that keeps a stale one fails the comparison.
 ///
 /// The operations read an operand at exactly the width it reports, so a
 /// layout whose `k` is not limb-aligned must carry nothing below it: the
@@ -125,6 +130,7 @@ where
 {
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
     module_ref.fill_glwe_from_source(&mut glwe, source);
+    GLWEToBackendMut::<BR>::set_noise(&mut glwe, Some(fixture_noise(infos.k(), infos.rank())));
     glwe
 }
 
@@ -160,7 +166,8 @@ pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &Backen
     twin.transfer_into(dst);
 }
 
-/// Allocates a GGLWE on the reference module and fills it with uniform noise.
+/// Allocates a GGLWE on the reference module and fills it with uniform noise,
+/// tagged like [`ref_glwe`].
 pub(crate) fn ref_gglwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGGLWE<BR>
 where
     BR: ParityBackend,
@@ -168,7 +175,12 @@ where
 {
     let mut gglwe = module_ref.gglwe_alloc_from_infos(infos);
     fill_by_digit(module_ref, &mut gglwe, 1, source);
+    GGLWEToBackendMut::<BR>::set_noise(&mut gglwe, Some(fixture_noise(infos.k(), infos.rank_out())));
     gglwe
+}
+
+fn fixture_noise(k: TorusPrecision, rank: Rank) -> ComponentNoise {
+    ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), k, rank.as_usize())
 }
 
 /// Declares a `poulpy-core` parity suite for a caller-selected backend pair.

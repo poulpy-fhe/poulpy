@@ -21,8 +21,7 @@ use crate::{
 /// [`impl_ckks_bootstrapping_reference`] wires every method to the reference pipeline.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 ///
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference pipeline, honor all key layouts, and stay within
@@ -107,8 +106,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 /// A backend may exploit the known-zero limbs produced by ModUp.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 ///
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference composition, honor all key layouts, and stay

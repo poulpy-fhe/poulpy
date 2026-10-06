@@ -5,8 +5,7 @@ use std::collections::HashMap;
 /// Backend implementation contract for [`GLWEBlindSelection`].
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
 pub unsafe trait GLWEBlindSelectionImpl<T: UnsignedInteger>: Backend {

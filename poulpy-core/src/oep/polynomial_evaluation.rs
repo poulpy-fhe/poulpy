@@ -14,8 +14,7 @@ use crate::{
 /// policy. They preserve that policy's dispatch and do not implement HAL kernels.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must preserve the BSGS schedule semantics and the precision
 /// metadata contract expected by the scheme-supplied operations.
 pub unsafe trait PolynomialEvaluationImpl: Backend {

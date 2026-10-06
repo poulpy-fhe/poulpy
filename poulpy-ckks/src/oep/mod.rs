@@ -1,8 +1,7 @@
 //! Backend contracts selected by the public CKKS API through delegates.
 //!
-//! Backend implementations own ciphertext noise metadata: fresh encryption records
-//! its component estimates, exact copies preserve them, and arithmetic clears them.
-//! Preserve reference provenance checks before mutation. Delegates only forward.
+//! Outputs follow the core [noise metadata rule](poulpy_core::oep#noise-metadata).
+//! Delegates only forward.
 //!
 //! A backend explicitly implements each `*Impl` family. The
 //! `impl_ckks_*_reference!` macros wire lower-layer algorithms from

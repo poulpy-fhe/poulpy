@@ -47,9 +47,10 @@ follows the
 
 ## Share metadata
 
-Backend overrides own metadata stamping and provenance checks; delegates only
-forward calls. The OEP safety contracts require reference-equivalent metadata
-and rejection of invalid provenance before mutation.
+Outputs follow the core noise metadata rule (`poulpy_core::oep`): only the
+estimate left on an output is specified. Shares, aggregates and finalized keys
+record the estimates below. Invalid provenance is rejected before mutation, and
+delegates only forward calls.
 
 A share carries `ComponentNoise`: secret provenance and `rank + 1` effective
 fresh component variances, ordered as body followed by masks. Each mask variance

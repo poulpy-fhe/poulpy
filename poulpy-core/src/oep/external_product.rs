@@ -8,8 +8,7 @@ use crate::layouts::{
 /// Backend hook for GLWE external products.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and reference external-product layers.
 pub unsafe trait GLWEExternalProductImpl: Backend {
@@ -60,8 +59,7 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
 /// Backend hook for batched GGLWE external products.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and reference external-product layers.
 pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {
@@ -104,8 +102,7 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
 /// Backend hook for GGSW external products.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and reference external-product layers.
 pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {

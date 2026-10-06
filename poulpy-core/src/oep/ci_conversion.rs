@@ -6,8 +6,7 @@ use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 /// standard GLWEs of degree `2N`, executed by a standard backend of degree at least `2N`.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the reference maps.
 pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> {

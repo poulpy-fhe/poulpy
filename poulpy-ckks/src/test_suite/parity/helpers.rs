@@ -4,8 +4,8 @@ use crate::{
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill,
-    layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos},
+    ComponentNoise, Distribution, GLWEAdd, GLWEMaskFill,
+    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena, ScratchOwned},
@@ -17,6 +17,7 @@ use poulpy_hal::{
 pub(crate) struct Snapshot {
     pub layout: CKKSLayout,
     pub canonical: bool,
+    pub noise: Option<ComponentNoise>,
     pub digits: Vec<i64>,
 }
 
@@ -25,6 +26,7 @@ impl std::fmt::Debug for Snapshot {
         f.debug_struct("Snapshot")
             .field("layout", &self.layout)
             .field("canonical", &self.canonical)
+            .field("noise", &self.noise)
             .field("total_digits", &self.digits.len())
             .field("first_digits", &&self.digits[..self.digits.len().min(16)])
             .finish()
@@ -50,6 +52,7 @@ where
             meta: value.meta(),
         },
         canonical: view.is_canonical(),
+        noise: value.noise(),
         digits,
     }
 }
@@ -64,6 +67,9 @@ where
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
     module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
+    // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
+    let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), out.k(), out.rank().as_usize());
+    GLWEToBackendMut::<B>::set_noise(&mut out, Some(noise));
     out
 }
 

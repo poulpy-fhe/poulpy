@@ -68,18 +68,26 @@ fn scaled_variance(variance: f64, factor: f64) -> f64 {
     }
 }
 
-/// Ordinary body error is sampled with the masks. Intentional flooding remains
-/// at the output grid, even when its descriptor equals `Noise::ENCRYPTION`.
+/// Body error of a public-key encryption. Ordinary body error is sampled with
+/// the masks. Intentional flooding remains at the output grid, even when its
+/// descriptor equals `Noise::ENCRYPTION`.
 #[derive(Clone, Copy)]
-pub(crate) enum PublicKeyBodyNoise {
+pub enum PublicKeyBodyNoise {
+    /// Fresh body error, drawn with the masks.
     Sampled,
+    /// No body error.
     Omitted,
+    /// This flood in place of the body error, drawn at the output's `k`.
     Flood(Noise),
 }
 
-pub(crate) struct PublicKeyEncryptionPlan {
+/// Grids and output metadata of one public-key encryption.
+pub struct PublicKeyEncryptionPlan {
+    /// Precision at which the fresh errors are drawn.
     pub sample_precision: TorusPrecision,
+    /// Key precision the product uses: its leading `ceil(work_precision / base2k)` limbs.
     pub work_precision: TorusPrecision,
+    /// Metadata recorded on the output.
     pub noise: Option<ComponentNoise>,
 }
 
@@ -330,7 +338,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
 /// Select the fresh-error grid and estimate the resulting output component noise.
 /// The product consumes only the selected leading whole limbs of the prepared
 /// key. Missing provenance selects full key precision and its full width.
-pub(crate) fn public_key_encryption_plan<BE, R, K>(res: &R, pk: &K, body_noise: PublicKeyBodyNoise) -> PublicKeyEncryptionPlan
+pub fn public_key_encryption_plan<BE, R, K>(res: &R, pk: &K, body_noise: PublicKeyBodyNoise) -> PublicKeyEncryptionPlan
 where
     BE: Backend,
     R: GLWEInfos,

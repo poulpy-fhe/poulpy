@@ -9,8 +9,7 @@ use crate::layouts::{
 /// Backend-provided ciphertext conversion operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the documented conversion
 /// semantics for the backend.
@@ -85,8 +84,7 @@ pub unsafe trait ConversionImpl: Backend + crate::oep::GLWEKeyswitchImpl + crate
 /// Backend-provided GGSW conversions (ring independent).
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Same contract as [`ConversionImpl`].
 pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, tsk_infos: &A) -> usize

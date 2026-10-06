@@ -1,8 +1,7 @@
 //! Explicit backend extension points for binary-FHE operations.
 //!
-//! Backend implementations own ciphertext noise metadata: fresh encryption records
-//! its component estimates, exact copies preserve them, and arithmetic clears them.
-//! Preserve reference provenance checks before mutation. Delegates only forward.
+//! Outputs follow the core [noise metadata rule](poulpy_core::oep#noise-metadata).
+//! Delegates only forward.
 //!
 //! Backend implementations select callable lower-layer reference algorithms or
 //! inherit crate-private same-layer derived defaults. An override must reproduce

@@ -8,8 +8,7 @@ use super::derived::tensor_key as derived;
 use crate::{layouts::GLWETensorKeyShareOwned, oep::GGLWEPatImpl};
 
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Reproduce the reference share within the queried scratch budget.
 pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, pk_infos: &B) -> usize

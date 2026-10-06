@@ -11,8 +11,7 @@ use super::derived::public_key as derived;
 use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Reproduce the reference share, entry seeds included, within the queried
 /// scratch budget.
 pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {

@@ -367,6 +367,8 @@ where
                     with_scratch::<B, _>(module.glwe_copy_tmp_bytes(&copied, &values[0]), |s| {
                         module.glwe_copy(&mut copied, &values[0], s);
                     });
+                    // A retrieval is an evaluation: it returns the copy without the input's estimate.
+                    GLWEToBackendMut::<B>::set_noise(&mut copied, None);
                     assert_eq!(expected, snapshot_glwe::<B, _>(&copied));
                 }
                 with_scratch::<B, _>(bytes, |s| {

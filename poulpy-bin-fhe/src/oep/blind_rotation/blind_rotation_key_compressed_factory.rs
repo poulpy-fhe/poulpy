@@ -4,8 +4,7 @@ use poulpy_hal::layouts::{Backend, Module};
 /// Backend allocation of compressed blind-rotation keys.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](poulpy_core::oep#noise-metadata). Delegates only forward calls.
 /// Allocate zero-filled key elements with the requested dimensions and backend
 /// storage. Initialize the secret distribution to `Distribution::NONE`.
 pub unsafe trait BlindRotationKeyCompressedFactoryImpl<BRA: BlindRotationAlgo>: Backend {

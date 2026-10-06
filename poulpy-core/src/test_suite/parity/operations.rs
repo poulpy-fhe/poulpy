@@ -14,7 +14,7 @@ use crate::{
     GGSWRotate, GLWEAdd, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize,
     GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
-    layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
 };
 
@@ -85,16 +85,6 @@ fn compare<BR, BT, FR, FT>(
             }
 
             let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
-            if label == "glwe_copy" {
-                GLWEToBackendMut::<BR>::set_noise(
-                    &mut a_ref,
-                    Some(crate::ComponentNoise::from_secret_at(
-                        crate::Distribution::TernaryProb(0.5),
-                        a_infos.k,
-                        a_infos.rank.as_usize(),
-                    )),
-                );
-            }
             let b_ref = ref_glwe(module_ref, &a_infos, &mut source);
             let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
 

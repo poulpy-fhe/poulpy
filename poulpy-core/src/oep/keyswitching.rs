@@ -33,8 +33,7 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 /// coefficient-product accumulation.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must honor the supplied layouts and return a scratch bound
 /// sufficient for [`Self::gglwe_product_digits_strided`].
 pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
@@ -117,8 +116,7 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 /// Backend-provided GLWE key-switching operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must satisfy the documented key-switch semantics, honor layout metadata and
 /// prepared-key interpretation, and keep all reads and writes within the described backend buffers.
 /// # Gadget-digit width contract
@@ -181,8 +179,7 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
 /// Backend-provided GGLWE key-switching operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must preserve ciphertext invariants, use scratch space according to the
 /// advertised temporary-size contract, and uphold aliasing guarantees for backend-owned buffers.
 pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
@@ -225,8 +222,7 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
 /// Backend-provided GGSW key-switching operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must correctly interpret prepared key material for the backend, respect all
 /// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
 pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {
@@ -278,8 +274,7 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
 /// Backend-provided LWE key-switching operations.
 ///
 /// # Safety
-/// Ciphertext outputs must reproduce the reference noise metadata and provenance
-/// checks, including clearing invalidated estimates. Delegates only forward calls.
+/// Outputs follow the [noise metadata rule](crate::oep#noise-metadata). Delegates only forward calls.
 /// Implementations must only access the ciphertext and key regions described by the layouts and
 /// must produce results matching the logical key-switch operation for the backend.
 pub unsafe trait LWEKeyswitchImpl: Backend {
