@@ -257,6 +257,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30Neon` and `NTT4x30NeonRayon` override `cnv_apply_dft_sum` with a fused kernel: the terms of a sum are accumulated together, sixteen at a time, so an output limb is reduced and stored once per group where the derived body reduced, read and wrote it for every term.
+- The CRT reconstruction after the NEON inverse NTT accumulates its sum on four coefficients at a time in limbs of 30 bits, and folds the centering into the reduction.
 - `NTT4x30Neon` and `NTT4x30NeonRayon` implement `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits: one pass over the prepared matrix accumulates every digit of an output limb, with one store and one Montgomery step per 12 products, where the reference body ran one accumulating vector-matrix product per digit.
   It returns the residues of the reference body, which stays in use above 16 digits.
   Inner products of at most four terms skip one reduction step.

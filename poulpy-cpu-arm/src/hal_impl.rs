@@ -396,6 +396,37 @@ where
         };
     }
 
+    fn cnv_apply_dft_sum_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        _a_size: usize,
+        _b_size: usize,
+    ) -> usize {
+        crate::ntt4x30::convolution::cnv_apply_dft_sum_neon_tmp_bytes(res_size)
+    }
+
+    fn cnv_apply_dft_sum(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let _ = scratch;
+        unsafe {
+            crate::ntt4x30::convolution::cnv_apply_dft_sum_neon::<_, SerialTaskExecutor>(
+                module,
+                cnv_offset,
+                res,
+                res_col,
+                terms,
+                &mut [],
+            )
+        };
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,

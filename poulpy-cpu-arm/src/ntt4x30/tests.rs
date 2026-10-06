@@ -3,6 +3,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_by_const, test_convolution_by_const_add, test_convolution_pairwise,
+        test_convolution_sum,
     },
 };
 
@@ -276,7 +277,18 @@ fn test_convolution_direct() {
     for gap in [1, 2] {
         test_convolution(&module, module.n() >> gap, 50);
         test_convolution_pairwise(&module, module.n() >> gap, 50);
+        test_convolution_sum(&module, module.n() >> gap, 50);
     }
+    test_convolution_sum(&module, FLOOR, 50);
+    test_convolution_sum(&module, module.n(), 50);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_sum_rayon() {
+    let module = Module::<crate::NTT4x30NeonRayon>::new(1 << 8);
+    test_convolution_sum(&module, module.n(), 50);
+    test_convolution_sum(&module, module.n() >> 1, 50);
 }
 
 #[test]

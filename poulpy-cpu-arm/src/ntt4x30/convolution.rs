@@ -7,13 +7,12 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{
-    uint32x4_t, vdupq_n_u32, vdupq_n_u64, vget_low_u32, vld1q_dup_u32, vld1q_u32, vmlal_high_u32, vmlal_u32, vst1q_u32,
-    vzip1q_u32, vzip2q_u32,
+    uint32x4_t, uint64x2_t, vdupq_n_u32, vdupq_n_u64, vget_low_u32, vld1q_dup_u32, vld1q_u32, vmlal_high_u32, vmlal_u32,
+    vst1q_u32, vzip1q_u32, vzip2q_u32,
 };
 use poulpy_cpu_portable::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
-#[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
@@ -87,74 +86,129 @@ unsafe fn load_right<const MODE: u8>(p: *const u32) -> uint32x4_t {
     }
 }
 
-/// Inner product of `rows` rows, the right operand read through `MODE`.
-#[inline(always)]
-unsafe fn conv_rows<const PAIRWISE: bool, const MODE: u8>(
-    c: &[Plane; 4],
-    a0: *const u32,
-    a1: *const u32,
-    b0: *const u32,
-    b1: *const u32,
-    rows: usize,
-) -> [uint32x4_t; 4] {
-    unsafe {
-        let zero = vdupq_n_u64(0);
-        let mut out = [vdupq_n_u32(0); 4];
-        let mut done = 0;
-        while done < rows {
-            let len = (rows - done).min(DOT_CHUNK);
-            let mut lo = [zero; 4];
-            let mut hi = [zero; 4];
-            for row in done..done + len {
-                for p in 0..4 {
-                    let o = ROW * row + 4 * p;
-                    let mut xv = vld1q_u32(a0.add(o));
-                    let mut mv = load_right::<MODE>(b0.add(o));
-                    if PAIRWISE {
-                        xv = add_mod(xv, vld1q_u32(a1.add(o)), c[p].q);
-                        mv = add_mod(mv, load_right::<MODE>(b1.add(o)), c[p].q);
-                    }
-                    lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
-                    hi[p] = vmlal_high_u32(hi[p], xv, mv);
-                }
-            }
-            for p in 0..4 {
-                let r = redc_acc(lo[p], hi[p], &c[p], len <= DOT_SHORT);
-                out[p] = if done == 0 { r } else { add_mod(out[p], r, c[p].q) };
-            }
-            done += len;
-        }
-        out
-    }
+/// Running inner product of one output limb of one block, fed one run of rows at a time.
+///
+/// The state is passed and returned by value so that it stays in registers.
+#[derive(Clone, Copy)]
+struct Acc {
+    lo: [uint64x2_t; 4],
+    hi: [uint64x2_t; 4],
+    out: [uint32x4_t; 4],
+    count: usize,
+    flushed: bool,
 }
 
-/// Inner product of `rows` rows of block `blk`, with a possibly sparse right operand.
-///
-/// Slot `s` of the dense operand reads slot `s >> b_log_gap` of the sparse one (spec 4.5).
-/// `b0` and `b1` are right columns offset to their first row, with rows `b_size` limbs apart in their own block order.
-#[allow(clippy::too_many_arguments)]
-#[inline(always)]
-unsafe fn conv_dot<const PAIRWISE: bool>(
-    c: &[Plane; 4],
-    blk: usize,
-    a0: *const u32,
-    a1: *const u32,
-    b0: *const u32,
-    b1: *const u32,
-    b_size: usize,
-    b_log_gap: usize,
-    rows: usize,
-) -> [uint32x4_t; 4] {
-    unsafe {
-        let slot = (4 * blk) >> b_log_gap;
-        let block = (slot / 4) * b_size * ROW;
-        let (b0, b1) = (b0.add(block), b1.add(block));
-        match b_log_gap {
-            0 => conv_rows::<PAIRWISE, DENSE>(c, a0, a1, b0, b1, rows),
-            1 if slot.is_multiple_of(4) => conv_rows::<PAIRWISE, SPARSE_LOW>(c, a0, a1, b0, b1, rows),
-            1 => conv_rows::<PAIRWISE, SPARSE_HIGH>(c, a0, a1, b0, b1, rows),
-            _ => conv_rows::<PAIRWISE, SPARSE_ONE>(c, a0, a1, b0.add(slot % 4), b1.add(slot % 4), rows),
+impl Acc {
+    #[inline(always)]
+    unsafe fn new() -> Self {
+        unsafe {
+            let zero = vdupq_n_u64(0);
+            Self {
+                lo: [zero; 4],
+                hi: [zero; 4],
+                out: [vdupq_n_u32(0); 4],
+                count: 0,
+                flushed: false,
+            }
         }
+    }
+
+    #[inline(always)]
+    unsafe fn flush(self, c: &[Plane; 4]) -> Self {
+        unsafe {
+            let short = self.count <= DOT_SHORT;
+            let mut out = self.out;
+            for (p, c) in c.iter().enumerate() {
+                let r = redc_acc(self.lo[p], self.hi[p], c, short);
+                out[p] = if self.flushed { add_mod(out[p], r, c.q) } else { r };
+            }
+            let zero = vdupq_n_u64(0);
+            Self {
+                lo: [zero; 4],
+                hi: [zero; 4],
+                out,
+                count: 0,
+                flushed: true,
+            }
+        }
+    }
+
+    /// Adds the inner product of `rows` rows, the right operand read through `MODE`.
+    #[inline(always)]
+    unsafe fn push_rows<const PAIRWISE: bool, const MODE: u8>(
+        mut self,
+        c: &[Plane; 4],
+        a0: *const u32,
+        a1: *const u32,
+        b0: *const u32,
+        b1: *const u32,
+        rows: usize,
+    ) -> Self {
+        unsafe {
+            let mut row = 0;
+            while row < rows {
+                if self.count == DOT_CHUNK {
+                    self = self.flush(c);
+                }
+                let end = row + (rows - row).min(DOT_CHUNK - self.count);
+                self.count += end - row;
+                let (mut lo, mut hi) = (self.lo, self.hi);
+                while row < end {
+                    for (p, c) in c.iter().enumerate() {
+                        let o = ROW * row + 4 * p;
+                        let mut xv = vld1q_u32(a0.add(o));
+                        let mut mv = load_right::<MODE>(b0.add(o));
+                        if PAIRWISE {
+                            xv = add_mod(xv, vld1q_u32(a1.add(o)), c.q);
+                            mv = add_mod(mv, load_right::<MODE>(b1.add(o)), c.q);
+                        }
+                        lo[p] = vmlal_u32(lo[p], vget_low_u32(xv), vget_low_u32(mv));
+                        hi[p] = vmlal_high_u32(hi[p], xv, mv);
+                    }
+                    row += 1;
+                }
+                self.lo = lo;
+                self.hi = hi;
+            }
+            self
+        }
+    }
+
+    /// Adds `rows` rows of block `blk`, with a possibly sparse right operand.
+    ///
+    /// Slot `s` of the dense operand reads slot `s >> b_log_gap` of the sparse one (spec 4.5).
+    /// `b0` and `b1` are right columns offset to their first row, with rows `b_size` limbs apart in their own block order.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    unsafe fn push_block<const PAIRWISE: bool>(
+        self,
+        c: &[Plane; 4],
+        blk: usize,
+        a0: *const u32,
+        a1: *const u32,
+        b0: *const u32,
+        b1: *const u32,
+        b_size: usize,
+        b_log_gap: usize,
+        rows: usize,
+    ) -> Self {
+        unsafe {
+            let slot = (4 * blk) >> b_log_gap;
+            let block = (slot / 4) * b_size * ROW;
+            let (b0, b1) = (b0.add(block), b1.add(block));
+            match b_log_gap {
+                0 => self.push_rows::<PAIRWISE, DENSE>(c, a0, a1, b0, b1, rows),
+                1 if slot.is_multiple_of(4) => self.push_rows::<PAIRWISE, SPARSE_LOW>(c, a0, a1, b0, b1, rows),
+                1 => self.push_rows::<PAIRWISE, SPARSE_HIGH>(c, a0, a1, b0, b1, rows),
+                _ => self.push_rows::<PAIRWISE, SPARSE_ONE>(c, a0, a1, b0.add(slot % 4), b1.add(slot % 4), rows),
+            }
+        }
+    }
+
+    /// One canonical vector per prime.
+    #[inline(always)]
+    unsafe fn finish(self, c: &[Plane; 4]) -> [uint32x4_t; 4] {
+        unsafe { if self.count != 0 { self.flush(c).out } else { self.out } }
     }
 }
 
@@ -187,7 +241,7 @@ unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
             let j_max = (k_abs + 1).min(b_size);
             let a_off = packed_row_offset(a_size, k_abs + 1 - j_max, blk);
             let b_off = (b_size - j_max) * ROW;
-            let r = conv_dot::<PAIRWISE>(
+            let acc = Acc::new().push_block::<PAIRWISE>(
                 c,
                 blk,
                 a0.add(a_off),
@@ -198,6 +252,7 @@ unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
                 b_log_gap,
                 j_max - j_min,
             );
+            let r = acc.finish(c);
             let dst = res.add((k * res_cols + res_col) * 4 * n + 4 * blk);
             for p in 0..4 {
                 let d = dst.add(p * n);
@@ -454,12 +509,34 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
-#[cfg(feature = "enable-rayon")]
 pub(crate) fn cnv_apply_dft_sum_neon_tmp_bytes(_res_size: usize) -> usize {
     0
 }
 
-#[cfg(feature = "enable-rayon")]
+/// Terms fused in one pass of [`cnv_apply_dft_sum_neon`].
+const SUM_TERMS: usize = 16;
+
+/// One term of a fused sum of convolutions.
+#[derive(Clone, Copy)]
+struct SumTerm {
+    /// Left and right columns, from their first block.
+    a: *const u32,
+    b: *const u32,
+    a_size: usize,
+    b_size: usize,
+    b_log_gap: usize,
+    offset: usize,
+    /// Output limbs the term contributes to.
+    limbs: usize,
+}
+
+// The columns are only read, and outlive the tasks that share them.
+unsafe impl Send for SumTerm {}
+unsafe impl Sync for SumTerm {}
+
+/// `res[res_col] = sum_t a_t (x) b_t`, the terms of each group of `SUM_TERMS` accumulated in one pass.
+///
+/// An output limb is reduced and stored once per group, where the per-term fallback reduces, reads and writes it for every term.
 pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
@@ -473,27 +550,81 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    if terms.is_empty() {
-        for limb in 0..res.size() {
-            zero_res_limb(res, res_col, limb);
+    let (n, res_size, res_cols) = (res.n(), res.size(), res.cols());
+    check_degree::<BE>(module.n(), n);
+    assert!(n.is_multiple_of(4));
+    let n_blocks = n / 4;
+    // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
+    let mut written = 0;
+    for group in terms.chunks(SUM_TERMS) {
+        let mut sum_terms = [SumTerm {
+            a: std::ptr::null(),
+            b: std::ptr::null(),
+            a_size: 0,
+            b_size: 0,
+            b_log_gap: 0,
+            offset: 0,
+            limbs: 0,
+        }; SUM_TERMS];
+        let mut limbs = 0;
+        for (dst, term) in sum_terms.iter_mut().zip(group) {
+            let (a_size, b_size) = (term.a.size(), term.b.size());
+            assert_eq!(term.a.n(), n, "a.n():{} != res.n():{n}", term.a.n());
+            let b_log_gap = sparse_log_gap_portable(n, term.b.n());
+            if a_size == 0 || b_size == 0 {
+                continue;
+            }
+            let bound = a_size + b_size - 1;
+            let offset = cnv_offset.min(bound);
+            let a_raw: &[u32] = cast_slice(term.a.raw());
+            let b_raw: &[u32] = cast_slice(term.b.raw());
+            *dst = SumTerm {
+                a: col_slice(a_raw, n, a_size, term.a_col).as_ptr(),
+                b: col_slice(b_raw, term.b.n(), b_size, term.b_col).as_ptr(),
+                a_size,
+                b_size,
+                b_log_gap,
+                offset,
+                limbs: res_size.min((bound + 1).saturating_sub(offset)),
+            };
+            limbs = limbs.max(dst.limbs);
         }
-        return;
+        let sum_terms = &sum_terms[..group.len()];
+        let res_u32 = cast_slice_mut::<_, u32>(res.raw_mut());
+        assert!(res_u32.len() >= res_size * res_cols * 4 * n);
+        let res_ptr = SendPtr(res_u32.as_mut_ptr());
+        E::for_each(n_blocks.div_ceil(TASK_BLOCKS), |task| unsafe {
+            let c = planes();
+            for blk in task * TASK_BLOCKS..((task + 1) * TASK_BLOCKS).min(n_blocks) {
+                for k in 0..limbs {
+                    let mut acc = Acc::new();
+                    for term in sum_terms {
+                        if k < term.limbs {
+                            let k_abs = k + term.offset;
+                            let j_min = k_abs.saturating_sub(term.a_size - 1);
+                            let j_max = (k_abs + 1).min(term.b_size);
+                            let a = term.a.add(packed_row_offset(term.a_size, k_abs + 1 - j_max, blk));
+                            let b = term.b.add((term.b_size - j_max) * ROW);
+                            acc = acc.push_block::<false>(&c, blk, a, a, b, b, term.b_size, term.b_log_gap, j_max - j_min);
+                        }
+                    }
+                    let r = acc.finish(&c);
+                    let dst = res_ptr.get().add((k * res_cols + res_col) * 4 * n + 4 * blk);
+                    for (p, &r) in r.iter().enumerate() {
+                        let d = dst.add(p * n);
+                        if k < written {
+                            vst1q_u32(d, add_mod(vld1q_u32(d), r, c[p].q));
+                        } else {
+                            vst1q_u32(d, r);
+                        }
+                    }
+                }
+            }
+        });
+        written = written.max(limbs);
     }
-
-    for (index, term) in terms.iter().enumerate() {
-        if index == 0 {
-            unsafe {
-                apply::<BE, E, false, false>(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        } else {
-            unsafe {
-                apply::<BE, E, true, false>(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        }
+    for limb in written..res_size {
+        zero_res_limb(res, res_col, limb);
     }
 }
 

@@ -11,10 +11,11 @@
 //! Its last level folds in `1/n` and the CRT constant, so its output feeds the reconstruction directly.
 
 use core::arch::aarch64::{
-    int32x4_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vld1q_dup_s32, vld1q_s32, vld1q_s64, vminq_u32,
-    vmlsq_s32, vmulq_s32, vqrdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64,
-    vreinterpretq_u32_s32, vreinterpretq_u64_s32, vrshrq_n_s32, vst1q_s32, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32,
-    vuzp1q_s32, vuzp1q_u64, vuzp2q_s32, vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
+    int32x4_t, uint64x2_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vdupq_n_u32, vdupq_n_u64, vget_low_u32,
+    vld1q_dup_s32, vld1q_s32, vld1q_s64, vld1q_u32, vminq_u32, vmlal_high_u32, vmlal_u32, vmlsq_s32, vmulq_s32, vqrdmulhq_s32,
+    vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64, vreinterpretq_u32_s32, vreinterpretq_u64_s32,
+    vrshrq_n_s32, vst1q_s32, vst1q_u64, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32, vuzp1q_s32, vuzp1q_u64, vuzp2q_s32,
+    vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
 };
 
 use poulpy_cpu_portable::kernels::ntt4x30::{
@@ -401,28 +402,65 @@ const QM: [u128; 4] = {
     [q[1] * q[2] * q[3], q[0] * q[2] * q[3], q[0] * q[1] * q[3], q[0] * q[1] * q[2]]
 };
 const TOTAL_Q: u128 = QM[0] * Q[0] as u128;
-const TOTAL_Q_MULT: [u128; 4] = [0, TOTAL_Q, TOTAL_Q * 2, TOTAL_Q * 3];
+const TOTAL_Q_MULT: [u128; 5] = [0, TOTAL_Q, TOTAL_Q * 2, TOTAL_Q * 3, TOTAL_Q * 4];
+
+/// The complementary products `Q / Q[p]` in three limbs of 30 bits.
+const QM_LIMBS: [[u32; 3]; 4] = {
+    let mut out = [[0u32; 3]; 4];
+    let mut p = 0;
+    while p < 4 {
+        out[p] = [
+            (QM[p] & 0x3FFF_FFFF) as u32,
+            ((QM[p] >> 30) & 0x3FFF_FFFF) as u32,
+            (QM[p] >> 60) as u32,
+        ];
+        p += 1;
+    }
+    out
+};
+
+/// `floor(Q / 2)`, the offset that turns the centered reduction into a plain one.
+const HALF_Q: u128 = TOTAL_Q / 2;
+const HALF_Q_LIMBS: [u64; 3] = [
+    (HALF_Q & 0x3FFF_FFFF) as u64,
+    ((HALF_Q >> 30) & 0x3FFF_FFFF) as u64,
+    (HALF_Q >> 60) as u64,
+];
 
 /// CRT reconstruction of `n` coefficients from four planes of canonical residues already multiplied by the CRT constants.
+///
+/// The sum `floor(Q / 2) + sum_p t[p] * (Q / Q[p])` is accumulated on four coefficients at a time, limb by limb.
+/// Each limb sum stays below `2^63`.
+/// Reducing it modulo `Q` and removing the offset gives the representative in `[-floor(Q / 2), ceil(Q / 2))`.
 unsafe fn crt(dst: *mut i128, t: *const u32, n: usize) {
     unsafe {
-        let half_q: u128 = TOTAL_Q.div_ceil(2);
-        let lo: [u64; 4] = std::array::from_fn(|p| QM[p] as u64);
-        let hi: [u64; 4] = std::array::from_fn(|p| (QM[p] >> 64) as u64);
-        for i in 0..n {
-            let mut low = 0u128;
-            let mut high = 0u64;
-            for p in 0..4 {
-                let x = *t.add(p * n + i) as u64;
-                low += x as u128 * lo[p] as u128;
-                high += x * hi[p];
+        let init: [uint64x2_t; 3] = std::array::from_fn(|j| vdupq_n_u64(HALF_Q_LIMBS[j]));
+        let mut sums = [0u64; 12];
+        let mut i = 0;
+        while i < n {
+            let mut lo = init;
+            let mut hi = init;
+            for (p, limbs) in QM_LIMBS.iter().enumerate() {
+                let x = vld1q_u32(t.add(p * n + i));
+                for (j, &limb) in limbs.iter().enumerate() {
+                    let c = vdupq_n_u32(limb);
+                    lo[j] = vmlal_u32(lo[j], vget_low_u32(x), vget_low_u32(c));
+                    hi[j] = vmlal_high_u32(hi[j], x, c);
+                }
             }
-            // The sum is below 4 Q and Q is below 2^120.
-            let mut v = low + ((high as u128) << 64);
-            v -= TOTAL_Q_MULT[(v >> 120) as usize];
-            let w = v.wrapping_sub(TOTAL_Q);
-            v = if v >= TOTAL_Q { w } else { v };
-            *dst.add(i) = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
+            for j in 0..3 {
+                vst1q_u64(sums.as_mut_ptr().add(4 * j), lo[j]);
+                vst1q_u64(sums.as_mut_ptr().add(4 * j + 2), hi[j]);
+            }
+            for k in 0..4 {
+                // The sum is below 4.5 Q and Q is between 2^119 and 2^120: at most one multiple of Q remains after the table.
+                let mut v = sums[k] as u128 + ((sums[4 + k] as u128) << 30) + ((sums[8 + k] as u128) << 60);
+                v -= TOTAL_Q_MULT[(v >> 120) as usize];
+                let w = v.wrapping_sub(TOTAL_Q);
+                v = if v >= TOTAL_Q { w } else { v };
+                *dst.add(i + k) = v as i128 - HALF_Q as i128;
+            }
+            i += 4;
         }
     }
 }
