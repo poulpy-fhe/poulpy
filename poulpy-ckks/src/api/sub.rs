@@ -62,7 +62,7 @@ pub trait CKKSSubOps<BE: Backend> {
     /// Computes `dst -= 1` in-place.
     ///
     /// The exact integer constant is subtracted from coefficient slot `0`.
-    /// CKKS layout and scale metadata is preserved; encryption metadata is cleared.
+    /// CKKS layout and scale metadata is preserved; component noise metadata is cleared.
     /// Size scratch with [`Self::ckks_sub_one_tmp_bytes`].
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where

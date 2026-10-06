@@ -18,7 +18,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ```
 ///
 /// For `_assign` the buffer is the same as the source so `offset = 0` and
-/// CKKS layout and scale metadata is unchanged. Encryption metadata is cleared.
+/// CKKS layout and scale metadata is unchanged. Component noise metadata is cleared.
 pub trait CKKSNegOps<BE: Backend> {
     fn ckks_neg_tmp_bytes(&self, res_size: usize) -> usize;
 
@@ -29,7 +29,7 @@ pub trait CKKSNegOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = -dst` in-place, preserving CKKS layout and scale metadata.
-    /// Encryption metadata is cleared.
+    /// Component noise metadata is cleared.
     fn ckks_neg_assign<Dst>(&self, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

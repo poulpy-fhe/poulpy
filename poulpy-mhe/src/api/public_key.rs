@@ -50,7 +50,7 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     /// ephemerals from, as core's key takes its secret's. The entries need
     /// distinct seeds, and finalization rejects shares whose entries share
     /// one: entries sharing a mask would give ciphertexts whose masks are rank
-    /// 1 in the ephemerals. Derived encryption metadata retains the base law
+    /// 1 in the ephemerals. Derived component noise metadata retains the base law
     /// and party count of the collective secret, including after preparation.
     fn mhe_glwe_public_key_share_finalize<R>(
         &self,

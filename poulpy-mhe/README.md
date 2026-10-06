@@ -54,7 +54,7 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 - `GLWEEncToShareMHEProtocol`, `GLWEShareToEncMHEProtocol`: conversions between
   a ciphertext and additive shares of its plaintext on the torus.
 
-## Encryption provenance
+## Component noise metadata
 
 Keys and ciphertexts expose `ComponentNoise` through `noise()`. Its
 `components()` contains `rank + 1` raw variance estimates in body-then-mask order,
@@ -74,8 +74,8 @@ ephemerals require a conservative covariance bound when reusing a public key.
 The public key's ephemeral sampling law must match its recorded base secret law.
 
 These are fresh construction estimates, not exact distributions or live noise
-tracking after evaluation. Homomorphic operations clear output encryption
-noise. Key-switch share estimates describe newly generated construction
+tracking after evaluation. Homomorphic operations clear output component noise
+metadata. Key-switch share estimates describe newly generated construction
 error; finalization clears the ciphertext tag because it also contains the
 input's existing phase error and precision-conversion error. See the
 [fresh-noise contract](docs/mhe-contracts.md#share-metadata) for the model's limits.

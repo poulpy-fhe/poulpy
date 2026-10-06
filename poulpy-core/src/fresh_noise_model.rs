@@ -300,7 +300,7 @@ fn public_key_phase_plan<R: GLWEInfos>(
     }
 }
 
-/// Select the fresh-error grid and estimate the resulting output phase error.
+/// Select the fresh-error grid and estimate the resulting output component noise.
 /// The product consumes only the selected leading whole limbs of the prepared
 /// key. Missing provenance selects full key precision and its full width.
 pub(crate) fn public_key_encryption_plan<BE, R, K>(res: &R, pk: &K, body_noise: PublicKeyBodyNoise) -> PublicKeyEncryptionPlan

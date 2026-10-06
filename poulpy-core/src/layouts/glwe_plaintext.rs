@@ -277,7 +277,7 @@ where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        let _ = metadata; /* Plaintexts do not carry encryption provenance. */
+        let _ = metadata; /* Plaintexts do not carry component noise metadata. */
     }
 
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
@@ -335,7 +335,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMu
 
 impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        let _ = metadata; /* Plaintexts do not carry encryption provenance. */
+        let _ = metadata; /* Plaintexts do not carry component noise metadata. */
     }
 
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {

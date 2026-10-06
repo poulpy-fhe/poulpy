@@ -29,7 +29,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
-/// Encryption metadata is cleared.
+/// Component noise metadata is cleared.
 pub trait CKKSRotateOps<BE: Backend> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -54,7 +54,7 @@ pub trait CKKSRotateOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place, preserving CKKS layout and scale metadata.
-    /// Encryption metadata is cleared.
+    /// Component noise metadata is cleared.
     fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,

@@ -250,7 +250,7 @@ where
 
 pub trait GGLWEToGGSWKeyPreparedToBackendMut<B: Backend> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
-    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Borrows coefficients and copies the current layout and component noise metadata.
     /// Metadata changed on the returned view is local to that view. Operations
     /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B>;

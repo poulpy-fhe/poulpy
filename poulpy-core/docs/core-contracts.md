@@ -223,9 +223,8 @@ Copies, compression, preparation and backend transfers preserve the recorded
 estimate and its creation precision, even when the destination's precision
 differs. A copy that changes rank selects the corresponding leading terms
 or appends zero-noise masks. Copies also preserve an absent tag on an evaluated
-ciphertext. Backend
-views copy metadata by value, so an operation that records or clears metadata
-must update the owner through its setter.
+ciphertext. Backend views clone the component noise metadata, so an operation
+that records or clears it must update the owner through its setter.
 
 Equality includes all component estimates and their precision. The `PNM3` wire
 format preserves them and validates the component count against the ciphertext

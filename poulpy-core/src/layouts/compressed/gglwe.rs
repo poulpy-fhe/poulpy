@@ -447,10 +447,10 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::B
 }
 
 pub trait GGLWECompressedToBackendMut<BE: Backend>: GGLWECompressedToBackendRef<BE> {
-    /// Backend hook for recording or propagating derived encryption provenance.
+    /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and provenance metadata.
+    /// Borrows coefficients and copies the current layout and component noise metadata.
     /// Metadata changed on the returned view is local to that view. Operations
     /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE>;

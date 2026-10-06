@@ -109,7 +109,7 @@ where
 }
 
 /// Actual SK, single-PK and collective-PK producers replace a reused
-/// ciphertext's fresh phase-error estimate, including its precision and secret.
+/// ciphertext's component noise metadata, including its precision and secret.
 pub fn test_ciphertext_encryption_noise_tags<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,

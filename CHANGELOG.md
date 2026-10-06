@@ -129,7 +129,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- **Breaking:** CKKS encryption and key generation derive encryption noise and its placement from the destination and key metadata; encryption-info parameters are removed. Ciphertexts forward core encryption provenance ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
+- **Breaking:** CKKS encryption and key generation derive encryption noise and its placement from the destination and key metadata; encryption-info parameters are removed. Ciphertexts forward core component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
 
 - **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
 

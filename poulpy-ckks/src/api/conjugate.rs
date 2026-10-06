@@ -30,7 +30,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
-/// Encryption metadata is cleared.
+/// Component noise metadata is cleared.
 pub trait CKKSConjugateOps<BE: Backend> {
     fn ckks_conjugate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -54,7 +54,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     }
 
     /// Computes `dst = conj(dst)` in-place, preserving CKKS layout and scale metadata.
-    /// Encryption metadata is cleared.
+    /// Component noise metadata is cleared.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

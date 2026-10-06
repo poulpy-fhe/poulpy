@@ -1,7 +1,7 @@
 //! Blanket implementations connecting `poulpy-core` traits to the matching
 //! backend family impl traits on [`poulpy_hal::layouts::Module`].
 //!
-//! Delegates enforce encryption metadata policy while wiring the safe public
+//! Delegates enforce component noise metadata policy while wiring the safe public
 //! traits to the backend-owned high-level extension point.
 
 mod automorphism;
