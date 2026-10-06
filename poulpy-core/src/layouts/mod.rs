@@ -1375,12 +1375,8 @@ impl Degree {
 pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> TorusPrecision {
     debug_assert!(
         k_aux.0 >= dsize.0 * base2k.0,
-        "k_aux ({}) must be at least dsize * base2k ({} * {} = {}): the auxiliary guard must \
-         cover at least one full gadget digit, otherwise operations truncate mid-digit",
-        k_aux.0,
-        dsize.0,
-        base2k.0,
-        dsize.0 * base2k.0
+        "k_aux must be at least dsize * base2k: the auxiliary guard must \
+         cover at least one full gadget digit, otherwise operations truncate mid-digit"
     );
     TorusPrecision(dnum.0 * dsize.0 * base2k.0 + k_aux.0)
 }

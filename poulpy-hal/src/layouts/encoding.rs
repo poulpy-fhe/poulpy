@@ -224,12 +224,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
             assert!(gap >= 1, "gap must be >= 1");
-            assert!(
-                data.len() * gap == a.n(),
-                "data.len()*gap={} must equal N={}",
-                data.len() * gap,
-                a.n()
-            );
+            assert!(data.len() * gap == a.n(), "data.len()*gap must equal N");
             assert!(col < a.cols());
         }
 
