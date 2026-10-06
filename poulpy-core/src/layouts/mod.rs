@@ -1458,17 +1458,54 @@ pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> 
     base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k)
 }
 
+/// Failure target of [`gadget_product_guard_limbs`]: the dropped tail of a gadget product reaches
+/// half a unit of the last live limb with probability at most `2^-128` over a whole product.
+const GADGET_PRODUCT_GUARD_FAILURE_BITS: usize = 128;
+
+/// Limbs a gadget product computes below the live precision.
+///
+/// The limbs below the window are dropped before normalization. They act as an error on the
+/// last live limb, and this returns the smallest window that keeps that error under the rounding
+/// threshold of one half with the failure target above, under the model of
+/// `docs/base2k-failure-probability.md`:
+///
+/// - one accumulated coefficient has standard deviation `2^(2 * base2k) * sqrt(product_terms) / 12`,
+///   for independent centered uniform digits,
+/// - with `g` guard limbs the first dropped limb weighs `2^(-(g + 1) * base2k)` units of the last
+///   live limb, and all the dropped limbs together at most `sqrt(4 / 3)` times its deviation,
+/// - the failure probability of one coefficient is bounded by the Mills-ratio bound on `erfc`, and
+///   the union bound runs over `product_terms` coefficients, which is more than a product has.
+///
+/// [`gadget_product_limbs`] is the count that makes the last live limb exact in the worst case.
+/// The result never exceeds it, and is 2 where it gives 3 at every radix in use.
+pub(crate) fn gadget_product_guard_limbs(key_base2k: Base2K, product_terms: usize) -> usize {
+    let exact = gadget_product_limbs(key_base2k, product_terms);
+    let base2k = key_base2k.as_usize() as f64;
+    let log2_terms = (product_terms.max(1) as f64).log2();
+    let log2_sigma = 2.0 * base2k + log2_terms / 2.0 - 12f64.log2();
+    let target = (GADGET_PRODUCT_GUARD_FAILURE_BITS as f64 + log2_terms) * core::f64::consts::LN_2;
+    for guard in 1..exact {
+        // Deviation of the dropped tail, in units of the last live limb.
+        let log2_tail = log2_sigma + (4f64 / 3.0).log2() / 2.0 - (guard as f64 + 1.0) * base2k;
+        // x = T / (sqrt(2) * sigma) with the threshold T = 1 / 2.
+        let x = (-1.5 - log2_tail).exp2();
+        if x * x + (core::f64::consts::PI.sqrt() * x / 2.0).asinh() >= target {
+            return guard;
+        }
+    }
+    exact
+}
+
 /// Sizes the key region materialized for a gadget product and its immediate
 /// normalization.
 ///
 /// All lower limbs can, in principle, affect the rounded result through a
-/// sufficiently long carry chain. This keeps a conservative practical window:
-/// the live input/output precision, converted to the key radix, plus the
-/// worst-case limb growth of the signed polynomial products accumulated into
-/// one coefficient. The window is backend-independent: a dropped limb sits
-/// below the output precision by construction, and an approximate transform's
-/// rounding error scales with each limb's own magnitude, so it neither
-/// reaches the retained limbs nor grows by dropping the lower ones.
+/// sufficiently long carry chain. This keeps a practical window: the live
+/// input/output precision, converted to the key radix, plus the guard limbs of
+/// [`gadget_product_guard_limbs`]. The window is backend-independent: a dropped
+/// limb sits below the output precision by construction, and an approximate
+/// transform's rounding error scales with each limb's own magnitude, so it
+/// neither reaches the retained limbs nor grows by dropping the lower ones.
 pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) -> usize {
     let GadgetProductOutputSizeParams {
         key_size,
@@ -1488,13 +1525,46 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         .max(output_k.as_usize())
         .div_ceil(base2k)
         .saturating_add(extra_live_limbs);
-    let product_limbs = gadget_product_limbs(key_base2k, product_terms);
-    work_size.min(live_limbs.saturating_add(product_limbs))
+    let guard_limbs = gadget_product_guard_limbs(key_base2k, product_terms);
+    work_size.min(live_limbs.saturating_add(guard_limbs))
 }
 
 #[cfg(test)]
 mod gadget_sizing_tests {
     use super::*;
+
+    #[test]
+    fn guard_limbs_meet_the_failure_target() {
+        // CKKS bootstrapping key at the 52-bit radix: 2^16 * 7 * 4 terms.
+        assert_eq!(gadget_product_limbs(Base2K(52), (1 << 16) * 28), 3);
+        assert_eq!(gadget_product_guard_limbs(Base2K(52), (1 << 16) * 28), 2);
+        // A blind-rotation sized product at a 17-bit radix.
+        assert_eq!(gadget_product_limbs(Base2K(17), (1 << 10) * 12), 3);
+        assert_eq!(gadget_product_guard_limbs(Base2K(17), (1 << 10) * 12), 2);
+        for base2k in 1..=62u32 {
+            for log_terms in 0..40usize {
+                let terms = 1usize << log_terms;
+                let exact = gadget_product_limbs(Base2K(base2k), terms);
+                let guard = gadget_product_guard_limbs(Base2K(base2k), terms);
+                assert!((1..=exact).contains(&guard), "base2k {base2k} terms 2^{log_terms}");
+                if guard == exact {
+                    continue;
+                }
+                // The plain bound erfc(x) <= exp(-x^2) is weaker than the Mills-ratio bound by a few bits:
+                // the chosen window must meet the target within that slack, and one limb fewer must miss it.
+                let log2_failure = |guard: usize| {
+                    let log2_tail = 2.0 * base2k as f64 + log_terms as f64 / 2.0 - 12f64.log2() + (4f64 / 3.0).log2() / 2.0
+                        - (guard as f64 + 1.0) * base2k as f64;
+                    let x = (-1.5 - log2_tail).exp2();
+                    log_terms as f64 - x * x / core::f64::consts::LN_2
+                };
+                assert!(log2_failure(guard) <= -120.0, "base2k {base2k} terms 2^{log_terms}");
+                if guard > 1 {
+                    assert!(log2_failure(guard - 1) > -128.0, "base2k {base2k} terms 2^{log_terms}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn dnum_for_input_is_the_inverse_of_gadget_k() {
@@ -1554,32 +1624,25 @@ mod gadget_sizing_tests {
 
     #[test]
     fn output_size_accounts_for_polynomial_accumulation_growth() {
-        assert_eq!(
+        let size = |base2k: u32, input_k: u32, output_k: u32, product_terms: usize| {
             gadget_product_output_size(GadgetProductOutputSizeParams {
                 key_size: 12,
-                key_base2k: Base2K(30),
-                input_k: TorusPrecision(60),
-                output_k: TorusPrecision(90),
+                key_base2k: Base2K(base2k),
+                input_k: TorusPrecision(input_k),
+                output_k: TorusPrecision(output_k),
                 dsize: Dsize(1),
                 k_aux: TorusPrecision(180),
-                product_terms: 1,
+                product_terms,
                 extra_live_limbs: 0,
-            }),
-            5
-        );
-        assert_eq!(
-            gadget_product_output_size(GadgetProductOutputSizeParams {
-                key_size: 12,
-                key_base2k: Base2K(30),
-                input_k: TorusPrecision(60),
-                output_k: TorusPrecision(90),
-                dsize: Dsize(1),
-                k_aux: TorusPrecision(180),
-                product_terms: 1 << 16,
-                extra_live_limbs: 0,
-            }),
-            6
-        );
+            })
+        };
+        // Three live limbs and two guard limbs: a single product spans two limbs.
+        assert_eq!(size(30, 60, 90, 1), 5);
+        // At a 30-bit radix the failure target leaves room for 2^16 accumulated products.
+        assert_eq!(size(30, 60, 90, 1 << 16), 5);
+        // At a 12-bit radix the accumulation costs a guard limb.
+        assert_eq!(size(12, 24, 36, 1), 5);
+        assert_eq!(size(12, 24, 36, 1 << 30), 6);
     }
 
     #[test]
