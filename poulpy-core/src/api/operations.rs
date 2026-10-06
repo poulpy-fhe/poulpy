@@ -149,6 +149,20 @@ pub trait GLWEMulPlain<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
+/// Right operand of [`GLWETensoring::glwe_mul_relinearize`].
+pub enum GLWEMulRight<'a, B, BP> {
+    /// The left operand itself: a squaring.
+    Left,
+    /// Another ciphertext.
+    Operand(&'a B),
+    /// A prepared right operand of `size` limbs, built from a ciphertext of width `k`.
+    Prepared {
+        prep: &'a BP,
+        size: usize,
+        k: crate::layouts::TorusPrecision,
+    },
+}
+
 /// Tensor products of GLWE ciphertexts.
 ///
 /// Both ciphertext operands are read canonical at their `k` (see the
@@ -212,6 +226,47 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize`] for operands of `a_size` and `b_size` limbs
+    /// and a product of width `tensor_k`, the larger of the two operand widths.
+    fn glwe_mul_relinearize_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// `res = relinearize(left * right)` in one pass, for rank 1 and one `base2k` across `res`,
+    /// the operands and the tensor key.
+    ///
+    /// `left` is the left operand, or `None` when it is `res` itself, read at its current width.
+    /// The result is written at width `res_k`: the caller sets the width of `res` afterwards.
+    ///
+    /// The columns of the product that are not key-switched stay in the transform domain until the
+    /// single final normalization, where [`Self::glwe_tensor_apply`] followed by
+    /// [`Self::glwe_tensor_relinearize`] transforms and normalizes them first.
+    /// The two paths agree up to rounding, not bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize<R, A, B, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        left: Option<&A>,
+        right: GLWEMulRight<'_, B, BP>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
 }
 
 pub trait GLWEAdd<BE: Backend> {

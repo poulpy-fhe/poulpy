@@ -260,6 +260,38 @@ impl_operations_delegate!(
         B: GGLWEInfos,
     {
         BE::glwe_tensor_relinearize_tmp_bytes(self, res, a, tsk)
+    },
+    fn glwe_mul_relinearize_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+    {
+        BE::glwe_mul_relinearize_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
+    },
+    fn glwe_mul_relinearize<R, A, B, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        left: Option<&A>,
+        right: crate::api::GLWEMulRight<'_, B, BP>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_relinearize(self, cnv_offset, res, res_k, left, right, tsk, scratch)
     }
 );
 

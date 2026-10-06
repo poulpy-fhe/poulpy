@@ -782,6 +782,40 @@ macro_rules! impl_rank_one_tensoring {
                         .gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk)
                         .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size))
             }
+
+            fn glwe_mul_relinearize_tmp_bytes<R, B>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: GLWEInfos,
+                B: GGLWEInfos,
+            {
+                module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+            }
+
+            fn glwe_mul_relinearize<R, A, B, BP, T>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                left: Option<&A>,
+                right: poulpy_core::GLWEMulRight<'_, B, BP>,
+                tsk: &T,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: GLWEToBackendMut<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be> + GLWEInfos,
+                B: GLWEToBackendRef<$be> + GLWEInfos,
+                BP: poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                T: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_relinearize_reference(cnv_offset, res, res_k, left, right, tsk, scratch)
+            }
         }
     };
 }
