@@ -15,7 +15,7 @@
 //
 // ----------------------------------------------------------------------
 
-//! Q120 NTT precomputation and reference execution.
+//! Q120 NTT precomputation and portable execution.
 //!
 //! This module is a direct Rust port of:
 //! - `q120_ntt.c` (precomputation: [`NttTable`], [`NttTableInv`])
@@ -31,20 +31,20 @@
 //!
 //! The forward NTT consists of:
 //! 1. **First pass**: multiply each coefficient `a[i]` by `ω^i` using the
-//!    split-precomputed multiplication (`split_precompmul`).
+//!    split-precomputed multiplication (`split_precompmul_portable`).
 //! 2. **Butterfly levels**: for `nn = n, n/2, …, 2`, apply the Cooley–Tukey
 //!    DIT butterfly across all blocks of size `nn`.
 //!
 //! The inverse NTT reverses this: butterfly levels first (Gentleman–Sande
 //! DIF), then a final element-wise multiply by `ω^{-i} / n`.
 //!
-//! Lazy Barrett reduction (`modq_red`) is applied at specific levels
+//! Lazy Barrett reduction (`modq_red_portable`) is applied at specific levels
 //! when the accumulated bit-width would otherwise overflow 64 bits.
 //!
 //! # Correctness
 //!
-//! The reference implementation is intended as a correctness oracle.
-//! For performance, the AVX2 backend in `poulpy-cpu-avx` will implement
+//! This portable production implementation is checked against the independent
+//! `poulpy-cpu-oracle` backend. The AVX2 backend in `poulpy-cpu-avx` implements
 //! the same algorithm using SIMD intrinsics that match the spqlios source.
 use poulpy_hal::layouts::{Ring, Standard};
 
@@ -69,9 +69,9 @@ pub struct NttStepMeta {
     pub q2bs: [u64; 4],
     /// Output bit-size bound after this level.
     pub bs: u64,
-    /// `ceil(bs / 2)`, used in `split_precompmul`.
+    /// `ceil(bs / 2)`, used in `split_precompmul_portable`.
     pub half_bs: u64,
-    /// `(1 << half_bs) - 1`, pre-masked for `split_precompmul`.
+    /// `(1 << half_bs) - 1`, pre-masked for `split_precompmul_portable`.
     pub mask: u64,
     /// Whether a lazy Barrett reduction step is applied at this level.
     pub reduce: bool,
@@ -98,7 +98,7 @@ pub struct NttReducMeta {
 ///
 /// Construct with [`NttTable::new`].
 pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
-    /// NTT size (a power of two at most [`max_ntt_degree`]).
+    /// NTT size (a power of two at most [`max_ntt_degree_portable`]).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -123,7 +123,7 @@ pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
 ///
 /// Construct with [`NttTableInv::new`].
 pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
-    /// NTT size (a power of two at most [`max_ntt_degree`]).
+    /// NTT size (a power of two at most [`max_ntt_degree_portable`]).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -147,7 +147,7 @@ pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
 /// Computes `x^n mod q` using square-and-multiply.
 ///
 /// Negative exponents compute the modular inverse via `x^(-(|n| mod (q-1)))`.
-pub fn modq_pow(x: u32, n: i64, q: u32) -> u32 {
+pub fn modq_pow_portable(x: u32, n: i64, q: u32) -> u32 {
     let qm1 = (q - 1) as i64;
     // reduce exponent mod (q-1) to positive representative
     let np = ((n % qm1) + qm1) % qm1;
@@ -168,7 +168,7 @@ pub fn modq_pow(x: u32, n: i64, q: u32) -> u32 {
 /// Returns the primitive `2n`-th roots of unity for each prime.
 fn fill_omegas<P: PrimeSetCrt4>(n: usize) -> [u32; 4] {
     assert!(n.is_power_of_two() && n <= (1 << P::MAX_LOG_N));
-    std::array::from_fn(|k| modq_pow(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, P::Q[k]))
+    std::array::from_fn(|k| modq_pow_portable(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, P::Q[k]))
 }
 
 /// Finds the optimal `h` for the lazy Barrett reduction step.
@@ -226,9 +226,9 @@ impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
     /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
     pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, R>(),
             "NTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree::<P, R>()
+            max_ntt_degree_portable::<P, R>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -330,7 +330,7 @@ impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
                 let m = n / halfnn; // = 2n/nn, step in omega table
                 // We need ω^{i*m} for i=1..halfnn-1.
                 // Compute successively: start at ω^m, multiply by ω^m each step.
-                let omega_m: [u64; 4] = std::array::from_fn(|k| modq_pow(omega_vec[k], m as i64, P::Q[k]) as u64);
+                let omega_m: [u64; 4] = std::array::from_fn(|k| modq_pow_portable(omega_vec[k], m as i64, P::Q[k]) as u64);
                 let mut pow_om: [u64; 4] = omega_m; // ω^{1*m}
                 let half_bs_level = level_metadata.last().unwrap().half_bs;
                 for i in 0..halfnn - 1 {
@@ -371,9 +371,9 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
     /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
     pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, R>(),
             "iNTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree::<P, R>()
+            max_ntt_degree_portable::<P, R>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -449,7 +449,7 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
             // Fill omega entries for this level: halfnn-1 entries (i=1..halfnn-1)
             // using inverse ω^{-i*m} for m = 2n/nn.
             let m = n / halfnn;
-            let omega_inv_m: [u64; 4] = std::array::from_fn(|k| modq_pow(omega_vec[k], -(m as i64), P::Q[k]) as u64);
+            let omega_inv_m: [u64; 4] = std::array::from_fn(|k| modq_pow_portable(omega_vec[k], -(m as i64), P::Q[k]) as u64);
             let mut pow_om: [u64; 4] = omega_inv_m; // ω^{-1*m}
             let half_bs_level = level_metadata.last().unwrap().half_bs;
             for i in 0..halfnn - 1 {
@@ -491,9 +491,9 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
             // Omega entries: n values of ω^{-i} * n^{-1} for i = 0..n-1
             for k in 0..4 {
                 let q = P::Q[k] as u64;
-                let inv_n = modq_pow(n as u32, -1, P::Q[k]) as u64;
+                let inv_n = modq_pow_portable(n as u32, -1, P::Q[k]) as u64;
                 // ω_inv = ω^{-1}
-                let omega_inv = modq_pow(omega_vec[k], -1, P::Q[k]) as u64;
+                let omega_inv = modq_pow_portable(omega_vec[k], -1, P::Q[k]) as u64;
                 let mut pow_om = inv_n; // ω^{-0} * n^{-1}
                 for i in 0..n {
                     powomega[po_ptr + 4 * i + k] = pack_omega(pow_om, half_bs, q);
@@ -521,7 +521,7 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
 
 /// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set:
 /// `2^MAX_LOG_N` on the standard ring, half that on the conjugate-invariant ring.
-pub fn max_ntt_degree<P: PrimeSetCrt4, R: Ring>() -> usize {
+pub fn max_ntt_degree_portable<P: PrimeSetCrt4, R: Ring>() -> usize {
     (2usize << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR as usize
 }
 
@@ -539,7 +539,7 @@ pub fn max_ntt_degree<P: PrimeSetCrt4, R: Ring>() -> usize {
 /// up to multiples of Q (the exact value may exceed Q but stays < 2^64
 /// under the bit-width guarantees tracked by [`NttStepMeta`]).
 #[inline(always)]
-pub fn split_precompmul(inp: u64, powomega_packed: u64, half_bs: u64, mask: u64) -> u64 {
+pub fn split_precompmul_portable(inp: u64, powomega_packed: u64, half_bs: u64, mask: u64) -> u64 {
     let inp_low = inp & mask;
     let t = powomega_packed & 0xFFFF_FFFF; // low 32 bits = ω mod Q (32-bit prime)
     let t1 = powomega_packed >> 32; // high 32 bits = (ω << half_bs) mod Q
@@ -554,7 +554,7 @@ pub fn split_precompmul(inp: u64, powomega_packed: u64, half_bs: u64, mask: u64)
 /// ```
 /// The result is congruent to `x mod Q` with fewer bits.
 #[inline(always)]
-pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
+pub fn modq_red_portable(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
     (x & mask).wrapping_add((x >> h).wrapping_mul(cst))
 }
 
@@ -591,7 +591,7 @@ pub(super) fn ntt_core<P: PrimeSetCrt4>(table: &NttTable<P, impl Ring>, data: &m
             for k in 0..4 {
                 let x = data[4 * i + k];
                 let po = table.powomega[po_off + 4 * i + k];
-                data[4 * i + k] = split_precompmul(x, po, h, mask);
+                data[4 * i + k] = split_precompmul_portable(x, po, h, mask);
             }
         }
         po_off += 4 * n;
@@ -684,7 +684,7 @@ pub(super) fn intt_core<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data
         for i in 0..n {
             for k in 0..4 {
                 let x = if do_reduce {
-                    modq_red(
+                    modq_red_portable(
                         data[4 * i + k],
                         table.reduc_metadata.h,
                         table.reduc_metadata.mask,
@@ -694,7 +694,7 @@ pub(super) fn intt_core<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data
                     data[4 * i + k]
                 };
                 let po = table.powomega[po_off + 4 * i + k];
-                data[4 * i + k] = split_precompmul(x, po, h, mask);
+                data[4 * i + k] = split_precompmul_portable(x, po, h, mask);
             }
         }
     }
@@ -728,12 +728,12 @@ fn ntt_butterfly_block(
         let idx_a = 4 * blk + k;
         let idx_b = 4 * (blk + halfnn) + k;
         let a = if do_reduce {
-            modq_red(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+            modq_red_portable(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
         } else {
             data[idx_a]
         };
         let b = if do_reduce {
-            modq_red(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+            modq_red_portable(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
         } else {
             data[idx_b]
         };
@@ -748,18 +748,18 @@ fn ntt_butterfly_block(
                 let idx_a = 4 * (blk + i) + k;
                 let idx_b = 4 * (blk + halfnn + i) + k;
                 let a = if do_reduce {
-                    modq_red(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+                    modq_red_portable(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
                 } else {
                     data[idx_a]
                 };
                 let b = if do_reduce {
-                    modq_red(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+                    modq_red_portable(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
                 } else {
                     data[idx_b]
                 };
                 data[idx_a] = a.wrapping_add(b);
                 let b1 = a.wrapping_add(q2bs[k]).wrapping_sub(b);
-                data[idx_b] = split_precompmul(b1, powomega[po_off + 4 * (i - 1) + k], h, mask);
+                data[idx_b] = split_precompmul_portable(b1, powomega[po_off + 4 * (i - 1) + k], h, mask);
             }
         }
     }
@@ -790,12 +790,12 @@ fn intt_butterfly_block(
         let idx_a = 4 * blk + k;
         let idx_b = 4 * (blk + halfnn) + k;
         let a = if do_reduce {
-            modq_red(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+            modq_red_portable(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
         } else {
             data[idx_a]
         };
         let bo = if do_reduce {
-            modq_red(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+            modq_red_portable(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
         } else {
             data[idx_b]
         };
@@ -810,16 +810,16 @@ fn intt_butterfly_block(
                 let idx_a = 4 * (blk + i) + k;
                 let idx_b = 4 * (blk + halfnn + i) + k;
                 let a = if do_reduce {
-                    modq_red(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+                    modq_red_portable(data[idx_a], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
                 } else {
                     data[idx_a]
                 };
                 let b_raw = if do_reduce {
-                    modq_red(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
+                    modq_red_portable(data[idx_b], reduc.h, reduc.mask, reduc.modulo_red_cst[k])
                 } else {
                     data[idx_b]
                 };
-                let bo = split_precompmul(b_raw, powomega[po_off + 4 * (i - 1) + k], h, mask);
+                let bo = split_precompmul_portable(b_raw, powomega[po_off + 4 * (i - 1) + k], h, mask);
                 data[idx_a] = a.wrapping_add(bo);
                 data[idx_b] = a.wrapping_add(q2bs[k]).wrapping_sub(bo);
             }

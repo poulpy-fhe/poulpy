@@ -3,7 +3,7 @@ use crate::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
 };
 
-pub fn vec_znx_zero<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
+pub fn vec_znx_zero_portable<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
 where
     BE: Backend<ZnxWord = i64> + ZnxZero,
     BE::BufMut<'r>: HostDataMut,

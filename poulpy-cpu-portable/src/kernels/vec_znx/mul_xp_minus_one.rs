@@ -13,12 +13,16 @@ use crate::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(n: usize) -> usize {
+pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
-where
+pub fn vec_znx_mul_xp_minus_one_assign_portable<'r, BE>(
+    p: i64,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    tmp: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
     BE::BufMut<'r>: HostDataMut,
 {

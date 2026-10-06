@@ -1009,7 +1009,7 @@ mod tests {
     }
 
     use poulpy_cpu_portable::kernels::znx::{
-        get_carry_i64, get_digit_i64, znx_extract_digit_addmul_portable, znx_normalize_digit_portable,
+        get_carry_i64_portable, get_digit_i64_portable, znx_extract_digit_addmul_portable, znx_normalize_digit_portable,
         znx_normalize_final_step_assign_portable, znx_normalize_final_step_portable, znx_normalize_first_step_assign_portable,
         znx_normalize_first_step_portable, znx_normalize_middle_step_assign_portable, znx_normalize_middle_step_portable,
     };
@@ -1045,7 +1045,7 @@ mod tests {
     #[target_feature(enable = "avx512f")]
     unsafe fn test_get_digit_ifma_internal() {
         let base2k: usize = 12;
-        let y0: Vec<i64> = X_DATA.iter().map(|&v| get_digit_i64(base2k, v)).collect();
+        let y0: Vec<i64> = X_DATA.iter().map(|&v| get_digit_i64_portable(base2k, v)).collect();
         let mut y1: Vec<i64> = vec![0i64; 8];
         let x_512: __m512i = _mm512_loadu_si512(X_DATA.as_ptr() as *const _);
         let (mask, sign, _) = normalize_consts_avx512(base2k);
@@ -1065,11 +1065,11 @@ mod tests {
     #[target_feature(enable = "avx512f")]
     unsafe fn test_get_carry_ifma_internal() {
         let base2k: usize = 12;
-        let digits: Vec<i64> = X_DATA.iter().map(|&v| get_digit_i64(base2k, v)).collect();
+        let digits: Vec<i64> = X_DATA.iter().map(|&v| get_digit_i64_portable(base2k, v)).collect();
         let y0: Vec<i64> = X_DATA
             .iter()
             .zip(digits.iter())
-            .map(|(&x, &d)| get_carry_i64(base2k, x, d))
+            .map(|(&x, &d)| get_carry_i64_portable(base2k, x, d))
             .collect();
         let mut y1: Vec<i64> = vec![0i64; 8];
         let x_512: __m512i = _mm512_loadu_si512(X_DATA.as_ptr() as *const _);

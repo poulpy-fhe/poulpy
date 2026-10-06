@@ -13,17 +13,22 @@ use crate::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
 };
 
-/// Scratch the [`vec_znx_lsh_assign`] kernel carves: one normalization carry.
+/// Scratch the [`vec_znx_lsh_assign_portable`] kernel carves: one normalization carry.
 ///
 /// The api-level `vec_znx_lsh_tmp_bytes` keeps its OEP default, which also has
 /// to cover the still-derived `lsh_add` / `lsh_sub`; it is strictly larger than
 /// this.
-pub fn vec_znx_lsh_assign_carry_bytes(n: usize) -> usize {
+pub fn vec_znx_lsh_assign_carry_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_lsh_assign<'r, BE>(base2k: usize, k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, carry: &mut [i64])
-where
+pub fn vec_znx_lsh_assign_portable<'r, BE>(
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    carry: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
     BE: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,

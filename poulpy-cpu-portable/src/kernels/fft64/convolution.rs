@@ -5,9 +5,9 @@ use crate::{
             module::FFT64Plan,
             reim::ReimArith,
             reim4::{Reim4BlkMatVec, Reim4Convolution},
-            vec_znx_dft::vec_znx_dft_apply,
+            vec_znx_dft::vec_znx_dft_apply_portable,
         },
-        sparse_log_gap,
+        sparse_log_gap_portable,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
@@ -16,7 +16,7 @@ use crate::{
 };
 use poulpy_hal::execution::TaskExecutor;
 
-pub fn convolution_prepare_left<BE>(
+pub fn convolution_prepare_left_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -28,7 +28,7 @@ pub fn convolution_prepare_left<BE>(
     convolution_prepare::<_, BE>(plan, res, a, tmp)
 }
 
-pub fn convolution_prepare_right<BE>(
+pub fn convolution_prepare_right_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -92,7 +92,7 @@ fn convolution_prepare<R, BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply::<BE>(plan, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply_portable::<BE>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];
@@ -104,7 +104,7 @@ fn convolution_prepare<R, BE>(
     }
 }
 
-pub fn convolution_prepare_self<BE>(
+pub fn convolution_prepare_self_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
@@ -175,7 +175,7 @@ pub fn convolution_prepare_self<BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply::<BE>(plan, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply_portable::<BE>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let left_col: &mut [f64] = &mut left_raw[i * n * res_size..];
@@ -192,12 +192,12 @@ pub fn convolution_prepare_self<BE>(
     }
 }
 
-pub fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn convolution_by_const_apply_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
     size_of::<i64>() * ((min_size + a_size) * 8 + b_size)
 }
 
-pub fn convolution_by_const_apply<BE>(
+pub fn convolution_by_const_apply_portable<BE>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -216,7 +216,7 @@ pub fn convolution_by_const_apply<BE>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_by_const_apply_add<BE>(
+pub fn convolution_by_const_apply_add_portable<BE>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -303,16 +303,16 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool>(
     }
 }
 
-pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn convolution_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    // Covers the reference per-block staging (a_size + b_size + min_size rows, the `a` rows
+    // Covers the portable per-block staging (a_size + b_size + min_size rows, the `a` rows
     // only for the pairwise sum) and the fused SIMD cores: the padded `a` window, `b` staged
     // for a sparse or a pairwise `b`, and 16 groups of output rows.
     size_of::<f64>() * 8 * (a_size + 6 + 2 * b_size + 16 * min_size)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft<BE>(
+pub fn convolution_apply_dft_portable<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -328,7 +328,7 @@ pub fn convolution_apply_dft<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -365,10 +365,10 @@ pub fn convolution_apply_dft<BE>(
     }
 }
 
-/// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
+/// Accumulating variant of [`convolution_apply_dft_portable`]: `res[res_col] += a (x) b`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_add<BE>(
+pub fn convolution_apply_dft_add_portable<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -384,7 +384,7 @@ pub fn convolution_apply_dft_add<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -417,12 +417,12 @@ pub fn convolution_apply_dft_add<BE>(
     );
 }
 
-pub fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-    convolution_apply_dft_tmp_bytes(res_size, a_size, b_size) + (a_size + b_size) * size_of::<f64>() * 8
+pub fn convolution_pairwise_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    convolution_apply_dft_tmp_bytes_portable(res_size, a_size, b_size) + (a_size + b_size) * size_of::<f64>() * 8
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_pairwise_apply_dft<BE>(
+pub fn convolution_pairwise_apply_dft_portable<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -437,7 +437,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        convolution_apply_dft::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        convolution_apply_dft_portable::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 
@@ -445,13 +445,13 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let m: usize = n >> 1;
 
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
     let b_size: usize = b.size();
 
-    assert!(tmp.len() >= convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size) / size_of::<f64>());
+    assert!(tmp.len() >= convolution_pairwise_apply_dft_tmp_bytes_portable(res_size, a_size, b_size) / size_of::<f64>());
 
     let bound: usize = a_size + b_size - 1;
     let min_size: usize = res_size.min(bound);

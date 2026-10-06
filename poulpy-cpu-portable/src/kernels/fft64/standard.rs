@@ -60,7 +60,7 @@ where
 /// - `p ≡ 3 (mod 4)` maps into the conjugate half. Substituting `-p`
 ///   (now `≡ 1 mod 4`) brings the action back at the cost of a single
 ///   global imag negation, signalled by `conj`.
-pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan {
+pub fn build_fft64_automorphism_plan_portable(n: usize, p: i64) -> Fft64AutomorphismPlan {
     assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
     assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
 
@@ -204,7 +204,7 @@ macro_rules! fft64_ring_arith_standard {
             )
         }
         fn fft64_automorphism_plan(n: usize, p: i64) -> $crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan {
-            $crate::kernels::fft64::standard::build_fft64_automorphism_plan(n, p)
+            $crate::kernels::fft64::standard::build_fft64_automorphism_plan_portable(n, p)
         }
         fn fft64_automorphism(plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
             <Self as $crate::kernels::fft64::reim::ReimArith>::reim_automorphism(plan, res, a)

@@ -1,10 +1,10 @@
-use super::{vec_znx_sub_assign_mixed, vec_znx_sub_mixed, vec_znx_sub_negate_assign_mixed};
+use super::{vec_znx_sub_assign_mixed_portable, vec_znx_sub_mixed_portable, vec_znx_sub_negate_assign_mixed_portable};
 use crate::{
     kernels::znx::{ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_sub<'r, 'a, BE>(
+pub fn vec_znx_sub_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -17,7 +17,7 @@ pub fn vec_znx_sub<'r, 'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_sub_mixed(res, res_col, a, a_col, b, b_col);
+        return vec_znx_sub_mixed_portable(res, res_col, a, a_col, b, b_col);
     }
 
     let res_size: usize = res.size();
@@ -57,7 +57,7 @@ pub fn vec_znx_sub<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_assign<'r, 'a, BE>(
+pub fn vec_znx_sub_assign_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -68,7 +68,7 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     if a.n() != res.n() {
-        return vec_znx_sub_assign_mixed(res, res_col, a, a_col);
+        return vec_znx_sub_assign_mixed_portable(res, res_col, a, a_col);
     }
 
     let res_size: usize = res.size();
@@ -81,7 +81,7 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
+pub fn vec_znx_sub_negate_assign_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -92,7 +92,7 @@ pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     if a.n() != res.n() {
-        return vec_znx_sub_negate_assign_mixed(res, res_col, a, a_col);
+        return vec_znx_sub_negate_assign_mixed_portable(res, res_col, a, a_col);
     }
 
     let res_size: usize = res.size();

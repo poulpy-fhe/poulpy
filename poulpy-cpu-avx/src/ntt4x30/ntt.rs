@@ -26,7 +26,7 @@
 //!
 //! # Algorithm
 //!
-//! Identical to the scalar reference in [`poulpy_cpu_portable::kernels::ntt4x30::ntt`],
+//! Identical to the portable scalar implementation in [`poulpy_cpu_portable::kernels::ntt4x30::ntt`],
 //! but the inner loops operate on 4 primes simultaneously via 256-bit SIMD.
 //!
 //! Split-precomputed multiplication:

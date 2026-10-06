@@ -1,6 +1,6 @@
 //! Extended-precision (`i128`) ring element vector operations for the NTT4x30 backend.
 //!
-//! This module provides standalone reference functions for [`VecZnxBig`] operations
+//! This module provides standalone portable functions for [`VecZnxBig`](poulpy_hal::layouts::VecZnxBig) operations
 //! when the backend's `BigWord` is `i128`.  Unlike the [`fft64`] backend — where
 //! `BigWord = i64` and a `VecZnxBig` can be reinterpreted as a `VecZnx` — the
 //! NTT4x30 backend stores `i128` values, so every operation must be implemented
@@ -17,13 +17,13 @@
 //!
 //! # Functions
 //!
-//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add`], [`ntt4x30_vec_znx_big_sub`],
-//!   [`ntt4x30_vec_znx_big_negate`] and their inplace / mixed-precision variants.
-//! - **Copy from small**: [`ntt4x30_vec_znx_big_from_small`] — sign-extend `i64` → `i128`.
-//! - **Normalization**: [`ntt4x30_vec_znx_big_normalize`] — extract base-2k digits from
+//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add_portable`], [`ntt4x30_vec_znx_big_sub_portable`],
+//!   [`ntt4x30_vec_znx_big_negate_portable`] and their inplace / mixed-precision variants.
+//! - **Copy from small**: [`ntt4x30_vec_znx_big_from_small_portable`] — sign-extend `i64` → `i128`.
+//! - **Normalization**: [`ntt4x30_vec_znx_big_normalize_portable`] — extract base-2k digits from
 //!   `i128` limbs into `i64` `VecZnx` output.  Uses an `i128` carry buffer.
-//! - **Automorphism**: [`ntt4x30_vec_znx_big_automorphism`] /
-//!   [`ntt4x30_vec_znx_big_automorphism_assign`] — apply `X → X^p` on `i128` coefficients.
+//! - **Automorphism**: [`ntt4x30_vec_znx_big_automorphism_portable`] /
+//!   [`ntt4x30_vec_znx_big_automorphism_assign_portable`] — apply `X → X^p` on `i128` coefficients.
 //! - **Gaussian noise**: [`ntt4x30_vec_znx_big_add_normal_portable`] — add rounded Gaussian
 //!   noise into a specified limb of a `VecZnxBig`.
 //!
@@ -36,12 +36,12 @@ use crate::{
     kernels::{
         normalization::I64NormalizeOps,
         vec_znx::{
-            VecZnxRangeMut, vec_znx_add_assign_mixed, vec_znx_add_mixed, vec_znx_from_small_mixed, vec_znx_sub_assign_mixed,
-            vec_znx_sub_mixed, vec_znx_sub_negate_assign_mixed,
+            VecZnxRangeMut, vec_znx_add_assign_mixed_portable, vec_znx_add_mixed_portable, vec_znx_from_small_mixed_portable,
+            vec_znx_sub_assign_mixed_portable, vec_znx_sub_mixed_portable, vec_znx_sub_negate_assign_mixed_portable,
         },
         znx::{
-            ZnxNormalizeMiddleStepAssign, get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_portable,
-            znx_extract_digit_mul_i128_portable,
+            ZnxNormalizeMiddleStepAssign, get_carry_i128_portable, get_digit_i128_portable,
+            znx_extract_digit_addmul_normalize_i128_portable, znx_extract_digit_mul_i128_portable,
         },
     },
     layouts::{
@@ -74,22 +74,22 @@ fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry
 
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k, ai);
-            let co = get_carry_i128(base2k, ai, digit);
+            let digit = get_digit_i128_portable(base2k, ai);
+            let co = get_carry_i128_portable(base2k, ai, digit);
             let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k_lsh, ai);
-            let co = get_carry_i128(base2k_lsh, ai, digit);
+            let digit = get_digit_i128_portable(base2k_lsh, ai);
+            let co = get_carry_i128_portable(base2k_lsh, ai, digit);
             let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     }
 }
@@ -137,22 +137,22 @@ fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64],
 
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k, ai);
-            let co = get_carry_i128(base2k, ai, digit);
+            let digit = get_digit_i128_portable(base2k, ai);
+            let co = get_carry_i128_portable(base2k, ai, digit);
             let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = O::apply_i64(*r, out as i64);
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-            let digit = get_digit_i128(base2k_lsh, ai);
-            let co = get_carry_i128(base2k_lsh, ai, digit);
+            let digit = get_digit_i128_portable(base2k_lsh, ai);
+            let co = get_carry_i128_portable(base2k_lsh, ai, digit);
             let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = O::apply_i64(*r, out as i64);
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     }
 }
@@ -169,23 +169,23 @@ fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mu
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            let digit = get_digit_i128(base2k, ri);
-            let co = get_carry_i128(base2k, ri, digit);
+            let digit = get_digit_i128_portable(base2k, ri);
+            let co = get_carry_i128_portable(base2k, ri, digit);
             let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            let digit = get_digit_i128(base2k_lsh, ri);
-            let co = get_carry_i128(base2k_lsh, ri, digit);
+            let digit = get_digit_i128_portable(base2k_lsh, ri);
+            let co = get_carry_i128_portable(base2k_lsh, ri, digit);
             let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
+            let out = get_digit_i128_portable(base2k, d_plus_c);
             *r = out as i64;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
+            *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
         });
     }
 }
@@ -202,13 +202,13 @@ fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            *r = get_digit_i128(base2k, get_digit_i128(base2k, ri) + *c) as i64;
+            *r = get_digit_i128_portable(base2k, get_digit_i128_portable(base2k, ri) + *c) as i64;
         });
     } else {
         let base2k_lsh = base2k - lsh;
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
             let ri = *r as i128;
-            *r = get_digit_i128(base2k, (get_digit_i128(base2k_lsh, ri) << lsh) + *c) as i64;
+            *r = get_digit_i128_portable(base2k, (get_digit_i128_portable(base2k_lsh, ri) << lsh) + *c) as i64;
         });
     }
 }
@@ -220,13 +220,13 @@ fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], 
 
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
-            let out = get_digit_i128(base2k, get_digit_i128(base2k, *r as i128) + *c);
+            let out = get_digit_i128_portable(base2k, get_digit_i128_portable(base2k, *r as i128) + *c);
             *r = O::apply_i64(*r, out as i64);
         });
     } else {
         let base2k_lsh = base2k - lsh;
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
-            let out = get_digit_i128(base2k, (get_digit_i128(base2k_lsh, *r as i128) << lsh) + *c);
+            let out = get_digit_i128_portable(base2k, (get_digit_i128_portable(base2k_lsh, *r as i128) << lsh) + *c);
             *r = O::apply_i64(*r, out as i64);
         });
     }
@@ -617,7 +617,7 @@ pub trait I128BigOps {
 
 /// Per-slice `i128→i64` normalization kernels, dispatched via the backend type parameter.
 ///
-/// The hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize`] are expressed
+/// The hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize_portable`] are expressed
 /// as trait methods so that SIMD backends can override them without duplicating the outer
 /// loop logic.  All methods have scalar default implementations.
 ///
@@ -686,22 +686,22 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
         if lsh == 0 {
             izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-                let digit = get_digit_i128(base2k, ai);
-                let co = get_carry_i128(base2k, ai, digit);
+                let digit = get_digit_i128_portable(base2k, ai);
+                let co = get_carry_i128_portable(base2k, ai, digit);
                 let d_plus_c = digit + *c;
-                let out = get_digit_i128(base2k, d_plus_c);
+                let out = get_digit_i128_portable(base2k, d_plus_c);
                 *r = out as i64;
-                *c = co + get_carry_i128(base2k, d_plus_c, out);
+                *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
             });
         } else {
             let base2k_lsh = base2k - lsh;
             izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-                let digit = get_digit_i128(base2k_lsh, ai);
-                let co = get_carry_i128(base2k_lsh, ai, digit);
+                let digit = get_digit_i128_portable(base2k_lsh, ai);
+                let co = get_carry_i128_portable(base2k_lsh, ai, digit);
                 let d_plus_c = (digit << lsh) + *c;
-                let out = get_digit_i128(base2k, d_plus_c);
+                let out = get_digit_i128_portable(base2k, d_plus_c);
                 *r = out as i64;
-                *c = co + get_carry_i128(base2k, d_plus_c, out);
+                *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
             });
         }
     }
@@ -722,23 +722,23 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
         if lsh == 0 {
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
-                let digit = get_digit_i128(base2k, ri);
-                let co = get_carry_i128(base2k, ri, digit);
+                let digit = get_digit_i128_portable(base2k, ri);
+                let co = get_carry_i128_portable(base2k, ri, digit);
                 let d_plus_c = digit + *c;
-                let out = get_digit_i128(base2k, d_plus_c);
+                let out = get_digit_i128_portable(base2k, d_plus_c);
                 *r = out as i64;
-                *c = co + get_carry_i128(base2k, d_plus_c, out);
+                *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
             });
         } else {
             let base2k_lsh = base2k - lsh;
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
-                let digit = get_digit_i128(base2k_lsh, ri);
-                let co = get_carry_i128(base2k_lsh, ri, digit);
+                let digit = get_digit_i128_portable(base2k_lsh, ri);
+                let co = get_carry_i128_portable(base2k_lsh, ri, digit);
                 let d_plus_c = (digit << lsh) + *c;
-                let out = get_digit_i128(base2k, d_plus_c);
+                let out = get_digit_i128_portable(base2k, d_plus_c);
                 *r = out as i64;
-                *c = co + get_carry_i128(base2k, d_plus_c, out);
+                *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
             });
         }
     }
@@ -752,13 +752,13 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
         if lsh == 0 {
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
-                *r = get_digit_i128(base2k, get_digit_i128(base2k, ri) + *c) as i64;
+                *r = get_digit_i128_portable(base2k, get_digit_i128_portable(base2k, ri) + *c) as i64;
             });
         } else {
             let base2k_lsh = base2k - lsh;
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
-                *r = get_digit_i128(base2k, (get_digit_i128(base2k_lsh, ri) << lsh) + *c) as i64;
+                *r = get_digit_i128_portable(base2k, (get_digit_i128_portable(base2k_lsh, ri) << lsh) + *c) as i64;
             });
         }
     }
@@ -775,14 +775,14 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
 // Public API
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns the scratch size (in bytes) required by [`ntt4x30_vec_znx_big_normalize`].
-pub fn ntt4x30_vec_znx_big_normalize_tmp_bytes(n: usize) -> usize {
+/// Returns the scratch size (in bytes) required by [`ntt4x30_vec_znx_big_normalize_portable`].
+pub fn ntt4x30_vec_znx_big_normalize_tmp_bytes_portable(n: usize) -> usize {
     3 * n * size_of::<i128>()
 }
 
 /// Returns the scratch size (in bytes) required by
-/// [`ntt4x30_vec_znx_big_automorphism_assign`].
-pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n: usize) -> usize {
+/// [`ntt4x30_vec_znx_big_automorphism_assign_portable`].
+pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i128>()
 }
 
@@ -790,7 +790,7 @@ pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n: usize) -> usize {
 ///
 /// Limbs present in both `a` and `b` are summed; limbs present in only one are copied;
 /// extra res limbs beyond both are zeroed.
-pub fn ntt4x30_vec_znx_big_add<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -804,7 +804,7 @@ where
     let b = b.to_backend_ref();
 
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+        return vec_znx_add_mixed_portable(&mut res, res_col, &a, a_col, &b, b_col);
     }
 
     let res_size = res.size();
@@ -839,7 +839,7 @@ where
 
 /// In-place addition: `res[res_col] += a[a_col]` over the first `min(res.size(), a.size())`
 /// limbs.
-pub fn ntt4x30_vec_znx_big_add_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_add_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -851,7 +851,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_add_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let sum_size = res.size().min(a.size());
@@ -862,7 +862,7 @@ where
 
 /// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
 /// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -876,7 +876,7 @@ where
     let b = b.to_backend_ref();
 
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+        return vec_znx_add_mixed_portable(&mut res, res_col, &a, a_col, &b, b_col);
     }
 
     let res_size = res.size();
@@ -901,7 +901,7 @@ where
 }
 
 /// In-place: `res[res_col] += a[a_col]` where `a` is a `VecZnx` (i64 limbs).
-pub fn ntt4x30_vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -912,7 +912,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_add_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let sum_size = res.size().min(a.size());
@@ -922,7 +922,7 @@ where
 }
 
 /// Subtraction: `res[res_col] = a[a_col] - b[b_col]`.
-pub fn ntt4x30_vec_znx_big_sub<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -936,7 +936,7 @@ where
     let b = b.to_backend_ref();
 
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+        return vec_znx_sub_mixed_portable(&mut res, res_col, &a, a_col, &b, b_col);
     }
 
     let res_size = res.size();
@@ -968,7 +968,7 @@ where
 }
 
 /// In-place subtraction: `res[res_col] -= a[a_col]`.
-pub fn ntt4x30_vec_znx_big_sub_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -980,7 +980,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_sub_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let sum_size = res.size().min(a.size());
@@ -990,7 +990,7 @@ where
 }
 
 /// Swap-subtract in-place: `res[res_col] = a[a_col] - res[res_col]`.
-pub fn ntt4x30_vec_znx_big_sub_negate_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_negate_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1002,7 +1002,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_sub_negate_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let res_size = res.size();
@@ -1017,8 +1017,14 @@ where
 }
 
 /// `res = a - b` where `a` is `VecZnx` (i64) and `b` is `VecZnxBig` (i128).
-pub fn ntt4x30_vec_znx_big_sub_small_a<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
+pub fn ntt4x30_vec_znx_big_sub_small_a_portable<R, A, B, BE>(
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &B,
+    b_col: usize,
+) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
     A: VecZnxToBackendRef,
@@ -1031,7 +1037,7 @@ where
     let b = b.to_backend_ref();
 
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+        return vec_znx_sub_mixed_portable(&mut res, res_col, &a, a_col, &b, b_col);
     }
 
     let res_size = res.size();
@@ -1058,8 +1064,14 @@ where
 }
 
 /// `res = a - b` where `a` is `VecZnxBig` (i128) and `b` is `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_b<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
+pub fn ntt4x30_vec_znx_big_sub_small_b_portable<R, A, B, BE>(
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &B,
+    b_col: usize,
+) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
     A: VecZnxBigToBackendRef<BE>,
@@ -1072,7 +1084,7 @@ where
     let b = b.to_backend_ref();
 
     if a.n() != res.n() || b.n() != res.n() {
-        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+        return vec_znx_sub_mixed_portable(&mut res, res_col, &a, a_col, &b, b_col);
     }
 
     let res_size = res.size();
@@ -1097,7 +1109,7 @@ where
 }
 
 /// In-place: `res[res_col] -= a[a_col]` where `a` is a `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_small_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1108,7 +1120,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_sub_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let sum_size = res.size().min(a.size());
@@ -1118,7 +1130,7 @@ where
 }
 
 /// In-place: `res[res_col] = a[a_col] - res[res_col]` where `a` is a `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_negate_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_small_negate_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1129,7 +1141,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_sub_negate_assign_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let res_size = res.size();
@@ -1144,7 +1156,7 @@ where
 }
 
 /// Negate: `res[res_col] = -a[a_col]`.
-pub fn ntt4x30_vec_znx_big_negate<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_negate_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1167,7 +1179,7 @@ where
 }
 
 /// In-place negation: `res[res_col] = -res[res_col]`.
-pub fn ntt4x30_vec_znx_big_negate_assign<R, BE>(res: &mut R, res_col: usize)
+pub fn ntt4x30_vec_znx_big_negate_assign_portable<R, BE>(res: &mut R, res_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1182,7 +1194,7 @@ where
 /// Sign-extend `i64` coefficients from `a[a_col]` into `i128` limbs of `res[res_col]`.
 ///
 /// Limbs beyond `a.size()` are zeroed.
-pub fn ntt4x30_vec_znx_big_from_small<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_from_small_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -1193,7 +1205,7 @@ where
     let a = a.to_backend_ref();
 
     if a.n() != res.n() {
-        return vec_znx_from_small_mixed(&mut res, res_col, &a, a_col);
+        return vec_znx_from_small_mixed_portable(&mut res, res_col, &a, a_col);
     }
 
     let res_size = res.size();
@@ -1217,7 +1229,7 @@ where
 /// `carry` must have at least `ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>()`
 /// elements (i.e., `3 * n` `i128` values).
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
+pub fn ntt4x30_vec_znx_big_normalize_portable<R, A, BE>(
     res: &mut R,
     res_base2k: usize,
     res_k: usize,
@@ -1242,7 +1254,7 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
     ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
 }
 
-/// [`ntt4x30_vec_znx_big_normalize`] restricted to `[coeff_start, coeff_start + coeff_len)`;
+/// [`ntt4x30_vec_znx_big_normalize_portable`] restricted to `[coeff_start, coeff_start + coeff_len)`;
 /// `carry` needs `3 * coeff_len` elements private to the range.
 #[allow(clippy::too_many_arguments)]
 fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
@@ -1271,7 +1283,7 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
     let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
-        ntt4x30_vec_znx_big_normalize_range_raw::<A, BE>(
+        ntt4x30_vec_znx_big_normalize_range_raw_portable::<A, BE>(
             ptr,
             res_shape,
             res_base2k,
@@ -1305,7 +1317,7 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 /// Source reads must remain immutable, and scratch must not overlap the source.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
-pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
+pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
     res_ptr: *mut i64,
     res_shape: VecZnxShape,
     res_base2k: usize,
@@ -1450,9 +1462,9 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
 }
 
 /// Adds or subtracts normalized `a` under the source bounds of
-/// [`ntt4x30_vec_znx_big_normalize`].
+/// [`ntt4x30_vec_znx_big_normalize_portable`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
+pub fn ntt4x30_vec_znx_big_normalize_assign_portable<O, R, A, BE>(
     res: &mut R,
     res_base2k: usize,
     res_offset: i64,
@@ -1502,9 +1514,9 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     });
 }
 
-/// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
+/// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize_portable`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_vec_znx_big_normalize_add_assign<R, A, BE>(
+pub fn ntt4x30_vec_znx_big_normalize_add_assign_portable<R, A, BE>(
     res: &mut R,
     res_base2k: usize,
     res_offset: i64,
@@ -1520,12 +1532,14 @@ pub fn ntt4x30_vec_znx_big_normalize_add_assign<R, A, BE>(
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    ntt4x30_vec_znx_big_normalize_assign::<AddOp, _, _, _>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    ntt4x30_vec_znx_big_normalize_assign_portable::<AddOp, _, _, _>(
+        res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
+    );
 }
 
-/// Subtracts normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
+/// Subtracts normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize_portable`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_vec_znx_big_normalize_sub_assign<R, A, BE>(
+pub fn ntt4x30_vec_znx_big_normalize_sub_assign_portable<R, A, BE>(
     res: &mut R,
     res_base2k: usize,
     res_offset: i64,
@@ -1541,13 +1555,15 @@ pub fn ntt4x30_vec_znx_big_normalize_sub_assign<R, A, BE>(
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    ntt4x30_vec_znx_big_normalize_assign::<SubOp, _, _, _>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    ntt4x30_vec_znx_big_normalize_assign_portable::<SubOp, _, _, _>(
+        res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
+    );
 }
 
 /// Apply the Galois automorphism `X → X^p` to `a[a_col]`, writing to `res[res_col]`.
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_vec_znx_big_automorphism<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_automorphism_portable<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism,
     R: VecZnxBigToBackendMut<BE>,
@@ -1574,7 +1590,7 @@ where
 ///
 /// `tmp` must have at least `ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n) / 16`
 /// elements (i.e., `n` `i128` values).
-pub fn ntt4x30_vec_znx_big_automorphism_assign<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i128])
+pub fn ntt4x30_vec_znx_big_automorphism_assign_portable<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i128])
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism,
     R: VecZnxBigToBackendMut<BE>,

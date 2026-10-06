@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-pub fn vec_znx_dft_add<BE>(
+pub fn vec_znx_dft_add_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -67,7 +67,7 @@ pub fn vec_znx_dft_add<BE>(
     }
 }
 
-pub fn vec_znx_dft_add_assign<BE>(
+pub fn vec_znx_dft_add_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -91,7 +91,7 @@ pub fn vec_znx_dft_add_assign<BE>(
     }
 }
 
-pub fn vec_znx_dft_copy<BE>(
+pub fn vec_znx_dft_copy_portable<BE>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -124,7 +124,7 @@ pub fn vec_znx_dft_copy<BE>(
     })
 }
 
-pub fn vec_znx_dft_apply<BE>(
+pub fn vec_znx_dft_apply_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     step: usize,
     offset: usize,
@@ -164,7 +164,7 @@ pub fn vec_znx_dft_apply<BE>(
     });
 }
 
-pub fn vec_znx_idft_apply<BE>(
+pub fn vec_znx_idft_apply_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -198,7 +198,7 @@ pub fn vec_znx_idft_apply<BE>(
     }
 }
 
-pub fn vec_znx_idft_apply_tmpa<BE>(
+pub fn vec_znx_idft_apply_tmpa_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -234,7 +234,7 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
 // may still be useful as a future optimization, even though the current
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
-pub fn vec_znx_idft_apply_consume<'a, BE>(
+pub fn vec_znx_idft_apply_consume_portable<'a, BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     mut res: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
@@ -258,7 +258,7 @@ where
     res.into_big()
 }
 
-pub fn vec_znx_dft_sub<BE>(
+pub fn vec_znx_dft_sub_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -312,7 +312,7 @@ pub fn vec_znx_dft_sub<BE>(
     }
 }
 
-pub fn vec_znx_dft_sub_assign<BE>(
+pub fn vec_znx_dft_sub_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -336,7 +336,7 @@ pub fn vec_znx_dft_sub_assign<BE>(
     }
 }
 
-pub fn vec_znx_dft_sub_negate_assign<BE>(
+pub fn vec_znx_dft_sub_negate_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -364,7 +364,7 @@ pub fn vec_znx_dft_sub_negate_assign<BE>(
     }
 }
 
-pub fn vec_znx_dft_zero<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
+pub fn vec_znx_dft_zero_portable<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
 where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
@@ -394,7 +394,7 @@ pub struct Fft64AutomorphismPlan {
 ///
 /// This is a pure data movement op, applied limb by limb through the
 /// backend ring's [`Fft64RingArith::fft64_automorphism`].
-pub fn vec_znx_dft_automorphism<BE>(
+pub fn vec_znx_dft_automorphism_portable<BE>(
     plan: &Fft64AutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -416,7 +416,7 @@ pub fn vec_znx_dft_automorphism<BE>(
     }
 }
 
-pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
+pub fn vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor>(
     plan: &Fft64AutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,

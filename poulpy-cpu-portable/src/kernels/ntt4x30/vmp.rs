@@ -4,11 +4,11 @@
 //! `poulpy-cpu-portable`. The workflow is:
 //!
 //! 1. **Prepare** — encode a `MatZnx` (i64 coefficients) into the
-//!    [`VmpPMat`] prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_vmp_prepare`].
-//! 2. **Apply** — multiply a [`VecZnxDft`] (q120b) by a prepared
-//!    [`VmpPMat`] (q120c) to obtain a new [`VecZnxDft`] (q120b) via
-//!    [`ntt4x30_vmp_apply_dft_to_dft`].
+//!    [`VmpPMat`](poulpy_hal::layouts::VmpPMat) prepared format (q120c, NTT domain) via
+//!    [`ntt4x30_vmp_prepare_portable`].
+//! 2. **Apply** — multiply a [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) by a prepared
+//!    [`VmpPMat`](poulpy_hal::layouts::VmpPMat) (q120c) to obtain a new [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) via
+//!    [`ntt4x30_vmp_apply_dft_to_dft_portable`].
 //!
 //! # Layout
 //!
@@ -41,16 +41,16 @@ use crate::{
 };
 
 use crate::kernels::ntt4x30::types::Q_SHIFTED;
-use crate::kernels::vmp_select::{assert_extractable, vmp_extract_selected_rows_core};
+use crate::kernels::vmp_select::{assert_extractable_portable, vmp_extract_selected_rows_core_portable};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Prepare
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch space (in bytes) required by [`ntt4x30_vmp_prepare`].
+/// Scratch space (in bytes) required by [`ntt4x30_vmp_prepare_portable`].
 ///
 /// Returns `4 * n * 8` bytes (one q120b NTT buffer of `4*n` u64).
-pub fn ntt4x30_vmp_prepare_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_vmp_prepare_tmp_bytes_portable(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
@@ -63,7 +63,7 @@ pub fn ntt4x30_vmp_prepare_tmp_bytes(n: usize) -> usize {
 /// 4. Store in `res` in the block-interleaved layout (see module doc).
 ///
 /// `tmp` must hold at least `ntt4x30_vmp_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_prepare<BE>(
+pub fn ntt4x30_vmp_prepare_portable<BE>(
     module: &Module<BE>,
     res: &mut VmpPMatBackendMut<'_, BE>,
     a: &MatZnxBackendRef<'_, BE>,
@@ -85,7 +85,7 @@ pub fn ntt4x30_vmp_prepare<BE>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes(n));
+    assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes_portable(n));
 
     let nrows: usize = a.cols_in() * a.rows();
     let ncols: usize = a.cols_out() * a.size();
@@ -138,7 +138,7 @@ pub fn ntt4x30_vmp_prepare<BE>(
 /// - `extracted_blk`:  8 × `row_max` u64 (one x2-block from each input row)
 ///
 /// where `row_max = a_size.min(b_rows) * b_cols_in`.
-pub fn ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
+pub fn ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
     let row_max = a_size.min(b_rows) * b_cols_in;
     (16 + 8 * row_max) * size_of::<u64>()
 }
@@ -319,7 +319,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 /// of `pmat` using lazy q120b × q120c accumulation.
 ///
 /// `tmp` must hold at least `ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(...) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
+pub fn ntt4x30_vmp_apply_dft_to_dft_portable<BE>(
     module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -361,7 +361,7 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`.
-pub fn ntt4x30_vmp_extract_selected_rows<BE: Backend<ZnxWord = i64>>(
+pub fn ntt4x30_vmp_extract_selected_rows_portable<BE: Backend<ZnxWord = i64>>(
     res: &mut VmpPMatBackendMut<'_, BE>,
     a: &VmpPMatBackendRef<'_, BE>,
     first_row: usize,
@@ -370,11 +370,11 @@ pub fn ntt4x30_vmp_extract_selected_rows<BE: Backend<ZnxWord = i64>>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
 
     let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
     let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 1);
-    vmp_extract_selected_rows_core(
+    vmp_extract_selected_rows_core_portable(
         cast_slice_mut::<u8, u32>(res.data_mut().as_mut()),
         res_rows,
         res_ncols,
@@ -394,7 +394,7 @@ pub fn ntt4x30_vmp_extract_selected_rows<BE: Backend<ZnxWord = i64>>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Zero all entries of a prepared polynomial matrix.
-pub fn ntt4x30_vmp_zero<BE: Backend<ZnxWord = i64>>(res: &mut VmpPMatBackendMut<'_, BE>)
+pub fn ntt4x30_vmp_zero_portable<BE: Backend<ZnxWord = i64>>(res: &mut VmpPMatBackendMut<'_, BE>)
 where
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {

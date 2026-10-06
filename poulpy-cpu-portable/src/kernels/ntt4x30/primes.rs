@@ -117,7 +117,7 @@ impl PrimeSetCrt4 for Primes31 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernels::ntt4x30::{arithmetic::b_to_znx128_portable, ntt::modq_pow};
+    use crate::kernels::ntt4x30::{arithmetic::b_to_znx128_portable, ntt::modq_pow_portable};
 
     fn check<P: PrimeSetCrt4>() {
         P::validate();
@@ -125,8 +125,8 @@ mod tests {
         for (k, &q) in P::Q.iter().enumerate() {
             assert_eq!(u32::BITS - q.leading_zeros(), P::LOG_Q as u32);
             assert!((2..).take_while(|d| d * d <= q as u64).all(|d| !(q as u64).is_multiple_of(d)));
-            assert_eq!(modq_pow(P::OMEGA[k], 1 << P::MAX_LOG_N, q), q - 1);
-            assert_eq!(modq_pow(P::OMEGA[k], 1 << (P::MAX_LOG_N + 1), q), 1);
+            assert_eq!(modq_pow_portable(P::OMEGA[k], 1 << P::MAX_LOG_N, q), q - 1);
+            assert_eq!(modq_pow_portable(P::OMEGA[k], 1 << (P::MAX_LOG_N + 1), q), 1);
             assert_eq!((total / q as i128 % q as i128) * P::CRT_CST[k] as i128 % q as i128, 1);
         }
         for x in [

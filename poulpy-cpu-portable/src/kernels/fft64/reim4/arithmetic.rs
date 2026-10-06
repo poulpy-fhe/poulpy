@@ -150,7 +150,7 @@ pub fn reim4_vec_mat1col_product_portable(
     let mut acc: [f64; 8] = [0f64; 8];
     let mut j = 0;
     for _ in 0..nrows {
-        reim4_add_mul(&mut acc, as_arr(&u[j..]), as_arr(&v[j..]));
+        reim4_add_mul_portable(&mut acc, as_arr(&u[j..]), as_arr(&v[j..]));
         j += 8;
     }
     dst[0..8].copy_from_slice(&acc);
@@ -176,8 +176,8 @@ pub fn reim4_vec_mat2cols_product_portable(
         let _1j: usize = i << 3;
         let _2j: usize = i << 4;
         let u_j: &[f64; 8] = as_arr(&u[_1j..]);
-        reim4_add_mul(&mut acc_0, u_j, as_arr(&v[_2j..]));
-        reim4_add_mul(&mut acc_1, u_j, as_arr(&v[_2j + 8..]));
+        reim4_add_mul_portable(&mut acc_0, u_j, as_arr(&v[_2j..]));
+        reim4_add_mul_portable(&mut acc_1, u_j, as_arr(&v[_2j + 8..]));
     }
     dst[0..8].copy_from_slice(&acc_0);
     dst[8..16].copy_from_slice(&acc_1);
@@ -211,13 +211,13 @@ pub fn reim4_vec_mat2cols_2ndcol_product_portable(
     for i in 0..nrows {
         let _1j: usize = i << 3;
         let _2j: usize = i << 4;
-        reim4_add_mul(&mut acc, as_arr(&u[_1j..]), as_arr(&v[_2j + 8..]));
+        reim4_add_mul_portable(&mut acc, as_arr(&u[_1j..]), as_arr(&v[_2j + 8..]));
     }
     dst[0..8].copy_from_slice(&acc);
 }
 
 #[inline(always)]
-pub fn reim4_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
+pub fn reim4_add_mul_portable(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
     for k in 0..4 {
         let ar: f64 = a[k];
         let br: f64 = b[k];
@@ -229,7 +229,7 @@ pub fn reim4_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
 }
 
 #[inline(always)]
-pub fn reim4_real_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
+pub fn reim4_real_add_mul_portable(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
     for k in 0..8 {
         dst[k] += a[k] * b[k];
     }
@@ -239,7 +239,7 @@ pub fn reim4_real_add_mul(dst: &mut [f64; 8], a: &[f64; 8], b: &[f64; 8]) {
 pub fn reim4_real_vec_mat1col_product_portable(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     let mut acc = [0.0; 8];
     for i in 0..nrows {
-        reim4_real_add_mul(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[8 * i..]));
+        reim4_real_add_mul_portable(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[8 * i..]));
     }
     dst[..8].copy_from_slice(&acc);
 }
@@ -250,8 +250,8 @@ pub fn reim4_real_vec_mat2cols_product_portable(nrows: usize, dst: &mut [f64], u
     let mut acc1 = [0.0; 8];
     for i in 0..nrows {
         let u = as_arr(&u[8 * i..]);
-        reim4_real_add_mul(&mut acc0, u, as_arr(&v[16 * i..]));
-        reim4_real_add_mul(&mut acc1, u, as_arr(&v[16 * i + 8..]));
+        reim4_real_add_mul_portable(&mut acc0, u, as_arr(&v[16 * i..]));
+        reim4_real_add_mul_portable(&mut acc1, u, as_arr(&v[16 * i + 8..]));
     }
     dst[..8].copy_from_slice(&acc0);
     dst[8..16].copy_from_slice(&acc1);
@@ -261,7 +261,7 @@ pub fn reim4_real_vec_mat2cols_product_portable(nrows: usize, dst: &mut [f64], u
 pub fn reim4_real_vec_mat2cols_2ndcol_product_portable(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     let mut acc = [0.0; 8];
     for i in 0..nrows {
-        reim4_real_add_mul(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[16 * i + 8..]));
+        reim4_real_add_mul_portable(&mut acc, as_arr(&u[8 * i..]), as_arr(&v[16 * i + 8..]));
     }
     dst[..8].copy_from_slice(&acc);
 }
@@ -275,7 +275,7 @@ pub fn reim4_real_convolution_1coeff_portable(k: usize, dst: &mut [f64; 8], a: &
     let j_min = k.saturating_sub(a_size - 1);
     let j_max = (k + 1).min(b_size);
     for j in j_min..j_max {
-        reim4_real_add_mul(dst, as_arr(&a[8 * (k - j)..]), as_arr(&b[8 * j..]));
+        reim4_real_add_mul_portable(dst, as_arr(&a[8 * (k - j)..]), as_arr(&b[8 * j..]));
     }
 }
 
@@ -303,7 +303,7 @@ pub fn reim4_convolution_1coeff_portable(k: usize, dst: &mut [f64; 8], a: &[f64]
     let j_max: usize = (k + 1).min(b_size);
 
     for j in j_min..j_max {
-        reim4_add_mul(dst, as_arr(&a[8 * (k - j)..]), as_arr(&b[8 * j..]));
+        reim4_add_mul_portable(dst, as_arr(&a[8 * (k - j)..]), as_arr(&b[8 * j..]));
     }
 }
 
@@ -314,7 +314,7 @@ pub fn reim4_convolution_2coeffs_portable(k: usize, dst: &mut [f64; 16], a: &[f6
 }
 
 #[inline(always)]
-pub fn reim4_add_mul_b_real_const(dst: &mut [f64; 8], a: &[f64; 8], b: f64) {
+pub fn reim4_add_mul_b_real_const_portable(dst: &mut [f64; 8], a: &[f64; 8], b: f64) {
     for k in 0..4 {
         let ar: f64 = a[k];
         let ai: f64 = a[k + 4];
@@ -336,7 +336,7 @@ pub fn reim4_convolution_by_real_const_1coeff_portable(k: usize, dst: &mut [f64;
     let j_max: usize = (k + 1).min(b_size);
 
     for j in j_min..j_max {
-        reim4_add_mul_b_real_const(dst, as_arr(&a[8 * (k - j)..]), b[j]);
+        reim4_add_mul_b_real_const_portable(dst, as_arr(&a[8 * (k - j)..]), b[j]);
     }
 }
 
@@ -351,7 +351,7 @@ pub fn reim4_convolution_by_real_const_2coeffs_portable(k: usize, dst: &mut [f64
 /// `l` of a row at `l` for re and `4 + l` for im), `N = n << log_gap`: degree-`N`
 /// slot `i` reads degree-`n` slot `i >> log_gap`, so a whole block reads one
 /// slot once `log_gap >= 2`. `dst` receives `size` contiguous rows.
-pub fn reim4_gather_sparse_block(dst: &mut [f64], src: &[f64], size: usize, blk: usize, log_gap: usize) {
+pub fn reim4_gather_sparse_block_portable(dst: &mut [f64], src: &[f64], size: usize, blk: usize, log_gap: usize) {
     for lane in 0..4 {
         let slot: usize = (4 * blk + lane) >> log_gap;
         let base: usize = (slot >> 2) * size * 8 + (slot & 3);
@@ -362,9 +362,16 @@ pub fn reim4_gather_sparse_block(dst: &mut [f64], src: &[f64], size: usize, blk:
     }
 }
 
-/// [`reim4_gather_sparse_block`] of `src0` plus the same rows of `src1`: the
+/// [`reim4_gather_sparse_block_portable`] of `src0` plus the same rows of `src1`: the
 /// pairwise operand sum of two columns of one degree-`n` operand.
-pub fn reim4_gather_sparse_block_sum(dst: &mut [f64], src0: &[f64], src1: &[f64], size: usize, blk: usize, log_gap: usize) {
+pub fn reim4_gather_sparse_block_sum_portable(
+    dst: &mut [f64],
+    src0: &[f64],
+    src1: &[f64],
+    size: usize,
+    blk: usize,
+    log_gap: usize,
+) {
     for lane in 0..4 {
         let slot: usize = (4 * blk + lane) >> log_gap;
         let base: usize = (slot >> 2) * size * 8 + (slot & 3);

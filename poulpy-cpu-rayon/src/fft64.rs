@@ -116,8 +116,8 @@ use $crate::__private::poulpy_cpu_portable::{
             module::FFTModuleHandle,
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             vec_znx_dft::Fft64AutomorphismPlan,
-            reim4::{Reim4BlkMatVec, Reim4Convolution, reim4_gather_sparse_block, reim4_gather_sparse_block_sum},
-            vmp::{vmp_prepare as fft64_vmp_prepare, vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes},
+            reim4::{Reim4BlkMatVec, Reim4Convolution, reim4_gather_sparse_block_portable, reim4_gather_sparse_block_sum_portable},
+            vmp::{vmp_prepare_portable as fft64_vmp_prepare, vmp_prepare_tmp_bytes_portable as fft64_vmp_prepare_tmp_bytes},
         },
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
@@ -433,9 +433,9 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
             };
             let b: &[f64] = if b_log_gap != 0 {
                 if PAIRWISE {
-                    reim4_gather_sparse_block_sum(b_buf, b0, b1, b_size, block, b_log_gap);
+                    reim4_gather_sparse_block_sum_portable(b_buf, b0, b1, b_size, block, b_log_gap);
                 } else {
-                    reim4_gather_sparse_block(b_buf, b0, b_size, block, b_log_gap);
+                    reim4_gather_sparse_block_portable(b_buf, b0, b_size, block, b_log_gap);
                 }
                 &*b_buf
             } else if PAIRWISE {
@@ -1250,7 +1250,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         if let Some((add, add_col)) = addend {
             let mut big: VecZnxBigBackendMut<'_, $base> = VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_big::vec_znx_big_add_small_assign::<_, _, $base>(
+            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_big::vec_znx_big_add_small_assign_portable::<_, _, $base>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -1548,12 +1548,12 @@ unsafe impl HalVecZnxDftImpl for $rayon {
     ) {
         let _ = scratch;
         if $crate::RayonTaskExecutor::should_serialize_inner() {
-            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
+            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::vec_znx_dft_automorphism_add_portable::<
                 $base,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
         } else {
-            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
+            $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::vec_znx_dft_automorphism_add_portable::<
                 $base,
                 $crate::RayonTaskExecutor,
             >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);

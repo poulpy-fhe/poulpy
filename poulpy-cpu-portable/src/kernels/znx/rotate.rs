@@ -1,6 +1,6 @@
 use crate::kernels::znx::{ZnxCopy, ZnxNegate};
 
-pub fn znx_rotate<ZNXARI: ZnxNegate + ZnxCopy>(p: i64, res: &mut [i64], src: &[i64]) {
+pub fn znx_rotate_portable<ZNXARI: ZnxNegate + ZnxCopy>(p: i64, res: &mut [i64], src: &[i64]) {
     {
         assert_eq!(res.len(), src.len());
     }

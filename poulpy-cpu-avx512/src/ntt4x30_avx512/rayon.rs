@@ -945,7 +945,10 @@ where
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT4x30Avx512<R>, SerialTaskExecutor>(
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
+                NTT4x30Avx512<R>,
+                SerialTaskExecutor,
+            >(
                 cnv_offset,
                 &mut base_big_mut::<R>(res),
                 res_col,
@@ -957,7 +960,10 @@ where
                 &mut [],
             );
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT4x30Avx512<R>, RayonTaskExecutor>(
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
+                NTT4x30Avx512<R>,
+                RayonTaskExecutor,
+            >(
                 cnv_offset,
                 &mut base_big_mut::<R>(res),
                 res_col,
@@ -995,7 +1001,7 @@ where
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
                 NTT4x30Avx512<R>,
                 SerialTaskExecutor,
             >(
@@ -1010,7 +1016,7 @@ where
                 &mut [],
             );
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
                 NTT4x30Avx512<R>,
                 RayonTaskExecutor,
             >(

@@ -28,7 +28,7 @@
 //!
 //! # Algorithm
 //!
-//! Identical to the scalar reference in [`poulpy_cpu_portable::kernels::ntt4x30::ntt`].
+//! Identical to the portable scalar implementation in [`poulpy_cpu_portable::kernels::ntt4x30::ntt`].
 //! The inner loops operate on 4 primes per coefficient (256-bit) and on 2
 //! coefficients in parallel (512-bit) where the butterfly shape allows it.
 //!

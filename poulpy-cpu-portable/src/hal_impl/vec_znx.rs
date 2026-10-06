@@ -160,7 +160,7 @@ macro_rules! hal_impl_vec_znx_ci {
             a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            $crate::kernels::vec_znx::vec_znx_ci_embed::<Self>(res, res_col, a, a_col)
+            $crate::kernels::vec_znx::vec_znx_ci_embed_portable::<Self>(res, res_col, a, a_col)
         }
 
         fn vec_znx_ci_trace(
@@ -170,7 +170,7 @@ macro_rules! hal_impl_vec_znx_ci {
             a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            $crate::kernels::vec_znx::vec_znx_ci_trace::<Self>(res, res_col, a, a_col)
+            $crate::kernels::vec_znx::vec_znx_ci_trace_portable::<Self>(res, res_col, a, a_col)
         }
     };
 }

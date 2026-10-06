@@ -3,7 +3,7 @@
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
-        conjugate_invariant::build_ntt4x30_automorphism_plan,
+        conjugate_invariant::build_ntt4x30_automorphism_plan_portable,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
         vec_znx_dft::NttAutomorphismPlan,
@@ -55,7 +55,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Neon<Conju
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -74,6 +74,6 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Neon<Co
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

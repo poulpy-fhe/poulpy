@@ -2,7 +2,7 @@
 
 use crate::kernels::ntt4x30::I128NormalizeOps;
 
-use crate::kernels::znx::{get_digit_i64, znx_extract_digit_addmul_normalize_i128_portable};
+use crate::kernels::znx::{get_digit_i64_portable, znx_extract_digit_addmul_normalize_i128_portable};
 
 pub fn test_i128_normalize_fused<BE: I128NormalizeOps>() {
     test_boundary_kernels::<BE>();
@@ -36,7 +36,7 @@ pub fn test_i128_normalize_fused<BE: I128NormalizeOps>() {
                     if res_base2k == 1 {
                         0
                     } else {
-                        get_digit_i64(res_base2k - 1, v as i64)
+                        get_digit_i64_portable(res_base2k - 1, v as i64)
                     }
                 })
                 .collect();

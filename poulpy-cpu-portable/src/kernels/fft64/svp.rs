@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-pub fn svp_prepare<'r, 'a, BE>(
+pub fn svp_prepare_portable<'r, 'a, BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,
@@ -22,7 +22,7 @@ pub fn svp_prepare<'r, 'a, BE>(
     BE::fft64_forward(plan, res.at_mut(res_col, 0));
 }
 
-pub fn svp_apply_dft_to_dft<'r, 'a, BE>(
+pub fn svp_apply_dft_to_dft_portable<'r, 'a, BE>(
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,
@@ -48,7 +48,7 @@ pub fn svp_apply_dft_to_dft<'r, 'a, BE>(
     }
 }
 
-pub fn svp_apply_dft_to_dft_assign<'r, 'a, BE>(
+pub fn svp_apply_dft_to_dft_assign_portable<'r, 'a, BE>(
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
     a: &SvpPPolBackendRef<'a, BE>,

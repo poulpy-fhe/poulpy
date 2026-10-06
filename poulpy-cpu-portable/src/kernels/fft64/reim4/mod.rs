@@ -104,7 +104,7 @@ pub trait Reim4Convolution {
     /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
     /// column of a multi-column (column-interleaved) one. `b_log_gap` is
     /// `log2(N / n)` for a degree-`n` right operand (zero when dense): its block
-    /// rows are gathered through [`reim4_gather_sparse_block`]. `a` takes the
+    /// rows are gathered through [`reim4_gather_sparse_block_portable`]. `a` takes the
     /// module degree. `tmp` holds at least `8 * (b_size + min_size)` f64.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply(
@@ -130,7 +130,7 @@ pub trait Reim4Convolution {
             let b_blk: &[f64] = if b_log_gap == 0 {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
                 &*tmp_b
             };
             Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -167,7 +167,7 @@ pub trait Reim4Convolution {
             let b_blk: &[f64] = if b_log_gap == 0 {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
                 &*tmp_b
             };
             Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -183,7 +183,7 @@ pub trait Reim4Convolution {
     /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
     /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched. `tmp` holds
     /// at least `8 * (b_size + min_size)` f64, sized by the caller's
-    /// [`convolution_apply_dft_tmp_bytes`](super::convolution::convolution_apply_dft_tmp_bytes).
+    /// [`convolution_apply_dft_tmp_bytes_portable`](super::convolution::convolution_apply_dft_tmp_bytes_portable).
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply_accumulate(
         m: usize,
@@ -208,7 +208,7 @@ pub trait Reim4Convolution {
             let b_blk: &[f64] = if b_log_gap == 0 {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
                 &*tmp_b
             };
             Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -247,7 +247,7 @@ pub trait Reim4Convolution {
             let b_blk: &[f64] = if b_log_gap == 0 {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
                 &*tmp_b
             };
             Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -266,7 +266,7 @@ pub trait Reim4Convolution {
     /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
     /// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand (zero when
     /// dense): its block rows are summed through
-    /// [`reim4_gather_sparse_block_sum`]. `a0` and `a1` take the module degree.
+    /// [`reim4_gather_sparse_block_sum_portable`]. `a0` and `a1` take the module degree.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_pairwise_apply(
         m: usize,
@@ -299,7 +299,7 @@ pub trait Reim4Convolution {
                     &b1[blk_i * b_row..(blk_i + 1) * b_row],
                 );
             } else {
-                reim4_gather_sparse_block_sum(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
             }
             Self::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
             for k in 0..min_size {
@@ -343,7 +343,7 @@ pub trait Reim4Convolution {
                     &b1[blk_i * b_row..(blk_i + 1) * b_row],
                 );
             } else {
-                reim4_gather_sparse_block_sum(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
             }
             Self::reim4_real_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
             for k in 0..min_size {

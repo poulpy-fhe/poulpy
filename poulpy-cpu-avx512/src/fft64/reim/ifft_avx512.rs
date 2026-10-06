@@ -28,7 +28,7 @@ const IFFT_RECURSION_CUTOFF: usize = 2048;
 
 #[target_feature(enable = "avx512f")]
 pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
-    // m <= 16 falls through to the reference implementation: it is too small
+    // m <= 16 falls through to the portable implementation: it is too small
     // for the AVX-512 base case (`ifft16x2_avx512` processes 2 blocks per
     // call, so it needs m >= 32). For m >= 32, the BFS dispatcher always
     // produces an even number of IFFT16 blocks and uses `ifft16x2_avx512`.

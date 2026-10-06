@@ -1051,13 +1051,15 @@ where
     ) {
         let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
-                plan, res, res_col, a, a_col,
-            );
+            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add_portable::<
+                Self,
+                SerialTaskExecutor,
+            >(plan, res, res_col, a, a_col);
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, RayonTaskExecutor>(
-                plan, res, res_col, a, a_col,
-            );
+            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add_portable::<
+                Self,
+                RayonTaskExecutor,
+            >(plan, res, res_col, a, a_col);
         }
     }
 }

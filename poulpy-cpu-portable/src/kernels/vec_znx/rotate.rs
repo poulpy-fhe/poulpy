@@ -5,11 +5,11 @@ use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_rotate_assign_tmp_bytes(n: usize) -> usize {
+pub fn vec_znx_rotate_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_rotate<'r, 'a, BE>(
+pub fn vec_znx_rotate_portable<'r, 'a, BE>(
     p: i64,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
@@ -40,7 +40,7 @@ pub fn vec_znx_rotate<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_rotate_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
+pub fn vec_znx_rotate_assign_portable<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
 where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,

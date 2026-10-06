@@ -10,7 +10,7 @@ use poulpy_cpu_portable::kernels::znx::{
     ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
     ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
     ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
-    znx_copy_portable, znx_rotate, znx_zero_portable,
+    znx_copy_portable, znx_rotate_portable, znx_zero_portable,
 };
 
 use poulpy_hal::layouts::Ring;
@@ -106,7 +106,7 @@ impl<R: Ring> ZnxNegateAssign for NTT4x30Avx512<R> {
 impl<R: Ring> ZnxRotate for NTT4x30Avx512<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 

@@ -1,7 +1,7 @@
 //! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`NTT4x30Portable`](super::NTT4x30Portable).
 //!
 //! Implements the `Znx*` traits from `crate::kernels::znx`. All implementations
-//! delegate to the same `_ref` functions as `poulpy-cpu-portable` — these operate on plain
+//! delegate to the shared `_portable` kernels, which operate on plain
 //! `&[i64]` slices, which are backend-independent.
 
 use super::NTT4x30Portable;
@@ -18,7 +18,7 @@ use crate::kernels::znx::{
     znx_normalize_digit_portable, znx_normalize_final_step_assign_portable, znx_normalize_final_step_portable,
     znx_normalize_first_step_assign_portable, znx_normalize_first_step_carry_only_portable, znx_normalize_first_step_portable,
     znx_normalize_middle_step_assign_portable, znx_normalize_middle_step_carry_only_portable, znx_normalize_middle_step_portable,
-    znx_rotate, znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable,
+    znx_rotate_portable, znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable,
     znx_zero_portable,
 };
 
@@ -133,7 +133,7 @@ impl<R: Ring> ZnxNegateAssign for NTT4x30Portable<R> {
 impl<R: Ring> ZnxRotate for NTT4x30Portable<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 

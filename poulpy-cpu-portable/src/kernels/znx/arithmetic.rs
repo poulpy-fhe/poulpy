@@ -19,7 +19,7 @@ use crate::kernels::znx::{
     switch_ring::znx_switch_ring_portable,
     zero::znx_zero_portable,
     znx_extract_digit_addmul_portable, znx_mul_add_power_of_two_portable, znx_mul_power_of_two_assign_portable,
-    znx_mul_power_of_two_portable, znx_normalize_digit_portable, znx_rotate,
+    znx_mul_power_of_two_portable, znx_normalize_digit_portable, znx_rotate_portable,
 };
 
 pub struct ZnxPortable {}
@@ -34,7 +34,7 @@ impl ZnxAdd for ZnxPortable {
 impl ZnxRotate for ZnxPortable {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 

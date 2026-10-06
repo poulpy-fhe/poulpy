@@ -6,10 +6,11 @@ use std::mem::size_of;
 use crate::kernels::{
     fft64::{
         convolution::{
-            I64Ops, convolution_apply_dft, convolution_apply_dft_add, convolution_apply_dft_tmp_bytes,
-            convolution_by_const_apply, convolution_by_const_apply_add, convolution_by_const_apply_tmp_bytes,
-            convolution_pairwise_apply_dft, convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left,
-            convolution_prepare_right, convolution_prepare_self,
+            I64Ops, convolution_apply_dft_add_portable, convolution_apply_dft_portable, convolution_apply_dft_tmp_bytes_portable,
+            convolution_by_const_apply_add_portable, convolution_by_const_apply_portable,
+            convolution_by_const_apply_tmp_bytes_portable, convolution_pairwise_apply_dft_portable,
+            convolution_pairwise_apply_dft_tmp_bytes_portable, convolution_prepare_left_portable,
+            convolution_prepare_right_portable, convolution_prepare_self_portable,
         },
         module::FFTModuleHandle,
         reim::ReimArith,
@@ -18,12 +19,14 @@ use crate::kernels::{
     ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            CNV_ACC_GROUP, ntt4x30_cnv_apply_dft, ntt4x30_cnv_apply_dft_add, ntt4x30_cnv_apply_dft_sum,
-            ntt4x30_cnv_apply_dft_sum_tmp_bytes, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
-            ntt4x30_cnv_by_const_apply_add, ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft,
-            ntt4x30_cnv_pairwise_apply_dft_tmp_bytes, ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes,
-            ntt4x30_cnv_prepare_right, ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self,
-            ntt4x30_cnv_prepare_self_tmp_bytes,
+            CNV_ACC_GROUP, ntt4x30_cnv_apply_dft_add_portable, ntt4x30_cnv_apply_dft_portable,
+            ntt4x30_cnv_apply_dft_sum_portable, ntt4x30_cnv_apply_dft_sum_tmp_bytes_portable,
+            ntt4x30_cnv_apply_dft_tmp_bytes_portable, ntt4x30_cnv_by_const_apply_add_portable,
+            ntt4x30_cnv_by_const_apply_portable, ntt4x30_cnv_by_const_apply_tmp_bytes_portable,
+            ntt4x30_cnv_pairwise_apply_dft_portable, ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable,
+            ntt4x30_cnv_prepare_left_portable, ntt4x30_cnv_prepare_left_tmp_bytes_portable, ntt4x30_cnv_prepare_right_portable,
+            ntt4x30_cnv_prepare_right_tmp_bytes_portable, ntt4x30_cnv_prepare_self_portable,
+            ntt4x30_cnv_prepare_self_tmp_bytes_portable,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -97,7 +100,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
+        convolution_prepare_left_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -125,7 +128,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
+        convolution_prepare_right_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -138,7 +141,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(module.n()) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(module.n()) * convolution_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -151,7 +154,7 @@ where
     where
         Self: Backend<BigWord = i64, ZnxWord = i64>,
     {
-        convolution_by_const_apply_tmp_bytes(res_size, a_size, b_size)
+        convolution_by_const_apply_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -174,9 +177,9 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = convolution_by_const_apply_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -199,9 +202,9 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = convolution_by_const_apply_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply_add::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -223,10 +226,10 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        convolution_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -248,10 +251,10 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_add::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        convolution_apply_dft_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -264,7 +267,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        reim4_block_workers::<Self>(module.n()) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<Self>(module.n()) * convolution_pairwise_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -286,10 +289,10 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = convolution_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_pairwise_apply_dft::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
+        convolution_pairwise_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_prepare_self_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -319,7 +322,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self::<Self>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);
+        convolution_prepare_self_portable::<Self>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);
     }
 }
 
@@ -359,7 +362,8 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE)) * ntt4x30_cnv_prepare_left_tmp_bytes(module.n())
+        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
+            * ntt4x30_cnv_prepare_left_tmp_bytes_portable(module.n())
     }
 
     fn cnv_prepare_left_default(
@@ -377,18 +381,19 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes(res.n());
+        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes_portable(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_left::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_prepare_left_portable::<Self>(module, res, a, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE)) * ntt4x30_cnv_prepare_right_tmp_bytes(module.n())
+        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
+            * ntt4x30_cnv_prepare_right_tmp_bytes_portable(module.n())
     }
 
     fn cnv_prepare_right_default(
@@ -406,11 +411,11 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes(res.n());
+        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes_portable(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_cnv_prepare_right::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_prepare_right_portable::<Self>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -423,7 +428,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -436,7 +441,7 @@ where
     where
         Self: Backend<BigWord = i128, DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_by_const_apply_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_by_const_apply_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -459,9 +464,9 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
+        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes_portable(0, 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+        ntt4x30_cnv_by_const_apply_portable::<Self, SerialTaskExecutor>(
             cnv_offset,
             &mut res_ref,
             res_col,
@@ -494,9 +499,9 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
+        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes_portable(0, 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+        ntt4x30_cnv_by_const_apply_add_portable::<Self, SerialTaskExecutor>(
             cnv_offset,
             &mut res_ref,
             res_col,
@@ -529,10 +534,10 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -555,10 +560,10 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_add::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_add_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_apply_dft_sum_tmp_bytes_default(
@@ -571,7 +576,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_apply_dft_sum_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     fn cnv_apply_dft_sum_default<R>(
@@ -590,9 +595,9 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_ref.size(), 0, 0);
+        let bytes = ntt4x30_cnv_apply_dft_sum_tmp_bytes_portable(res_ref.size(), 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_sum::<Self>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
+        ntt4x30_cnv_apply_dft_sum_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -605,7 +610,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<Self>(_module.n()) * ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -628,17 +633,18 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_pairwise_apply_dft::<Self>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
+        ntt4x30_cnv_pairwise_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_prepare_self_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE)) * ntt4x30_cnv_prepare_self_tmp_bytes(module.n())
+        scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
+            * ntt4x30_cnv_prepare_self_tmp_bytes_portable(module.n())
     }
 
     fn cnv_prepare_self_default(
@@ -658,11 +664,11 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes(left.n());
+        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes_portable(left.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(left.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_self::<Self>(module, left, right, a, tmp);
+        ntt4x30_cnv_prepare_self_portable::<Self>(module, left, right, a, tmp);
     }
 }
 

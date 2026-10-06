@@ -4,9 +4,10 @@ use crate::layouts::VecZnxBigBackendRef;
 use crate::{
     kernels::{
         vec_znx::{
-            vec_znx_add, vec_znx_add_assign, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
-            vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
-            vec_znx_sub_negate_assign,
+            vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
+            vec_znx_automorphism_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_normalize_portable,
+            vec_znx_normalize_tmp_bytes_portable, vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable,
+            vec_znx_sub_portable,
         },
         znx::{
             I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
@@ -38,7 +39,7 @@ where
     VecZnx::from_shape(v.data, shape)
 }
 
-pub fn vec_znx_big_add<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_add_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -50,10 +51,10 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
-    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
+    vec_znx_add_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
 }
 
-pub fn vec_znx_big_add_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_add_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -63,10 +64,10 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_add_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_add_assign_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_add_small_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -78,10 +79,10 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_ref = b.to_backend_ref();
-    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
+    vec_znx_add_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
 }
 
-pub fn vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_add_small_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -91,14 +92,14 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_ref = a.to_backend_ref();
-    vec_znx_add_assign::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
+    vec_znx_add_assign_portable::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
 }
 
-pub fn vec_znx_big_automorphism_assign_tmp_bytes(n: usize) -> usize {
+pub fn vec_znx_big_automorphism_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_big_automorphism<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_automorphism_portable<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -108,20 +109,20 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_automorphism::<BE>(p, &mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_automorphism_portable::<BE>(p, &mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_automorphism_assign<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
+pub fn vec_znx_big_automorphism_assign_portable<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism + ZnxCopy,
     for<'a> BE::BufMut<'a>: HostDataMut,
     R: VecZnxBigToBackendMut<BE>,
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
-    vec_znx_automorphism_assign::<BE>(p, &mut res_vznx, res_col, tmp);
+    vec_znx_automorphism_assign_portable::<BE>(p, &mut res_vznx, res_col, tmp);
 }
 
-pub fn vec_znx_big_negate<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_negate_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxNegate + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -131,25 +132,25 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_negate::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_negate_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_negate_assign<R, BE>(res: &mut R, res_col: usize)
+pub fn vec_znx_big_negate_assign_portable<R, BE>(res: &mut R, res_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxNegateAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
     R: VecZnxBigToBackendMut<BE>,
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
-    vec_znx_negate_assign::<BE>(&mut res_vznx, res_col);
+    vec_znx_negate_assign_portable::<BE>(&mut res_vznx, res_col);
 }
 
-pub fn vec_znx_big_normalize_tmp_bytes(n: usize) -> usize {
-    vec_znx_normalize_tmp_bytes(n)
+pub fn vec_znx_big_normalize_tmp_bytes_portable(n: usize) -> usize {
+    vec_znx_normalize_tmp_bytes_portable(n)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn vec_znx_big_normalize<R, A, BE>(
+pub fn vec_znx_big_normalize_portable<R, A, BE>(
     res: &mut R,
     res_base2k: usize,
     res_k: usize,
@@ -181,7 +182,7 @@ pub fn vec_znx_big_normalize<R, A, BE>(
 {
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let mut res_ref = res.to_backend_mut();
-    vec_znx_normalize::<BE>(
+    vec_znx_normalize_portable::<BE>(
         &mut res_ref,
         res_base2k,
         res_k,
@@ -220,7 +221,7 @@ pub fn vec_znx_big_add_normal_portable<R, B>(
 }
 
 /// R <- A - B
-pub fn vec_znx_big_sub<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_sub_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -232,11 +233,11 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
-    vec_znx_sub::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
+    vec_znx_sub_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
 }
 
 /// R <- A - B
-pub fn vec_znx_big_sub_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_sub_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -246,11 +247,11 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_sub_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_sub_assign_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
 /// R <- B - A
-pub fn vec_znx_big_sub_negate_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_sub_negate_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -260,11 +261,11 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_sub_negate_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_sub_negate_assign_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
 /// R <- A - B
-pub fn vec_znx_big_sub_small_a<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_sub_small_a_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -276,11 +277,11 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
     let a_ref = a.to_backend_ref();
-    vec_znx_sub::<BE>(&mut res_vznx, res_col, &a_ref, a_col, &b_vznx, b_col);
+    vec_znx_sub_portable::<BE>(&mut res_vznx, res_col, &a_ref, a_col, &b_vznx, b_col);
 }
 
 /// R <- A - B
-pub fn vec_znx_big_sub_small_b<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_sub_small_b_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -292,11 +293,11 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_ref = b.to_backend_ref();
-    vec_znx_sub::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
+    vec_znx_sub_portable::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
 }
 
 ///  R <- R - A
-pub fn vec_znx_big_sub_small_a_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_sub_small_a_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -306,11 +307,11 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_ref = a.to_backend_ref();
-    vec_znx_sub_assign::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
+    vec_znx_sub_assign_portable::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
 }
 
 /// R <- A - R
-pub fn vec_znx_big_sub_small_b_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_big_sub_small_b_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -320,5 +321,5 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_ref = a.to_backend_ref();
-    vec_znx_sub_negate_assign::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
+    vec_znx_sub_negate_assign_portable::<BE>(&mut res_vznx, res_col, &a_ref, a_col);
 }

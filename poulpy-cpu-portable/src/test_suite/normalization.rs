@@ -149,7 +149,11 @@ where
                 assert_eq!((&r, &rs), (&b, &bs), "extract overwrite k={k}, lsh={lsh}, n={n}");
                 for overwrite in [false, true] {
                     for (i, value) in r.iter_mut().enumerate() {
-                        *value = if overwrite || k == 1 { 0 } else { get_digit_i64(k - 1, a[i]) };
+                        *value = if overwrite || k == 1 {
+                            0
+                        } else {
+                            get_digit_i64_portable(k - 1, a[i])
+                        };
                     }
                     b.copy_from_slice(&r);
                     if overwrite {

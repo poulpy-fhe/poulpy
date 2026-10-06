@@ -18,7 +18,7 @@ use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_portable::kernels::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_portable::kernels::vmp_select::assert_extractable;
+use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
@@ -764,7 +764,7 @@ pub(crate) fn vmp_extract_selected_rows_avx512_pm<R: Ring>(
     first_row: usize,
     row_step: usize,
 ) {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();

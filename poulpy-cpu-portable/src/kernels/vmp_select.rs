@@ -14,7 +14,7 @@ use crate::layouts::{Backend, VmpPMatBackendMut, VmpPMatBackendRef};
 ///
 /// Every kernel entry point calls it first, so the kernel may index without
 /// bounds checks in release.
-pub fn assert_extractable<BE: Backend>(
+pub fn assert_extractable_portable<BE: Backend>(
     res: &VmpPMatBackendMut<'_, BE>,
     a: &VmpPMatBackendRef<'_, BE>,
     first_row: usize,
@@ -73,7 +73,7 @@ fn cell_offset(nrows: usize, ncols: usize, row: usize, col: usize, cell: usize) 
 /// step of `s` is a flat row step of `s * cols_in`. Reads touch only the
 /// selected cells.
 #[allow(clippy::too_many_arguments)]
-pub fn vmp_extract_selected_rows_core<T: Copy>(
+pub fn vmp_extract_selected_rows_core_portable<T: Copy>(
     res: &mut [T],
     res_rows: usize,
     res_ncols: usize,

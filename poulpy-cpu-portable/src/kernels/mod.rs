@@ -1,9 +1,13 @@
-//! Pure-Rust reference implementations of all polynomial operations.
+//! Portable production implementations of polynomial operations.
 //!
 //! Contains scalar polynomial arithmetic (`znx`), vector-level operations
-//! (`vec_znx`), and an FFT64 implementation (`fft64`). Used as a
-//! correctness oracle for backend testing via the
-//! [`poulpy_hal::test_suite`] module.
+//! (`vec_znx`), and FFT64 and NTT4x30 kernels shared by the portable and SIMD
+//! backends. Independent correctness oracles live in `poulpy-cpu-oracle`.
+//!
+//! Every exported free kernel function uses the `_portable` suffix, including
+//! generic compositions, table builders, and scratch-size queries. Backend
+//! trait methods retain their contract names, and inherent methods on plans
+//! and tables retain their type-scoped names.
 
 pub mod fft64;
 pub mod normalization;
@@ -16,7 +20,7 @@ pub mod vmp_select;
 /// zero for a dense operand. A sparse operand needs a power-of-two degree that
 /// divides `N` and is at least 8, the CPU block floor (spec 4.5, #266). Asserted
 /// once, at kernel entry; the kernels' loops then index on it without checks.
-pub fn sparse_log_gap(module_n: usize, n: usize) -> usize {
+pub fn sparse_log_gap_portable(module_n: usize, n: usize) -> usize {
     if n == module_n {
         return 0;
     }

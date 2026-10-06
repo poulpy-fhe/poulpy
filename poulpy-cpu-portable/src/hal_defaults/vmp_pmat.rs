@@ -10,10 +10,10 @@ use crate::kernels::{
         reim::ReimArith,
         reim4::Reim4BlkMatVec,
         vmp::{
-            vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
-            vmp_apply_dft_to_dft_with_kernel as fft64_vmp_apply_dft_to_dft_with_kernel,
-            vmp_extract_selected_rows as fft64_vmp_extract_selected_rows, vmp_prepare as fft64_vmp_prepare,
-            vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes, vmp_zero as fft64_vmp_zero,
+            vmp_apply_dft_to_dft_tmp_bytes_portable as fft64_vmp_apply_dft_to_dft_tmp_bytes,
+            vmp_apply_dft_to_dft_with_kernel_portable as fft64_vmp_apply_dft_to_dft_with_kernel,
+            vmp_extract_selected_rows_portable as fft64_vmp_extract_selected_rows, vmp_prepare_portable as fft64_vmp_prepare,
+            vmp_prepare_tmp_bytes_portable as fft64_vmp_prepare_tmp_bytes, vmp_zero_portable as fft64_vmp_zero,
         },
     },
     ntt4x30::{
@@ -23,8 +23,9 @@ use crate::kernels::{
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
         vmp::{
-            ntt4x30_vmp_apply_dft_to_dft, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes, ntt4x30_vmp_extract_selected_rows,
-            ntt4x30_vmp_prepare, ntt4x30_vmp_prepare_tmp_bytes, ntt4x30_vmp_zero,
+            ntt4x30_vmp_apply_dft_to_dft_portable, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable,
+            ntt4x30_vmp_extract_selected_rows_portable, ntt4x30_vmp_prepare_portable, ntt4x30_vmp_prepare_tmp_bytes_portable,
+            ntt4x30_vmp_zero_portable,
         },
     },
 };
@@ -243,7 +244,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_vmp_prepare_tmp_bytes(module.n())
+        ntt4x30_vmp_prepare_tmp_bytes_portable(module.n())
     }
 
     fn vmp_prepare_default(
@@ -261,9 +262,9 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_vmp_prepare_tmp_bytes(res.n());
+        let bytes = ntt4x30_vmp_prepare_tmp_bytes_portable(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_vmp_prepare::<Self>(module, res, a, tmp);
+        ntt4x30_vmp_prepare_portable::<Self>(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -278,7 +279,7 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+        ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_default(
@@ -295,9 +296,9 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let bytes = ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_vmp_apply_dft_to_dft::<Self>(module, res, a, b, limb_offset, tmp);
+        ntt4x30_vmp_apply_dft_to_dft_portable::<Self>(module, res, a, b, limb_offset, tmp);
     }
 
     fn vmp_extract_selected_rows_default(
@@ -310,14 +311,14 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt4x30_vmp_extract_selected_rows::<Self>(res, a, first_row, row_step);
+        ntt4x30_vmp_extract_selected_rows_portable::<Self>(res, a, first_row, row_step);
     }
 
     fn vmp_zero_default(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>)
     where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
-        ntt4x30_vmp_zero::<Self>(res);
+        ntt4x30_vmp_zero_portable::<Self>(res);
     }
 }
 

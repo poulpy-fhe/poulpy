@@ -902,7 +902,7 @@ mod tests {
     }
 
     use poulpy_cpu_portable::kernels::znx::{
-        get_carry_i64, get_digit_i64, znx_extract_digit_addmul_portable, znx_normalize_digit_portable,
+        get_carry_i64_portable, get_digit_i64_portable, znx_extract_digit_addmul_portable, znx_normalize_digit_portable,
         znx_normalize_final_step_assign_portable, znx_normalize_final_step_portable, znx_normalize_first_step_assign_portable,
         znx_normalize_first_step_portable, znx_normalize_middle_step_assign_portable, znx_normalize_middle_step_portable,
     };
@@ -923,10 +923,10 @@ mod tests {
             -4835376105455195188,
         ];
         let y0: Vec<i64> = vec![
-            get_digit_i64(base2k, x[0]),
-            get_digit_i64(base2k, x[1]),
-            get_digit_i64(base2k, x[2]),
-            get_digit_i64(base2k, x[3]),
+            get_digit_i64_portable(base2k, x[0]),
+            get_digit_i64_portable(base2k, x[1]),
+            get_digit_i64_portable(base2k, x[2]),
+            get_digit_i64_portable(base2k, x[3]),
         ];
         let mut y1: Vec<i64> = vec![0i64; 4];
         unsafe {
@@ -962,10 +962,10 @@ mod tests {
         ];
         let carry: [i64; 4] = [1174467039, -144794816, -1466676977, 513122840];
         let y0: Vec<i64> = vec![
-            get_carry_i64(base2k, x[0], carry[0]),
-            get_carry_i64(base2k, x[1], carry[1]),
-            get_carry_i64(base2k, x[2], carry[2]),
-            get_carry_i64(base2k, x[3], carry[3]),
+            get_carry_i64_portable(base2k, x[0], carry[0]),
+            get_carry_i64_portable(base2k, x[1], carry[1]),
+            get_carry_i64_portable(base2k, x[2], carry[2]),
+            get_carry_i64_portable(base2k, x[3], carry[3]),
         ];
         let mut y1: Vec<i64> = vec![0i64; 4];
         unsafe {

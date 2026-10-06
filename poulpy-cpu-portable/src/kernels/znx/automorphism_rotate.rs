@@ -36,7 +36,7 @@ pub fn znx_automorphism_rotate_portable(p: i64, k: i64, res: &mut [i64], a: &[i6
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernels::znx::{ZnxPortable, standard::znx_automorphism_portable, znx_rotate};
+    use crate::kernels::znx::{ZnxPortable, standard::znx_automorphism_portable, znx_rotate_portable};
 
     /// The fused kernel must equal an automorphism by `p` followed by a rotation
     /// by `k` (two separate passes).
@@ -53,7 +53,7 @@ mod tests {
                 let mut auto: Vec<i64> = vec![0; n];
                 znx_automorphism_portable(p, &mut auto, &a);
                 let mut compose: Vec<i64> = vec![0; n];
-                znx_rotate::<ZnxPortable>(k, &mut compose, &auto);
+                znx_rotate_portable::<ZnxPortable>(k, &mut compose, &auto);
 
                 assert_eq!(fused, compose, "mismatch for p={p}, k={k}");
             }

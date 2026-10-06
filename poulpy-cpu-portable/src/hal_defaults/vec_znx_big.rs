@@ -10,31 +10,37 @@ use std::{
 
 use crate::kernels::{
     fft64::vec_znx_big::{
-        vec_znx_big_add as fft64_vec_znx_big_add, vec_znx_big_add_assign as fft64_vec_znx_big_add_assign,
-        vec_znx_big_add_small as fft64_vec_znx_big_add_small, vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
-        vec_znx_big_automorphism as fft64_vec_znx_big_automorphism,
-        vec_znx_big_automorphism_assign as fft64_vec_znx_big_automorphism_assign,
-        vec_znx_big_automorphism_assign_tmp_bytes as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
-        vec_znx_big_negate as fft64_vec_znx_big_negate, vec_znx_big_negate_assign as fft64_vec_znx_big_negate_assign,
-        vec_znx_big_normalize as fft64_vec_znx_big_normalize,
-        vec_znx_big_normalize_tmp_bytes as fft64_vec_znx_big_normalize_tmp_bytes, vec_znx_big_sub as fft64_vec_znx_big_sub,
-        vec_znx_big_sub_assign as fft64_vec_znx_big_sub_assign,
-        vec_znx_big_sub_negate_assign as fft64_vec_znx_big_sub_negate_assign,
-        vec_znx_big_sub_small_a as fft64_vec_znx_big_sub_small_a,
-        vec_znx_big_sub_small_a_assign as fft64_vec_znx_big_sub_small_a_assign,
-        vec_znx_big_sub_small_b as fft64_vec_znx_big_sub_small_b,
-        vec_znx_big_sub_small_b_assign as fft64_vec_znx_big_sub_small_b_assign,
+        vec_znx_big_add_assign_portable as fft64_vec_znx_big_add_assign, vec_znx_big_add_portable as fft64_vec_znx_big_add,
+        vec_znx_big_add_small_assign_portable as fft64_vec_znx_big_add_small_assign,
+        vec_znx_big_add_small_portable as fft64_vec_znx_big_add_small,
+        vec_znx_big_automorphism_assign_portable as fft64_vec_znx_big_automorphism_assign,
+        vec_znx_big_automorphism_assign_tmp_bytes_portable as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
+        vec_znx_big_automorphism_portable as fft64_vec_znx_big_automorphism,
+        vec_znx_big_negate_assign_portable as fft64_vec_znx_big_negate_assign,
+        vec_znx_big_negate_portable as fft64_vec_znx_big_negate, vec_znx_big_normalize_portable as fft64_vec_znx_big_normalize,
+        vec_znx_big_normalize_tmp_bytes_portable as fft64_vec_znx_big_normalize_tmp_bytes,
+        vec_znx_big_sub_assign_portable as fft64_vec_znx_big_sub_assign,
+        vec_znx_big_sub_negate_assign_portable as fft64_vec_znx_big_sub_negate_assign,
+        vec_znx_big_sub_portable as fft64_vec_znx_big_sub,
+        vec_znx_big_sub_small_a_assign_portable as fft64_vec_znx_big_sub_small_a_assign,
+        vec_znx_big_sub_small_a_portable as fft64_vec_znx_big_sub_small_a,
+        vec_znx_big_sub_small_b_assign_portable as fft64_vec_znx_big_sub_small_b_assign,
+        vec_znx_big_sub_small_b_portable as fft64_vec_znx_big_sub_small_b,
     },
     ntt4x30::vec_znx_big::{
-        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign, ntt4x30_vec_znx_big_add_small,
-        ntt4x30_vec_znx_big_add_small_assign, ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
-        ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes, ntt4x30_vec_znx_big_from_small, ntt4x30_vec_znx_big_negate,
-        ntt4x30_vec_znx_big_negate_assign, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_add_assign,
-        ntt4x30_vec_znx_big_normalize_sub_assign, ntt4x30_vec_znx_big_normalize_tmp_bytes, ntt4x30_vec_znx_big_sub,
-        ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign, ntt4x30_vec_znx_big_sub_small_a,
-        ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b, ntt4x30_vec_znx_big_sub_small_negate_assign,
+        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add_assign_portable, ntt4x30_vec_znx_big_add_portable,
+        ntt4x30_vec_znx_big_add_small_assign_portable, ntt4x30_vec_znx_big_add_small_portable,
+        ntt4x30_vec_znx_big_automorphism_assign_portable, ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable,
+        ntt4x30_vec_znx_big_automorphism_portable, ntt4x30_vec_znx_big_from_small_portable,
+        ntt4x30_vec_znx_big_negate_assign_portable, ntt4x30_vec_znx_big_negate_portable,
+        ntt4x30_vec_znx_big_normalize_add_assign_portable, ntt4x30_vec_znx_big_normalize_portable,
+        ntt4x30_vec_znx_big_normalize_sub_assign_portable, ntt4x30_vec_znx_big_normalize_tmp_bytes_portable,
+        ntt4x30_vec_znx_big_sub_assign_portable, ntt4x30_vec_znx_big_sub_negate_assign_portable,
+        ntt4x30_vec_znx_big_sub_portable, ntt4x30_vec_znx_big_sub_small_a_portable,
+        ntt4x30_vec_znx_big_sub_small_assign_portable, ntt4x30_vec_znx_big_sub_small_b_portable,
+        ntt4x30_vec_znx_big_sub_small_negate_assign_portable,
     },
-    vec_znx::vec_znx_from_small_mixed,
+    vec_znx::vec_znx_from_small_mixed_portable,
     znx::{
         I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
         ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
@@ -203,7 +209,7 @@ where
         let a: VecZnx<&[u8], i64> = vec_znx_backend_ref_as_host_ref::<Self>(a);
 
         if a.n() != res.n() {
-            return vec_znx_from_small_mixed(&mut res, res_col, &a, a_col);
+            return vec_znx_from_small_mixed_portable(&mut res, res_col, &a, a_col);
         }
 
         let res_size = res.size();
@@ -550,7 +556,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_from_small::<_, _, Self>(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_from_small_portable::<_, _, Self>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_add_default<R, A, C>(
@@ -568,7 +574,7 @@ where
         A: VecZnxBigToBackendRef<Self>,
         C: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_add::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_add_portable::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -577,7 +583,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_add_assign::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_add_assign_portable::<_, _, Self>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
@@ -597,7 +603,7 @@ where
         A: VecZnxBigToBackendRef<Self>,
     {
         let b = vec_znx_backend_ref_as_host_ref::<Self>(b);
-        ntt4x30_vec_znx_big_add_small::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        ntt4x30_vec_znx_big_add_small_portable::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_add_small_assign_default<R>(
@@ -612,7 +618,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_default<R, A, C>(
@@ -629,7 +635,7 @@ where
         A: VecZnxBigToBackendRef<Self>,
         C: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_sub::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_sub_portable::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -638,7 +644,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_sub_assign::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_assign_portable::<_, _, Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -647,7 +653,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_sub_negate_assign::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_negate_assign_portable::<_, _, Self>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
@@ -667,7 +673,7 @@ where
         C: VecZnxBigToBackendRef<Self>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_a::<_, _, _, Self>(res, res_col, &a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_sub_small_a_portable::<_, _, _, Self>(res, res_col, &a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_small_assign_default<R>(
@@ -682,7 +688,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_assign::<_, _, Self>(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_sub_small_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
@@ -702,7 +708,7 @@ where
         A: VecZnxBigToBackendRef<Self>,
     {
         let b = vec_znx_backend_ref_as_host_ref::<Self>(b);
-        ntt4x30_vec_znx_big_sub_small_b::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        ntt4x30_vec_znx_big_sub_small_b_portable::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
@@ -717,7 +723,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_negate_assign::<_, _, Self>(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_sub_small_negate_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_inner_sum_default<R, A>(
@@ -778,7 +784,7 @@ where
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_negate::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_negate_portable::<_, _, Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_assign_default<R>(_module: &Module<Self>, res: &mut R, res_col: usize)
@@ -786,14 +792,14 @@ where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         R: VecZnxBigToBackendMut<Self>,
     {
-        ntt4x30_vec_znx_big_negate_assign::<_, Self>(res, res_col);
+        ntt4x30_vec_znx_big_negate_assign_portable::<_, Self>(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(module: &Module<Self>) -> usize
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
     {
-        ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n())
+        ntt4x30_vec_znx_big_normalize_tmp_bytes_portable(module.n())
     }
 
     fn vec_znx_big_normalize_default<R, A>(
@@ -816,9 +822,11 @@ where
         let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes_portable(n) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize::<_, _, Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_portable::<_, _, Self>(
+            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
+        );
     }
 
     fn vec_znx_big_normalize_add_assign_default<R, A>(
@@ -840,9 +848,11 @@ where
         let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes_portable(n) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize_add_assign::<_, _, Self>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_add_assign_portable::<_, _, Self>(
+            res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
+        );
     }
 
     fn vec_znx_big_normalize_sub_assign_default<R, A>(
@@ -864,9 +874,11 @@ where
         let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes_portable(n) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize_sub_assign::<_, _, Self>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_sub_assign_portable::<_, _, Self>(
+            res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
+        );
     }
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -875,14 +887,14 @@ where
         R: VecZnxBigToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        ntt4x30_vec_znx_big_automorphism::<_, _, Self>(k, res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_automorphism_portable::<_, _, Self>(k, res, res_col, a, a_col);
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<Self>) -> usize
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     {
-        ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
+        ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable(module.n())
     }
 
     fn vec_znx_big_automorphism_assign_default<R>(
@@ -899,9 +911,9 @@ where
         let n: usize = res.to_backend_mut().n();
         let (tmp, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable(n) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_automorphism_assign::<_, Self>(k, res, res_col, tmp);
+        ntt4x30_vec_znx_big_automorphism_assign_portable::<_, Self>(k, res, res_col, tmp);
     }
 }
 

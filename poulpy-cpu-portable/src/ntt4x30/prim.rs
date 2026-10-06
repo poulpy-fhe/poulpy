@@ -1,7 +1,7 @@
 //! Trait implementations for [`NTT4x30Portable`] — primitive NTT-domain operations.
 //!
 //! Implements all `Ntt*` traits from [`crate::kernels::ntt4x30`] for
-//! [`NTT4x30Portable`], delegating to the `*_ref` scalar functions.
+//! [`NTT4x30Portable`], delegating to the `*_portable` scalar functions.
 //!
 //! This mirrors `poulpy_cpu_portable::fft64::reim` for the FFT64 backend.
 
@@ -49,7 +49,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable<C
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
-        conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
+        conjugate_invariant::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -60,7 +60,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portabl
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
-        conjugate_invariant::build_ntt4x30_automorphism_plan(n, p)
+        conjugate_invariant::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 

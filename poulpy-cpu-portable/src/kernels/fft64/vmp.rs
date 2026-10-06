@@ -3,7 +3,7 @@ use crate::{
     kernels::{
         SendPtr,
         fft64::{module::FFT64Plan, reim::ReimArith, reim4::Reim4BlkMatVec},
-        vmp_select::{assert_extractable, vmp_extract_selected_rows_core},
+        vmp_select::{assert_extractable_portable, vmp_extract_selected_rows_core_portable},
     },
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
@@ -12,11 +12,11 @@ use crate::{
 };
 use poulpy_hal::execution::TaskExecutor;
 
-pub fn vmp_prepare_tmp_bytes(n: usize) -> usize {
+pub fn vmp_prepare_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vmp_prepare<BE>(
+pub fn vmp_prepare_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     pmat: &mut VmpPMatBackendMut<'_, BE>,
     mat: &MatZnxBackendRef<'_, BE>,
@@ -81,7 +81,7 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
         assert!(n >= 8);
         assert_eq!(mat.len(), n * nrows * ncols);
         assert_eq!(pmat.len(), n * nrows * ncols);
-        assert!(tmp.len() >= vmp_prepare_tmp_bytes(n) / size_of::<i64>())
+        assert!(tmp.len() >= vmp_prepare_tmp_bytes_portable(n) / size_of::<i64>())
     }
 
     let offset: usize = nrows * ncols * 8;
@@ -110,7 +110,7 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`.
-pub fn vmp_extract_selected_rows<BE>(
+pub fn vmp_extract_selected_rows_portable<BE>(
     res: &mut VmpPMatBackendMut<'_, BE>,
     a: &VmpPMatBackendRef<'_, BE>,
     first_row: usize,
@@ -120,11 +120,11 @@ pub fn vmp_extract_selected_rows<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_extractable(res, a, first_row, row_step);
+    assert_extractable_portable(res, a, first_row, row_step);
 
     let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
     let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 3);
-    vmp_extract_selected_rows_core(
+    vmp_extract_selected_rows_core_portable(
         res.raw_mut(),
         res_rows,
         res_ncols,
@@ -139,12 +139,12 @@ pub fn vmp_extract_selected_rows<BE>(
     );
 }
 
-pub fn vmp_apply_dft_to_dft_tmp_bytes(a_size: usize, prows: usize, pcols_in: usize) -> usize {
+pub fn vmp_apply_dft_to_dft_tmp_bytes_portable(a_size: usize, prows: usize, pcols_in: usize) -> usize {
     let row_max: usize = (a_size).min(prows);
     (16 + 8 * row_max * pcols_in) * size_of::<f64>()
 }
 
-pub fn vmp_zero<BE>(res: &mut VmpPMatBackendMut<'_, BE>)
+pub fn vmp_zero_portable<BE>(res: &mut VmpPMatBackendMut<'_, BE>)
 where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -153,7 +153,7 @@ where
 }
 
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft<BE>(
+pub fn vmp_apply_dft_to_dft_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
@@ -164,11 +164,11 @@ pub fn vmp_apply_dft_to_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_with_kernel_portable::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
+pub fn vmp_apply_dft_to_dft_with_kernel_portable<BE, KERNEL, E>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,

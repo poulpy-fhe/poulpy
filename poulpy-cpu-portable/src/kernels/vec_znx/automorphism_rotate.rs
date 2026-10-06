@@ -4,12 +4,12 @@ use crate::{
 };
 
 /// Fused automorphism + rotation on a single column: computes
-/// `res = X^k * auto(p, a)` (see [`znx_automorphism_rotate_portable`]).
+/// `res = X^k * auto(p, a)` (see [`znx_automorphism_rotate_portable`](crate::kernels::znx::znx_automorphism_rotate_portable)).
 ///
-/// Equivalent to applying [`vec_znx_automorphism`](super::vec_znx_automorphism)
-/// with `p` followed by [`vec_znx_rotate`](super::vec_znx_rotate) with `k`, but
+/// Equivalent to applying [`vec_znx_automorphism_portable`](super::vec_znx_automorphism_portable)
+/// with `p` followed by [`vec_znx_rotate_portable`](super::vec_znx_rotate_portable) with `k`, but
 /// in a single pass and without an intermediate buffer.
-pub fn vec_znx_automorphism_rotate<'r, 'a, BE>(
+pub fn vec_znx_automorphism_rotate_portable<'r, 'a, BE>(
     p: i64,
     k: i64,
     res: &mut VecZnxBackendMut<'r, BE>,

@@ -8,7 +8,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
-        conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan},
+        conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan_portable},
         ntt::{NttTable, NttTableInv},
         primes::{PrimeSetCrt4, Primes30},
         vec_znx_dft::NttAutomorphismPlan,
@@ -52,7 +52,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx512<Con
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -67,7 +67,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx512<
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        build_ntt4x30_automorphism_plan(n, p)
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 

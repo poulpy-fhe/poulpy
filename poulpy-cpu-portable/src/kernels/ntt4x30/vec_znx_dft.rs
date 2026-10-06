@@ -4,8 +4,8 @@
 //!
 //! - The [`NttModuleHandle`] trait, which exposes precomputed NTT/iNTT
 //!   tables and multiply–accumulate metadata from a module handle.
-//! - Forward (`ntt4x30_vec_znx_dft_apply`) and inverse
-//!   (`ntt4x30_vec_znx_idft_apply`, `ntt4x30_vec_znx_idft_apply_tmpa`) DFT
+//! - Forward (`ntt4x30_vec_znx_dft_apply_portable`) and inverse
+//!   (`ntt4x30_vec_znx_idft_apply_portable`, `ntt4x30_vec_znx_idft_apply_tmpa_portable`) DFT
 //!   operations.
 //! - Component-wise DFT-domain arithmetic (add, sub, negate, copy, zero).
 //!
@@ -79,7 +79,7 @@ impl<P: PrimeSetCrt4, R: Ring> NttPlanSet<P, R> {
     where
         NttPlan<P, R>: NttPlanNew,
     {
-        let max_degree = crate::kernels::ntt4x30::ntt::max_ntt_degree::<P, R>();
+        let max_degree = crate::kernels::ntt4x30::ntt::max_ntt_degree_portable::<P, R>();
         assert!(
             max_n.is_power_of_two() && max_n <= max_degree,
             "maximum ring degree must be a power of two ≤ {max_degree}, got {max_n}"
@@ -238,7 +238,7 @@ fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScala
 /// - Converts i64 coefficients to q120b with [`NttFromZnx64`],
 ///   then applies the forward NTT in-place via [`NttDFTExecute`].
 /// - Missing input limbs (out of range) are zeroed in `res`.
-pub fn ntt4x30_vec_znx_dft_apply<BE>(
+pub fn ntt4x30_vec_znx_dft_apply_portable<BE>(
     module: &Module<BE>,
     step: usize,
     offset: usize,
@@ -288,10 +288,10 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
 // Inverse DFT
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns the scratch space (in bytes) for [`ntt4x30_vec_znx_idft_apply`].
+/// Returns the scratch space (in bytes) for [`ntt4x30_vec_znx_idft_apply_portable`].
 ///
 /// Requires one q120b buffer of length `n` (4 u64 per coefficient).
-pub fn ntt4x30_vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_vec_znx_idft_apply_tmp_bytes_portable(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
@@ -303,7 +303,7 @@ pub fn ntt4x30_vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
 /// 3. CRT-reconstructs the `i128` coefficients via [`NttToZnx128`].
 ///
 /// `tmp` must hold at least `4 * n` `u64` values.
-pub fn ntt4x30_vec_znx_idft_apply<BE>(
+pub fn ntt4x30_vec_znx_idft_apply_portable<BE>(
     module: &Module<BE>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -343,9 +343,9 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
 
 /// Inverse NTT (destructive): decode `a[a_col]` into `res[res_col]`.
 ///
-/// Like [`ntt4x30_vec_znx_idft_apply`] but applies the inverse NTT
+/// Like [`ntt4x30_vec_znx_idft_apply_portable`] but applies the inverse NTT
 /// **in place** to `a`, modifying it.  Requires no scratch space.
-pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
+pub fn ntt4x30_vec_znx_idft_apply_tmpa_portable<BE>(
     module: &Module<BE>,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -383,7 +383,7 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
 // logic may still be useful as a future optimization, even though the current
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
-pub fn ntt4x30_vec_znx_idft_apply_consume<'a, BE>(
+pub fn ntt4x30_vec_znx_idft_apply_consume_portable<'a, BE>(
     module: &Module<BE>,
     mut a: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
@@ -502,7 +502,7 @@ where
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
 ///
 /// Uses lazy q120b addition; out-of-range limbs are copied or zeroed.
-pub fn ntt4x30_vec_znx_dft_add<BE>(
+pub fn ntt4x30_vec_znx_dft_add_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -554,7 +554,7 @@ pub fn ntt4x30_vec_znx_dft_add<BE>(
 }
 
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
-pub fn ntt4x30_vec_znx_dft_add_assign<BE>(
+pub fn ntt4x30_vec_znx_dft_add_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -571,7 +571,7 @@ pub fn ntt4x30_vec_znx_dft_add_assign<BE>(
 }
 
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
-pub fn ntt4x30_vec_znx_dft_sub<BE>(
+pub fn ntt4x30_vec_znx_dft_sub_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -623,7 +623,7 @@ pub fn ntt4x30_vec_znx_dft_sub<BE>(
 }
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
-pub fn ntt4x30_vec_znx_dft_sub_assign<BE>(
+pub fn ntt4x30_vec_znx_dft_sub_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -642,7 +642,7 @@ pub fn ntt4x30_vec_znx_dft_sub_assign<BE>(
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
 ///
 /// Extra `res` limbs beyond `a.size()` are negated.
-pub fn ntt4x30_vec_znx_dft_sub_negate_assign<BE>(
+pub fn ntt4x30_vec_znx_dft_sub_negate_assign_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -664,8 +664,8 @@ pub fn ntt4x30_vec_znx_dft_sub_negate_assign<BE>(
 
 /// DFT-domain copy with stride: `res[res_col][j] = a[a_col][offset + j*step]`.
 ///
-/// Mirrors `vec_znx_dft_copy` from the FFT64 backend.
-pub fn ntt4x30_vec_znx_dft_copy<BE>(
+/// Mirrors `vec_znx_dft_copy_portable` from the FFT64 backend.
+pub fn ntt4x30_vec_znx_dft_copy_portable<BE>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -699,7 +699,7 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
 }
 
 /// Zero all limbs of `res[res_col]`.
-pub fn ntt4x30_vec_znx_dft_zero<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
+pub fn ntt4x30_vec_znx_dft_zero_portable<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
 where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
@@ -727,7 +727,7 @@ pub struct NttAutomorphismPlan {
 /// Per output slot, one 4-u64 q120b copy from the indexed source slot.
 /// No modular arithmetic, no negation — full-spectrum NTT layout makes
 /// the action a pure permutation.
-pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
+pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE>(
     plan: &NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -766,7 +766,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     }
 }
 
-pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
+pub fn ntt4x30_vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor>(
     plan: &NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,

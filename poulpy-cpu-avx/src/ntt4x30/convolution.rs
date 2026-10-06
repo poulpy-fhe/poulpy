@@ -6,7 +6,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_portable::kernels::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_portable::kernels::sparse_log_gap;
+use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
@@ -381,7 +381,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {

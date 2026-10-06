@@ -14,7 +14,7 @@
 //! `poulpy_hal` defines a hardware abstraction layer (HAL) via the
 //! [`Backend`](poulpy_hal::layouts::Backend) trait and open extension point
 //! (OEP) traits in [`poulpy_hal::oep`]. This crate implements those extension
-//! points with AVX-512F, AVX-512-IFMA, AVX2/FMA, and scalar/reference fallback
+//! points with AVX-512F, AVX-512-IFMA, AVX2/FMA, and portable scalar fallback
 //! paths depending on the backend and operation family.
 //!
 //! The internal modules are organized by operation domain:

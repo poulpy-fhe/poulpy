@@ -3,8 +3,12 @@ use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_negate<'r, 'a, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, a: &VecZnxBackendRef<'a, BE>, a_col: usize)
-where
+pub fn vec_znx_negate_portable<'r, 'a, BE>(
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'a, BE>,
+    a_col: usize,
+) where
     BE: Backend<ZnxWord = i64> + ZnxNegate + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
@@ -24,7 +28,7 @@ where
     }
 }
 
-pub fn vec_znx_negate_assign<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
+pub fn vec_znx_negate_assign_portable<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
 where
     BE: Backend<ZnxWord = i64> + ZnxNegateAssign,
     BE::BufMut<'r>: HostDataMut,

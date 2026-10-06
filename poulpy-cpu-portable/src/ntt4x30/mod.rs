@@ -8,7 +8,7 @@
 //!
 //! `poulpy-hal` defines a hardware abstraction layer (HAL) via the [`Backend`](poulpy_hal::layouts::Backend)
 //! trait and a family of _open extension point_ (OEP) traits in [`poulpy_hal::oep`]. This crate
-//! implements every OEP trait for the [`NTT4x30Portable`] backend by delegating to the reference
+//! implements every OEP trait for the [`NTT4x30Portable`] backend by delegating to the portable
 //! functions provided by `crate::kernels::ntt4x30`.
 //!
 //! The internal modules are organised by operation domain:
@@ -52,14 +52,14 @@ use std::marker::PhantomData;
 
 use poulpy_hal::layouts::{Ring, Standard};
 
-/// Reference (portable) CPU backend using Q120 NTT arithmetic.
+/// Portable CPU backend using Q120 NTT arithmetic.
 ///
 /// `NTT4x30Portable<R>` is a zero-sized marker type that selects the portable NTT4x30 CPU backend
 /// over ring `R` (the standard ring by default, [`NTT4x30CIPortable`](crate::NTT4x30CIPortable) for the
 /// conjugate invariant ring)
 /// when used as the type parameter `B` in [`poulpy_hal::layouts::Module<B>`](poulpy_hal::layouts::Module)
 /// and related HAL types. It implements all open extension point (OEP) traits from
-/// `poulpy_hal::oep` by delegating to the portable reference functions in
+/// `poulpy_hal::oep` by delegating to the portable functions in
 /// `crate::kernels::ntt4x30`.
 ///
 /// # Backend characteristics

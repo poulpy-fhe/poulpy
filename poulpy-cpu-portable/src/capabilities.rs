@@ -23,7 +23,7 @@ pub struct BackendCapability {
 }
 
 /// The portable backends, available everywhere.
-pub fn reference_backends() -> Vec<BackendCapability> {
+pub fn portable_backends() -> Vec<BackendCapability> {
     ["FFT64Portable", "FFT64CIPortable", "NTT4x30Portable", "NTT4x30CIPortable"]
         .into_iter()
         .map(|backend| BackendCapability {
@@ -141,11 +141,11 @@ pub fn report_instruction_sets() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{instruction_sets, reference_backends, report_instruction_sets};
+    use super::{instruction_sets, portable_backends, report_instruction_sets};
 
     #[test]
-    fn reference_backends_are_always_available() {
-        assert!(reference_backends().iter().all(|c| c.supported && c.compiled));
+    fn portable_backends_are_always_available() {
+        assert!(portable_backends().iter().all(|c| c.supported && c.compiled));
     }
 
     #[test]

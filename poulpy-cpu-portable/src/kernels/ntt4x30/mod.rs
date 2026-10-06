@@ -15,11 +15,11 @@
 //
 // ----------------------------------------------------------------------
 
-//! Q120 NTT reference implementation.
+//! Q120 NTT portable implementation.
 //!
 //! This module is a Rust port of the `q120` component of the
 //! [spqlios-arithmetic](https://github.com/tfhe/spqlios-arithmetic) library.
-//! It provides a pure-scalar (no SIMD) reference implementation of the
+//! It provides a pure-scalar (no SIMD) portable implementation of the
 //! number-theoretic transform (NTT) and associated arithmetic over a
 //! degree-120 composite modulus `Q = Q₀·Q₁·Q₂·Q₃`.
 //!
@@ -54,8 +54,8 @@
 //!   and the corresponding product functions).
 //! - [`ntt`]: NTT precomputation tables ([`ntt::NttTable`],
 //!   [`ntt::NttTableInv`]).
-//! - [`standard`], [`conjugate_invariant`]: per-ring table construction, reference execution
-//!   (`ntt_portable`, `intt_portable`) and automorphism plans (`build_ntt4x30_automorphism_plan`).
+//! - [`standard`], [`conjugate_invariant`]: per-ring table construction, portable execution
+//!   (`ntt_portable`, `intt_portable`) and automorphism plans (`build_ntt4x30_automorphism_plan_portable`).
 //!
 //! # Trait overview
 //!
@@ -144,7 +144,7 @@ pub trait NttDFTExecute<Table> {
 
     /// Slot permutation of `X -> X^p` in this transform's layout.
     fn ntt_automorphism_plan(n: usize, p: i64) -> vec_znx_dft::NttAutomorphismPlan {
-        standard::build_ntt4x30_automorphism_plan(n, p)
+        standard::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 

@@ -12,7 +12,7 @@
 //! - **Integer block operations**: `I64` variants for constant-coefficient convolution
 //!   and block save/extract in the integer domain.
 //!
-//! All implementations use the default `_ref` implementations.
+//! All implementations use the default `_portable` implementations.
 
 use super::FFT64Portable;
 use poulpy_hal::layouts::Ring;

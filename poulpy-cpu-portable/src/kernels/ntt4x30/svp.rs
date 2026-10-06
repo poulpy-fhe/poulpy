@@ -4,10 +4,10 @@
 //! `poulpy-cpu-portable`.  The workflow is:
 //!
 //! 1. **Prepare** — encode a `ScalarZnx` (i64 coefficients) into the
-//!    [`SvpPPol`] prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_svp_prepare`].
-//! 2. **Apply** — multiply a [`VecZnxDft`] (q120b) by a prepared
-//!    [`SvpPPol`] (q120c) to obtain a new [`VecZnxDft`] (q120b) via
+//!    [`SvpPPol`](poulpy_hal::layouts::SvpPPol) prepared format (q120c, NTT domain) via
+//!    [`ntt4x30_svp_prepare_portable`].
+//! 2. **Apply** — multiply a [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) by a prepared
+//!    [`SvpPPol`](poulpy_hal::layouts::SvpPPol) (q120c) to obtain a new [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) via
 //!    one of the `ntt4x30_svp_apply_dft_to_dft*` functions.
 //!
 //! # Storage formats
@@ -47,10 +47,10 @@ use crate::{
 /// 2. Apply the forward NTT (via [`NttDFTExecute`]).
 /// 3. Convert q120b → q120c (via [`NttCFromB`]) and store in `res`.
 ///
-/// `res` must be a [`SvpPPol`] with `DftWord = Q120bScalar`.
+/// `res` must be a [`SvpPPol`](poulpy_hal::layouts::SvpPPol) with `DftWord = Q120bScalar`.
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
-pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
+pub fn ntt4x30_svp_prepare_portable<'r, 'a, BE>(
     module: &Module<BE>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,
@@ -91,10 +91,10 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
 /// ```
 /// Limbs of `res` beyond `b.size()` are zeroed.
 ///
-/// `a`: prepared [`SvpPPol`] in q120c format.
-/// `b`: input [`VecZnxDft`] in q120b format.
-/// `res`: output [`VecZnxDft`] in q120b format.
-pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
+/// `a`: prepared [`SvpPPol`](poulpy_hal::layouts::SvpPPol) in q120c format.
+/// `b`: input [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) in q120b format.
+/// `res`: output [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) in q120b format.
+pub fn ntt4x30_svp_apply_dft_to_dft_portable<'r, 'a, 'b, BE>(
     module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
@@ -151,7 +151,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
 ///
 /// Processes each q120b coefficient by copying it (since [`Q120bScalar`] is
 /// `Copy`) before overwriting to avoid aliasing conflicts.
-pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
+pub fn ntt4x30_svp_apply_dft_to_dft_assign_portable<'r, 'a, BE>(
     module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,

@@ -9,15 +9,15 @@ use crate::kernels::{
         module::FFTModuleHandle,
         reim::ReimArith,
         svp::{
-            svp_apply_dft_to_dft as fft64_svp_apply_dft_to_dft, svp_apply_dft_to_dft_assign as fft64_svp_apply_dft_to_dft_assign,
-            svp_prepare as fft64_svp_prepare,
+            svp_apply_dft_to_dft_assign_portable as fft64_svp_apply_dft_to_dft_assign,
+            svp_apply_dft_to_dft_portable as fft64_svp_apply_dft_to_dft, svp_prepare_portable as fft64_svp_prepare,
         },
     },
     ntt4x30::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero,
         ntt::NttTable,
         primes::Primes30,
-        svp::{ntt4x30_svp_apply_dft_to_dft_assign, ntt4x30_svp_prepare},
+        svp::{ntt4x30_svp_apply_dft_to_dft_assign_portable, ntt4x30_svp_prepare_portable},
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
     },
@@ -122,7 +122,7 @@ where
         R: SvpPPolToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        ntt4x30_svp_prepare::<Self>(module, &mut res_ref, res_col, a, a_col);
+        ntt4x30_svp_prepare_portable::<Self>(module, &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(
@@ -200,7 +200,7 @@ where
         A: SvpPPolToBackendRef<Self>,
     {
         let a_ref = a.to_backend_ref();
-        ntt4x30_svp_apply_dft_to_dft_assign::<Self>(module, res, res_col, &a_ref, a_col);
+        ntt4x30_svp_apply_dft_to_dft_assign_portable::<Self>(module, res, res_col, &a_ref, a_col);
     }
 }
 

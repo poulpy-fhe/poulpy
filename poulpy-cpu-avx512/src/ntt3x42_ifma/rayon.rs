@@ -1298,7 +1298,10 @@ where
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma<R>, SerialTaskExecutor>(
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
+                NTT3x42Ifma<R>,
+                SerialTaskExecutor,
+            >(
                 cnv_offset,
                 &mut base_big_mut::<R>(res),
                 res_col,
@@ -1310,7 +1313,7 @@ where
                 tmp,
             )
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
                 NTT3x42Ifma<R>,
                 NTT3x42IfmaRayonExecutor,
             >(
@@ -1353,7 +1356,10 @@ where
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma<R>, SerialTaskExecutor>(
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
+                NTT3x42Ifma<R>,
+                SerialTaskExecutor,
+            >(
                 cnv_offset,
                 &mut base_big_mut::<R>(res),
                 res_col,
@@ -1365,7 +1371,7 @@ where
                 tmp,
             )
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
                 NTT3x42Ifma<R>,
                 NTT3x42IfmaRayonExecutor,
             >(

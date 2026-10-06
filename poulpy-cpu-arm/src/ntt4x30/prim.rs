@@ -24,7 +24,7 @@ use super::NTT4x30Neon;
 
 // On aarch64, the q120b lazy-modular kernels and the i64↔q120b↔i128↔q120c
 // conversion kernels are NEON; on other targets we fall back to the scalar
-// reference functions so the negative-gate path on x86 emits only the
+// portable functions so the negative-gate path on x86 emits only the
 // intended `compile_error!`.
 #[cfg(target_arch = "aarch64")]
 use crate::neon::{

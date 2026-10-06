@@ -22,7 +22,7 @@ use crate::{
             types::Q120bScalar,
             vec_znx_dft::NttModuleHandle,
         },
-        sparse_log_gap,
+        sparse_log_gap_portable,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
@@ -43,22 +43,22 @@ pub(crate) const CNV_ACC_GROUP: usize = 16;
 /// Block-group size of the prepare canonicalize-and-scatter staging.
 const PREP_GROUP: usize = 64;
 
-/// Scratch bytes required by [`ntt4x30_cnv_apply_dft`] and its accumulate and
+/// Scratch bytes required by [`ntt4x30_cnv_apply_dft_portable`] and its accumulate and
 /// pairwise variants: the padded `a` window, the staged `b` rows (a sparse `b`
 /// is gathered, a pairwise `b` is lazily summed) and its `b1` twin, plus the
 /// accumulate staging group.
-pub fn ntt4x30_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size);
     16 * (a_size + 2 * (TILE - 1) + 2 * b_size) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_pairwise_apply_dft`]: the apply
+/// Scratch bytes required by [`ntt4x30_cnv_pairwise_apply_dft_portable`]: the apply
 /// scratch, which already stages both operands' second columns.
-pub fn ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     }
 }
 
@@ -264,9 +264,9 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     let res_cols = res.cols();
     let res_addr = cast_slice_mut::<Q120bScalar, u64>(res.raw_mut()).as_mut_ptr() as usize;
     let task_tmp_bytes = if PAIRWISE {
-        ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     } else {
-        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_size, a_size, b_size)
     };
 
     if BE::TaskExecutor::is_parallel() && group_count > 1 {
@@ -339,7 +339,7 @@ fn col_slice_u32(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u3
 ///
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft<BE>(
+pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -357,7 +357,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -375,11 +375,11 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     );
 }
 
-/// Accumulating variant of [`ntt4x30_cnv_apply_dft`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// Accumulating variant of [`ntt4x30_cnv_apply_dft_portable`]: `res[k] += Σ a[j] ⊙ b[k−j]`
 /// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_add<BE>(
+pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -397,7 +397,7 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -412,8 +412,8 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     );
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_apply_dft_sum`]: the group staging.
-pub fn ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_apply_dft_sum_portable`]: the group staging.
+pub fn ntt4x30_cnv_apply_dft_sum_tmp_bytes_portable(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     8 * CNV_ACC_GROUP * res_size * size_of::<u64>()
 }
 
@@ -430,7 +430,11 @@ pub struct CnvAccEntry {
 /// Builds the per-output-limb window schedule of a fused convolution
 /// accumulation. Entry windows are exact (no padding), so kernels read the
 /// block-major operand rows in place. Returns `sched[k]` for `k ∈ 0..res_size`.
-pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &[(usize, usize)]) -> Vec<Vec<CnvAccEntry>> {
+pub fn cnv_accumulate_schedule_portable(
+    cnv_offset: usize,
+    res_size: usize,
+    term_sizes: &[(usize, usize)],
+) -> Vec<Vec<CnvAccEntry>> {
     let mut sched: Vec<Vec<CnvAccEntry>> = (0..res_size).map(|_| Vec::new()).collect();
     for (t, &(a_size, b_size)) in term_sizes.iter().enumerate() {
         if a_size == 0 || b_size == 0 {
@@ -466,8 +470,8 @@ pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &
 /// All terms of one output limb are summed in the lazy q120 accumulators and
 /// reduced once, and the destination column is written exactly once through the
 /// staged group flush — the result is congruent to, but not bit-identical with,
-/// a sequence of [`ntt4x30_cnv_apply_dft_add`] calls.
-pub fn ntt4x30_cnv_apply_dft_sum<BE>(
+/// a sequence of [`ntt4x30_cnv_apply_dft_add_portable`] calls.
+pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -498,7 +502,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
                 col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
                 a_size,
                 b_size,
-                sparse_log_gap(n, t.b.n()),
+                sparse_log_gap_portable(n, t.b.n()),
             )
         })
         .collect();
@@ -516,7 +520,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     let meta = module.get_bbc_meta();
     let n_blks = n / 2;
 
-    let sched = cnv_accumulate_schedule(
+    let sched = cnv_accumulate_schedule_portable(
         cnv_offset,
         res_size,
         &term_cols.iter().map(|&(_, _, a, b, _)| (a, b)).collect::<Vec<_>>(),
@@ -582,9 +586,9 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
 /// Compute the pairwise DFT-domain convolution
 /// `res = (a[:,i] + a[:,j]) ⊙ (b[:,i] + b[:,j])`.
 ///
-/// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_dft`].
+/// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_dft_portable`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
+pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -600,14 +604,14 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        ntt4x30_cnv_apply_dft::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        ntt4x30_cnv_apply_dft_portable::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -638,15 +642,15 @@ fn zero_row_u32(dst: &mut [u32], size: usize, row: usize, n_blks: usize) {
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_left`]: NTT and canonical limbs.
-pub fn ntt4x30_cnv_prepare_left_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_left_portable`]: NTT and canonical limbs.
+pub fn ntt4x30_cnv_prepare_left_tmp_bytes_portable(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecL` (canonical u32 rows, block-major).
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_left<BE>(
+pub fn ntt4x30_cnv_prepare_left_portable<BE>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -729,14 +733,14 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_right`]: NTT and converted limbs.
-pub fn ntt4x30_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_right_portable`]: NTT and converted limbs.
+pub fn ntt4x30_cnv_prepare_right_tmp_bytes_portable(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
 /// limb order). Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_right<BE>(
+pub fn ntt4x30_cnv_prepare_right_portable<BE>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -809,14 +813,14 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_self`]: NTT, canonical and
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_self_portable`]: NTT, canonical and
 /// converted limbs.
-pub fn ntt4x30_cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_cnv_prepare_self_tmp_bytes_portable(n: usize) -> usize {
     12 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
-pub fn ntt4x30_cnv_prepare_self<BE>(
+pub fn ntt4x30_cnv_prepare_self_portable<BE>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
@@ -941,8 +945,8 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
 // By-const apply  (VecZnx × &[i64] → VecZnxBig, coefficient domain)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch bytes required by [`ntt4x30_cnv_by_const_apply`].
-pub fn ntt4x30_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_by_const_apply_portable`].
+pub fn ntt4x30_cnv_by_const_apply_tmp_bytes_portable(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
 }
 
@@ -951,10 +955,10 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b
 /// Shared by every backend with `BigWord = i128`: each output limb is an
 /// `i128` accumulation over the `a` limbs, taken one slice at a time (no
 /// per-coefficient accessor calls, no checks inside the coefficient loop).
-/// Output limbs `min_size..res.size()` are zeroed by `ntt4x30_cnv_by_const_apply`
-/// and left untouched by `ntt4x30_cnv_by_const_apply_add`. `_tmp` is unused.
+/// Output limbs `min_size..res.size()` are zeroed by `ntt4x30_cnv_by_const_apply_portable`
+/// and left untouched by `ntt4x30_cnv_by_const_apply_add_portable`. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
+pub fn ntt4x30_cnv_by_const_apply_portable<BE, E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -973,7 +977,7 @@ pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_by_const_apply_add<BE, E: TaskExecutor>(
+pub fn ntt4x30_cnv_by_const_apply_add_portable<BE, E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,

@@ -36,7 +36,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic: prints this machine's backend support"]
     fn print_report() {
-        let mut caps = poulpy_cpu_portable::capabilities::reference_backends();
+        let mut caps = poulpy_cpu_portable::capabilities::portable_backends();
         caps.extend(super::capabilities());
         println!("{}", poulpy_cpu_portable::capabilities::report(&caps));
     }

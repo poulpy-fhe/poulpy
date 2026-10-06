@@ -9,7 +9,7 @@
 //! `Znx` operations work on plain `&[i64]` slices with a single canonical memory
 //! layout shared across all backends.
 //!
-//! Every implementation delegates directly to the corresponding `_ref` function
+//! Every implementation delegates directly to the corresponding `_portable` function
 //! and is marked `#[inline(always)]` to eliminate call overhead.
 
 use super::FFT64Portable;
@@ -26,7 +26,7 @@ use crate::kernels::znx::{
     znx_normalize_digit_portable, znx_normalize_final_step_assign_portable, znx_normalize_final_step_portable,
     znx_normalize_first_step_assign_portable, znx_normalize_first_step_carry_only_portable, znx_normalize_first_step_portable,
     znx_normalize_middle_step_assign_portable, znx_normalize_middle_step_carry_only_portable, znx_normalize_middle_step_portable,
-    znx_rotate, znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable,
+    znx_rotate_portable, znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable,
     znx_zero_portable,
 };
 
@@ -141,7 +141,7 @@ impl<R: Ring> ZnxNegateAssign for FFT64Portable<R> {
 impl<R: Ring> ZnxRotate for FFT64Portable<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 

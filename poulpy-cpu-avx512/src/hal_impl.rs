@@ -295,7 +295,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -332,7 +332,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+        poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<Self, SerialTaskExecutor>(
             cnv_offset,
             res,
             res_col,
@@ -548,7 +548,7 @@ where
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
                 poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
+            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, Self>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -558,7 +558,7 @@ where
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
         let mut res_ref = &mut *res;
-        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<_, _, Self>(
             &mut res_ref,
             res_base2k,
             res_k,
@@ -1224,7 +1224,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
@@ -1255,7 +1255,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
                 Self,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);

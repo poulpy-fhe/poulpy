@@ -340,8 +340,8 @@ where
 /// Builds the [`Fft64AutomorphismPlan`]: the standard degree-`2n` plan,
 /// whose real half is the conjugate-invariant layout; `conj` only touches the absent
 /// imaginary half.
-pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan {
-    let plan = standard::build_fft64_automorphism_plan(2 * n, p);
+pub fn build_fft64_automorphism_plan_portable(n: usize, p: i64) -> Fft64AutomorphismPlan {
+    let plan = standard::build_fft64_automorphism_plan_portable(2 * n, p);
     Fft64AutomorphismPlan {
         p,
         perm: plan.perm,
@@ -455,7 +455,7 @@ macro_rules! fft64_ring_arith_ci {
             )
         }
         fn fft64_automorphism_plan(n: usize, p: i64) -> $crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan {
-            $crate::kernels::fft64::conjugate_invariant::build_fft64_automorphism_plan(n, p)
+            $crate::kernels::fft64::conjugate_invariant::build_fft64_automorphism_plan_portable(n, p)
         }
         fn fft64_automorphism(plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
             $crate::kernels::fft64::conjugate_invariant::fft64_automorphism_portable(plan, res, a)

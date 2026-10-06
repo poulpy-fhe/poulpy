@@ -2,7 +2,7 @@
 
 /// Implements [`SamplingImpl`](poulpy_core::oep::SamplingImpl) for a CPU
 /// backend with this crate's host [`ScalarZnxFill`](crate::ScalarZnxFill)
-/// methods and reference noise kernels, all applied straight to the backend
+/// methods and portable noise kernels, all applied straight to the backend
 /// buffer.
 ///
 /// The second argument selects the `VecZnxBig` word family: `fft64` for

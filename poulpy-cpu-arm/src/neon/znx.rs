@@ -588,7 +588,7 @@ mod tests {
     }
 
     /// Random `i64` values bounded to `[-2^60, 2^60)`. The scalar reference
-    /// `znx_*_ref` uses non-wrapping `+`/`-`, which panics in debug mode on
+    /// `znx_*_portable` uses non-wrapping `+`/`-`, which panics in debug mode on
     /// overflow; bounding to 2^60 keeps `add`/`sub` results safely below
     /// `i64::MAX/MIN` while still exercising both signs and the high bits
     /// the NEON kernel must propagate.

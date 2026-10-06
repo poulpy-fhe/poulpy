@@ -16,7 +16,7 @@ use poulpy_cpu_portable::kernels::{
         ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
         ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
         ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
-        znx_copy_portable, znx_rotate, znx_zero_portable,
+        znx_copy_portable, znx_rotate_portable, znx_zero_portable,
     },
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
@@ -326,7 +326,7 @@ impl<R: Ring> ZnxMulPowerOfTwoAssign for FFT64Avx512<R> {
 impl<R: Ring> ZnxRotate for FFT64Avx512<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 

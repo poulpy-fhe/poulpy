@@ -553,7 +553,7 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
 // interleave the per-lane operands.
 //
 // Algorithm shape lifted from `fft16_portable` / `ifft16_portable`
-// (`poulpy-cpu-portable/src/reference/fft64/reim/{fft,ifft}_ref.rs`).
+// (`poulpy-cpu-portable/src/kernels/fft64/reim/{fft,ifft}_portable.rs`).
 
 #[inline(always)]
 unsafe fn cplx_twiddle_neon(

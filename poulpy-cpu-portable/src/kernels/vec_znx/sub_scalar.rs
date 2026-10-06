@@ -3,7 +3,7 @@ use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_sub_scalar<'r, 'a, BE>(
+pub fn vec_znx_sub_scalar_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     a: &ScalarZnxBackendRef<'a, BE>,
@@ -35,7 +35,7 @@ pub fn vec_znx_sub_scalar<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_scalar_assign<'r, 'a, BE>(
+pub fn vec_znx_sub_scalar_assign_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     res_limb: usize,

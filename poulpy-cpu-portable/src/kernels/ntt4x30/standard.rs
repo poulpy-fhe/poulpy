@@ -30,7 +30,7 @@ impl<P: PrimeSetCrt4> NttPlanNew for NttPlan<P, Standard> {
     }
 }
 
-/// Forward Q120 NTT on a polynomial of `n` coefficients (reference implementation).
+/// Forward Q120 NTT on a polynomial of `n` coefficients (portable implementation).
 ///
 /// `data` must be a flat `u64` slice of length `4 * n` in q120b layout.
 /// After the call, each group of 4 consecutive u64 values holds the NTT
@@ -42,7 +42,7 @@ pub fn ntt_portable<P: PrimeSetCrt4>(table: &NttTable<P, Standard>, data: &mut [
     ntt_core(table, data);
 }
 
-/// Inverse Q120 NTT on a polynomial of `n` coefficients (reference implementation).
+/// Inverse Q120 NTT on a polynomial of `n` coefficients (portable implementation).
 ///
 /// `data` must be a flat `u64` slice of length `4 * n` in q120b layout
 /// (the output of [`ntt_portable`]).  After the call, each group of 4 u64
@@ -63,7 +63,7 @@ pub fn intt_portable<P: PrimeSetCrt4>(table: &NttTableInv<P, Standard>, data: &m
 /// The set `{1, 3, …, 2n - 1}` is closed under multiplication by any odd
 /// `p`, so the action is a pure permutation — no closure trick or
 /// conjugation flag is needed.
-pub fn build_ntt4x30_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorphismPlan {
     assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
     assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
 
