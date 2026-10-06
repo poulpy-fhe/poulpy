@@ -257,6 +257,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- The NEON `i128` normalization step computes each carry as one rounding shift of the wrapping sum, in place of a digit subtraction with its borrow, which removes a quarter of its instructions.
 - The NEON NTT4x30 inner products of the vector-matrix product and the convolution multiply residues centered around zero, on signed accumulators: 24 products share one Montgomery step, where 12 canonical ones did.
   The prepared matrix and both prepared convolution operands store centered residues.
 - The NEON NTT4x30 vector-matrix products gather their input limbs in runs of eight blocks of four coefficients.
