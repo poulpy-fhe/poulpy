@@ -370,8 +370,8 @@ where
             let bound = match noise {
                 Noise::Uniform { bits } => UBig::ONE << (bits - 1),
                 Noise::Gaussian { sigma, .. } if sigma > 1e30 => (UBig::ONE << 132) * 6u8,
-                Noise::Gaussian { sigma, .. } if sigma == 0.75 => UBig::from(4u8),
-                Noise::Gaussian { sigma, .. } if sigma == 1.5 => UBig::ONE,
+                Noise::Gaussian { sigma: 0.75, .. } => UBig::from(4u8),
+                Noise::Gaussian { sigma: 1.5, .. } => UBig::ONE,
                 Noise::Gaussian { .. } => UBig::from(100u8),
             };
             let pmf = match noise {

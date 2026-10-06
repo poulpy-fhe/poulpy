@@ -307,12 +307,13 @@ where
             self.glwe_mask_inner_product(&mut pt, mask, sk_in, &mut scratch_1);
             self.glwe_encrypt_pk_smudged(res, &pt, pk_out, flood, source_xu, source_xe, source_smudge, &mut scratch_1);
         }
-        if res.k() < mask.k() && pk_out.k() == res.k() {
-            if let Some(metadata) = res.noise() {
-                let mut components = metadata.components().to_vec();
-                components[0] = FreshNoiseEstimate::new(metadata.body().variance_at(res.k()) + 1.0, res.k());
-                GLWEToBackendMut::<BE>::set_noise(res, Some(metadata.with_components(components)));
-            }
+        if res.k() < mask.k()
+            && pk_out.k() == res.k()
+            && let Some(metadata) = res.noise()
+        {
+            let mut components = metadata.components().to_vec();
+            components[0] = FreshNoiseEstimate::new(metadata.body().variance_at(res.k()) + 1.0, res.k());
+            GLWEToBackendMut::<BE>::set_noise(res, Some(metadata.with_components(components)));
         }
         scratch.wipe(tmp_bytes);
     }
