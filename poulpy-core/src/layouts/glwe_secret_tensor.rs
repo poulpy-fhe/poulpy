@@ -37,6 +37,7 @@ pub(crate) fn pairs(rank: usize) -> usize {
 /// no [`Distribution`] variant describes them. The tag is kept because the
 /// products' own statistics are a closed-form function of the base
 /// distribution (see [`Distribution`] for the variance).
+#[derive(PartialEq, Eq)]
 pub struct GLWESecretTensor<D: Data, W: ZnxWord> {
     pub(crate) data: ScalarZnx<D, W>,
     pub(crate) rank: Rank,

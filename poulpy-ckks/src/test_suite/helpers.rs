@@ -110,7 +110,7 @@ pub fn ckks_spec(n: usize, base2k: usize, log_delta: usize, log_budget: usize) -
     ckks_spec_sparse(n, base2k, log_delta, log_budget, 0)
 }
 
-/// Snapshots a value's current precision as a `CKKSLayout` spec (so it can be
+/// Copies a value's current precision into a `CKKSLayout` spec (so it can be
 /// passed to the `assert_mul_*_output_meta` helpers after the source is mutated
 /// in place). Captures `log_delta`/`log_budget`/`log_sparsity` and the width `k`.
 pub fn ckks_snapshot<A: CKKSInfos>(a: &A) -> CKKSLayout {

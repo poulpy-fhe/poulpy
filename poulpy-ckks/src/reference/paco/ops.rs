@@ -194,8 +194,8 @@ mod tests {
 
     #[test]
     fn fold_rotation_schedules() {
-        assert_eq!(fold_rotations(64, 8), vec![32, 16, 8]);
-        assert_eq!(fold_rotations(128, 64), vec![64]);
-        assert_eq!(fold_rotations(16, 16), Vec::<i64>::new());
+        assert!(fold_rotations(64, 8) == vec![32, 16, 8], "PaCo fold rotations differ");
+        assert!(fold_rotations(128, 64) == vec![64], "PaCo fold rotations differ");
+        assert!(fold_rotations(16, 16) == Vec::<i64>::new(), "PaCo fold rotations differ");
     }
 }

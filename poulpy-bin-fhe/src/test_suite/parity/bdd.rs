@@ -1,6 +1,6 @@
 //! Exact coefficient and metadata parity for selection and BDD operations.
 
-use super::{GlweSnapshot, ParityBackend, fixture_ggsw, fixture_glwe, snapshot_ggsw, snapshot_glwe, with_scratch};
+use super::{HostGlwe, ParityBackend, fixture_ggsw, fixture_glwe, host_ggsw, host_glwe, with_scratch};
 use crate::{api::*, bdd_arithmetic::*};
 use poulpy_core::{GLWECopy, layouts::*};
 use poulpy_hal::layouts::*;
@@ -72,7 +72,7 @@ impl<B: Backend> GetGGSWBit<B> for BorrowedBits<'_, B> {
     }
 }
 
-fn gates<B: ParityBackend>(module: &Module<B>, swap: bool) -> Vec<GlweSnapshot>
+fn gates<B: ParityBackend>(module: &Module<B>, swap: bool) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -101,8 +101,8 @@ where
             with_scratch::<B, _>(bytes, |scratch| module.cswap(&mut left, &mut right, &bit, scratch));
             assert_eq!(left.encryption_metadata(), None);
             assert_eq!(right.encryption_metadata(), None);
-            outputs.push(snapshot_glwe::<B, _>(&left));
-            outputs.push(snapshot_glwe::<B, _>(&right));
+            outputs.push(host_glwe::<B, _>(&left));
+            outputs.push(host_glwe::<B, _>(&right));
         } else {
             let mut out = fixture_glwe(module, &layout, 2);
             GLWEToBackendMut::<B>::set_encryption_metadata(&mut out, Some(provenance));
@@ -115,7 +115,7 @@ where
             assert_eq!(out.encryption_metadata(), None);
             assert_eq!(left.encryption_metadata(), Some(provenance));
             assert_eq!(right.encryption_metadata(), Some(provenance));
-            outputs.push(snapshot_glwe::<B, _>(&out));
+            outputs.push(host_glwe::<B, _>(&out));
         }
     }
     outputs
@@ -127,7 +127,7 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(gates(reference, false), gates(tested, false));
+    assert!(gates(reference, false) == gates(tested, false), "bdd result differs");
 }
 /// Checks conditional swap, including a selector radix different from the operands.
 pub fn test_cswap_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
@@ -135,10 +135,10 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(gates(reference, true), gates(tested, true));
+    assert!(gates(reference, true) == gates(tested, true), "bdd result differs");
 }
 
-fn rotations<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn rotations<B: ParityBackend>(module: &Module<B>) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -151,7 +151,7 @@ where
             with_scratch::<B, _>(module.glwe_blind_rotation_assign_tmp_bytes(&out, &key), |s| {
                 module.glwe_blind_rotation_assign(&mut out, &selectors, sign, 1, mask, 1, s)
             });
-            outputs.push(snapshot_glwe::<B, _>(&out));
+            outputs.push(host_glwe::<B, _>(&out));
             for input_layout in [
                 layout,
                 GLWELayout {
@@ -170,7 +170,7 @@ where
                 with_scratch::<B, _>(bytes, |s| {
                     module.glwe_blind_rotation(&mut out, &input, &selectors, sign, 1, mask, 1, s)
                 });
-                outputs.push(snapshot_glwe::<B, _>(&out));
+                outputs.push(host_glwe::<B, _>(&out));
             }
         }
     }
@@ -187,12 +187,12 @@ where
     with_scratch::<B, _>(bytes, |s| {
         module.glwe_blind_rotation(&mut out, &input, &selectors, false, 1, 3, 1, s)
     });
-    outputs.push(snapshot_glwe::<B, _>(&out));
+    outputs.push(host_glwe::<B, _>(&out));
     let bytes = module.glwe_blind_rotation_assign_tmp_bytes(&out, &key);
     with_scratch::<B, _>(bytes, |s| {
         module.glwe_blind_rotation_assign(&mut out, &selectors, true, 1, 3, 1, s)
     });
-    outputs.push(snapshot_glwe::<B, _>(&out));
+    outputs.push(host_glwe::<B, _>(&out));
     outputs
 }
 /// Checks both rotation directions, offsets, empty bit ranges, and assignment variants.
@@ -201,7 +201,7 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(rotations(reference), rotations(tested));
+    assert!(rotations(reference) == rotations(tested), "bdd result differs");
 }
 
 fn selection_fixture<B: ParityBackend>(
@@ -218,17 +218,20 @@ fn selection_fixture<B: ParityBackend>(
     value
 }
 
-fn selection<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn selection<B: ParityBackend>(module: &Module<B>) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
     let selectors = selector(module);
     let expected = selection_with_key(module, &selectors);
-    assert_eq!(expected, selection_with_key(module, &BorrowedBits(&selectors.bits)));
+    assert!(
+        expected == selection_with_key(module, &BorrowedBits(&selectors.bits)),
+        "bdd result differs"
+    );
     expected
 }
 
-fn selection_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<GlweSnapshot>
+fn selection_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -266,7 +269,7 @@ where
                 .filter(|(i, _)| present & (1 << i) != 0)
                 .collect();
             with_scratch::<B, _>(bytes, |s| module.glwe_blind_selection(&mut out, map, selectors, 1, 2, s));
-            outputs.push(snapshot_glwe::<B, _>(&out));
+            outputs.push(host_glwe::<B, _>(&out));
         }
     }
     outputs
@@ -279,20 +282,23 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(selection(reference), selection(tested));
+    assert!(selection(reference) == selection(tested), "bdd result differs");
 }
 
-fn retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
     let selectors = selector(module);
     let expected = retrieval_with_key(module, &selectors);
-    assert_eq!(expected, retrieval_with_key(module, &BorrowedBits(&selectors.bits)));
+    assert!(
+        expected == retrieval_with_key(module, &BorrowedBits(&selectors.bits)),
+        "bdd result differs"
+    );
     expected
 }
 
-fn retrieval_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<GlweSnapshot>
+fn retrieval_with_key<B: ParityBackend, K: GetGGSWBit<B>>(module: &Module<B>, selectors: &K) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -305,7 +311,7 @@ where
             false => module.glwe_blind_retrieval_statefull(&mut values, selectors, 1, 2, s),
             true => module.glwe_blind_retrieval_statefull_rev(&mut values, selectors, 1, 2, s),
         });
-        outputs.extend(values.iter().map(snapshot_glwe::<B, _>));
+        outputs.extend(values.iter().map(host_glwe::<B, _>));
     }
     outputs
 }
@@ -316,10 +322,10 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(retrieval(reference), retrieval(tested));
+    assert!(retrieval(reference) == retrieval(tested), "bdd result differs");
 }
 
-fn streaming_retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn streaming_retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<HostGlwe>
 where
     Module<B>: Cmux<B> + poulpy_core::GLWECopy<B> + poulpy_core::GLWEZero<B> + GGSWPreparedFactory<B>,
 {
@@ -343,7 +349,7 @@ where
             let values: Vec<_> = (0..capacity)
                 .map(|i| selection_fixture(module, &input_layout, layout.k, 20 + i as u8))
                 .collect();
-            let before: Vec<_> = values.iter().map(snapshot_glwe::<B, _>).collect();
+            let before: Vec<_> = values.iter().map(host_glwe::<B, _>).collect();
             let mut out = selection_fixture(module, &output_layout, layout.k, 99);
             let bytes = values
                 .iter()
@@ -355,15 +361,18 @@ where
                 with_scratch::<B, _>(bytes, |s| {
                     retriever.retrieve(module, &mut out, &values[..count], &bits, 1, s);
                 });
-                let expected = snapshot_glwe::<B, _>(&out);
+                let expected = host_glwe::<B, _>(&out);
                 if count == 0 {
-                    assert!(expected.bytes.iter().all(|&byte| byte == 0));
+                    assert!(
+                        expected.data().raw().iter().all(|&coefficient| coefficient == 0),
+                        "empty retrieval must return zero"
+                    );
                 } else if count == 1 {
                     let mut copied = selection_fixture(module, &output_layout, layout.k, 91);
                     with_scratch::<B, _>(module.glwe_copy_tmp_bytes(&copied, &values[0]), |s| {
                         module.glwe_copy(&mut copied, &values[0], s);
                     });
-                    assert_eq!(expected, snapshot_glwe::<B, _>(&copied));
+                    assert!(expected == host_glwe::<B, _>(&copied), "bdd result differs");
                 }
                 with_scratch::<B, _>(bytes, |s| {
                     for value in &values[..count] {
@@ -371,10 +380,10 @@ where
                     }
                     retriever.flush(module, &mut out, &bits, 1, s);
                 });
-                assert_eq!(expected, snapshot_glwe::<B, _>(&out));
+                assert!(expected == host_glwe::<B, _>(&out), "bdd result differs");
                 outputs.push(expected);
             }
-            let full_stream = snapshot_glwe::<B, _>(&out);
+            let full_stream = host_glwe::<B, _>(&out);
             // The legacy convenience query remains valid for homogeneous user
             // buffers, even when their allocation is wider than accumulator data.
             let mut homogeneous_out = selection_fixture(module, &input_layout, layout.k, 99);
@@ -382,7 +391,7 @@ where
             with_scratch::<B, _>(bytes, |s| {
                 retriever.retrieve(module, &mut homogeneous_out, &values, &selectors, 1, s);
             });
-            outputs.push(snapshot_glwe::<B, _>(&homogeneous_out));
+            outputs.push(host_glwe::<B, _>(&homogeneous_out));
 
             // Overfilling must fail at the requested capacity, including when
             // that capacity is not a power of two, without corrupting the stream.
@@ -398,18 +407,21 @@ where
                     retriever.add(module, value, &bits, 1, s);
                 }
                 assert!(catch_unwind(AssertUnwindSafe(|| retriever.add(module, &extra, &bits, 1, s))).is_err());
-                let before_output = snapshot_glwe::<B, _>(&out);
+                let before_output = host_glwe::<B, _>(&out);
                 assert!(
                     catch_unwind(AssertUnwindSafe(|| {
                         retriever.retrieve(module, &mut out, &oversized, &bits, 1, s);
                     }))
                     .is_err()
                 );
-                assert_eq!(before_output, snapshot_glwe::<B, _>(&out));
+                assert!(before_output == host_glwe::<B, _>(&out), "bdd result differs");
                 retriever.flush(module, &mut out, &bits, 1, s);
             });
-            assert_eq!(full_stream, snapshot_glwe::<B, _>(&out));
-            assert_eq!(before, values.iter().map(snapshot_glwe::<B, _>).collect::<Vec<_>>());
+            assert!(full_stream == host_glwe::<B, _>(&out), "bdd result differs");
+            assert!(
+                before == values.iter().map(host_glwe::<B, _>).collect::<Vec<_>>(),
+                "bdd result differs"
+            );
         }
     }
     outputs
@@ -422,7 +434,10 @@ where
     Module<BR>: Cmux<BR> + poulpy_core::GLWECopy<BR> + poulpy_core::GLWEZero<BR> + GGSWPreparedFactory<BR>,
     Module<BT>: Cmux<BT> + poulpy_core::GLWECopy<BT> + poulpy_core::GLWEZero<BT> + GGSWPreparedFactory<BT>,
 {
-    assert_eq!(streaming_retrieval(reference), streaming_retrieval(tested));
+    assert!(
+        streaming_retrieval(reference) == streaming_retrieval(tested),
+        "bdd result differs"
+    );
 }
 
 struct TinyCircuit;
@@ -437,7 +452,7 @@ impl GetBitCircuitInfo for TinyCircuit {
         (&[Node::Cmux(0, 1, 0), Node::Copy, Node::Cmux(1, 0, 1), Node::None], 2)
     }
 }
-fn evaluation<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
+fn evaluation<B: ParityBackend>(module: &Module<B>) -> Vec<HostGlwe>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -452,7 +467,7 @@ where
         with_scratch::<B, _>(bytes, |s| {
             module.execute_bdd_circuit_multi_thread(threads, &mut out, &inputs, &TinyCircuit, s)
         });
-        outputs.extend(out.iter().map(snapshot_glwe::<B, _>));
+        outputs.extend(out.iter().map(host_glwe::<B, _>));
     }
     outputs
 }
@@ -462,10 +477,10 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(evaluation(reference), evaluation(tested));
+    assert!(evaluation(reference) == evaluation(tested), "bdd result differs");
 }
 
-fn matrix_rotations<B: ParityBackend>(module: &Module<B>) -> Vec<super::GgswSnapshot>
+fn matrix_rotations<B: ParityBackend>(module: &Module<B>) -> Vec<super::HostGgsw>
 where
     Module<B>: BddParityModule<B>,
 {
@@ -490,7 +505,7 @@ where
             1 => module.ggsw_blind_rotation_assign(&mut out, &inputs, false, 1, 2, 0, s),
             _ => module.scalar_to_ggsw_blind_rotation(&mut out, &scalar, &inputs, true, 1, 2, 0, s),
         });
-        outputs.push(snapshot_ggsw::<B, _>(&out));
+        outputs.push(host_ggsw::<B, _>(&out));
     }
     for input_layout in [
         GGSWLayout {
@@ -509,7 +524,7 @@ where
         with_scratch::<B, _>(bytes, |s| {
             module.ggsw_blind_rotation(&mut out, &input, &inputs, true, 1, 2, 0, s)
         });
-        outputs.push(snapshot_ggsw::<B, _>(&out));
+        outputs.push(host_ggsw::<B, _>(&out));
     }
     outputs
 }
@@ -519,5 +534,5 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(matrix_rotations(reference), matrix_rotations(tested));
+    assert!(matrix_rotations(reference) == matrix_rotations(tested), "bdd result differs");
 }

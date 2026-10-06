@@ -276,7 +276,7 @@ mod tests {
             let mut want = vec![0u64; 4 * n];
             ntt_add_neon(n, &mut got, &a, &b);
             ntt_add_ref(n, &mut want, &a, &b);
-            assert_eq!(got, want, "ntt_add_neon mismatch at n={n}");
+            assert!(got == want, "ntt_add_neon mismatch at n={n}");
         }
     }
 
@@ -290,7 +290,7 @@ mod tests {
             let mut want = r0;
             ntt_add_assign_neon(n, &mut got, &a);
             ntt_add_assign_ref_(n, &mut want, &a);
-            assert_eq!(got, want, "ntt_add_assign_neon mismatch at n={n}");
+            assert!(got == want, "ntt_add_assign_neon mismatch at n={n}");
         }
     }
 
@@ -304,7 +304,7 @@ mod tests {
             let mut want = vec![0u64; 4 * n];
             ntt_sub_neon(n, &mut got, &a, &b);
             ntt_sub_ref(n, &mut want, &a, &b);
-            assert_eq!(got, want, "ntt_sub_neon mismatch at n={n}");
+            assert!(got == want, "ntt_sub_neon mismatch at n={n}");
         }
     }
 
@@ -318,7 +318,7 @@ mod tests {
             let mut want = r0;
             ntt_sub_assign_neon(n, &mut got, &a);
             ntt_sub_assign_ref_(n, &mut want, &a);
-            assert_eq!(got, want, "ntt_sub_assign_neon mismatch at n={n}");
+            assert!(got == want, "ntt_sub_assign_neon mismatch at n={n}");
         }
     }
 
@@ -332,7 +332,7 @@ mod tests {
             let mut want = r0;
             ntt_sub_negate_assign_neon(n, &mut got, &a);
             ntt_sub_negate_assign_ref_(n, &mut want, &a);
-            assert_eq!(got, want, "ntt_sub_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "ntt_sub_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -345,7 +345,7 @@ mod tests {
             let mut want = vec![0u64; 4 * n];
             ntt_negate_neon(n, &mut got, &a);
             ntt_negate_ref(n, &mut want, &a);
-            assert_eq!(got, want, "ntt_negate_neon mismatch at n={n}");
+            assert!(got == want, "ntt_negate_neon mismatch at n={n}");
         }
     }
 
@@ -358,7 +358,7 @@ mod tests {
             let mut want = r0;
             ntt_negate_assign_neon(n, &mut got);
             ntt_negate_assign_ref_(n, &mut want);
-            assert_eq!(got, want, "ntt_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "ntt_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -385,14 +385,14 @@ mod tests {
 
         ntt_add_neon(n, &mut got, &a, &b);
         ntt_add_ref(n, &mut want, &a, &b);
-        assert_eq!(got, want, "boundary add");
+        assert!(got == want, "boundary add");
 
         ntt_sub_neon(n, &mut got, &a, &b);
         ntt_sub_ref(n, &mut want, &a, &b);
-        assert_eq!(got, want, "boundary sub");
+        assert!(got == want, "boundary sub");
 
         ntt_negate_neon(n, &mut got, &a);
         ntt_negate_ref(n, &mut want, &a);
-        assert_eq!(got, want, "boundary negate");
+        assert!(got == want, "boundary negate");
     }
 }

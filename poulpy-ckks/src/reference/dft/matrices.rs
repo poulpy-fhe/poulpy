@@ -775,8 +775,8 @@ mod tests {
                         let factors = gen_dft_matrices::<f64>(&plan, log_n);
                         let replayed = plan.diagonal_indexes(log_n);
                         let generated: Vec<Vec<i64>> = factors.iter().map(|f| f.indexes()).collect();
-                        assert_eq!(
-                            replayed, generated,
+                        assert!(
+                            replayed == generated,
                             "index replay diverges from generator: kind={kind:?} bit_reversed={bit_reversed} schedule={schedule:?} log_n={log_n} format={format:?}"
                         );
                     }
@@ -867,10 +867,10 @@ mod tests {
             let fr = gen_dft_matrices::<f64>(&repack, 5);
             assert_eq!(fs.len(), fr.len());
             for (a, b) in fs.iter().zip(&fr) {
-                assert_eq!(a.indexes(), b.indexes());
+                assert!(a.indexes() == b.indexes(), "matrices result differs");
                 for idx in a.indexes() {
-                    assert_eq!(a.re.get(idx), b.re.get(idx), "re diag {idx}");
-                    assert_eq!(a.im.get(idx), b.im.get(idx), "im diag {idx}");
+                    assert!(a.re.get(idx) == b.re.get(idx), "re diag {idx}");
+                    assert!(a.im.get(idx) == b.im.get(idx), "im diag {idx}");
                 }
             }
         }
@@ -991,7 +991,7 @@ mod tests {
                     let block = gen_dft_matrices_blockwise::<f64>(kind, log_slots, log_slots, &depth, 1.0, bit_reversed);
                     assert_eq!(dense.len(), block.len(), "{kind:?} {depth:?}");
                     for (f, (a, b)) in dense.iter().zip(&block).enumerate() {
-                        assert_eq!(a.indexes(), b.indexes(), "{kind:?} br={bit_reversed} {depth:?} factor {f}");
+                        assert!(a.indexes() == b.indexes(), "{kind:?} br={bit_reversed} {depth:?} factor {f}");
                     }
                     let (dr, di) = eval_chain(&dense, re.clone(), im.clone());
                     let (br, bi) = eval_chain(&block, re.clone(), im.clone());

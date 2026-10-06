@@ -36,6 +36,17 @@ pub struct CKKSCiphertext<D: Data, W: ZnxWord, R: Ring> {
     _ring: PhantomData<R>,
 }
 
+impl<D: Data, W: ZnxWord, R: Ring> PartialEq for CKKSCiphertext<D, W, R>
+where
+    GLWE<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.meta == other.meta
+    }
+}
+
+impl<D: Data, W: ZnxWord, R: Ring> Eq for CKKSCiphertext<D, W, R> where GLWE<D, W>: Eq {}
+
 impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
     pub(crate) fn from_inner(inner: GLWE<D, W>, meta: CKKSMeta) -> Self {
         Self {

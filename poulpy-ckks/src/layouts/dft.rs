@@ -880,22 +880,28 @@ mod tests {
         let encode = plan(DFTType::Encode, &[2, 3, 3, 3], DFTOutputFormat::SplitRealAndImag);
         let encode_indexes = encode.diagonal_indexes(12);
         let encode = encode.with_optimal_bsgs(12);
-        assert_eq!(encode.schedule().giant_steps(), vec![1024, 256, 32, 4]);
-        assert_eq!(encode.diagonal_indexes(12), encode_indexes);
+        assert!(
+            encode.schedule().giant_steps() == vec![1024, 256, 32, 4],
+            "dft result differs"
+        );
+        assert!(encode.diagonal_indexes(12) == encode_indexes, "dft result differs");
 
         let decode = plan(DFTType::Decode, &[3, 3, 3, 2], DFTOutputFormat::SplitRealAndImag).with_optimal_bsgs(12);
-        assert_eq!(decode.schedule().giant_steps(), vec![4, 32, 256, 1024]);
+        assert!(
+            decode.schedule().giant_steps() == vec![4, 32, 256, 1024],
+            "dft result differs"
+        );
     }
 
     #[test]
     fn optimal_bsgs_doubles_only_the_sparse_repack_boundary() {
         let encode = plan(DFTType::Encode, &[1, 1], DFTOutputFormat::RepackImagAsReal).with_optimal_bsgs(4);
-        assert_eq!(encode.schedule().giant_steps(), vec![2, 3]);
+        assert!(encode.schedule().giant_steps() == vec![2, 3], "dft result differs");
 
         let decode = plan(DFTType::Decode, &[1, 1], DFTOutputFormat::RepackImagAsReal);
         let consumed_bits = decode.consumed_bits();
         let decode = decode.with_optimal_bsgs(4);
-        assert_eq!(decode.schedule().giant_steps(), vec![4, 2]);
+        assert!(decode.schedule().giant_steps() == vec![4, 2], "dft result differs");
         assert_eq!(decode.consumed_bits(), consumed_bits);
     }
 
@@ -907,23 +913,23 @@ mod tests {
     #[test]
     fn diagonal_log_sparsity_follows_the_widest_merged_butterfly() {
         let decode = plan(DFTType::Decode, &[3, 4, 4, 4], DFTOutputFormat::SplitRealAndImag);
-        assert_eq!(decode.factor_log_sparsity(16), vec![12, 8, 4, 0]);
+        assert!(decode.factor_log_sparsity(16) == vec![12, 8, 4, 0], "dft result differs");
         for (factor, s) in decode.diagonal_log_sparsity(16).iter().zip([12, 8, 4, 0]) {
             assert!(factor.iter().all(|&(_, v)| v == s), "sparsity is not uniform over the factor");
         }
         let encode = plan(DFTType::Encode, &[4, 4, 4, 3], DFTOutputFormat::SplitRealAndImag);
-        assert_eq!(encode.factor_log_sparsity(16), vec![0, 4, 8, 12]);
+        assert!(encode.factor_log_sparsity(16) == vec![0, 4, 8, 12], "dft result differs");
 
         let sparse = plan(DFTType::Decode, &[2, 2], DFTOutputFormat::SplitRealAndImag);
-        assert_eq!(sparse.factor_log_sparsity(7), vec![4, 2]);
+        assert!(sparse.factor_log_sparsity(7) == vec![4, 2], "dft result differs");
 
         let repack = plan(DFTType::Decode, &[2, 2], DFTOutputFormat::RepackImagAsReal);
-        assert_eq!(repack.factor_log_sparsity(7), vec![1, 2]);
+        assert!(repack.factor_log_sparsity(7) == vec![1, 2], "dft result differs");
         let repack = plan(DFTType::Encode, &[2, 2], DFTOutputFormat::RepackImagAsReal);
-        assert_eq!(repack.factor_log_sparsity(7), vec![2, 1]);
+        assert!(repack.factor_log_sparsity(7) == vec![2, 1], "dft result differs");
 
         let reversed = plan(DFTType::Decode, &[3, 4, 4, 4], DFTOutputFormat::SplitRealAndImag).with_bit_reversed(true);
-        assert_eq!(reversed.factor_log_sparsity(16), vec![0; 4]);
+        assert!(reversed.factor_log_sparsity(16) == vec![0; 4], "dft result differs");
     }
 
     fn bsgs_cost(indexes: &[i64], slots: usize, giant_step: usize) -> (usize, [usize; 2], BTreeSet<i64>) {

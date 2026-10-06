@@ -123,9 +123,9 @@ where
         if !matches!(dist, Distribution::ZERO) {
             // Same seed, same column; a second draw from the same source differs.
             let (_, again) = fill_and_download(module, dist, &mut Source::new([1u8; 32]));
-            assert_eq!(again, col, "{dist:?}: not a function of the seed");
+            assert!(again == col, "{dist:?}: not a function of the seed");
             let (_, next) = fill_and_download(module, dist, &mut source);
-            assert_ne!(next, col, "{dist:?}: the source did not advance");
+            assert!(next != col, "{dist:?}: the source did not advance");
         }
     }
 }
@@ -149,7 +149,7 @@ fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, _noise: Noise) {
     for col_j in 0..COLS {
         if col_j != col_i {
             for limb_i in 0..SIZE {
-                assert_eq!(a.at(col_j, limb_i), zero);
+                assert!(a.at(col_j, limb_i) == zero, "values differ");
             }
             continue;
         }
@@ -268,9 +268,12 @@ where
         let mut repeat = Source::new([91; 32]);
         let a = draw(&mut first);
         let b = draw(&mut repeat);
-        assert_eq!(a, b, "Gaussian same-backend reproducibility (big={big})");
-        assert_eq!(first.new_seed(), repeat.new_seed(), "Gaussian source consumption (big={big})");
-        assert_ne!(a, draw(&mut first), "Gaussian source did not advance (big={big})");
+        assert!(a == b, "Gaussian same-backend reproducibility (big={big})");
+        assert!(
+            first.new_seed() == repeat.new_seed(),
+            "Gaussian source consumption (big={big})"
+        );
+        assert!(a != draw(&mut first), "Gaussian source did not advance (big={big})");
         for limb in 0..SIZE {
             assert!(a.at(0, limb).iter().all(|value| *value == 0));
         }

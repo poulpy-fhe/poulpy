@@ -196,7 +196,10 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         let mut prep_scratch: ScratchOwned<BE> = ScratchOwned::alloc(prep_bytes);
         let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
         module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
-        assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
+        assert!(
+            prepared_babies.baby_steps().collect::<Vec<_>>() == baby_steps,
+            "values differ"
+        );
 
         let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
@@ -284,8 +287,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                     &mut scratch.borrow(),
                 );
 
-                assert_eq!(
-                    have, want,
+                assert!(
+                    have == want,
                     "prepared baby rotation {rot} column {col} differs from on-the-fly automorphism"
                 );
             }

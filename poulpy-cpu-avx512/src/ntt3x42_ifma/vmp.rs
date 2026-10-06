@@ -1418,7 +1418,7 @@ mod tests {
                             Some(prefix),
                             &mut scratch,
                         );
-                        assert_eq!(actual.data, expected.data, "prefix={prefix}, dsize={dsize}, size={size}");
+                        assert!(actual == expected, "prefix={prefix}, dsize={dsize}, size={size}");
                     }
                 }
             }
@@ -1513,7 +1513,7 @@ mod rotated_tests {
                                 &rotated,
                             );
                             assert!(
-                                reference.data.as_slice() == fused.data.as_slice(),
+                                reference == fused,
                                 "dsize={dsize} input={input_size} key={key_size} output={output_size} p={p}"
                             );
                             #[cfg(feature = "enable-rayon")]
@@ -1530,7 +1530,7 @@ mod rotated_tests {
                                         &rotated,
                                     )
                                 });
-                                assert!(reference.data.as_slice() == fused.data.as_slice());
+                                assert!(reference == fused);
                             }
                         }
                     }

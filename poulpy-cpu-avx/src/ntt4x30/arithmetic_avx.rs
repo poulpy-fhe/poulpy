@@ -938,7 +938,7 @@ mod tests {
         unsafe { b_from_znx64_avx2(n, &mut res_avx, &coeffs) };
         b_from_znx64_ref::<Primes30>(n, &mut res_ref, &coeffs);
 
-        assert_eq!(res_avx, res_ref, "b_from_znx64: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "b_from_znx64: AVX2 vs ref mismatch");
     }
 
     /// AVX2 `c_from_b` (Barrett reduction to Montgomery u32) matches reference.
@@ -956,7 +956,7 @@ mod tests {
         unsafe { c_from_b_avx2(n, &mut res_avx, &b) };
         c_from_b_ref::<Primes30>(n, &mut res_ref, &b);
 
-        assert_eq!(res_avx, res_ref, "c_from_b: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "c_from_b: AVX2 vs ref mismatch");
     }
 
     /// AVX2 `vec_mat1col_product_bbb` matches reference.
@@ -981,7 +981,7 @@ mod tests {
         unsafe { vec_mat1col_product_bbb_avx2(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_bbb_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbb: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_bbb: AVX2 vs ref mismatch");
     }
 
     /// Fused `reduce_b_and_apply_crt` matches two-step `reduce_b_to_canonical` + barrett.
@@ -1011,7 +1011,7 @@ mod tests {
                 let t2 = reduce_b_and_apply_crt(xv, q, mu, pow32_crt, pow16_crt, crt);
                 _mm256_storeu_si256(fused.as_mut_ptr() as *mut __m256i, t2);
             }
-            assert_eq!(fused, two_step, "reduce_b_and_apply_crt mismatch at j={j}");
+            assert!(fused == two_step, "reduce_b_and_apply_crt mismatch at j={j}");
         }
     }
 
@@ -1033,7 +1033,7 @@ mod tests {
             unsafe { b_to_znx128_avx2(n, &mut res_avx, &b) };
             b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
 
-            assert_eq!(res_avx, res_ref, "b_to_znx128: AVX2 vs ref mismatch at n={n}");
+            assert!(res_avx == res_ref, "b_to_znx128: AVX2 vs ref mismatch at n={n}");
         }
     }
 }

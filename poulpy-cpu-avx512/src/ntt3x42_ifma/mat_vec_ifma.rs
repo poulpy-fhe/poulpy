@@ -652,7 +652,7 @@ mod tests {
         unsafe { vec_mat1col_product_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
         vec_mat1col_product_bbc_ntt3x42_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_ifma, res_ref, "vec_mat1col_product_bbc: IFMA vs ref mismatch");
+        assert!(res_ifma == res_ref, "vec_mat1col_product_bbc: IFMA vs ref mismatch");
     }
 
     /// IFMA `vec_mat1col_product_bbc` matches for larger ell values.
@@ -670,7 +670,10 @@ mod tests {
         unsafe { vec_mat1col_product_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
         vec_mat1col_product_bbc_ntt3x42_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_ifma, res_ref, "vec_mat1col_product_bbc (large ell): IFMA vs ref mismatch");
+        assert!(
+            res_ifma == res_ref,
+            "vec_mat1col_product_bbc (large ell): IFMA vs ref mismatch"
+        );
     }
 
     /// IFMA `vec_mat1col_product_x2_bbc` matches reference.
@@ -702,7 +705,7 @@ mod tests {
         unsafe { vec_mat1col_product_x2_bbc_ifma::<false>(&meta, ell, &mut res_ifma, &x, &y) };
         vec_mat1col_product_x2_bbc_ntt3x42_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_ifma, res_ref, "vec_mat1col_product_x2_bbc: IFMA vs ref mismatch");
+        assert!(res_ifma == res_ref, "vec_mat1col_product_x2_bbc: IFMA vs ref mismatch");
     }
 
     /// IFMA `vec_mat2cols_product_x2_bbc` matches reference.
@@ -743,6 +746,6 @@ mod tests {
         unsafe { vec_mat2cols_product_x2_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
         vec_mat2cols_product_x2_bbc_ntt3x42_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_ifma, res_ref, "vec_mat2cols_product_x2_bbc: IFMA vs ref mismatch");
+        assert!(res_ifma == res_ref, "vec_mat2cols_product_x2_bbc: IFMA vs ref mismatch");
     }
 }

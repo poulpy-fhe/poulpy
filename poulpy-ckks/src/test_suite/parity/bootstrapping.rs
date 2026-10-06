@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
+    helpers::{HostCiphertext, fixture_ciphertext, fixture_operand, host_ciphertext, with_scratch},
     keys::{fixture_gglwe, key_layout, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
 };
 use crate::{
@@ -30,7 +30,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
 
-fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
+fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, HostCiphertext, HostCiphertext)>
 where
     B: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
@@ -107,8 +107,8 @@ where
             }
             results.push((
                 result.map_err(|error| error.to_string()),
-                snapshot::<B, _>(&src),
-                snapshot::<B, _>(&dst),
+                host_ciphertext::<B, _>(&src),
+                host_ciphertext::<B, _>(&dst),
             ));
         }
     }
@@ -126,7 +126,7 @@ where
     Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(run(params, reference), run(params, tested), "encapsulated ModUp differs");
+    assert!(run(params, reference) == run(params, tested), "encapsulated ModUp differs");
 }
 
 /// Fixture key store of the bootstrapping parity tests: identical coefficients
@@ -293,7 +293,7 @@ where
     }
 }
 
-type Outcome = (Result<(), String>, Vec<Snapshot>);
+type Outcome = (Result<(), String>, Vec<HostCiphertext>);
 
 fn run_bootstrap<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
 where
@@ -380,7 +380,7 @@ where
                 B::ckks_functional_bootstrap_impl(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&outs[0])]));
+            results.push((result.map_err(|e| e.to_string()), vec![host_ciphertext::<B, _>(&outs[0])]));
             continue;
         }
         let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &out_layout, &in_layout, &ctx, &layout);
@@ -389,20 +389,20 @@ where
             B::ckks_bootstrap_impl(module, &mut out, &ct_in, &ctx, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&out)]));
+        results.push((result.map_err(|e| e.to_string()), vec![host_ciphertext::<B, _>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
             let mut raised = fixture_ciphertext(module, &out_layout, 101);
             let result = with_scratch::<B, _>(B::ckks_mod_up_tmp_bytes_impl(module, raised.size()), |scratch| {
                 B::ckks_mod_up_into_impl(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![host_ciphertext::<B, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
             let result = with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_bootstrap_mod_up_impl(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![host_ciphertext::<B, _>(&raised)]));
         }
     }
     results
@@ -445,9 +445,8 @@ where
     FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        run_bootstrap::<BR, F>(params, reference),
-        run_bootstrap::<BT, F>(params, tested),
+    assert!(
+        run_bootstrap::<BR, F>(params, reference) == run_bootstrap::<BT, F>(params, tested),
         "bootstrapping differs"
     );
 }

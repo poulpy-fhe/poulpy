@@ -97,7 +97,13 @@ mod tests {
     #[test]
     fn omega2_wraps_half_turn() {
         let m = 16;
-        assert_eq!(ship_pre_rotated_masks_omega2(3, 1, m), ship_pre_rotated_masks(19, -1, m));
-        assert_eq!(ship_pre_rotated_masks_omega2(19, 1, m), ship_pre_rotated_masks(3, 1, m));
+        assert!(
+            ship_pre_rotated_masks_omega2(3, 1, m) == ship_pre_rotated_masks(19, -1, m),
+            "masks result differs"
+        );
+        assert!(
+            ship_pre_rotated_masks_omega2(19, 1, m) == ship_pre_rotated_masks(3, 1, m),
+            "masks result differs"
+        );
     }
 }

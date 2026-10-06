@@ -12,9 +12,7 @@ pub mod lifecycle;
 
 use poulpy_core::{
     TransferInto,
-    layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-    },
+    layouts::{GGSW, GGSWInfos, GGSWToBackendRef, GLWE, GLWEInfos, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned, ZnxViewMut},
@@ -25,51 +23,38 @@ use poulpy_hal::{
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost> {}
 impl<B: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for B {}
 
-/// Coefficient-domain representation including precision and allocated tails.
-#[derive(PartialEq, Eq)]
-pub(crate) struct GlweSnapshot {
-    layout: GLWELayout,
-    capacity: usize,
-    bytes: Vec<u8>,
-}
-impl std::fmt::Debug for GlweSnapshot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GlweSnapshot")
-            .field("layout", &self.layout)
-            .field("capacity", &self.capacity)
-            .finish()
-    }
-}
+pub(crate) type HostGlwe = GLWE<poulpy_hal::AlignedBuf, i64>;
+pub(crate) type HostGgsw = GGSW<poulpy_hal::AlignedBuf, i64>;
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct GgswSnapshot {
-    layout: GGSWLayout,
-    rows: Vec<GlweSnapshot>,
-}
+pub(crate) fn host_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> HostGlwe {
+    use poulpy_core::layouts::{GLWEToBackendMut, SetK};
 
-pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> GlweSnapshot {
     let view = ct.to_backend_ref();
-    let mut bytes = vec![0; view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>()];
-    B::copy_view_to_host(view.data().data(), &mut bytes);
-    GlweSnapshot {
-        layout: view.glwe_layout(),
-        capacity: view.max_size(),
-        bytes,
-    }
+    let module = Module::<HostBytesBackend>::new(view.n().as_usize() as u64);
+    let mut layout = view.glwe_layout();
+    layout.k = (view.max_size() * view.base2k().as_usize()).into();
+    let mut host = module.glwe_alloc_from_infos(&layout);
+    let bytes = view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>();
+    B::copy_view_to_host(view.data().data(), &mut host.data_mut().data_mut().as_mut()[..bytes]);
+    host.set_k(view.k());
+    host.set_canonical(view.is_canonical());
+    GLWEToBackendMut::<HostBytesBackend>::set_encryption_metadata(&mut host, view.encryption_metadata());
+    host
 }
 
-pub(crate) fn snapshot_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(ct: &A) -> GgswSnapshot {
+pub(crate) fn host_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(ct: &A) -> HostGgsw {
+    use poulpy_core::layouts::GGSWToBackendMut;
+
     let view = ct.to_backend_ref();
-    let mut rows = Vec::new();
+    let module = Module::<HostBytesBackend>::new(view.n().as_usize() as u64);
+    let mut host = module.ggsw_alloc_from_infos(&view);
     for row in 0..view.dnum().as_usize() {
         for col in 0..=view.rank().as_usize() {
-            rows.push(snapshot_glwe::<B, _>(&view.at_view(row, col)));
+            host_glwe::<B, _>(&view.at_view(row, col)).transfer_into(&mut host.at_mut(row, col));
         }
     }
-    GgswSnapshot {
-        layout: view.ggsw_layout(),
-        rows,
-    }
+    GGSWToBackendMut::<HostBytesBackend>::set_encryption_metadata(&mut host, view.encryption_metadata());
+    host
 }
 
 /// Uniform digits in `[-2^(base2k-1), 2^(base2k-1))`, as the backend mask sampler draws them.

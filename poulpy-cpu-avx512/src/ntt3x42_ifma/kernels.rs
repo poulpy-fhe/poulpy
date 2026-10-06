@@ -1175,7 +1175,7 @@ mod tests {
                     let roots = recover_root_si512(_mm512_loadu_si512(quotients.as_ptr().cast()), _mm512_set1_epi64(q as i64));
                     _mm512_storeu_si512(actual.as_mut_ptr().cast(), roots);
                 }
-                assert_eq!(actual, roots);
+                assert!(actual == roots, "recover_root_si512_matches_nonzero_twiddles mismatch");
             }
         }
     }

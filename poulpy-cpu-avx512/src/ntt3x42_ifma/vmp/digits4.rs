@@ -885,8 +885,8 @@ mod tests {
                                 None,
                                 &mut tmp,
                             );
-                            assert_eq!(
-                                actual.data, expected.data,
+                            assert!(
+                                actual == expected,
                                 "a={a_size}, key={key_size}, output={output_size}, prefix={prefix}, edge={edge}"
                             );
                             #[cfg(feature = "enable-rayon")]
@@ -899,8 +899,8 @@ mod tests {
                                     Some(prefix),
                                     &mut tmp,
                                 );
-                                assert_eq!(
-                                    actual.data, expected.data,
+                                assert!(
+                                    actual == expected,
                                     "parallel a={a_size}, key={key_size}, output={output_size}, prefix={prefix}, edge={edge}"
                                 );
                             });

@@ -165,7 +165,10 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     let internal_twin = internal!(BT, module_test, twin_test, ggsw_test);
                     internal_twin.transfer_into(&mut have);
                     assert_glwe_eq!(internal_ref, have, "external product DFT, unnormalized operand");
-                    assert_eq!(internal_ref, res_ref, "external product DFT disagrees with public operation");
+                    assert!(
+                        internal_ref == res_ref,
+                        "external product DFT disagrees with public operation"
+                    );
                 }
 
                 // The assign query is measured independently at the operand's own width.

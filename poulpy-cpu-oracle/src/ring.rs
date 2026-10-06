@@ -195,7 +195,7 @@ mod tests {
             let mut got = vec![F::Big::default(); n];
             inverse(module, &mut got, &prod);
             let got: Vec<i128> = got.into_iter().map(Into::into).collect();
-            assert_eq!(got, ci_schoolbook(&a, &b), "n = {n}");
+            assert!(got == ci_schoolbook(&a, &b), "n = {n}");
         }
     }
 
@@ -220,7 +220,7 @@ mod tests {
                 for (i, &value) in input.iter().enumerate() {
                     expected[i * (big / n)] = i128::from(value);
                 }
-                assert_eq!(actual, expected, "embedding {n} -> {big}");
+                assert!(actual == expected, "embedding {n} -> {big}");
             }
         }
     }
@@ -259,7 +259,7 @@ mod tests {
             for p in [1i64, 3, 5, -1, -3, 7, 4 * n as i64 - 1, 2 * n as i64 + 1] {
                 let mut got = vec![0i64; n];
                 automorphism::<ConjugateInvariant, i64>(p, &mut got, &a);
-                assert_eq!(got, ci_automorphism_from_basis(p, &a), "n = {n}, p = {p}");
+                assert!(got == ci_automorphism_from_basis(p, &a), "n = {n}, p = {p}");
             }
         }
     }

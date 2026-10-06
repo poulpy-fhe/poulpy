@@ -29,7 +29,7 @@ pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize
     }
 }
 
-fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, HostCiphertext)>
 where
     Module<B>: GLWEMaskFill<B>,
 {
@@ -50,8 +50,8 @@ where
                 );
                 let a = fixture_ciphertext(module, &la, 31);
                 let rhs = fixture_ciphertext(module, &lb, 32);
-                let before_a = snapshot::<B, _>(&a);
-                let before_b = snapshot::<B, _>(&rhs);
+                let before_a = host_ciphertext::<B, _>(&a);
+                let before_b = host_ciphertext::<B, _>(&rhs);
                 // `ckks_double_into` is the lazy `a + a` at the source's width and
                 // `ckks_mul_pow2_into` by one bit below it, equal once normalized.
                 for (width, lazy) in [(3 * b + 5, true), (2 * b + 3, false)] {
@@ -62,16 +62,15 @@ where
                         B::ckks_mul_pow2_tmp_bytes_impl(module, doubled.max_size()).max(B::glwe_normalize_tmp_bytes(module));
                     with_scratch::<B, _>(bytes, |scratch| {
                         B::ckks_double_into_impl(module, &mut doubled, &a, scratch)?;
-                        let raw = snapshot::<B, _>(&doubled);
-                        assert_eq!(raw.canonical, !lazy, "double_into k={width}");
+                        let raw = host_ciphertext::<B, _>(&doubled);
+                        assert_eq!(raw.2, !lazy, "double_into k={width}");
                         results.push(("ckks_double_into_impl", raw));
                         B::glwe_normalize_assign(module, &mut doubled, scratch);
                         B::ckks_mul_pow2_into_impl(module, &mut shifted, &a, 1, scratch)
                     })
                     .unwrap();
-                    assert_eq!(
-                        snapshot::<B, _>(&doubled).digits,
-                        snapshot::<B, _>(&shifted).digits,
+                    assert!(
+                        host_ciphertext::<B, _>(&doubled).0.data() == host_ciphertext::<B, _>(&shifted).0.data(),
                         "double_into k={width} differs from mul_pow2 by one bit"
                     );
                 }
@@ -82,13 +81,13 @@ where
                         pt_layout.glwe_layout.n = (params.n / 4).into();
                     }
                     let pt = fixture_plaintext(module, &pt_layout, 33);
-                    let before_pt = snapshot::<B, _>(&pt);
+                    let before_pt = host_ciphertext::<B, _>(&pt);
                     macro_rules! run {
                 ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
                     let mut out = fixture_ciphertext(module, &$initial, 31);
                     let bytes = B::$query(module, out.max_size());
                     with_scratch::<B,_>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
-                    results.push((stringify!($method), snapshot::<B,_>(&out)));
+                    results.push((stringify!($method), host_ciphertext::<B,_>(&out)));
                 }};
             }
                     run!(ckks_add_into_impl, ckks_add_tmp_bytes_impl, out_layout, [&a, &rhs]);
@@ -139,31 +138,31 @@ where
                         let mut out = fixture_ciphertext(module, &out_layout, 31);
                         let bytes = B::ckks_copy_tmp_bytes_impl(module, &out, &a);
                         with_scratch::<B, _>(bytes, |scratch| B::ckks_copy_impl(module, &mut out, &a, scratch)).unwrap();
-                        results.push(("ckks_copy_impl", snapshot::<B, _>(&out)));
+                        results.push(("ckks_copy_impl", host_ciphertext::<B, _>(&out)));
                     }
                     run!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, out_layout, [&a]);
                     run!(ckks_double_into_impl, ckks_mul_pow2_tmp_bytes_impl, out_layout, [&a]);
                     let mut neg = fixture_ciphertext(module, &la, 31);
                     B::ckks_neg_assign_impl(module, &mut neg).unwrap();
-                    results.push(("neg_assign", snapshot::<B, _>(&neg)));
+                    results.push(("neg_assign", host_ciphertext::<B, _>(&neg)));
                     for bits in [0, 1, b + 1] {
                         run!(ckks_mul_pow2_into_impl, ckks_mul_pow2_tmp_bytes_impl, out_layout, [&a, bits]);
                         run!(ckks_mul_pow2_assign_impl, ckks_mul_pow2_tmp_bytes_impl, la, [bits]);
                         run!(ckks_div_pow2_into_impl, ckks_div_pow2_tmp_bytes_impl, out_layout, [&a, bits]);
                         let mut div = fixture_ciphertext(module, &la, 31);
                         B::ckks_div_pow2_assign_impl(module, &mut div, bits).unwrap();
-                        results.push(("div_pow2_assign", snapshot::<B, _>(&div)));
+                        results.push(("div_pow2_assign", host_ciphertext::<B, _>(&div)));
                     }
-                    assert_eq!(before_a, snapshot::<B, _>(&a), "arithmetic changed source a");
-                    assert_eq!(before_b, snapshot::<B, _>(&rhs), "arithmetic changed source b");
-                    assert_eq!(before_pt, snapshot::<B, _>(&pt), "arithmetic changed plaintext");
+                    assert!(before_a == host_ciphertext::<B, _>(&a), "arithmetic changed source a");
+                    assert!(before_b == host_ciphertext::<B, _>(&rhs), "arithmetic changed source b");
+                    assert!(before_pt == host_ciphertext::<B, _>(&pt), "arithmetic changed plaintext");
                 }
                 // A metadata-only budget failure must not change the destination.
                 let mut out = fixture_ciphertext(module, &la, 31);
-                let before = snapshot::<B, _>(&out);
+                let before = host_ciphertext::<B, _>(&out);
                 let bits = out.log_budget() + 1;
                 assert!(B::ckks_div_pow2_assign_impl(module, &mut out, bits).is_err());
-                assert_eq!(before, snapshot::<B, _>(&out));
+                assert!(before == host_ciphertext::<B, _>(&out), "arithmetic result differs");
             }
         }
     }
@@ -175,20 +174,23 @@ where
     macro_rules! rejects {
         ($method:ident, $query:ident, [$($arg:expr),*]) => {{
             let mut out = fixture_ciphertext(module, &narrow, 72);
-            let unchanged = snapshot::<B,_>(&out);
+            let unchanged = host_ciphertext::<B,_>(&out);
             let bytes = B::$query(module,out.max_size());
             assert!(with_scratch::<B,_>(bytes,|scratch|B::$method(module,&mut out,$($arg,)*scratch)).is_err(), stringify!($method));
-            assert_eq!(unchanged,snapshot::<B,_>(&out), "failed {} mutated its destination", stringify!($method));
+            assert!(unchanged == host_ciphertext::<B,_>(&out), "failed {} mutated its destination", stringify!($method));
         }};
     }
     rejects!(ckks_add_into_impl, ckks_add_tmp_bytes_impl, [&source, &source]);
     rejects!(ckks_sub_into_impl, ckks_sub_tmp_bytes_impl, [&source, &source]);
     {
         let mut out = fixture_ciphertext(module, &narrow, 72);
-        let unchanged = snapshot::<B, _>(&out);
+        let unchanged = host_ciphertext::<B, _>(&out);
         let bytes = B::ckks_copy_tmp_bytes_impl(module, &out, &source);
         assert!(with_scratch::<B, _>(bytes, |scratch| B::ckks_copy_impl(module, &mut out, &source, scratch)).is_err());
-        assert_eq!(unchanged, snapshot::<B, _>(&out), "failed copy mutated its destination");
+        assert!(
+            unchanged == host_ciphertext::<B, _>(&out),
+            "failed copy mutated its destination"
+        );
     }
     rejects!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, [&source]);
     rejects!(ckks_mul_pow2_into_impl, ckks_mul_pow2_tmp_bytes_impl, [&source, 0]);
@@ -207,13 +209,13 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(arithmetic(params, r), arithmetic(params, t));
+    assert!(arithmetic(params, r) == arithmetic(params, t), "arithmetic result differs");
 }
 
 fn imaginary<B: Backend<ZnxWord = i64> + CKKSImagImpl>(
     params: CKKSTestParams,
     module: &Module<B>,
-) -> Vec<(&'static str, Snapshot)>
+) -> Vec<(&'static str, HostCiphertext)>
 where
     Module<B>: GLWEMaskFill<B>,
 {
@@ -223,7 +225,7 @@ where
     for (sparse, slots) in [(0, SlotsKind::Complex), (2, SlotsKind::Real)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, sparse, slots);
         let a = fixture_ciphertext(module, &la, 31);
-        let before = snapshot::<B, _>(&a);
+        let before = host_ciphertext::<B, _>(&a);
         for width in [2 * b + 3, 4 * b + 1] {
             let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
             macro_rules! run {
@@ -231,7 +233,7 @@ where
                     let mut out = fixture_ciphertext(module, &$initial, 31);
                     let bytes = B::$query(module, out.max_size());
                     with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
-                    results.push((stringify!($method), snapshot::<B, _>(&out)));
+                    results.push((stringify!($method), host_ciphertext::<B, _>(&out)));
                 }};
             }
             run!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl, out_layout, [&a]);
@@ -239,9 +241,8 @@ where
             run!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl, out_layout, [&a]);
             run!(ckks_div_i_assign_impl, ckks_div_i_tmp_bytes_impl, la, []);
         }
-        assert_eq!(
-            before,
-            snapshot::<B, _>(&a),
+        assert!(
+            before == host_ciphertext::<B, _>(&a),
             "imaginary-unit multiplication changed its source"
         );
     }
@@ -251,15 +252,14 @@ where
     macro_rules! rejects {
         ($method:ident, $query:ident) => {{
             let mut out = fixture_ciphertext(module, &narrow, 72);
-            let unchanged = snapshot::<B, _>(&out);
+            let unchanged = host_ciphertext::<B, _>(&out);
             let bytes = B::$query(module, out.max_size());
             assert!(
                 with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, &source, scratch)).is_err(),
                 stringify!($method)
             );
-            assert_eq!(
-                unchanged,
-                snapshot::<B, _>(&out),
+            assert!(
+                unchanged == host_ciphertext::<B, _>(&out),
                 "failed {} mutated its destination",
                 stringify!($method)
             );
@@ -279,10 +279,10 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(imaginary(params, r), imaginary(params, t));
+    assert!(imaginary(params, r) == imaginary(params, t), "arithmetic result differs");
 }
 
-fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, HostCiphertext)>
 where
     B: Backend<ZnxWord = i64> + CKKSMulImpl,
     Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
@@ -297,8 +297,8 @@ where
             let lb = layout(params, rank, 4 * b + 1, b + 1, 0, SlotsKind::Complex);
             let a = fixture_operand(module, &la, 51, lazy);
             let rhs = fixture_operand(module, &lb, 52, lazy);
-            let before_a = snapshot::<B, _>(&a);
-            let before_b = snapshot::<B, _>(&rhs);
+            let before_a = host_ciphertext::<B, _>(&a);
+            let before_b = host_ciphertext::<B, _>(&rhs);
             let key_infos = key_layout(params.n, b, 4 * b + 5, dsize, rank * (rank + 1) / 2, rank);
             let key = prepared_tensor_key(module, &key_infos, 53);
             for width in [2 * b + 3, 5 * b + 1] {
@@ -309,11 +309,11 @@ where
                     B::ckks_mul_into_impl(module, &mut out, &a, &rhs, &key, scratch)
                 })
                 .unwrap();
-                results.push(("mul_into", snapshot::<B, _>(&out)));
+                results.push(("mul_into", host_ciphertext::<B, _>(&out)));
                 let mut out = fixture_ciphertext(module, &lr, 99);
                 let bytes = B::ckks_square_tmp_bytes_impl(module, &out, &a, &key);
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_square_into_impl(module, &mut out, &a, &key, scratch)).unwrap();
-                results.push(("square_into", snapshot::<B, _>(&out)));
+                results.push(("square_into", host_ciphertext::<B, _>(&out)));
             }
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, &key);
@@ -321,34 +321,33 @@ where
                 B::ckks_mul_assign_impl(module, &mut assigned, &rhs, &key, scratch)
             })
             .unwrap();
-            let ordinary = snapshot::<B, _>(&assigned);
+            let ordinary = host_ciphertext::<B, _>(&assigned);
             let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &rhs, scratch)).unwrap();
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_prepared_assign_impl(module, &mut assigned, &prepared, &key, scratch)
             })
             .unwrap();
-            assert_eq!(
-                ordinary,
-                snapshot::<B, _>(&assigned),
+            assert!(
+                ordinary == host_ciphertext::<B, _>(&assigned),
                 "prepared multiplication differs from ordinary multiplication"
             );
             results.push(("mul_assign", ordinary));
-            results.push(("mul_prepared_assign", snapshot::<B, _>(&assigned)));
+            results.push(("mul_prepared_assign", host_ciphertext::<B, _>(&assigned)));
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             let bytes = B::ckks_square_tmp_bytes_impl(module, &assigned, &assigned, &key);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_square_assign_impl(module, &mut assigned, &key, scratch)
             })
             .unwrap();
-            results.push(("square_assign", snapshot::<B, _>(&assigned)));
+            results.push(("square_assign", host_ciphertext::<B, _>(&assigned)));
             for compact in [false, true] {
                 let mut lp = layout(params, 0, b + 3, b - 1, 2, SlotsKind::Real);
                 if compact {
                     lp.glwe_layout.n = (params.n / 4).into();
                 }
                 let pt = fixture_plaintext(module, &lp, 54);
-                let before_pt = snapshot::<B, _>(&pt);
+                let before_pt = host_ciphertext::<B, _>(&pt);
                 let lr = layout(params, rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
                 let bytes = B::ckks_mul_pt_vec_tmp_bytes_impl(module, &out, &a, pt.k());
@@ -356,14 +355,14 @@ where
                     B::ckks_mul_pt_vec_into_impl(module, &mut out, &a, &pt, scratch)
                 })
                 .unwrap();
-                results.push(("mul_pt_vec_into", snapshot::<B, _>(&out)));
+                results.push(("mul_pt_vec_into", host_ciphertext::<B, _>(&out)));
                 let mut out = fixture_operand(module, &la, 51, lazy);
                 let bytes = B::ckks_mul_pt_vec_tmp_bytes_impl(module, &out, &out, pt.k());
                 with_scratch::<B, _>(bytes, |scratch| {
                     B::ckks_mul_pt_vec_assign_impl(module, &mut out, &pt, scratch)
                 })
                 .unwrap();
-                results.push(("mul_pt_vec_assign", snapshot::<B, _>(&out)));
+                results.push(("mul_pt_vec_assign", host_ciphertext::<B, _>(&out)));
                 for coeff in [0, 3] {
                     let mut out = fixture_ciphertext(module, &lr, 99);
                     let bytes = B::ckks_mul_pt_const_tmp_bytes_impl(module, &out, &a, pt.k());
@@ -371,23 +370,23 @@ where
                         B::ckks_mul_pt_const_into_impl(module, &mut out, &a, &pt, coeff, scratch)
                     })
                     .unwrap();
-                    results.push(("mul_pt_const_into", snapshot::<B, _>(&out)));
+                    results.push(("mul_pt_const_into", host_ciphertext::<B, _>(&out)));
                     let mut out = fixture_operand(module, &la, 51, lazy);
                     let bytes = B::ckks_mul_pt_const_tmp_bytes_impl(module, &out, &out, pt.k());
                     with_scratch::<B, _>(bytes, |scratch| {
                         B::ckks_mul_pt_const_assign_impl(module, &mut out, &pt, coeff, scratch)
                     })
                     .unwrap();
-                    results.push(("mul_pt_const_assign", snapshot::<B, _>(&out)));
+                    results.push(("mul_pt_const_assign", host_ciphertext::<B, _>(&out)));
                 }
-                assert_eq!(before_pt, snapshot::<B, _>(&pt));
+                assert!(before_pt == host_ciphertext::<B, _>(&pt), "arithmetic result differs");
             }
-            assert_eq!(before_a, snapshot::<B, _>(&a));
-            assert_eq!(before_b, snapshot::<B, _>(&rhs));
+            assert!(before_a == host_ciphertext::<B, _>(&a), "arithmetic result differs");
+            assert!(before_b == host_ciphertext::<B, _>(&rhs), "arithmetic result differs");
             let mut bad_layout = la;
             bad_layout.glwe_layout.base2k = (b - 1).into();
             let mut out = fixture_ciphertext(module, &bad_layout, 99);
-            let before = snapshot::<B, _>(&out);
+            let before = host_ciphertext::<B, _>(&out);
             // Prepared-object shape validation happens before any scratch use.
             assert!(
                 with_scratch::<B, _>(0, |scratch| B::ckks_mul_prepared_assign_impl(
@@ -395,7 +394,7 @@ where
                 ))
                 .is_err()
             );
-            assert_eq!(before, snapshot::<B, _>(&out));
+            assert!(before == host_ciphertext::<B, _>(&out), "arithmetic result differs");
         }
     }
     results
@@ -410,10 +409,10 @@ where
     Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(products(params, r), products(params, t));
+    assert!(products(params, r) == products(params, t), "arithmetic result differs");
 }
 
-fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, HostCiphertext)>
 where
     B: Backend<ZnxWord = i64> + CKKSRotateImpl,
     Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
@@ -427,7 +426,7 @@ where
     for (dsize, lazy) in [(1, false), (2, true)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
         let input = fixture_operand(module, &la, 61, lazy);
-        let before = snapshot::<B, _>(&input);
+        let before = host_ciphertext::<B, _>(&input);
         let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
         let key = prepared_automorphism_key(module, &key_infos, 5, 62);
         for width in [2 * b + 3, 4 * b + 1] {
@@ -444,7 +443,7 @@ where
                 )
             })
             .unwrap();
-            results.push(("rotate_into", snapshot::<B, _>(&out)));
+            results.push(("rotate_into", host_ciphertext::<B, _>(&out)));
             for k in shifts {
                 let mut out = fixture_ciphertext(module, &lr, 99);
                 let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &input, &key);
@@ -452,7 +451,7 @@ where
                     B::ckks_rotate_by_into_impl(module, &mut out, &input, k, &key, scratch)
                 })
                 .unwrap();
-                results.push(("rotate_by_into", snapshot::<B, _>(&out)));
+                results.push(("rotate_by_into", host_ciphertext::<B, _>(&out)));
             }
         }
         let mut out = fixture_operand(module, &la, 61, lazy);
@@ -466,7 +465,7 @@ where
             )
         })
         .unwrap();
-        results.push(("rotate_assign", snapshot::<B, _>(&out)));
+        results.push(("rotate_assign", host_ciphertext::<B, _>(&out)));
         for k in shifts {
             let mut out = fixture_operand(module, &la, 61, lazy);
             let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &out, &key);
@@ -474,9 +473,9 @@ where
                 B::ckks_rotate_by_assign_impl(module, &mut out, k, &key, scratch)
             })
             .unwrap();
-            results.push(("rotate_by_assign", snapshot::<B, _>(&out)));
+            results.push(("rotate_by_assign", host_ciphertext::<B, _>(&out)));
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert!(before == host_ciphertext::<B, _>(&input), "arithmetic result differs");
     }
     results
 }
@@ -490,10 +489,10 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(rotations(params, r), rotations(params, t));
+    assert!(rotations(params, r) == rotations(params, t), "arithmetic result differs");
 }
 
-fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, HostCiphertext)>
 where
     B: Backend<ZnxWord = i64> + CKKSConjugateImpl,
     Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
@@ -505,7 +504,7 @@ where
     for (dsize, lazy) in [(1, false), (2, true)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
         let input = fixture_operand(module, &la, 61, lazy);
-        let before = snapshot::<B, _>(&input);
+        let before = host_ciphertext::<B, _>(&input);
         let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
         let key = prepared_automorphism_key(module, &key_infos, -1, 62);
         for width in [2 * b + 3, 4 * b + 1] {
@@ -522,7 +521,7 @@ where
                 )
             })
             .unwrap();
-            results.push(("conjugate_into", snapshot::<B, _>(&out)));
+            results.push(("conjugate_into", host_ciphertext::<B, _>(&out)));
         }
         let mut out = fixture_operand(module, &la, 61, lazy);
         let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &out, &key);
@@ -535,8 +534,8 @@ where
             )
         })
         .unwrap();
-        results.push(("conjugate_assign", snapshot::<B, _>(&out)));
-        assert_eq!(before, snapshot::<B, _>(&input));
+        results.push(("conjugate_assign", host_ciphertext::<B, _>(&out)));
+        assert!(before == host_ciphertext::<B, _>(&input), "arithmetic result differs");
     }
     results
 }
@@ -550,5 +549,8 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(conjugations(params, r), conjugations(params, t));
+    assert!(
+        conjugations(params, r) == conjugations(params, t),
+        "arithmetic result differs"
+    );
 }

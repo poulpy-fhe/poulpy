@@ -10,11 +10,12 @@ use crate::{
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{VecZnxAddAssign, VecZnxCopy, VecZnxFillUniformSource},
     layouts::*,
     oep::*,
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, download_vec_znx},
 };
 
 /// Capabilities needed by the complete encryption/decryption composition suite.
@@ -51,47 +52,108 @@ impl<B> EncryptionParityBackend for B where
 {
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Snapshot {
-    pub(crate) label: &'static str,
-    pub(crate) metadata: Vec<usize>,
-    pub(crate) bytes: Vec<u8>,
+#[derive(PartialEq, Eq)]
+pub(crate) enum EncryptionValue {
+    Glwe(GLWE<AlignedBuf, i64>),
+    GlwePlaintext(GLWEPlaintext<AlignedBuf, i64>),
+    Lwe(LWE<AlignedBuf, i64>),
+    LwePlaintext(LWEPlaintext<AlignedBuf, i64>),
+    Gglwe(GGLWE<AlignedBuf, i64>),
+    Ggsw(GGSW<AlignedBuf, i64>),
+    Sources([[u8; 32]; 2]),
+    Seeds(Vec<[u8; 32]>),
+    SwitchingDegrees(Degree, Degree),
 }
+
+#[derive(PartialEq, Eq)]
+pub(crate) struct EncryptionObservation {
+    pub(crate) operation: &'static str,
+    pub(crate) value: EncryptionValue,
+}
+
+pub(crate) fn assert_observations_eq(
+    want: Vec<EncryptionObservation>,
+    have: Vec<EncryptionObservation>,
+    context: std::fmt::Arguments<'_>,
+) {
+    assert!(want.len() == have.len(), "{context}: observation count");
+    for (want, have) in want.iter().zip(&have) {
+        assert!(want.operation == have.operation, "{context}: observation order");
+        assert!(
+            want.value == have.value,
+            "{context}: {} differs between backends",
+            want.operation
+        );
+        if let (EncryptionValue::Glwe(want), EncryptionValue::Glwe(have)) = (&want.value, &have.value) {
+            assert!(want.is_canonical() == have.is_canonical(), "{context}: GLWE canonical flag");
+        }
+    }
+}
+
+// Backend views are not required to expose host slices. Transfer their storage
+// into a typed host container while retaining the complete view geometry.
+fn host_vec<B: Backend>(value: &VecZnxBackendRef<'_, B>) -> VecZnx<AlignedBuf, B::ZnxWord> {
+    let mut data = poulpy_hal::alloc_aligned::<u8>(B::len_bytes_ref(value.data()));
+    B::copy_view_to_host(value.data(), &mut data);
+    VecZnx::from_shape(data, value.shape())
+}
+
+pub(crate) fn host_mat<B: Backend>(value: &MatZnx<B::BufRef<'_>, B::ZnxWord>) -> MatZnx<AlignedBuf, B::ZnxWord> {
+    let mut data = poulpy_hal::alloc_aligned::<u8>(B::len_bytes_ref(value.data()));
+    B::copy_view_to_host(value.data(), &mut data);
+    MatZnx::from_data(data, value.n(), value.rows(), value.cols_in(), value.cols_out(), value.size())
+}
+
 pub(crate) fn assert_fresh_encryption_metadata(value: &impl LWEInfos) {
     assert_encryption_metadata(value, crate::DEFAULT_SIGMA_XE.powi(2));
 }
 
 fn assert_encryption_metadata(value: &impl LWEInfos, variance: f64) {
     let metadata = value.encryption_metadata().expect("encryption must record its provenance");
-    assert_eq!(metadata.parties(), 1);
-    assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(2.0 / 3.0));
-    assert_eq!(metadata.secret_distribution().parties(), 1);
-    assert_eq!(metadata.fresh_noise().precision(), value.k());
+    assert!(metadata.parties() == 1, "encryption party count");
+    assert!(
+        metadata.secret_distribution().base() == Distribution::TernaryProb(2.0 / 3.0),
+        "encryption secret distribution"
+    );
+    assert!(
+        metadata.secret_distribution().parties() == 1,
+        "secret distribution party count"
+    );
+    assert!(metadata.fresh_noise().precision() == value.k(), "fresh noise precision");
     assert!((metadata.initial_noise_variance() - variance).abs() <= variance * 1e-12);
 }
 
-pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
+fn observe_glwe<B: Backend<ZnxWord = i64>, G: GLWEToBackendRef<B>>(operation: &'static str, value: &G) -> EncryptionObservation {
     let view = value.to_backend_ref();
-    if label == "encrypt_pk" || label == "encrypt_zero_pk" {
+    if operation == "encrypt_pk" || operation == "encrypt_zero_pk" {
         let variance = (2.0 * view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0)
             * crate::DEFAULT_SIGMA_XE.powi(2);
         assert_encryption_metadata(&view, variance);
-    } else if label.contains("encrypt") || label == "public_key_generate" {
+    } else if operation.contains("encrypt") || operation == "public_key_generate" {
         assert_fresh_encryption_metadata(&view);
     }
-    let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
-    B::copy_view_to_host(view.data.data(), &mut bytes);
-    Snapshot {
-        label,
-        metadata: vec![
-            view.n().as_usize(),
-            view.base2k().as_usize(),
-            view.k().as_usize(),
-            view.rank().as_usize(),
-        ],
-        bytes,
+    EncryptionObservation {
+        operation,
+        value: EncryptionValue::Glwe(GLWE {
+            encryption_metadata: view.encryption_metadata(),
+            data: host_vec::<B>(&view.data),
+            k: view.k,
+            base2k: view.base2k,
+            canonical: view.canonical,
+        }),
     }
 }
+
+fn observe_plaintext<B: Backend<ZnxWord = i64>>(
+    operation: &'static str,
+    value: &GLWEPlaintext<B::OwnedBuf, i64>,
+) -> EncryptionObservation {
+    EncryptionObservation {
+        operation,
+        value: EncryptionValue::GlwePlaintext(value.to_host_owned::<B>()),
+    }
+}
+
 fn poison_glwe<B: Backend, G: GLWEToBackendMut<B>>(value: &mut G) {
     let mut view = value.to_backend_mut();
     let bytes = B::len_bytes_mut(view.data.data_mut());
@@ -109,11 +171,10 @@ fn poison_lwe<B: Backend, G: LWEToBackendMut<B>>(value: &mut G) {
     let mask_bytes = B::len_bytes_mut(view.mask.data_mut());
     B::copy_host_to_view(view.mask.data_mut(), &vec![0xA5; mask_bytes]);
 }
-pub(crate) fn source_snapshot(label: &'static str, e: &mut Source, a: &mut Source) -> Snapshot {
-    Snapshot {
-        label,
-        metadata: vec![],
-        bytes: [e.new_seed().as_slice(), a.new_seed().as_slice()].concat(),
+pub(crate) fn observe_sources(operation: &'static str, e: &mut Source, a: &mut Source) -> EncryptionObservation {
+    EncryptionObservation {
+        operation,
+        value: EncryptionValue::Sources([e.new_seed(), a.new_seed()]),
     }
 }
 pub(crate) fn secret<B: EncryptionParityBackend>(module: &Module<B>, n: usize, rank: usize) -> BackendGLWESecret<B> {
@@ -139,7 +200,13 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
     Module<BR>: GLWEExpandLWEMatrix<BR>,
     Module<BT>: GLWEExpandLWEMatrix<BT>,
 {
-    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot>
+    fn run<B: EncryptionParityBackend>(
+        module: &Module<B>,
+        n: usize,
+        base2k: usize,
+        rank: usize,
+        k: usize,
+    ) -> Vec<EncryptionObservation>
     where
         Module<B>: GLWEExpandLWEMatrix<B>,
     {
@@ -178,8 +245,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
-        results.push(snapshot_glwe::<B, _>("encrypt_sk", &out));
-        results.push(source_snapshot("encrypt_sk_sources", &mut e, &mut a));
+        results.push(observe_glwe::<B, _>("encrypt_sk", &out));
+        results.push(observe_sources("encrypt_sk_sources", &mut e, &mut a));
         let mut with_mask = module.glwe_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut with_mask);
         module.fill_glwe_mask_from_seed(&mut with_mask, [73; 32]);
@@ -190,9 +257,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut Source::new([71; 32]),
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
-        assert_eq!(
-            snapshot_glwe::<B, _>("encrypt_sk", &with_mask),
-            snapshot_glwe::<B, _>("encrypt_sk", &out),
+        assert!(
+            with_mask.to_host_owned::<B>() == out.to_host_owned::<B>(),
             "caller-filled masks must produce the same ciphertext"
         );
         let mut have = module.glwe_plaintext_alloc_from_infos(&infos);
@@ -203,7 +269,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &skp,
             &mut poisoned_scratch::<B>(module.glwe_decrypt_tmp_bytes(&infos)).arena(),
         );
-        results.push(snapshot_glwe::<B, _>("decrypt", &have));
+        results.push(observe_plaintext::<B>("decrypt", &have));
         let mut twin = module.glwe_alloc_from_infos(&infos);
         unnormalized_twin::<B, B>(&out, &mut twin);
         let mut have_twin = module.glwe_plaintext_alloc_from_infos(&infos);
@@ -213,9 +279,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &skp,
             &mut poisoned_scratch::<B>(module.glwe_decrypt_tmp_bytes(&infos)).arena(),
         );
-        assert_eq!(
-            snapshot_glwe::<B, _>("decrypt", &have_twin).bytes,
-            results.last().unwrap().bytes,
+        assert!(
+            have_twin.to_host_owned::<B>() == have.to_host_owned::<B>(),
             "glwe_decrypt, unnormalized operand"
         );
         // The mask phase is the decryption without the body: of the ciphertext's
@@ -224,7 +289,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         poison_glwe::<B, _>(&mut phase);
         let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_inner_product_tmp_bytes(&infos));
         module.glwe_mask_inner_product(&mut phase, &out, &skp, &mut mask_scratch().arena());
-        results.push(snapshot_glwe::<B, _>("mask_inner_product", &phase));
+        results.push(observe_plaintext::<B>("mask_inner_product", &phase));
         let mut mask = module.glwe_mask_alloc_from_infos(&infos);
         for j in 0..rank {
             module.vec_znx_copy(
@@ -236,9 +301,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         }
         let mut other = module.glwe_plaintext_alloc_from_infos(&infos);
         module.glwe_mask_inner_product(&mut other, &mask, &skp, &mut mask_scratch().arena());
-        assert_eq!(
-            snapshot_glwe::<B, _>("mask_inner_product", &other).bytes,
-            results.last().unwrap().bytes,
+        assert!(
+            other.to_host_owned::<B>() == phase.to_host_owned::<B>(),
             "glwe_mask_inner_product, allocated mask"
         );
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -255,9 +319,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut phase,
             &mut poisoned_scratch::<B>(module.glwe_normalize_tmp_bytes()).arena(),
         );
-        assert_eq!(
-            snapshot_glwe::<B, _>("decrypt", &phase).bytes,
-            snapshot_glwe::<B, _>("decrypt", &have).bytes,
+        assert!(
+            phase.to_host_owned::<B>() == have.to_host_owned::<B>(),
             "glwe_mask_inner_product plus the body"
         );
         poison_glwe::<B, _>(&mut out);
@@ -268,8 +331,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
-        results.push(snapshot_glwe::<B, _>("encrypt_zero_sk", &out));
-        results.push(source_snapshot("encrypt_zero_sk_sources", &mut e, &mut a));
+        results.push(observe_glwe::<B, _>("encrypt_zero_sk", &out));
+        results.push(observe_sources("encrypt_zero_sk_sources", &mut e, &mut a));
 
         for compressed in [false, true] {
             let mut pk = module.glwe_public_key_alloc_from_infos(&infos);
@@ -296,21 +359,24 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 );
             }
             for l in 0..pk.rank().as_usize() {
-                results.push(snapshot_glwe::<B, _>(
+                results.push(observe_glwe::<B, _>(
                     "public_key_generate",
                     &GLWEPublicKeyAtViewRef::<B>::at_view(&pk, l),
                 ));
             }
-            results.push(source_snapshot("public_key_generate_sources", &mut e, &mut a));
-            assert_eq!(pk.dist(), sk.dist());
+            results.push(observe_sources("public_key_generate_sources", &mut e, &mut a));
+            assert!(pk.dist() == sk.dist(), "public key distribution");
             let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk);
             module.glwe_public_key_prepare(
                 &mut pkp,
                 &pk,
                 &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&infos)).arena(),
             );
-            assert_eq!(pkp.dist(), pk.dist());
-            assert_eq!(pkp.encryption_metadata(), pk.encryption_metadata());
+            assert!(pkp.dist() == pk.dist(), "prepared public key distribution");
+            assert!(
+                pkp.encryption_metadata() == pk.encryption_metadata(),
+                "prepared public key metadata"
+            );
             poison_glwe::<B, _>(&mut out);
             module.glwe_encrypt_pk(
                 &mut out,
@@ -320,8 +386,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &mut a,
                 &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
             );
-            results.push(snapshot_glwe::<B, _>("encrypt_pk", &out));
-            results.push(source_snapshot("encrypt_pk_sources", &mut e, &mut a));
+            results.push(observe_glwe::<B, _>("encrypt_pk", &out));
+            results.push(observe_sources("encrypt_pk_sources", &mut e, &mut a));
             poison_glwe::<B, _>(&mut out);
             module.glwe_encrypt_zero_pk(
                 &mut out,
@@ -330,8 +396,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &mut a,
                 &mut poisoned_scratch::<B>(module.glwe_encrypt_pk_tmp_bytes(&infos, &pkp)).arena(),
             );
-            results.push(snapshot_glwe::<B, _>("encrypt_zero_pk", &out));
-            results.push(source_snapshot("encrypt_zero_pk_sources", &mut e, &mut a));
+            results.push(observe_glwe::<B, _>("encrypt_zero_pk", &out));
+            results.push(observe_sources("encrypt_zero_pk_sources", &mut e, &mut a));
         }
 
         let mut compressed = module.glwe_compressed_alloc_from_infos(&infos);
@@ -346,8 +412,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         );
         poison_glwe::<B, _>(&mut out);
         module.decompress_glwe(&mut out, &compressed);
-        results.push(snapshot_glwe::<B, _>("compressed_encrypt_sk", &out));
-        results.push(source_snapshot("compressed_sources", &mut e, &mut a));
+        results.push(observe_glwe::<B, _>("compressed_encrypt_sk", &out));
+        results.push(observe_sources("compressed_sources", &mut e, &mut a));
         poison_glwe_compressed::<B, _>(&mut compressed);
         module.glwe_compressed_encrypt_zero_sk(
             &mut compressed,
@@ -359,13 +425,13 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         let mut zero = module.glwe_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut zero);
         module.decompress_glwe(&mut zero, &compressed);
-        results.push(snapshot_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
-        results.push(source_snapshot("compressed_zero_sources", &mut e, &mut a));
+        results.push(observe_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
+        results.push(observe_sources("compressed_zero_sources", &mut e, &mut a));
         module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
-        results.push(snapshot_glwe::<B, _>("mask_seed", &out));
+        results.push(observe_glwe::<B, _>("mask_seed", &out));
         module.fill_glwe_mask_from_source(&mut out, &mut a);
-        results.push(snapshot_glwe::<B, _>("mask_source", &out));
-        results.push(source_snapshot("mask_sources", &mut e, &mut a));
+        results.push(observe_glwe::<B, _>("mask_source", &out));
+        results.push(observe_sources("mask_sources", &mut e, &mut a));
         let mut lsk = module.lwe_secret_alloc((n * rank).into());
         let data: Vec<i64> = (0..n * rank).map(|i| (i % 3) as i64 - 1).collect();
         {
@@ -394,36 +460,36 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                 &lsk,
                 &mut poisoned_scratch::<B>(module.lwe_matrix_decrypt_tmp_bytes(&layout)).arena(),
             );
-            results.push(snapshot_glwe::<B, _>("matrix_decrypt", &plain));
+            results.push(observe_plaintext::<B>("matrix_decrypt", &plain));
         }
         results
     }
     let base2k = params.base2k.min(12);
     for &rank in &shapes.ranks {
         for k in [3 * base2k, 4 * base2k - 1, 4 * base2k + 1] {
-            assert_eq!(
+            assert_observations_eq(
                 run(reference, params.n, base2k, rank, k),
                 run(tested, params.n, base2k, rank, k),
-                "GLWE encryption rank={rank} k={k}"
+                format_args!("GLWE encryption rank={rank} k={k}"),
             );
         }
     }
 }
 
-fn snapshot_lwe<B: Backend, G: LWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
+fn observe_lwe<B: Backend<ZnxWord = i64>, G: LWEToBackendRef<B>>(operation: &'static str, value: &G) -> EncryptionObservation {
     let view = LWEToBackendRef::<B>::to_backend_ref(value);
-    if label == "lwe_encrypt_sk" {
+    if operation == "lwe_encrypt_sk" {
         assert_fresh_encryption_metadata(&view);
     }
-    let mut bytes = vec![0; view.body.n() * view.body.cols() * view.body.size() * size_of::<i64>()];
-    B::copy_view_to_host(view.body.data(), &mut bytes);
-    let mut mask = vec![0; view.mask.n() * view.mask.cols() * view.mask.size() * size_of::<i64>()];
-    B::copy_view_to_host(view.mask.data(), &mut mask);
-    bytes.extend(mask);
-    Snapshot {
-        label,
-        metadata: vec![view.n().as_usize(), view.base2k().as_usize(), view.k().as_usize()],
-        bytes,
+    EncryptionObservation {
+        operation,
+        value: EncryptionValue::Lwe(LWE {
+            encryption_metadata: view.encryption_metadata(),
+            body: host_vec::<B>(&view.body),
+            mask: host_vec::<B>(&view.mask),
+            k: view.k,
+            base2k: view.base2k,
+        }),
     }
 }
 
@@ -434,7 +500,7 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
     reference: &Module<BR>,
     tested: &Module<BT>,
 ) {
-    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, k: usize) -> Vec<Snapshot> {
+    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, k: usize) -> Vec<EncryptionObservation> {
         let infos = LWELayout {
             n: n.into(),
             base2k: base2k.into(),
@@ -465,8 +531,8 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut poisoned_scratch::<B>(module.lwe_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
         let mut results = vec![
-            snapshot_lwe::<B, _>("lwe_encrypt_sk", &out),
-            source_snapshot("lwe_sources", &mut e, &mut a),
+            observe_lwe::<B, _>("lwe_encrypt_sk", &out),
+            observe_sources("lwe_sources", &mut e, &mut a),
         ];
         let mut have = module.lwe_plaintext_alloc(base2k.into(), k.into());
         {
@@ -480,19 +546,19 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &sk,
             &mut poisoned_scratch::<B>(module.lwe_decrypt_tmp_bytes(&infos)).arena(),
         );
-        let view = LWEPlaintextToBackendRef::<B>::to_backend_ref(&have);
-        let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
-        B::copy_view_to_host(view.data.data(), &mut bytes);
-        results.push(Snapshot {
-            label: "lwe_decrypt",
-            metadata: vec![view.base2k().as_usize(), view.k().as_usize()],
-            bytes,
+        results.push(EncryptionObservation {
+            operation: "lwe_decrypt",
+            value: EncryptionValue::LwePlaintext(LWEPlaintext {
+                data: download_vec_znx::<B>(&have.data),
+                base2k: have.base2k,
+                k: have.k,
+            }),
         });
         module.fill_lwe_mask_from_seed(base2k, &mut out, [103; 32]);
-        results.push(snapshot_lwe::<B, _>("lwe_mask_seed", &out));
+        results.push(observe_lwe::<B, _>("lwe_mask_seed", &out));
         module.fill_lwe_mask_from_source(base2k, &mut out, &mut a);
-        results.push(snapshot_lwe::<B, _>("lwe_mask_source", &out));
-        results.push(source_snapshot("lwe_mask_sources", &mut e, &mut a));
+        results.push(observe_lwe::<B, _>("lwe_mask_source", &out));
+        results.push(observe_sources("lwe_mask_sources", &mut e, &mut a));
         // LWECompressed has a public decompressor but no compressed encrypt
         // operation. Stage its canonical body and seed explicitly on each backend.
         let mut compact = module.lwe_compressed_alloc_from_infos(&infos);
@@ -501,20 +567,34 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         let pad = (base2k - k % base2k) % base2k;
         *body.last_mut().unwrap() &= !0i64 << pad;
         B::copy_from_host(compact.data.data_mut(), bytemuck::cast_slice(&body));
-        let mut before = vec![0; B::len_bytes(compact.data.data())];
-        B::copy_to_host(compact.data.data(), &mut before);
+        let before = LWECompressed {
+            encryption_metadata: compact.encryption_metadata(),
+            data: download_vec_znx::<B>(&compact.data),
+            base2k: compact.base2k,
+            k: compact.k,
+            seed: compact.seed,
+        };
         module.decompress_lwe(&mut out, &compact);
-        results.push(snapshot_lwe::<B, _>("lwe_decompress", &out));
-        let mut after = vec![0; B::len_bytes(compact.data.data())];
-        B::copy_to_host(compact.data.data(), &mut after);
-        assert_eq!(after, before);
-        assert_eq!(compact.seed, [107; 32]);
+        results.push(observe_lwe::<B, _>("lwe_decompress", &out));
+        let after = LWECompressed {
+            encryption_metadata: compact.encryption_metadata(),
+            data: download_vec_znx::<B>(&compact.data),
+            base2k: compact.base2k,
+            k: compact.k,
+            seed: compact.seed,
+        };
+        assert!(after == before, "LWE decompression changed its source");
+        assert!(compact.seed == [107; 32], "LWE decompression changed the seed");
         results
     }
     let b = params.base2k.min(12);
     for n in [8, reference.n()] {
         for k in [3 * b, 4 * b - 1, 4 * b + 1] {
-            assert_eq!(run(reference, n, b, k), run(tested, n, b, k), "LWE encryption n={n} k={k}");
+            assert_observations_eq(
+                run(reference, n, b, k),
+                run(tested, n, b, k),
+                format_args!("LWE encryption n={n} k={k}"),
+            );
         }
     }
 }

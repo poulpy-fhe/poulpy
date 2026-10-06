@@ -142,11 +142,12 @@ where
             &mut scratch.borrow(),
         );
 
-        let want = BE::to_host_bytes(&want.data);
-        let have = BE::to_host_bytes(&have.data);
-        assert_ne!(want, sentinel, "reference VMP did not overwrite the destination");
-        assert_eq!(
-            have, want,
+        assert!(
+            BE::to_host_bytes(&want.data) != sentinel,
+            "reference VMP did not overwrite the destination"
+        );
+        assert!(
+            have == want,
             "strided VMP mismatch for dsize={dsize}, a_size={a_size}, sparse={sparse}"
         );
     }
@@ -417,7 +418,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
 
             let mut have = module_ref.gglwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
-            assert_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
+            assert!(res_ref == have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
 
             // The assign query is measured independently at the operand's own width.
             let mut assigned_ref = module_ref.gglwe_alloc_from_infos(&a_infos);
@@ -430,7 +431,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
             module_test.gglwe_keyswitch_assign(&mut assigned_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
             let mut have = module_ref.gglwe_alloc_from_infos(&a_infos);
             assigned_test.transfer_into(&mut have);
-            assert_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
+            assert!(assigned_ref == have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
         }
     }
 }
@@ -582,7 +583,7 @@ where
                 1,
                 &mut scratch.borrow(),
             );
-            BE::to_host_bytes(&res.data)
+            res
         };
 
         let mut scratch = ScratchOwned::<BE>::alloc(
@@ -592,8 +593,8 @@ where
         );
         let want = product(&key_of(&sel_pmat, &effective_layout, 1), &mut scratch);
         let have = product(&key_of(&parent_pmat, &effective_layout, stride), &mut scratch);
-        assert_eq!(
-            have, want,
+        assert!(
+            have == want,
             "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
 
@@ -602,9 +603,8 @@ where
         let mut refilled = mat.clone();
         poison(&mut refilled, 0);
         let refilled_pmat = prepare(&refilled, rows, &mut prep);
-        assert_eq!(
-            product(&key_of(&refilled_pmat, &effective_layout, stride), &mut scratch),
-            have,
+        assert!(
+            product(&key_of(&refilled_pmat, &effective_layout, stride), &mut scratch) == have,
             "skipped rows changed the output for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
     }

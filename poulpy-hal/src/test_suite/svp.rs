@@ -173,7 +173,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
             let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             let res_test = download_vec_znx::<BT>(&res_test_backend);
-            assert_eq!(res_ref, res_test);
+            assert!(res_ref == res_test, "test_svp_apply_dft: result mismatch");
         }
     }
 }
@@ -359,7 +359,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
             let res_ref = download_vec_znx::<BR>(&res_ref_backend);
             let res_test = download_vec_znx::<BT>(&res_test_backend);
-            assert_eq!(res_ref, res_test);
+            assert!(res_ref == res_test, "test_svp_apply_dft_to_dft: result mismatch");
         }
     }
 }
@@ -498,6 +498,6 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
 
         let res_ref = download_vec_znx::<BR>(&res_ref_backend);
         let res_test = download_vec_znx::<BT>(&res_test_backend);
-        assert_eq!(res_ref, res_test);
+        assert!(res_ref == res_test, "test_svp_apply_dft_to_dft_assign: result mismatch");
     }
 }

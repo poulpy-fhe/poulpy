@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use poulpy_core::{
     GLWERotate, TransferInto,
-    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank},
+    layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -44,7 +44,7 @@ const PACO_C: usize = 8;
 const KAPPA: usize = 4;
 
 /// Asserts that a rejected public call did not alter either the ciphertext's
-/// semantic/layout metadata or its backend bytes.
+/// value, metadata, or canonical state.
 fn assert_ciphertext_unchanged<BE>(
     before: &crate::layouts::CKKSCiphertextOwned<HostBytesBackend>,
     after: &crate::layouts::CKKSCiphertextOwned<BE>,
@@ -52,17 +52,12 @@ fn assert_ciphertext_unchanged<BE>(
     BE: TestContextBackend<Ring = Standard>,
 {
     let after = after.to_host_owned::<BE>();
-    assert_eq!(before.meta(), after.meta(), "a rejected call changed CKKS metadata");
-    assert_eq!(before.n(), after.n(), "a rejected call changed the output degree");
-    assert_eq!(before.rank(), after.rank(), "a rejected call changed the output rank");
-    assert_eq!(before.base2k(), after.base2k(), "a rejected call changed the output radix");
-    assert_eq!(before.k(), after.k(), "a rejected call changed the output torus width");
+    assert!(before == &after, "a rejected call changed the ciphertext");
     assert_eq!(
-        before.max_size(),
-        after.max_size(),
-        "a rejected call changed the output stored limb width"
+        before.is_canonical(),
+        after.is_canonical(),
+        "a rejected call changed canonical state"
     );
-    assert_eq!(before.data().raw(), after.data().raw(), "a rejected call changed output data");
 }
 
 /// Decrypts on `BE` at full precision, downloads, and reconstructs the raw
@@ -397,11 +392,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_eq!(seq.log_budget(), par.log_budget(), "metadata must match");
     assert_eq!(par.log_sparsity(), expected_sparsity, "parallel output sparsity");
     let (seq_host, par_host) = (seq.to_host_owned::<BE>(), par.to_host_owned::<BE>());
-    assert_eq!(
-        seq_host.data().raw(),
-        par_host.data().raw(),
-        "parallel output must be bit-identical"
-    );
+    assert!(seq_host == par_host, "parallel output must be bit-identical");
 
     // Worker modules and arenas remain reusable across calls.
     let mut par_reused = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
@@ -415,10 +406,9 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    assert_eq!(
-        seq_host.data().raw(),
-        par_reused.to_host_owned::<BE>().data().raw(),
-        "reused PaCo workers must remain deterministic",
+    assert!(
+        seq_host == par_reused.to_host_owned::<BE>(),
+        "reused PaCo workers must remain deterministic"
     );
 }
 
@@ -583,9 +573,8 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     assert_eq!(out.log_budget(), par.log_budget(), "metadata must match");
     assert_eq!(par.log_sparsity(), expected_sparsity, "parallel output sparsity");
     let (out_host, par_host) = (out.to_host_owned::<BE>(), par.to_host_owned::<BE>());
-    assert_eq!(
-        out_host.data().raw(),
-        par_host.data().raw(),
+    assert!(
+        out_host == par_host,
         "default parallel driver must be bit-identical to the default sequential driver"
     );
 

@@ -68,14 +68,12 @@ pub fn test_glwe_rotate<BE: crate::test_suite::noise::TestBackend + crate::oep::
 
         for col in 0..cols {
             let expected = negacyclic_rotate(src.data.at(col, 0), shift);
-            assert_eq!(
-                out.data.at(col, 0),
-                expected.as_slice(),
+            assert!(
+                out.data.at(col, 0) == expected.as_slice(),
                 "out-of-place mismatch for shift {shift}, col {col}"
             );
-            assert_eq!(
-                inplace.data.at(col, 0),
-                expected.as_slice(),
+            assert!(
+                inplace.data.at(col, 0) == expected.as_slice(),
                 "inplace mismatch for shift {shift}, col {col}"
             );
         }

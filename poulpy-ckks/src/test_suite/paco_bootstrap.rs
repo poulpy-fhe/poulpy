@@ -357,14 +357,5 @@ fn seq_bootstrap_case<BE, F, E>(
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, &mut scratch.borrow())
         .unwrap();
-    assert_eq!(
-        out_view.meta(),
-        out.meta(),
-        "view-input bootstrap must reproduce the owned-input metadata"
-    );
-    assert_eq!(
-        out_view.data(),
-        out.data(),
-        "view-input bootstrap must be bit-identical to the owned-input run"
-    );
+    assert!(out_view == out, "view-input bootstrap differs from owned-input bootstrap");
 }

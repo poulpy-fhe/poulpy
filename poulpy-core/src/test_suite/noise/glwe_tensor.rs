@@ -596,9 +596,8 @@ where
                 );
                 module.glwe_mul_plain(cnv_offset, &mut res_compact, &a, &pt_compact, &mut scratch.borrow());
                 module.glwe_mul_plain(cnv_offset, &mut res_dense, &a, &pt_dense, &mut scratch.borrow());
-                assert_eq!(
-                    res_compact.data().raw(),
-                    res_dense.data().raw(),
+                assert!(
+                    res_compact == res_dense,
                     "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
 
@@ -608,9 +607,8 @@ where
                 assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
                 module.glwe_mul_plain_assign(cnv_offset, &mut assign_compact, &pt_compact, &mut scratch.borrow());
                 module.glwe_mul_plain_assign(cnv_offset, &mut assign_dense, &pt_dense, &mut scratch.borrow());
-                assert_eq!(
-                    assign_compact.data().raw(),
-                    assign_dense.data().raw(),
+                assert!(
+                    assign_compact == assign_dense,
                     "glwe_mul_plain_assign: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
             }

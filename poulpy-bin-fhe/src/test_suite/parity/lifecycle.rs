@@ -1,5 +1,5 @@
 //! Key lifecycle and packed-to-prepared integer parity.
-use super::{ParityBackend, fixture_glwe, snapshot_glwe, with_scratch};
+use super::{ParityBackend, fixture_glwe, host_glwe, with_scratch};
 use crate::{
     api::{
         BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk, CircuitBootstrappingKeyEncryptSk,
@@ -21,7 +21,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{HostBytesBackend, Module, WriterTo},
+    layouts::{HostBytesBackend, Module},
     source::Source,
 };
 
@@ -98,19 +98,21 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
     }
 }
 
-fn raw_key_bytes<B: ParityBackend>(module: &Module<B>, key: &BDDKey<B::OwnedBuf, CGGI, i64>, layout: &BDDKeyLayout) -> Vec<u8> {
+fn host_key<B: ParityBackend>(
+    module: &Module<B>,
+    key: &BDDKey<B::OwnedBuf, CGGI, i64>,
+    layout: &BDDKeyLayout,
+) -> BDDKey<poulpy_hal::AlignedBuf, CGGI, i64> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut copy = BDDKey::alloc_from_infos(&host, layout);
     key.transfer_into(&mut copy);
-    let mut bytes = Vec::new();
-    copy.write_to(&mut bytes).unwrap();
-    bytes
+    copy
 }
 
 fn observe<B: ParityBackend>(
     module: &Module<B>,
     value: &FheUintPrepared<B::OwnedBuf, u8, B>,
-) -> (GGSWLayout, Vec<super::GlweSnapshot>)
+) -> (GGSWLayout, Vec<super::HostGlwe>)
 where
     Module<B>: GLWEExternalProduct<B>,
 {
@@ -131,7 +133,7 @@ where
                 with_scratch::<B, _>(module.glwe_external_product_tmp_bytes(&output, &input, bit), |s| {
                     module.glwe_external_product(&mut output, &input, &bit.to_backend_ref(), s)
                 });
-                snapshot_glwe::<B, _>(&output)
+                host_glwe::<B, _>(&output)
             })
             .collect(),
     )
@@ -190,7 +192,7 @@ where
         let mut raw_test = BDDKey::alloc_from_infos(tested, &layout);
         raw_ref.transfer_into(&mut raw_test);
         assert!(
-            raw_key_bytes(reference, &raw_ref, &layout) == raw_key_bytes(tested, &raw_test, &layout),
+            host_key(reference, &raw_ref, &layout) == host_key(tested, &raw_test, &layout),
             "raw key transfer mismatch"
         );
         let mut key_ref = reference.alloc_bdd_key_from_infos(&layout);
@@ -226,7 +228,10 @@ where
         with_scratch::<BT, _>(bt_bytes, |s| {
             tested.fhe_uint_prepare(&mut res_test, &input_test, &key_test, s)
         });
-        assert_eq!(observe(reference, &res_ref), observe(tested, &res_test));
+        assert!(
+            observe(reference, &res_ref) == observe(tested, &res_test),
+            "lifecycle result differs"
+        );
         for (start, count) in [(1usize, 5usize), (2, 0), (0, 8)] {
             with_scratch::<BR, _>(br_bytes, |s| {
                 reference.fhe_uint_prepare_custom(&mut res_ref, &input_ref, start, count, &key_ref, s)
@@ -235,13 +240,13 @@ where
                 tested.fhe_uint_prepare_custom(&mut res_test, &input_test, start, count, &key_test, s)
             });
             let expected = observe(reference, &res_ref);
-            assert_eq!(expected, observe(tested, &res_test));
+            assert!(expected == observe(tested, &res_test), "lifecycle result differs");
             for threads in [1usize, 2, 4] {
                 let workers = poulpy_hal::execution::worker_count::<BT::TaskExecutor>(threads, count);
                 with_scratch::<BT, _>(bt_bytes * workers, |s| {
                     tested.fhe_uint_prepare_custom_multi_thread(threads, &mut res_test, &input_test, start, count, &key_test, s)
                 });
-                assert_eq!(expected, observe(tested, &res_test));
+                assert!(expected == observe(tested, &res_test), "lifecycle result differs");
             }
         }
         let mut right_ref = reference.alloc_fhe_uint_prepared_from_infos(&output);
@@ -280,7 +285,10 @@ where
                     tested.execute_bdd_circuit_1w_to_1w(&mut actual, &circuit, &res_test, &key_test, s)
                 }
             });
-            assert_eq!(snapshot_glwe::<BR, _>(&expected), snapshot_glwe::<BT, _>(&actual));
+            assert!(
+                host_glwe::<BR, _>(&expected) == host_glwe::<BT, _>(&actual),
+                "lifecycle result differs"
+            );
             for threads in [1usize, 2, 4] {
                 let bytes = if two_words {
                     tested.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
@@ -314,7 +322,10 @@ where
                         tested.execute_bdd_circuit_1w_to_1w_multi_thread(threads, &mut actual, &circuit, &res_test, &key_test, s)
                     }
                 });
-                assert_eq!(snapshot_glwe::<BR, _>(&expected), snapshot_glwe::<BT, _>(&actual));
+                assert!(
+                    host_glwe::<BR, _>(&expected) == host_glwe::<BT, _>(&actual),
+                    "lifecycle result differs"
+                );
             }
         }
     }
@@ -379,7 +390,7 @@ where
             },
         );
         assert!(
-            raw_key_bytes(module, &expected, &layout) == raw_key_bytes(module, &actual, &layout),
+            host_key(module, &expected, &layout) == host_key(module, &actual, &layout),
             "key encryption parity mismatch"
         );
         let reference_bytes = crate::reference::bdd::bdd_key_encrypt_sk_tmp_bytes_reference::<CGGI, B, _>(module, &layout);
@@ -405,7 +416,7 @@ where
             )
         });
         assert!(
-            raw_key_bytes(module, &expected, &layout) == raw_key_bytes(module, &actual, &layout),
+            host_key(module, &expected, &layout) == host_key(module, &actual, &layout),
             "key encryption parity mismatch"
         );
         let mut sk_prepared = module.glwe_secret_prepared_alloc(layout.cbt_layout.brk_layout.rank);
@@ -449,7 +460,10 @@ where
             );
             assert!(expected.bits.iter().all(|bit| bit.encryption_metadata().is_some()));
             assert!(actual.bits.iter().all(|bit| bit.encryption_metadata().is_some()));
-            assert_eq!(observe(module, &expected), observe(module, &actual));
+            assert!(
+                observe(module, &expected) == observe(module, &actual),
+                "lifecycle result differs"
+            );
         }
     }
 }

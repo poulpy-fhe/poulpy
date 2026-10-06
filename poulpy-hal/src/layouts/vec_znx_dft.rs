@@ -549,14 +549,14 @@ mod limb_range_tests {
             middle.data.fill(0);
         }));
         assert!(rejected.is_err());
-        assert_eq!(dft.data, original);
+        assert!(dft.data == original, "assert_non_contiguous_operations: result mismatch");
 
         // Both physical sizes are block-linear, so byte-count equality alone
         // cannot authorize indexed access to an unknown layout.
         assert_eq!(NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, 1, 1) * cols * size, bytes);
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dft.zero_at(1, 1)));
         assert!(rejected.is_err());
-        assert_eq!(dft.data, original);
+        assert!(dft.data == original, "assert_non_contiguous_operations: result mismatch");
         assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
 
         let ptr = dft.data.as_ptr();
@@ -565,10 +565,16 @@ mod limb_range_tests {
             let full = backend.with_size_mut(size);
             assert_eq!((full.n(), full.cols(), full.size()), (n, cols, size));
             assert_eq!(full.data.as_ptr(), ptr);
-            assert_eq!(full.data, original.as_slice());
+            assert!(
+                full.data == original.as_slice(),
+                "assert_non_contiguous_operations: result mismatch"
+            );
             full.data[bytes / 2..bytes].fill(0);
         }
-        assert_eq!(&dft.data[..bytes / 2], &original[..bytes / 2]);
+        assert!(
+            dft.data[..bytes / 2] == original[..bytes / 2],
+            "assert_non_contiguous_operations: result mismatch"
+        );
         assert!(dft.data[bytes / 2..bytes].iter().all(|byte| *byte == 0));
 
         dft.zero();

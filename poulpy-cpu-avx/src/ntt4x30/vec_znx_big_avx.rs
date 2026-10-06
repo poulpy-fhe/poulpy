@@ -1170,7 +1170,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_add_avx2(n, &mut res, &a, &b) };
-        assert_eq!(res, expected, "vi128_add_avx2 mismatch");
+        assert!(res == expected, "vi128_add_avx2 mismatch");
     }
 
     #[test]
@@ -1182,7 +1182,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_sub_avx2(n, &mut res, &a, &b) };
-        assert_eq!(res, expected, "vi128_sub_avx2 mismatch");
+        assert!(res == expected, "vi128_sub_avx2 mismatch");
     }
 
     #[test]
@@ -1193,7 +1193,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_negate_avx2(n, &mut res, &a) };
-        assert_eq!(res, expected, "vi128_negate_avx2 mismatch");
+        assert!(res == expected, "vi128_negate_avx2 mismatch");
     }
 
     #[test]
@@ -1204,7 +1204,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_from_small_avx2(n, &mut res, &a) };
-        assert_eq!(res, expected, "vi128_from_small_avx2 mismatch");
+        assert!(res == expected, "vi128_from_small_avx2 mismatch");
     }
 
     #[test]
@@ -1215,7 +1215,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_neg_from_small_avx2(n, &mut res, &a) };
-        assert_eq!(res, expected, "vi128_neg_from_small_avx2 mismatch");
+        assert!(res == expected, "vi128_neg_from_small_avx2 mismatch");
     }
 
     #[test]
@@ -1249,7 +1249,7 @@ mod tests {
 
         let mut res = vec![0i128; n];
         unsafe { vi128_hadamard_i64_avx2(n, &mut res, &a, &b) };
-        assert_eq!(res, expected, "vi128_hadamard_i64_avx2 mismatch");
+        assert!(res == expected, "vi128_hadamard_i64_avx2 mismatch");
     }
 
     #[test]
@@ -1294,9 +1294,8 @@ mod tests {
                         assert_eq!((want[1], want_carry[1]), (0, bound >> (base2k - 1)));
                     }
                     unsafe { nfc_middle_step_avx2(base2k as u32, lsh as u32, n, &mut got, &a, &mut got_carry) };
-                    assert_eq!(
-                        (&got, &got_carry),
-                        (&want, &want_carry),
+                    assert!(
+                        (&got, &got_carry) == (&want, &want_carry),
                         "middle k={base2k} lsh={lsh} round={round}"
                     );
                     want.clone_from(&initial);
@@ -1305,14 +1304,14 @@ mod tests {
                     got_carry.clone_from(&carry);
                     nfc_middle_step_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
                     unsafe { nfc_middle_step_assign_avx2(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
-                    assert_eq!((&got, &got_carry), (&want, &want_carry), "assign k={base2k} lsh={lsh}");
+                    assert!((&got, &got_carry) == (&want, &want_carry), "assign k={base2k} lsh={lsh}");
                     want.clone_from(&initial);
                     got.clone_from(&initial);
                     want_carry.clone_from(&carry);
                     got_carry.clone_from(&carry);
                     nfc_final_step_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
                     unsafe { nfc_final_step_assign_avx2(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
-                    assert_eq!((&got, &got_carry), (&want, &want_carry), "final k={base2k} lsh={lsh}");
+                    assert!((&got, &got_carry) == (&want, &want_carry), "final k={base2k} lsh={lsh}");
                 }
             }
         }

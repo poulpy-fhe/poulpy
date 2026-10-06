@@ -4,8 +4,8 @@ use crate::{
     Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
-        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensor,
+        GLWESecretTensorFactory, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
             GLWETensorKeyPreparedFactory,
@@ -17,7 +17,7 @@ use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, download_scalar_znx},
 };
 use std::collections::HashMap;
 
@@ -38,8 +38,14 @@ where
     // The key lists name the module's Galois elements; keys for operands of a smaller
     // degree are those of a module of that degree.
     if r.n() == t.n() {
-        assert_eq!(r.glwe_trace_galois_elements(), t.glwe_trace_galois_elements());
-        assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
+        assert!(
+            r.glwe_trace_galois_elements() == t.glwe_trace_galois_elements(),
+            "values differ"
+        );
+        assert!(
+            r.glwe_pack_galois_elements() == t.glwe_pack_galois_elements(),
+            "values differ"
+        );
     }
     for &rank in &shapes.ranks {
         let g = GLWELayout {
@@ -104,7 +110,7 @@ where
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace rank={rank} skip={skip}");
             if skip == (params.n.ilog2() as usize) {
-                assert_eq!(out_r, a_r, "empty out-of-place trace must copy the input");
+                assert!(out_r == a_r, "empty out-of-place trace must copy the input");
             }
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
@@ -123,8 +129,8 @@ where
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
             if skip == (params.n.ilog2() as usize) {
-                assert_eq!(
-                    out_r, a_r,
+                assert!(
+                    out_r == a_r,
                     "empty trace must preserve coefficients and layout for untagged input"
                 );
             }
@@ -150,7 +156,7 @@ where
                 );
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out.transfer_into(&mut have);
-                assert_eq!(have, a_r, "empty trace without keys");
+                assert!(have == a_r, "empty trace without keys");
                 for assign in [false, true] {
                     initial.transfer_into(&mut out);
                     let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -173,7 +179,7 @@ where
                     }));
                     assert!(rejected.is_err(), "trace accepted skip greater than log_n");
                     out.transfer_into(&mut have);
-                    assert_eq!(have, initial, "invalid skip changed output");
+                    assert!(have == initial, "invalid skip changed output");
                 }
             }};
         }
@@ -228,13 +234,13 @@ where
             if log_gap_out == 0 && gi.k == g.k {
                 // The last packing phase is an empty trace: it must publish
                 // the accumulator retained at index zero into the destination.
-                assert_eq!(out_r, inputs_r[0], "packing failed to publish its final accumulator");
+                assert!(out_r == inputs_r[0], "packing failed to publish its final accumulator");
             }
             // Inputs are explicitly consumed; compare the observable mutations too.
             let mut have_in = r.glwe_alloc_from_infos(gi);
             for (a, b) in inputs_r.iter().zip(inputs_t.iter()) {
                 b.transfer_into(&mut have_in);
-                assert_eq!(*a, have_in, "pack input mutation");
+                assert!(*a == have_in, "pack input mutation");
             }
         }
         macro_rules! check_invalid_pack {
@@ -269,10 +275,10 @@ where
                     assert!(rejected.is_err(), "packing accepted unsupported positions/gap");
                     let mut have = r.glwe_alloc_from_infos(&g);
                     out.transfer_into(&mut have);
-                    assert_eq!(initial, have, "invalid packing changed output");
+                    assert!(initial == have, "invalid packing changed output");
                     for (want, operand) in expected.iter().zip(&operands) {
                         operand.transfer_into(&mut have);
-                        assert_eq!(*want, have, "invalid packing consumed an input");
+                        assert!(*want == have, "invalid packing consumed an input");
                     }
                 }
             }};
@@ -329,7 +335,7 @@ where
                         );
                         let mut have = r.glwe_alloc_from_infos(&g);
                         out.transfer_into(&mut have);
-                        assert_eq!(initial, have, "mixed packing layouts changed output");
+                        assert!(initial == have, "mixed packing layouts changed output");
                         for (want, operand) in expected.iter().zip(&operands) {
                             assert_eq!(
                                 want.glwe_layout(),
@@ -338,7 +344,7 @@ where
                             );
                             let mut have = r.glwe_alloc_from_infos(want);
                             operand.transfer_into(&mut have);
-                            assert_eq!(*want, have, "mixed packing layouts consumed an input");
+                            assert!(*want == have, "mixed packing layouts consumed an input");
                         }
                     }
                 }
@@ -403,11 +409,17 @@ where
             &secret_t,
             &mut poisoned_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
         );
-        assert_eq!(
-            BR::to_host_bytes(&tensor_r.data.data),
-            BT::to_host_bytes(&tensor_t.data.data),
-            "tensor secret rank={rank}"
-        );
+        let tensor_want = GLWESecretTensor {
+            data: download_scalar_znx::<BR>(&tensor_r.data),
+            rank: tensor_r.rank,
+            dist: tensor_r.dist,
+        };
+        let tensor_have = GLWESecretTensor {
+            data: download_scalar_znx::<BT>(&tensor_t.data),
+            rank: tensor_t.rank,
+            dist: tensor_t.dist,
+        };
+        assert!(tensor_want == tensor_have, "tensor secret rank={rank}");
         assert_eq!(tensor_r.dist(), tensor_t.dist());
         assert_eq!(tensor_r.dist(), secret_r.dist());
         let mut tensorp_r = r.glwe_secret_tensor_prepared_alloc_from_infos(&secret_layout);
@@ -445,12 +457,7 @@ where
             );
             let mut have = r.glwe_plaintext_alloc_from_infos(&g);
             pt_t.transfer_into(&mut have);
-            assert_eq!((pt_r.base2k, pt_r.k), (have.base2k, have.k));
-            assert_eq!(
-                BR::to_host_bytes(pt_r.data.data()),
-                BR::to_host_bytes(have.data.data()),
-                "tensor decrypt rank={rank} k={precision}"
-            );
+            assert!(pt_r == have, "tensor decrypt rank={rank} k={precision}");
             for dsize in shapes.dsizes(precision, b) {
                 let key = GLWETensorKeyLayout {
                     n: g.n,

@@ -729,7 +729,7 @@ mod host_transfer_tests {
         let input = vec![1u8; 100];
         let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
         assert_eq!(buf.len(), 128, "input is copied into a padded buffer");
-        assert_eq!(&buf[..100], &input[..]);
+        assert!(buf[..100] == input[..], "from_bytes_pads_and_zeroes: result mismatch");
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
     }
 
@@ -741,7 +741,10 @@ mod host_transfer_tests {
         let src = [7u8; 100];
         let buf = <HostBytesBackend as Backend>::from_host_bytes(&src);
         assert_eq!(buf.len(), 128);
-        assert_eq!(&buf[..100], &src[..]);
+        assert!(
+            buf[..100] == src[..],
+            "from_host_bytes_unaligned_length_pads_and_zeroes: result mismatch"
+        );
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
 
         let mut owned = <HostBytesBackend as Backend>::alloc_bytes(100);
@@ -749,11 +752,14 @@ mod host_transfer_tests {
         <HostBytesBackend as Backend>::copy_host_to_view(&mut <HostBytesBackend as Backend>::view_mut(&mut owned), &src2);
         let mut dst = vec![0u8; 100];
         <HostBytesBackend as Backend>::copy_view_to_host(&<HostBytesBackend as Backend>::view(&owned), &mut dst);
-        assert_eq!(dst, src2, "copy_host_to_view/copy_view_to_host round trip");
+        assert!(dst == src2, "copy_host_to_view/copy_view_to_host round trip");
 
         let mut all = vec![0xffu8; 128];
         <HostBytesBackend as Backend>::copy_to_host(&owned, &mut all);
-        assert_eq!(&all[..100], &src2[..]);
+        assert!(
+            all[..100] == src2[..],
+            "from_host_bytes_unaligned_length_pads_and_zeroes: result mismatch"
+        );
         assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
     }
 }

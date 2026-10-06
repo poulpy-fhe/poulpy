@@ -1,6 +1,6 @@
 //! Paired matrix generation and homomorphic transforms in every output format.
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{HostCiphertext, fixture_ciphertext, host_ciphertext, with_scratch},
     keys::{key_layout, prepared_automorphism_key},
 };
 use crate::{
@@ -20,25 +20,33 @@ use std::collections::HashMap;
 // Compact diagonal storage may stop at a backend-specific minimum degree.
 // Compare the public polynomial after the common ring embedding, not its
 // allocation degree or unused coefficient slots.
-fn diagonal_snapshot<B, A>(value: &A, ring_degree: usize) -> Snapshot
+fn embedded_plaintext<B, A>(value: &A, ring_degree: usize) -> HostCiphertext
 where
     B: Backend<ZnxWord = i64>,
     A: crate::CKKSInfos + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::GLWEToBackendRef<B>,
 {
-    let mut out = snapshot::<B, _>(value);
-    let degree = out.layout.glwe_layout.n.as_usize();
+    use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, SetK};
+    use poulpy_hal::layouts::{HostBytesBackend, ZnxView, ZnxViewMut};
+
+    let (value, meta, canonical) = host_ciphertext::<B, _>(value);
+    let degree = value.n().as_usize();
     assert!(ring_degree.is_multiple_of(degree));
     let gap = ring_degree / degree;
-    let mut embedded = vec![0; out.digits.len() * gap];
-    for (index, coefficient) in out.digits.iter().enumerate() {
-        embedded[index * gap] = *coefficient;
+    let module = Module::<HostBytesBackend>::new(ring_degree as u64);
+    let mut layout = value.glwe_layout();
+    layout.n = ring_degree.into();
+    layout.k = (value.max_size() * value.base2k().as_usize()).into();
+    let mut embedded = module.glwe_alloc_from_infos(&layout);
+    for (index, coefficient) in value.data().raw().iter().enumerate() {
+        embedded.data_mut().raw_mut()[index * gap] = *coefficient;
     }
-    out.digits = embedded;
-    out.layout.glwe_layout.n = ring_degree.into();
-    out
+    embedded.set_k(value.k());
+    embedded.set_canonical(canonical);
+    GLWEToBackendMut::<HostBytesBackend>::set_encryption_metadata(&mut embedded, value.encryption_metadata());
+    (embedded, meta, canonical)
 }
 
-fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+fn run<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<HostCiphertext>
 where
     B: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
@@ -82,7 +90,7 @@ where
                 for factor in dft.factor_operands() {
                     for giant in &factor.giant_steps {
                         for diagonal in &giant.diagonals {
-                            results.push(diagonal_snapshot::<B, _>(&diagonal.plaintext, module.n()));
+                            results.push(embedded_plaintext::<B, _>(&diagonal.plaintext, module.n()));
                         }
                     }
                 }
@@ -111,12 +119,11 @@ where
                     |scratch| module.ckks_dft_evaluate_assign(&mut resident, &prepared, &keys, scratch),
                 )
                 .unwrap();
-                assert_eq!(
-                    snapshot::<B, _>(&raw),
-                    snapshot::<B, _>(&resident),
+                assert!(
+                    host_ciphertext::<B, _>(&raw) == host_ciphertext::<B, _>(&resident),
                     "prepared DFT differs from streamed DFT"
                 );
-                results.push(snapshot::<B, _>(&raw));
+                results.push(host_ciphertext::<B, _>(&raw));
                 (dft, prepared, keys)
             }};
         }
@@ -134,8 +141,11 @@ where
                     |scratch| module.$method(&mut resident, &prepared, &keys, scratch),
                 )
                 .unwrap();
-                assert_eq!(snapshot::<B, _>(&out), snapshot::<B, _>(&resident));
-                results.push(snapshot::<B, _>(&out));
+                assert!(
+                    host_ciphertext::<B, _>(&out) == host_ciphertext::<B, _>(&resident),
+                    "dft result differs"
+                );
+                results.push(host_ciphertext::<B, _>(&out));
             }};
         }
         standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots);
@@ -143,7 +153,7 @@ where
         {
             let (dft, prepared, keys) = prepare!(Encode, Split, DFTType::Encode, DFTOutputFormat::SplitRealAndImag);
             let src = fixture_ciphertext(module, &layout, 71);
-            let before = snapshot::<B, _>(&src);
+            let before = host_ciphertext::<B, _>(&src);
             let mut re = fixture_ciphertext(module, &layout, 73);
             let mut im = fixture_ciphertext(module, &layout, 79);
             with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
@@ -156,11 +166,17 @@ where
                 module.ckks_coeffs_to_slots_split(&mut resident_re, &mut resident_im, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<B, _>(&re), snapshot::<B, _>(&resident_re));
-            assert_eq!(snapshot::<B, _>(&im), snapshot::<B, _>(&resident_im));
-            assert_eq!(before, snapshot::<B, _>(&src));
-            results.push(snapshot::<B, _>(&re));
-            results.push(snapshot::<B, _>(&im));
+            assert!(
+                host_ciphertext::<B, _>(&re) == host_ciphertext::<B, _>(&resident_re),
+                "dft result differs"
+            );
+            assert!(
+                host_ciphertext::<B, _>(&im) == host_ciphertext::<B, _>(&resident_im),
+                "dft result differs"
+            );
+            assert!(before == host_ciphertext::<B, _>(&src), "dft result differs");
+            results.push(host_ciphertext::<B, _>(&re));
+            results.push(host_ciphertext::<B, _>(&im));
         }
         {
             let (dft, prepared, keys) = prepare!(Decode, Split, DFTType::Decode, DFTOutputFormat::SplitRealAndImag);
@@ -183,15 +199,18 @@ where
                 module.ckks_slots_to_coeffs_split(&mut resident, &re, &im, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<B, _>(&out), snapshot::<B, _>(&resident));
-            results.push(snapshot::<B, _>(&out));
-            assert_eq!(
-                snapshot::<B, _>(&re),
-                snapshot::<B, _>(&fixture_ciphertext(module, &real_layout, 83))
+            assert!(
+                host_ciphertext::<B, _>(&out) == host_ciphertext::<B, _>(&resident),
+                "dft result differs"
             );
-            assert_eq!(
-                snapshot::<B, _>(&im),
-                snapshot::<B, _>(&fixture_ciphertext(module, &real_layout, 89))
+            results.push(host_ciphertext::<B, _>(&out));
+            assert!(
+                host_ciphertext::<B, _>(&re) == host_ciphertext::<B, _>(&fixture_ciphertext(module, &real_layout, 83)),
+                "dft result differs"
+            );
+            assert!(
+                host_ciphertext::<B, _>(&im) == host_ciphertext::<B, _>(&fixture_ciphertext(module, &real_layout, 89)),
+                "dft result differs"
             );
         }
         if log_slots < log_max_slots {
@@ -207,11 +226,14 @@ where
                 module.ckks_coeffs_to_slots_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<B, _>(&out), snapshot::<B, _>(&resident));
-            results.push(snapshot::<B, _>(&out));
-            assert_eq!(
-                snapshot::<B, _>(&src),
-                snapshot::<B, _>(&fixture_ciphertext(module, &layout, 101))
+            assert!(
+                host_ciphertext::<B, _>(&out) == host_ciphertext::<B, _>(&resident),
+                "dft result differs"
+            );
+            results.push(host_ciphertext::<B, _>(&out));
+            assert!(
+                host_ciphertext::<B, _>(&src) == host_ciphertext::<B, _>(&fixture_ciphertext(module, &layout, 101)),
+                "dft result differs"
             );
             let (dft, prepared, keys) = prepare!(Decode, Repack, DFTType::Decode, DFTOutputFormat::RepackImagAsReal);
             let repacked = CKKSLayout {
@@ -233,11 +255,14 @@ where
                 module.ckks_slots_to_coeffs_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<B, _>(&out), snapshot::<B, _>(&resident));
-            results.push(snapshot::<B, _>(&out));
-            assert_eq!(
-                snapshot::<B, _>(&src),
-                snapshot::<B, _>(&fixture_ciphertext(module, &repacked, 107))
+            assert!(
+                host_ciphertext::<B, _>(&out) == host_ciphertext::<B, _>(&resident),
+                "dft result differs"
+            );
+            results.push(host_ciphertext::<B, _>(&out));
+            assert!(
+                host_ciphertext::<B, _>(&src) == host_ciphertext::<B, _>(&fixture_ciphertext(module, &repacked, 107)),
+                "dft result differs"
             );
         } else {
             let invalid = DFTPlan::new(
@@ -275,9 +300,8 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        run::<BR, F>(params, reference),
-        run::<BT, F>(params, tested),
+    assert!(
+        run::<BR, F>(params, reference) == run::<BT, F>(params, tested),
         "DFT parity differs"
     );
 }

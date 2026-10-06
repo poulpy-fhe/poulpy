@@ -16,7 +16,7 @@ use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned},
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, download_vec_znx},
 };
 
 /// Covers all extraction/conversion methods with matching logical coefficients,
@@ -95,7 +95,7 @@ where
                 for (i, (want, out)) in out_r.iter().zip(out_t.iter()).enumerate() {
                     let mut have = r.lwe_alloc_from_infos(&l);
                     out.transfer_into(&mut have);
-                    assert_eq!(*want, have, "glwe_expand_lwe rank={rank} k={k} count={count} row={i}");
+                    assert!(*want == have, "glwe_expand_lwe rank={rank} k={k} count={count} row={i}");
                 }
                 let m = LWEMatrixLayout {
                     rows: count,
@@ -127,21 +127,21 @@ where
                 assert_eq!(matrix_r.rows(), matrix_t.rows());
                 for (left, right) in [(&matrix_r.body, &matrix_t.body), (&matrix_r.mask, &matrix_t.mask)] {
                     let live = left.n() * left.cols() * left.size() * std::mem::size_of::<i64>();
-                    let want = BR::to_host_bytes(left.data());
-                    let have = BT::to_host_bytes(right.data());
-                    assert_eq!(
-                        &want[..live],
-                        &have[..live],
-                        "matrix logical output rank={rank} count={count}"
-                    );
+                    let mut want = download_vec_znx::<BR>(left);
+                    let mut have = download_vec_znx::<BT>(right);
                     assert!(
-                        want[live..].iter().all(|&byte| byte == 0x55),
+                        want.data()[live..].iter().all(|&byte| byte == 0x55),
                         "reference matrix padding changed"
                     );
                     assert!(
-                        have[live..].iter().all(|&byte| byte == 0x77),
+                        have.data()[live..].iter().all(|&byte| byte == 0x77),
                         "backend matrix padding changed"
                     );
+                    // Padding sentinels are checked separately above, so compare
+                    // the typed values with identical allocation padding.
+                    want.data_mut()[live..].fill(0);
+                    have.data_mut()[live..].fill(0);
+                    assert!(want == have, "matrix logical output rank={rank} count={count}");
                 }
             }
             // Sample extraction permits a truncated mask and copies the first GLWE mask column.
@@ -158,7 +158,7 @@ where
                 t.lwe_sample_extract(&mut out_t, &a_t);
                 let mut have = r.lwe_alloc_from_infos(&l);
                 out_t.transfer_into(&mut have);
-                assert_eq!(out_r, have, "lwe_sample_extract rank={rank} k={k} n={dimension}");
+                assert!(out_r == have, "lwe_sample_extract rank={rank} k={k} n={dimension}");
             }
             let l = LWELayout {
                 n: Degree((params.n / 2) as u32),
@@ -209,7 +209,7 @@ where
                 );
                 let mut have = r.lwe_alloc_from_infos(&l);
                 out_t.transfer_into(&mut have);
-                assert_eq!(out_r, have, "lwe_from_glwe rank={rank} k={k} index={index}");
+                assert!(out_r == have, "lwe_from_glwe rank={rank} k={k} index={index}");
             }
             let kt = LWEToGLWEKeyLayout {
                 n: g.n,
@@ -301,7 +301,7 @@ where
             );
             let mut have = r.lwe_alloc_from_infos(&res);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "lwe_keyswitch rank={rank} k={k}");
+            assert!(out_r == have, "lwe_keyswitch rank={rank} k={k}");
         }
     }
 }

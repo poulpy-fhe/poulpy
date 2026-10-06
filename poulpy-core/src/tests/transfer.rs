@@ -293,7 +293,7 @@ fn module_transfer_glwe_roundtrip() {
     let mut downloaded = src_module.glwe_alloc_from_infos(&src);
     uploaded.transfer_into(&mut downloaded);
 
-    assert_eq!(downloaded, src);
+    assert!(downloaded == src, "values differ");
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn module_transfer_gglwe_roundtrip() {
     let mut downloaded = src_module.gglwe_alloc_from_infos(&src);
     uploaded.transfer_into(&mut downloaded);
 
-    assert_eq!(downloaded, src);
+    assert!(downloaded == src, "values differ");
 }
 
 /// `transfer_buf_into` writes into a destination the caller already owns, so a
@@ -332,12 +332,12 @@ fn transfer_buf_into_reuses_destination() {
     let mut dst: Vec<u8> = <DstBackend as Backend>::alloc_bytes(len);
 
     transfer_buf_into(&a, &mut dst);
-    assert_eq!(dst, a);
+    assert!(dst == a, "values differ");
 
     // Same destination, different source: no bytes of `a` survive.
     transfer_buf_into(&b, &mut dst);
-    assert_eq!(dst, b);
-    assert_ne!(dst, a);
+    assert!(dst == b, "values differ");
+    assert!(dst != a, "values unexpectedly match");
 }
 
 /// The size check lives in the shared move, so no implementor can skip it.

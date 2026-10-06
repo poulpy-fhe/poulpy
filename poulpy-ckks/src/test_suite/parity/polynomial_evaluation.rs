@@ -1,6 +1,6 @@
 //! Paired polynomial engines, one-shot derived schedules, and EvalMod.
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{HostCiphertext, fixture_ciphertext, host_ciphertext, with_scratch},
     keys::{key_layout, prepared_tensor_key},
 };
 use crate::{
@@ -106,7 +106,7 @@ fn folded<F: CKKSEncodingScalar>(basis: Basis, parity: Parity) -> Polynomial<F> 
     Polynomial::new_with_parity(basis, coeffs.into_iter().map(|v| F::from_f64(v).unwrap()).collect(), parity)
 }
 
-fn real_polynomials<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+fn real_polynomials<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<HostCiphertext>
 where
     B: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     F: CKKSEncodingScalar,
@@ -128,7 +128,7 @@ where
             .unwrap()
             .map_baby_steps_ref(|pt| upload(module, pt));
         let input = fixture_ciphertext(module, &layout, 127);
-        let before = snapshot::<B, _>(&input);
+        let before = host_ciphertext::<B, _>(&input);
         let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
         with_scratch::<B, _>(bytes, |scratch| {
             powers.populate(
@@ -157,12 +157,11 @@ where
             module.ckks_eval_poly_real_const_coeffs(&mut one_shot, &input, &encoded, &prepared_key, scratch)
         })
         .unwrap();
-        assert_eq!(
-            snapshot::<B, _>(&prepared_out),
-            snapshot::<B, _>(&one_shot),
+        assert!(
+            host_ciphertext::<B, _>(&prepared_out) == host_ciphertext::<B, _>(&one_shot),
             "prepared and one-shot real evaluation differ"
         );
-        results.push(snapshot::<B, _>(&one_shot));
+        results.push(host_ciphertext::<B, _>(&one_shot));
         // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
         for parity in [Parity::Even, Parity::Odd] {
             let encoded = folded::<F>(basis, parity)
@@ -174,14 +173,17 @@ where
                 module.ckks_eval_poly_real_const_coeffs(&mut out, &input, &encoded, &prepared_key, scratch)
             })
             .unwrap();
-            results.push(snapshot::<B, _>(&out));
+            results.push(host_ciphertext::<B, _>(&out));
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert!(
+            before == host_ciphertext::<B, _>(&input),
+            "polynomial evaluation result differs"
+        );
     }
     results
 }
 
-fn complex_polynomials_and_eval_mod<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+fn complex_polynomials_and_eval_mod<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<HostCiphertext>
 where
     B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
@@ -209,7 +211,7 @@ where
             im: encode(),
         };
         let input = fixture_ciphertext(module, &layout, 127);
-        let before = snapshot::<B, _>(&input);
+        let before = host_ciphertext::<B, _>(&input);
         let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
         with_scratch::<B, _>(bytes, |scratch| {
             powers.populate(
@@ -238,12 +240,11 @@ where
             module.ckks_eval_poly_complex_const_coeffs(&mut one_shot, &input, &complex, &prepared_key, scratch)
         })
         .unwrap();
-        assert_eq!(
-            snapshot::<B, _>(&prepared_out),
-            snapshot::<B, _>(&one_shot),
+        assert!(
+            host_ciphertext::<B, _>(&prepared_out) == host_ciphertext::<B, _>(&one_shot),
             "prepared and one-shot complex evaluation differ"
         );
-        results.push(snapshot::<B, _>(&one_shot));
+        results.push(host_ciphertext::<B, _>(&one_shot));
         for parity in [Parity::Even, Parity::Odd] {
             let poly = folded::<F>(basis, parity);
             let encode_folded = || {
@@ -260,7 +261,7 @@ where
                 module.ckks_eval_poly_complex_const_coeffs(&mut out, &input, &complex, &prepared_key, scratch)
             })
             .unwrap();
-            results.push(snapshot::<B, _>(&out));
+            results.push(host_ciphertext::<B, _>(&out));
 
             // Reject inconsistent real/imaginary input schedules before the
             // input transform can allocate or mutate any ciphertext.
@@ -271,7 +272,7 @@ where
                     .map_baby_steps_ref(|pt| upload(module, pt)),
                 im: complex.im,
             };
-            let untouched = snapshot::<B, _>(&out);
+            let untouched = host_ciphertext::<B, _>(&out);
             assert!(
                 with_scratch::<B, _>(0, |scratch| module.ckks_eval_poly_complex_const_coeffs(
                     &mut out,
@@ -282,9 +283,15 @@ where
                 ))
                 .is_err()
             );
-            assert_eq!(untouched, snapshot::<B, _>(&out));
+            assert!(
+                untouched == host_ciphertext::<B, _>(&out),
+                "polynomial evaluation result differs"
+            );
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert!(
+            before == host_ciphertext::<B, _>(&input),
+            "polynomial evaluation result differs"
+        );
     }
     for kind in [
         EvalModType::SinCheby,
@@ -312,15 +319,18 @@ where
             let compiled =
                 with_scratch::<B, _>(encoding, |scratch| compile_eval_mod::<B, F>(b.into(), plan, module, scratch)).unwrap();
             let input = fixture_ciphertext(module, &layout, 149);
-            let before = snapshot::<B, _>(&input);
+            let before = host_ciphertext::<B, _>(&input);
             let mut out = fixture_ciphertext(module, &layout, 151);
             let eval_bytes = module.ckks_eval_mod_tmp_bytes(&out, &input, &compiled, &key);
             with_scratch::<B, _>(eval_bytes, |scratch| {
                 module.ckks_eval_mod(&mut out, &input, &compiled, &prepared_key, scratch)
             })
             .unwrap();
-            assert_eq!(before, snapshot::<B, _>(&input));
-            results.push(snapshot::<B, _>(&out));
+            assert!(
+                before == host_ciphertext::<B, _>(&input),
+                "polynomial evaluation result differs"
+            );
+            results.push(host_ciphertext::<B, _>(&out));
         }
     }
     results
@@ -336,9 +346,8 @@ where
     Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        real_polynomials::<BR, F>(params, reference),
-        real_polynomials::<BT, F>(params, tested),
+    assert!(
+        real_polynomials::<BR, F>(params, reference) == real_polynomials::<BT, F>(params, tested),
         "real polynomial parity differs"
     );
 }
@@ -354,9 +363,8 @@ where
     Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        complex_polynomials_and_eval_mod::<BR, F>(params, reference),
-        complex_polynomials_and_eval_mod::<BT, F>(params, tested),
+    assert!(
+        complex_polynomials_and_eval_mod::<BR, F>(params, reference) == complex_polynomials_and_eval_mod::<BT, F>(params, tested),
         "complex polynomial or EvalMod parity differs"
     );
 }

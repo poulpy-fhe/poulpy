@@ -35,6 +35,17 @@ pub struct LWEPlaintext<D: Data, W: ZnxWord> {
     pub(crate) base2k: Base2K,
 }
 
+impl<D: Data, W: ZnxWord> PartialEq for LWEPlaintext<D, W>
+where
+    VecZnx<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data && self.k == other.k && self.base2k == other.base2k
+    }
+}
+
+impl<D: Data, W: ZnxWord> Eq for LWEPlaintext<D, W> where VecZnx<D, W>: Eq {}
+
 pub type LWEPlaintextBackendRef<'a, BE> = LWEPlaintext<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type LWEPlaintextBackendMut<'a, BE> = LWEPlaintext<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 

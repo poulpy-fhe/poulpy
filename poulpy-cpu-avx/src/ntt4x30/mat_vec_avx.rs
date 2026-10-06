@@ -614,7 +614,7 @@ mod tests {
         unsafe { vec_mat1col_product_bbc_avx2(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbc: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_bbc: AVX2 vs ref mismatch");
     }
 
     /// AVX2 `vec_mat1col_product_x2_bbc` matches reference (single column, two simultaneous outputs).
@@ -647,7 +647,7 @@ mod tests {
         unsafe { vec_mat1col_product_x2_bbc_avx2(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_x2_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_x2_bbc: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_x2_bbc: AVX2 vs ref mismatch");
     }
 
     /// AVX2 `vec_mat2cols_product_x2_bbc` matches reference (two columns, two simultaneous outputs).
@@ -689,7 +689,7 @@ mod tests {
         unsafe { vec_mat2cols_product_x2_bbc_avx2(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat2cols_product_x2_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat2cols_product_x2_bbc: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat2cols_product_x2_bbc: AVX2 vs ref mismatch");
     }
 
     #[test]
@@ -761,14 +761,20 @@ mod tests {
             vec_mat1col_product_bbc_ref::<Primes30>(&meta, ell, &mut res_ref[4 * coeff..4 * (coeff + 1)], &x_coeff, &y_coeff);
         }
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_blkpair_bbc_pm: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_blkpair_bbc_pm: AVX2 vs ref mismatch");
 
         let mut res_pair0 = vec![0u64; 16];
         let mut res_pair1 = vec![0u64; 16];
         unsafe {
             vec_mat1col_product_blkpair_bbc_pm_x2_avx2(&meta, ell, &mut res_pair0, &mut res_pair1, &x_pm, &x_pm, &y_pm, 4 * ell)
         };
-        assert_eq!(res_pair0, res_ref);
-        assert_eq!(res_pair1, res_ref);
+        assert!(
+            res_pair0 == res_ref,
+            "vec_mat1col_product_blkpair_bbc_pm_avx2_vs_ref mismatch"
+        );
+        assert!(
+            res_pair1 == res_ref,
+            "vec_mat1col_product_blkpair_bbc_pm_avx2_vs_ref mismatch"
+        );
     }
 }

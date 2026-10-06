@@ -647,9 +647,8 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
         module.lwe_matrix_decrypt(&lwe_matrix, &mut matrix_pt, &sk_lwe, &mut scratch.borrow());
 
         for limb in 0..glwe_pt_dec.data.size() {
-            assert_eq!(
-                &glwe_pt_dec.data.at(0, limb)[..n],
-                &matrix_pt.data().at(0, limb)[..n],
+            assert!(
+                glwe_pt_dec.data.at(0, limb)[..n] == matrix_pt.data().at(0, limb)[..n],
                 "rank={} limb={} failed",
                 rank.0,
                 limb

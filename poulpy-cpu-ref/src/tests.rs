@@ -459,9 +459,8 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 0,
                 &mut scratch.borrow(),
             );
-            assert_eq!(
-                download_vec_znx::<NTT4x30Ref>(&got_be),
-                download_vec_znx::<NTT4x30Ref>(&want_be),
+            assert!(
+                download_vec_znx::<NTT4x30Ref>(&got_be) == download_vec_znx::<NTT4x30Ref>(&want_be),
                 "vec_znx_rsh_assign mismatch for size={size} k={k}"
             );
         }
@@ -758,10 +757,7 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                             let limbs: Vec<_> = (0..a_size).map(|j| input.at(0, j)[i]).collect();
                             let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, res_size, offset);
                             let got: Vec<_> = (0..res_size).map(|j| output.at(0, j)[i]).collect();
-                            assert_eq!(
-                                got, want,
-                                "ka={a_base2k} kr={res_base2k} a={limbs:?} size={res_size} offset={offset}"
-                            );
+                            assert!(got == want, "ka={a_base2k} kr={res_base2k} size={res_size} offset={offset}");
                         }
                     }
                 }
@@ -815,7 +811,7 @@ fn test_normalize_exact_canonical_precision() {
             0,
             &mut [0; 3],
         );
-        assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
+        assert!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>() == expected);
         if a_base2k <= 62 && res_base2k <= 62 {
             vec_znx_normalize::<FFT64Ref>(
                 &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
@@ -828,7 +824,7 @@ fn test_normalize_exact_canonical_precision() {
                 0,
                 &mut [0; 3],
             );
-            assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
+            assert!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>() == expected);
         } else if a_base2k == 64 && res_base2k == 64 {
             vec_znx_normalize_assign::<FFT64Ref>(
                 res_base2k,
@@ -838,7 +834,7 @@ fn test_normalize_exact_canonical_precision() {
                 0,
                 &mut [0],
             );
-            assert_eq!(small.at(0, 0), expected);
+            assert!(small.at(0, 0) == expected);
         }
     }
 }
@@ -863,7 +859,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
         0,
         &mut [0; 3],
     );
-    assert_eq!((0..3).map(|j| regression_output.at(0, j)[0]).collect::<Vec<_>>(), [2, 2, 0]);
+    assert!((0..3).map(|j| regression_output.at(0, j)[0]).collect::<Vec<_>>() == [2, 2, 0]);
     const N: usize = 17;
     for a_base2k in [1, 2, 17, 50, 62] {
         for res_base2k in [1, 2, 19, 51, 62] {
@@ -910,7 +906,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
                         );
                     }
                 }
-                assert_eq!(split, want);
+                assert!(split == want);
                 for sub in [false, true] {
                     let mut got = alloc();
                     for j in 0..3 {
@@ -979,8 +975,8 @@ fn test_i128_normalization_kernel_integer() {
                 }
                 let mut res = vec![0i64; a.len()];
                 <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
-                assert_eq!(res, want_res, "base2k={base2k} lsh={lsh}");
-                assert_eq!(carry, want_carry, "base2k={base2k} lsh={lsh}");
+                assert!(res == want_res, "base2k={base2k} lsh={lsh}");
+                assert!(carry == want_carry, "base2k={base2k} lsh={lsh}");
             }
         }
     }
@@ -1014,7 +1010,7 @@ fn test_i128_normalize_fused_reference() {
             <NTT4x30Ref as I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<false>(
                 take, scale, base2k, &mut res, &mut src, &mut carry,
             );
-            assert_eq!((res, src, carry), (want_res, want_src, want_carry));
+            assert!((res, src, carry) == (want_res, want_src, want_carry));
         }
     }
 }
@@ -1093,9 +1089,9 @@ fn test_vec_znx_big_normalize_wide_radices() {
                                 })
                                 .collect();
                             let stored: Vec<_> = (0..size).map(|j| assigned.at(0, j)[i] as i128).collect();
-                            assert_eq!(
-                                normalize_integer_oracle(&stored, res_base2k, res_base2k, size, 0),
-                                normalize_integer_oracle(&total, res_base2k, res_base2k, size, 0)
+                            assert!(
+                                normalize_integer_oracle(&stored, res_base2k, res_base2k, size, 0)
+                                    == normalize_integer_oracle(&total, res_base2k, res_base2k, size, 0)
                             );
                         }
                     }
@@ -1103,7 +1099,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         let limbs: Vec<_> = (0..size).map(|j| input.at(0, j)[i]).collect();
                         let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, size, offset);
                         let got: Vec<_> = (0..size).map(|j| output.at(0, j)[i]).collect();
-                        assert_eq!(got, want, "ka={a_base2k} kr={res_base2k} size={size} offset={offset}");
+                        assert!(got == want, "ka={a_base2k} kr={res_base2k} size={size} offset={offset}");
                     }
                 }
             }
@@ -1172,9 +1168,9 @@ mod canonical_precision_tests {
         let verify = |name: &str, output: &VecZnx<AlignedBuf, i64>| {
             for (i, want) in expected.iter().enumerate() {
                 let got: Vec<_> = (0..size).map(|j| output.at(1, j)[i]).collect();
-                assert_eq!(
-                    got, *want,
-                    "{name}: ka={ka} kr={kr} k={k} size={size} offset={offset} i={i} a={a:?}"
+                assert!(
+                    got == *want,
+                    "{name}: ka={ka} kr={kr} k={k} size={size} offset={offset} i={i}"
                 );
             }
             for j in 0..size {
@@ -1640,7 +1636,7 @@ mod ckks_noncanonical_compact_dst {
         for (name, op, want) in ops {
             let mut dst = ct(&module, 32);
             op(&module, &mut dst, &src, &mut scratch);
-            assert_eq!(limbs(&mut dst, &mut scratch), want, "{name}");
+            assert!(limbs(&mut dst, &mut scratch) == want, "{name}");
         }
     }
 }

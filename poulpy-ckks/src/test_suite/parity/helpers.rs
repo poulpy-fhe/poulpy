@@ -12,46 +12,29 @@ use poulpy_hal::{
     source::Source,
 };
 
-/// Observable CKKS representation. Prepared backend storage is never compared.
-#[derive(PartialEq, Eq)]
-pub(crate) struct Snapshot {
-    pub layout: CKKSLayout,
-    pub canonical: bool,
-    pub digits: Vec<i64>,
-}
+/// Host ciphertext and CKKS metadata, plus the independent canonical-state invariant.
+/// GLWE equality intentionally ignores that cached state.
+pub(crate) type HostCiphertext = (poulpy_core::layouts::GLWE<poulpy_hal::AlignedBuf, i64>, crate::CKKSMeta, bool);
 
-impl std::fmt::Debug for Snapshot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Snapshot")
-            .field("layout", &self.layout)
-            .field("canonical", &self.canonical)
-            .field("total_digits", &self.digits.len())
-            .field("first_digits", &&self.digits[..self.digits.len().min(16)])
-            .finish()
-    }
-}
-
-pub(crate) fn snapshot<B, A>(value: &A) -> Snapshot
+pub(crate) fn host_ciphertext<B, A>(value: &A) -> HostCiphertext
 where
     B: Backend<ZnxWord = i64>,
     A: CKKSInfos + GLWEInfos + GLWEToBackendRef<B>,
 {
+    use poulpy_core::layouts::{GLWEToBackendMut, ModuleCoreAlloc, SetK};
+    use poulpy_hal::layouts::HostBytesBackend;
+
     let view = value.to_backend_ref();
-    let mut digits = vec![0i64; view.n().as_usize() * (view.rank().as_usize() + 1) * view.data().size()];
-    B::copy_view_to_host(view.data().data(), bytemuck::cast_slice_mut(&mut digits));
-    Snapshot {
-        layout: CKKSLayout {
-            glwe_layout: poulpy_core::layouts::GLWELayout {
-                n: value.n(),
-                base2k: value.base2k(),
-                k: value.k(),
-                rank: value.rank(),
-            },
-            meta: value.meta(),
-        },
-        canonical: view.is_canonical(),
-        digits,
-    }
+    let module = Module::<HostBytesBackend>::new(view.n().as_usize() as u64);
+    let mut layout = view.glwe_layout();
+    layout.k = (view.max_size() * view.base2k().as_usize()).into();
+    let mut host = module.glwe_alloc_from_infos(&layout);
+    let bytes = view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>();
+    B::copy_view_to_host(view.data().data(), &mut host.data_mut().data_mut().as_mut()[..bytes]);
+    host.set_k(view.k());
+    host.set_canonical(view.is_canonical());
+    GLWEToBackendMut::<HostBytesBackend>::set_encryption_metadata(&mut host, view.encryption_metadata());
+    (host, value.meta(), view.is_canonical())
 }
 
 pub(crate) fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(

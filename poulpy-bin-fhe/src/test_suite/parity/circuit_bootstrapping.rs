@@ -1,5 +1,5 @@
 //! Circuit-bootstrap parity over transferred coefficient-domain inputs and keys.
-use super::{ParityBackend, fixture_ggsw, snapshot_ggsw, with_scratch};
+use super::{ParityBackend, fixture_ggsw, host_ggsw, with_scratch};
 use crate::{
     api::{CircuitBootstrappingExecute, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory},
     blind_rotation::{BlindRotationKeyLayout, CGGI},
@@ -150,14 +150,14 @@ where
                 let mut invalid_layout = output;
                 invalid_layout.dnum = 1usize.into();
                 let mut invalid = fixture_ggsw(tested, &invalid_layout, 47);
-                let before = snapshot_ggsw::<BT, _>(&invalid);
+                let before = host_ggsw::<BT, _>(&invalid);
                 let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
                         plan_test.execute(tested, &mut invalid, &input_test, &key_test, s)
                     });
                 }));
                 assert!(failure.is_err(), "prepared plan accepted incompatible output layout");
-                assert_eq!(snapshot_ggsw::<BT, _>(&invalid), before, "invalid output was modified");
+                assert!(host_ggsw::<BT, _>(&invalid) == before, "invalid output was modified");
                 let mut expected = fixture_ggsw(reference, &output, 37);
                 let mut actual = fixture_ggsw(tested, &output, 37);
                 with_scratch::<BR, _>(plan_ref.execute_tmp_bytes(reference, &key_ref), |s| {
@@ -166,13 +166,19 @@ where
                 with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
                     plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
                 });
-                assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                assert!(
+                    host_ggsw::<BR, _>(&expected) == host_ggsw::<BT, _>(&actual),
+                    "circuit bootstrapping result differs"
+                );
                 // Reuse the same prepared plan after replacing every output coefficient.
                 actual = fixture_ggsw(tested, &output, 41);
                 with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
                     plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
                 });
-                assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                assert!(
+                    host_ggsw::<BR, _>(&expected) == host_ggsw::<BT, _>(&actual),
+                    "circuit bootstrapping result differs"
+                );
                 for legacy in [false, true] {
                     let bytes = match gap {
                         None if legacy => {
@@ -190,7 +196,10 @@ where
                         None => key_test.execute_to_constant(tested, &mut actual, &input_test, 1, extension, s),
                         Some(gap) => key_test.execute_to_exponent(tested, gap, &mut actual, &input_test, 1, extension, s),
                     });
-                    assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                    assert!(
+                        host_ggsw::<BR, _>(&expected) == host_ggsw::<BT, _>(&actual),
+                        "circuit bootstrapping result differs"
+                    );
                     if gap.is_some() {
                         break;
                     }

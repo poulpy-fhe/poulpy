@@ -13,7 +13,7 @@
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{DigestU64, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -150,9 +150,8 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            over_zeroed.data().digest_u64(),
-            over_poisoned.data().digest_u64(),
+        assert!(
+            over_zeroed == over_poisoned,
             "keyswitch result depends on incoming scratch contents (rank={rank}, dsize={dsize})"
         );
     }
@@ -286,9 +285,8 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            over_zeroed.data().digest_u64(),
-            over_poisoned.data().digest_u64(),
+        assert!(
+            over_zeroed == over_poisoned,
             "external product result depends on incoming scratch contents (rank={rank}, dsize={dsize})"
         );
     }

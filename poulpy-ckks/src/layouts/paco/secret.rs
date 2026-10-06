@@ -599,7 +599,7 @@ mod tests {
                         .collect();
                     if !nz.is_empty() {
                         hits += 1;
-                        assert_eq!(nz, vec![key.u()[t * p.h() + v].div_ceil(p.k())], "exponent is ceil(u/k)");
+                        assert!(nz == vec![key.u()[t * p.h() + v].div_ceil(p.k())], "exponent is ceil(u/k)");
                     }
                 }
                 assert_eq!(hits, usize::from(selected), "t={t} v={v}");

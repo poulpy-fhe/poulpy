@@ -111,6 +111,6 @@ where
     assert_eq!(dst.drift, src.drift);
     assert!(matches!(dst.rot_dir, LookUpTableRotationDirection::Right));
     for (a, b) in src.data.iter().zip(dst.data.iter()) {
-        assert_eq!(a, b);
+        assert!(a == b, "generic lut result differs");
     }
 }

@@ -1440,7 +1440,7 @@ mod tests {
         b_to_znx128_ref::<Primes30>(n, &mut result, &dc);
 
         let expected: Vec<i128> = [3, 10, 8, 0, 0, 0, 0, 0].to_vec();
-        assert_eq!(result, expected, "AVX2 NTT convolution mismatch");
+        assert!(result == expected, "AVX2 NTT convolution mismatch");
     }
 
     /// AVX2 NTT output matches reference NTT output.

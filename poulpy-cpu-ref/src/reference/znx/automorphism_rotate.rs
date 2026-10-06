@@ -55,7 +55,7 @@ mod tests {
                 let mut compose: Vec<i64> = vec![0; n];
                 znx_rotate::<ZnxRef>(k, &mut compose, &auto);
 
-                assert_eq!(fused, compose, "mismatch for p={p}, k={k}");
+                assert!(fused == compose, "mismatch for p={p}, k={k}");
             }
         }
     }

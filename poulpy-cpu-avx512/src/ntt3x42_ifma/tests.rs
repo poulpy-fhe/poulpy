@@ -380,7 +380,7 @@ mod ntt3x42_ifma_tests {
             let mut expected = vec![0i128; n];
             unsafe { simd_b_ntt3x42_ifma_to_znx128(n, &mut got, b) };
             b_ntt3x42_ifma_to_znx128_ref(n, &mut expected, b);
-            assert_eq!(got, expected);
+            assert!(got == expected, "assert_matches_ref mismatch");
         }
 
         let n = values.len();

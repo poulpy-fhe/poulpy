@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::{
     api::VecZnxFillUniformSource,
     layouts::{MatZnxAtBackendMut, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut, WriterTo},
@@ -13,7 +11,7 @@ use crate::{
 /// written, then read back into the second, which must then equal it.
 pub fn test_reader_writer_interface<T>([original, mut receiver]: [T; 2])
 where
-    T: WriterTo + ReaderFrom + PartialEq + Eq + Debug,
+    T: WriterTo + ReaderFrom + PartialEq + Eq,
 {
     assert!(original != receiver, "the two fixtures must differ");
 
@@ -23,7 +21,7 @@ where
     let mut reader: &[u8] = &buffer;
     receiver.read_from(&mut reader).expect("read_from failed");
 
-    assert_eq!(&original, &receiver, "Deserialized object does not match the original");
+    assert!(original == receiver, "Deserialized object does not match the original");
 }
 
 /// Round-trips `ScalarZnx`, `VecZnx` and `MatZnx` fixtures sampled by `module`.

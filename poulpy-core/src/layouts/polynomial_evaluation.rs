@@ -1251,7 +1251,7 @@ mod tests {
         let (folded, transform) = poly.fold_parity().unwrap();
 
         assert_eq!(transform, PolynomialInputTransform::ChebyshevT2);
-        assert_eq!(folded.coeffs, vec![1.0, -0.5, 0.25, 0.125]);
+        assert!(folded.coeffs == vec![1.0, -0.5, 0.25, 0.125], "values differ");
         for i in 0..=64 {
             let x = -1.0 + 2.0 * i as f64 / 64.0;
             assert!((poly.evaluate(x) - folded.evaluate(2.0 * x * x - 1.0)).abs() < 1e-12);
@@ -1336,9 +1336,9 @@ mod tests {
     fn min_mult_chebyshev_degree31_uniform_baby_steps() {
         let log_split = min_mult_split(31, Parity::Full, Basis::Chebyshev);
         assert_eq!(log_split, 3);
-        assert_eq!(
-            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, false),
-            vec![7, 7, 7, 7]
+        assert!(
+            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, false) == vec![7, 7, 7, 7],
+            "values differ"
         );
     }
 
@@ -1346,9 +1346,9 @@ mod tests {
     fn min_depth_chebyshev_degree31_splits_leading_baby_step() {
         let log_split = min_depth_split(bit_len(31));
         assert_eq!(log_split, 3);
-        assert_eq!(
-            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true),
-            vec![7, 7, 7, 3, 1, 1]
+        assert!(
+            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true) == vec![7, 7, 7, 3, 1, 1],
+            "values differ"
         );
     }
 

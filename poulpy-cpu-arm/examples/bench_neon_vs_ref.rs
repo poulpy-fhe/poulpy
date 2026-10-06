@@ -144,7 +144,7 @@ mod neon {
         let mut refr = vec![0i64; n];
         <FFT64Neon as ZnxAdd>::znx_add(&mut neon, &a, &b);
         <FFT64Ref as ZnxAdd>::znx_add(&mut refr, &a, &b);
-        assert_eq!(neon, refr, "znx_add (n={n})");
+        assert!(neon == refr, "znx_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -170,8 +170,8 @@ mod neon {
         let mut c_ref = c_init.clone();
         <FFT64Neon as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_neon, &mut c_neon);
         <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
-        assert_eq!(x_neon, x_ref, "znx_normalize_middle_step_assign x (n={n})");
-        assert_eq!(c_neon, c_ref, "znx_normalize_middle_step_assign c (n={n})");
+        assert!(x_neon == x_ref, "znx_normalize_middle_step_assign x (n={n})");
+        assert!(c_neon == c_ref, "znx_normalize_middle_step_assign c (n={n})");
 
         let iters = iters_for(n);
         let mut x = x_init.clone();
@@ -199,7 +199,7 @@ mod neon {
         let mut refr = vec![0i64; n];
         <FFT64Neon as ZnxAutomorphism>::znx_automorphism(p, &mut neon, &a);
         <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut refr, &a);
-        assert_eq!(neon, refr, "znx_automorphism (n={n})");
+        assert!(neon == refr, "znx_automorphism (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -361,7 +361,7 @@ mod neon {
         let mut refr = vec![0u64; 4 * n];
         <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64(&mut neon, &a);
         <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
-        assert_eq!(neon, refr, "ntt_from_znx64 (n={n})");
+        assert!(neon == refr, "ntt_from_znx64 (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0u64; 4 * n];
@@ -384,7 +384,7 @@ mod neon {
         let mut refr = data0.clone();
         <NTT4x30Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut neon);
         <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "ntt (n={n})");
+        assert!(neon == refr, "ntt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -409,7 +409,7 @@ mod neon {
         let mut refr = data0.clone();
         <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut neon);
         <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "intt (n={n})");
+        assert!(neon == refr, "intt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -436,7 +436,7 @@ mod neon {
         let mut refr = vec![0i128; n];
         <NTT4x30Neon as I128BigOps>::i128_add(&mut neon, &a, &b);
         <NTT4x30Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
-        assert_eq!(neon, refr, "i128_add (n={n})");
+        assert!(neon == refr, "i128_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i128; n];
@@ -462,8 +462,8 @@ mod neon {
         let mut c_ref = c_init.clone();
         <NTT4x30Neon as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_neon, &a, &mut c_neon);
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
-        assert_eq!(r_neon, r_ref, "nfc_middle_step r (n={n})");
-        assert_eq!(c_neon, c_ref, "nfc_middle_step c (n={n})");
+        assert!(r_neon == r_ref, "nfc_middle_step r (n={n})");
+        assert!(c_neon == c_ref, "nfc_middle_step c (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];

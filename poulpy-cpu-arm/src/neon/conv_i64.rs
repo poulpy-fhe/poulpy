@@ -227,7 +227,7 @@ mod tests {
             let mut want = [0i64; 8];
             i64_convolution_by_const_1coeff_neon(k, &mut got, &a, a_size, &b);
             i64_convolution_by_const_1coeff_ref(k, &mut want, &a, a_size, &b);
-            assert_eq!(got, want, "k={k}");
+            assert!(got == want, "k={k}");
         }
     }
 
@@ -243,7 +243,7 @@ mod tests {
             let mut want = [0i64; 16];
             i64_convolution_by_const_2coeffs_neon(k, &mut got, &a, a_size, &b);
             i64_convolution_by_const_2coeffs_ref(k, &mut want, &a, a_size, &b);
-            assert_eq!(got, want, "k={k}");
+            assert!(got == want, "k={k}");
         }
     }
 
@@ -259,7 +259,7 @@ mod tests {
         let mut want = vec![0i64; 8 * rows];
         i64_extract_1blk_contiguous_neon(n, offset, rows, blk, &mut got, &src);
         i64_extract_1blk_contiguous_ref(n, offset, rows, blk, &mut want, &src);
-        assert_eq!(got, want);
+        assert!(got == want, "i64_extract_1blk_contiguous_neon_matches_ref mismatch");
     }
 
     #[test]
@@ -274,6 +274,6 @@ mod tests {
         let mut want = vec![0i64; rows * n];
         i64_save_1blk_contiguous_neon(n, offset, rows, blk, &mut got, &src);
         i64_save_1blk_contiguous_ref(n, offset, rows, blk, &mut want, &src);
-        assert_eq!(got, want);
+        assert!(got == want, "i64_save_1blk_contiguous_neon_matches_ref mismatch");
     }
 }

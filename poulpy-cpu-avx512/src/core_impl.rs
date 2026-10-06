@@ -1021,8 +1021,8 @@ mod relinearize_tests {
                                 &prepared,
                                 &mut reference_scratch.borrow(),
                             );
-                            assert_eq!(
-                                got, expected,
+                            assert!(
+                                got == expected,
                                 "n={n}, rank={rank}, base2k={base2k}, dsize={dsize}, res_base2k={res_base2k}"
                             );
                         }

@@ -241,8 +241,8 @@ mod tests {
                         let mut expected = res.clone();
                         <NTT3x42Ifma>::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
                         <poulpy_cpu_ref::NTT4x30Ref>::nfc_middle_step(base2k, lsh, &mut expected, &a, &mut expected_carry);
-                        assert_eq!(res, expected, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
-                        assert_eq!(carry, expected_carry, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
+                        assert!(res == expected, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
+                        assert!(carry == expected_carry, "base2k={base2k}, lsh={lsh}, n={n}, shift={shift}");
                     }
                 }
             }

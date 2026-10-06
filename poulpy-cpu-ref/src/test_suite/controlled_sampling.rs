@@ -132,7 +132,7 @@ mod tests {
         let different = with_backend_samples(Module::<DifferentSamplingFFT64Ref>::new(64), |_| {
             scalar_samples(64, Distribution::TernaryProb(0.5), [7; 32])
         });
-        assert_ne!(original, different);
+        assert!(original != different);
         with_backend_samples(Module::<DifferentSamplingFFT64Ref>::new(64), |tested| {
             let reference = Module::<ControlledSamplingFFT64Ref>::new(64);
             let params = poulpy_hal::test_suite::TestParams {

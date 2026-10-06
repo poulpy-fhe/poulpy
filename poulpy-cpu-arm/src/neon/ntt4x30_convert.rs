@@ -458,7 +458,7 @@ mod tests {
         let mut want = vec![0u64; 4 * n];
         b_from_znx64_neon(n, &mut got, &coeffs);
         b_from_znx64_ref::<Primes30>(n, &mut want, &coeffs);
-        assert_eq!(got, want);
+        assert!(got == want, "b_from_znx64_neon_matches_ref mismatch");
     }
 
     #[test]
@@ -471,7 +471,7 @@ mod tests {
         let mut want = vec![0u32; 8 * n];
         c_from_b_neon(n, &mut got, &b);
         c_from_b_ref::<Primes30>(n, &mut want, &b);
-        assert_eq!(got, want);
+        assert!(got == want, "c_from_b_neon_matches_ref mismatch");
     }
 
     #[test]
@@ -484,6 +484,6 @@ mod tests {
         let mut want = vec![0i128; n];
         b_to_znx128_neon(n, &mut got, &b);
         b_to_znx128_ref::<Primes30>(n, &mut want, &b);
-        assert_eq!(got, want);
+        assert!(got == want, "b_to_znx128_neon_matches_ref mismatch");
     }
 }

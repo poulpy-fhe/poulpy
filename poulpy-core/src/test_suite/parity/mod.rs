@@ -15,12 +15,13 @@
 //! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
 //! crates register these contract suites for their supported implementations.
 
-/// `assert_eq!` on two GLWEs that also requires equal canonical flags, which
+/// Quiet equality on two GLWEs that also requires equal canonical flags, which
 /// GLWE equality ignores.
 macro_rules! assert_glwe_eq {
     ($want:expr, $have:expr, $($msg:tt)+) => {{
-        assert_eq!($want, $have, $($msg)+);
-        assert_eq!($want.is_canonical(), $have.is_canonical(), "canonical flag, {}", format_args!($($msg)+));
+        let (want, have) = (&$want, &$have);
+        assert!(want == have, $($msg)+);
+        assert!(want.is_canonical() == have.is_canonical(), "canonical flag, {}", format_args!($($msg)+));
     }};
 }
 

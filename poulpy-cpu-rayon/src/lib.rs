@@ -287,7 +287,7 @@ mod chunked_tests {
         let seen = run(4, 100, 4, PER_WORKER);
         let mut indices: Vec<usize> = seen.values().flatten().copied().collect();
         indices.sort_unstable();
-        assert_eq!(indices, (0..100).collect::<Vec<_>>());
+        assert!(indices == (0..100).collect::<Vec<_>>());
         assert!(seen.len() > 1, "expected several worker slices, got {}", seen.len());
         let offsets: Vec<usize> = seen.keys().copied().collect();
         let stride = PER_WORKER * size_of::<usize>();

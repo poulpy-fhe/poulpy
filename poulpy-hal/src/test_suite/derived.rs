@@ -181,8 +181,8 @@ where
 
         let want = download_vec_znx::<BE>(&want_backend);
         let have = download_vec_znx::<BE>(&have_backend);
-        assert_eq!(
-            want, have,
+        assert!(
+            want == have,
             "vmp_apply_dft: derived decomposition != hand-built oracle (col {col})"
         );
     }
@@ -377,12 +377,12 @@ where
                 let have_derived = download_vec_znx::<BE>(&derived_backend);
                 let have_module = download_vec_znx::<BE>(&module_backend);
 
-                assert_eq!(
-                    want, have_derived,
+                assert!(
+                    want == have_derived,
                     "vmp_apply_dft_to_dft_add: derived decomposition != two-step oracle (cols_in {cols_in} cols_out {cols_out} res_size {res_size} a_size {a_size} limb_offset {limb_offset} col {j})"
                 );
-                assert_eq!(
-                    want, have_module,
+                assert!(
+                    want == have_module,
                     "vmp_apply_dft_to_dft_add: module dispatch != two-step oracle (cols_in {cols_in} cols_out {cols_out} res_size {res_size} a_size {a_size} limb_offset {limb_offset} col {j})"
                 );
             }
@@ -439,9 +439,8 @@ where
                     &mut scratch.borrow(),
                 );
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_lsh: default body != normalize(offset) (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -498,9 +497,8 @@ where
                     &mut scratch.borrow(),
                 );
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_rsh: default body != normalize(offset) (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -613,9 +611,8 @@ where
                     );
                 }
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_lsh_add: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -700,9 +697,8 @@ where
                     );
                 }
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_lsh_sub: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -787,9 +783,8 @@ where
                     );
                 }
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_rsh_add: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -874,9 +869,8 @@ where
                     );
                 }
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_rsh_sub: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
                 );
             }
@@ -955,9 +949,8 @@ where
                 0,
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&got_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&got_backend),
                 "vec_znx_lsh_assign: dispatched op != api oracle, bit for bit (res_size {res_size} k {k})"
             );
 
@@ -972,9 +965,8 @@ where
                 );
             }
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_lsh_assign: default body != api oracle (res_size {res_size} k {k})"
             );
         }
@@ -1049,9 +1041,8 @@ where
                 );
             }
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_rsh_assign: default body != api oracle (res_size {res_size} k {k})"
             );
         }
@@ -1101,9 +1092,8 @@ where
                 0,
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_mul_xp_minus_one: default body != hand-built oracle (size {size} p {p})"
             );
         }
@@ -1190,15 +1180,13 @@ pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxM
                 0,
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_mul_xp_minus_one_assign: default body != out-of-place form (size {size} p {p})"
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&got_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&got_backend),
                 "vec_znx_mul_xp_minus_one_assign: dispatched op != out-of-place form (size {size} p {p})"
             );
         }
@@ -1253,9 +1241,8 @@ where
                 0,
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_add_scalar_assign: default body != hand-built oracle (res_size {res_size} res_limb {res_limb})"
             );
         }
@@ -1391,15 +1378,13 @@ where
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&have_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
             "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&got_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&got_backend),
             "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
@@ -1533,15 +1518,13 @@ where
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&have_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
             "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&got_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&got_backend),
             "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
@@ -1675,15 +1658,13 @@ where
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&have_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
             "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
-        assert_eq!(
-            download_vec_znx::<BE>(&want_backend),
-            download_vec_znx::<BE>(&got_backend),
+        assert!(
+            download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&got_backend),
             "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
@@ -1770,9 +1751,8 @@ where
                 &mut oracle_scratch.borrow(),
             );
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "vec_znx_idft_normalize_consume: default body != independent oracle (a_size {a_size} res_size {res_size} \
                  addend {with_addend})"
             );
@@ -1890,9 +1870,8 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
                     }
                 }
 
-                assert_eq!(
-                    download_vec_znx::<BE>(&want_backend),
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_dft_automorphism_add_with_plan: default body != independent oracle (p {p} col {col} \
                      res_size {res_size} a_size {a_size})"
                 );
@@ -1984,14 +1963,12 @@ where
                     );
                 }
                 let want = download_vec_znx::<BE>(&want_backend);
-                assert_eq!(
-                    want,
-                    download_vec_znx::<BE>(&have_backend),
+                assert!(
+                    want == download_vec_znx::<BE>(&have_backend),
                     "vec_znx_dft_automorphism: default body != plan form (p {p} col {col} res_size {res_size} a_size {a_size})"
                 );
-                assert_eq!(
-                    want,
-                    download_vec_znx::<BE>(&api_backend),
+                assert!(
+                    want == download_vec_znx::<BE>(&api_backend),
                     "vec_znx_dft_automorphism: api entry != plan form (p {p} col {col} res_size {res_size} a_size {a_size})"
                 );
             }
@@ -2125,9 +2102,8 @@ where
                 }
             }
 
-            assert_eq!(
-                download_vec_znx::<BE>(&want_backend),
-                download_vec_znx::<BE>(&have_backend),
+            assert!(
+                download_vec_znx::<BE>(&want_backend) == download_vec_znx::<BE>(&have_backend),
                 "svp_apply_dft: default body != independent oracle (col {col} res_size {res_size} b_size {b_size})"
             );
         }
@@ -2232,12 +2208,12 @@ where
             let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
             let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
             let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
-            assert_eq!(
-                want, have_derived,
+            assert!(
+                want == have_derived,
                 "cnv_apply_dft_add: derived decomposition != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
             );
-            assert_eq!(
-                want, have_module,
+            assert!(
+                want == have_module,
                 "cnv_apply_dft_add: module dispatch != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
             );
         }
@@ -2354,12 +2330,12 @@ where
             let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
             let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
             let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
-            assert_eq!(
-                want, have_derived,
+            assert!(
+                want == have_derived,
                 "cnv_apply_dft_sum: derived decomposition != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
             );
-            assert_eq!(
-                want, have_module,
+            assert!(
+                want == have_module,
                 "cnv_apply_dft_sum: module dispatch != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
             );
         }
@@ -2453,12 +2429,12 @@ where
             let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
             let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
             let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
-            assert_eq!(
-                want, have_derived,
+            assert!(
+                want == have_derived,
                 "cnv_pairwise_apply_dft: derived decomposition != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
             );
-            assert_eq!(
-                want, have_module,
+            assert!(
+                want == have_module,
                 "cnv_pairwise_apply_dft: module dispatch != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
             );
         }
@@ -2555,12 +2531,12 @@ where
             let want = product(&left_oracle, &right_oracle, col, cnv_offset, &mut scratch);
             let have_derived = product(&left_derived, &right_derived, col, cnv_offset, &mut scratch);
             let have_module = product(&left_module, &right_module, col, cnv_offset, &mut scratch);
-            assert_eq!(
-                want, have_derived,
+            assert!(
+                want == have_derived,
                 "cnv_prepare_self: derived decomposition != separate prepares (col {col} cnv_offset {cnv_offset})"
             );
-            assert_eq!(
-                want, have_module,
+            assert!(
+                want == have_module,
                 "cnv_prepare_self: module dispatch != separate prepares (col {col} cnv_offset {cnv_offset})"
             );
         }
@@ -2685,12 +2661,12 @@ where
         let want = normalize(&acc_oracle, &mut scratch);
         let have_derived = normalize(&acc_derived, &mut scratch);
         let have_module = normalize(&acc_module, &mut scratch);
-        assert_eq!(
-            want, have_derived,
+        assert!(
+            want == have_derived,
             "cnv_by_const_apply_add: derived decomposition != two-step oracle (cnv_offset {cnv_offset})"
         );
-        assert_eq!(
-            want, have_module,
+        assert!(
+            want == have_module,
             "cnv_by_const_apply_add: module dispatch != two-step oracle (cnv_offset {cnv_offset})"
         );
     }

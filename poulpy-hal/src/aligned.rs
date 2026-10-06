@@ -280,11 +280,11 @@ mod tests {
             *w = i as u64 * 3 + 1;
         }
         let b = a.clone();
-        assert_eq!(a, b);
+        assert!(a == b, "clone_copies_and_keeps_alignment: result mismatch");
         assert!(is_aligned(b.as_ptr()));
         assert_eq!(b.align(), a.align());
         a[0] = 99;
-        assert_ne!(a, b);
+        assert!(a != b, "clone_copies_and_keeps_alignment: result mismatch");
     }
 
     #[test]
@@ -293,11 +293,11 @@ mod tests {
         let buf = AlignedBuf::from(src.as_slice());
         assert_eq!(buf.len(), 128);
         assert!(is_aligned(buf.as_ptr()));
-        assert_eq!(&buf[..100], &src[..]);
+        assert!(buf[..100] == src[..], "from_slice_pads_and_zeroes_the_tail: result mismatch");
         assert!(buf[100..].iter().all(|&b| b == 0));
 
         let from_vec = AlignedBuf::from(src.clone());
-        assert_eq!(from_vec, buf);
+        assert!(from_vec == buf, "from_slice_pads_and_zeroes_the_tail: result mismatch");
 
         let empty = AlignedBuf::from(Vec::<u8>::new());
         assert_eq!(empty.len(), 0);
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(buf.as_slice().len(), 100);
         let copy = buf.clone();
         assert_eq!(copy.len(), 100);
-        assert_eq!(copy, buf);
+        assert!(copy == buf, "truncate_shrinks_the_length_only: result mismatch");
         // Dropping a truncated buffer frees the original layout (Miri checks it).
     }
 
@@ -324,15 +324,18 @@ mod tests {
         let a = AlignedBuf::from(vec![1u8, 2, 3]);
         let b = AlignedBuf::from(vec![1u8, 2, 3]);
         let c = AlignedBuf::from(vec![1u8, 2, 4]);
-        assert_eq!(a, b);
-        assert_ne!(a, c);
+        assert!(a == b, "eq_hash_and_debug_follow_the_slice: result mismatch");
+        assert!(a != c, "eq_hash_and_debug_follow_the_slice: result mismatch");
         let hash = |v: &AlignedBuf| {
             let mut h = DefaultHasher::new();
             v.hash(&mut h);
             h.finish()
         };
         assert_eq!(hash(&a), hash(&b));
-        assert_eq!(format!("{:?}", a), format!("{:?}", a.as_slice()));
+        assert!(
+            format!("{:?}", a) == format!("{:?}", a.as_slice()),
+            "eq_hash_and_debug_follow_the_slice: result mismatch"
+        );
     }
 
     /// The clone of a truncated buffer allocates for the truncated length.
@@ -342,7 +345,10 @@ mod tests {
         v.as_mut_slice()[..8].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
         v.truncate(8);
         let c = v.clone();
-        assert_eq!(c.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(
+            c.as_slice() == [1, 2, 3, 4, 5, 6, 7, 8],
+            "clone_allocates_for_the_truncated_length: result mismatch"
+        );
         assert_eq!((c.len(), c.capacity(), c.align()), (8, 8, 64));
         assert_eq!((v.len(), v.capacity()), (8, 64));
     }
@@ -355,7 +361,10 @@ mod tests {
         v.as_mut_slice()[0] = [1, 2, 3];
         v.truncate(1);
         let c = v.clone();
-        assert_eq!(c.as_slice(), &[[1, 2, 3]]);
+        assert!(
+            c.as_slice() == [[1, 2, 3]],
+            "clone_rounds_to_the_alignment_and_the_element_size: result mismatch"
+        );
         assert_eq!((c.len(), c.capacity(), c.align()), (1, 8, 64));
         assert!(is_aligned(c.as_ptr().cast::<u8>()));
     }

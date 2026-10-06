@@ -96,15 +96,7 @@ where
             &mut Source::new([3u8; 32]),
             &mut scratch.borrow(),
         );
-        for col in 0..rank + 1 {
-            for limb in 0..have.size() {
-                assert_eq!(
-                    have.data().at(col, limb),
-                    want.data().at(col, limb),
-                    "rank={rank} col={col} limb={limb}"
-                );
-            }
-        }
+        assert!(have == want, "encryption with supplied mask differs for rank={rank}");
     }
 }
 
@@ -316,7 +308,7 @@ where
             ct_zero == ct_compressed,
             "zero encryption differs from encrypting a zero plaintext"
         );
-        assert_eq!(source_xe_have.new_seed(), source_xe_want.new_seed());
+        assert!(source_xe_have.new_seed() == source_xe_want.new_seed(), "values differ");
     }
 }
 
@@ -382,9 +374,7 @@ where
         module.glwe_normalize_assign(&mut error_expected, &mut scratch.borrow());
         let mut error_actual = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         module.glwe_decrypt(&ct, &mut error_actual, &sk_prepared, &mut scratch.borrow());
-        for limb in 0..error_expected.size() {
-            assert_eq!(error_actual.data.at(0, limb), error_expected.data.at(0, limb));
-        }
+        assert!(error_actual == error_expected, "decrypted fresh noise differs");
 
         let noise_have: f64 = glwe_noise_checked(module, &ct, &pt, &sk_prepared, &mut scratch.borrow())
             .std()
@@ -764,7 +754,7 @@ where
                 })
                 .collect();
             for (l, key) in keys_want.iter().enumerate() {
-                assert_eq!(pk.at(l).to_owned_deep(), key.to_owned_deep(), "rank={rank} entry={l}");
+                assert!(pk.at(l).to_owned_deep() == key.to_owned_deep(), "rank={rank} entry={l}");
             }
 
             let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
@@ -894,8 +884,8 @@ where
                 crate::EncryptionMetadata::from_secret_at(*sk.dist(), infos.k)
                     .with_fresh_noise(crate::FreshNoiseEstimate::new(expected_variance, infos.k)),
             );
-            assert_eq!(
-                ct, want,
+            assert!(
+                ct == want,
                 "rank={rank}, pk extra precision={extra}, sample precision={sample_k}"
             );
 
@@ -914,7 +904,7 @@ where
                 );
             }));
             assert!(rejected.is_err());
-            assert_eq!(ct, before, "invalid public-key provenance must not mutate the destination");
+            assert!(ct == before, "invalid public-key provenance must not mutate the destination");
             *pk_prepared.dist_mut() = *sk.dist();
 
             // The ephemerals and their products would decrypt `ct` from the scratch.

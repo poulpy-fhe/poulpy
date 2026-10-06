@@ -363,5 +363,5 @@ pub fn test_polynomial_evaluation_parity<BR: ParityBackend, BT: ParityBackend>(
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    assert_eq!(exercise(r), exercise(t));
+    assert!(exercise(r) == exercise(t), "polynomial evaluation results differ");
 }

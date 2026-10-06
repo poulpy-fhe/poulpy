@@ -156,7 +156,7 @@ mod avx512 {
         let mut refr = vec![0i64; n];
         <FFT64Avx512 as ZnxAdd>::znx_add(&mut avx, &a, &b);
         <FFT64Ref as ZnxAdd>::znx_add(&mut refr, &a, &b);
-        assert_eq!(avx, refr, "znx_add (n={n})");
+        assert!(avx == refr, "znx_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -182,8 +182,8 @@ mod avx512 {
         let mut c_ref = c_init.clone();
         <FFT64Avx512 as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_avx, &mut c_avx);
         <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
-        assert_eq!(x_avx, x_ref, "znx_normalize_middle_step_assign x (n={n})");
-        assert_eq!(c_avx, c_ref, "znx_normalize_middle_step_assign c (n={n})");
+        assert!(x_avx == x_ref, "znx_normalize_middle_step_assign x (n={n})");
+        assert!(c_avx == c_ref, "znx_normalize_middle_step_assign c (n={n})");
 
         let iters = iters_for(n);
         let mut x = x_init.clone();
@@ -211,7 +211,7 @@ mod avx512 {
         let mut refr = vec![0i64; n];
         <FFT64Avx512 as ZnxAutomorphism>::znx_automorphism(p, &mut avx, &a);
         <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut refr, &a);
-        assert_eq!(avx, refr, "znx_automorphism (n={n})");
+        assert!(avx == refr, "znx_automorphism (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -373,7 +373,7 @@ mod avx512 {
         let mut refr = vec![0u64; 4 * n];
         <NTT4x30Avx512 as NttFromZnx64>::ntt_from_znx64(&mut avx, &a);
         <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
-        assert_eq!(avx, refr, "ntt_from_znx64 (n={n})");
+        assert!(avx == refr, "ntt_from_znx64 (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0u64; 4 * n];
@@ -396,7 +396,7 @@ mod avx512 {
         let mut refr = data0.clone();
         <NTT4x30Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut avx);
         <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(avx, refr, "ntt (n={n})");
+        assert!(avx == refr, "ntt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -421,7 +421,7 @@ mod avx512 {
         let mut refr = data0.clone();
         <NTT4x30Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut avx);
         <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(avx, refr, "intt (n={n})");
+        assert!(avx == refr, "intt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -448,7 +448,7 @@ mod avx512 {
         let mut refr = vec![0i128; n];
         <NTT4x30Avx512 as I128BigOps>::i128_add(&mut avx, &a, &b);
         <NTT4x30Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
-        assert_eq!(avx, refr, "i128_add (n={n})");
+        assert!(avx == refr, "i128_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i128; n];
@@ -474,8 +474,8 @@ mod avx512 {
         let mut c_ref = c_init.clone();
         <NTT4x30Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
-        assert_eq!(r_avx, r_ref, "nfc_middle_step r (n={n})");
-        assert_eq!(c_avx, c_ref, "nfc_middle_step c (n={n})");
+        assert!(r_avx == r_ref, "nfc_middle_step r (n={n})");
+        assert!(c_avx == c_ref, "nfc_middle_step c (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];

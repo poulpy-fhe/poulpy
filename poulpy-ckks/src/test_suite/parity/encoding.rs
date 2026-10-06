@@ -6,7 +6,7 @@
 
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GLWELayout, IntPolyInfos, LWEInfos},
+    layouts::{GLWEInfos, GLWELayout, IntPolyInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
@@ -21,7 +21,7 @@ use crate::{
     test_suite::CKKSTestParams,
 };
 
-use super::helpers::{Snapshot, fixture_ciphertext, fixture_plaintext, snapshot, with_scratch};
+use super::helpers::{HostCiphertext, fixture_ciphertext, fixture_plaintext, host_ciphertext, with_scratch};
 
 fn scalar_close<F: CKKSEncodingScalar>(expected: &[F], actual: &[F], tolerance: F) {
     assert_eq!(expected.len(), actual.len(), "encoding scalar count differs");
@@ -66,7 +66,7 @@ where
     F: CKKSEncodingScalar,
 {
     assert!(
-        snapshot::<BR, _>(r).layout == snapshot::<BT, _>(t).layout,
+        r.glwe_layout() == t.glwe_layout() && r.meta() == t.meta(),
         "encoding metadata differs"
     );
     let quantization = F::from_f64(2.0).unwrap() * (-F::from_usize(r.log_delta()).unwrap()).exp2();
@@ -137,7 +137,7 @@ where
     observed
 }
 
-fn coefficient_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<Snapshot>
+fn coefficient_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<HostCiphertext>
 where
     B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     B::Ring: CKKSSlotEmbedding,
@@ -173,13 +173,16 @@ where
                     .collect();
                 let buffer = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
                 let mut pt = fixture_plaintext(module, &layout, 47);
-                let mut expected_layout = snapshot::<B, _>(&pt).layout;
+                let mut expected_layout = CKKSLayout {
+                    glwe_layout: pt.glwe_layout(),
+                    meta: pt.meta(),
+                };
                 expected_layout.meta.slots = slots.meet(B::Ring::SLOTS);
                 module.ckks_encode_coeffs_into(&mut pt, &buffer).unwrap();
                 assert!(buffer.to_host::<B>() == input, "coefficient encoding changed its input");
-                let encoded = snapshot::<B, _>(&pt);
+                let encoded = host_ciphertext::<B, _>(&pt);
                 assert!(
-                    encoded.layout == expected_layout,
+                    encoded.0.glwe_layout() == expected_layout.glwe_layout && encoded.1 == expected_layout.meta,
                     "coefficient encoding changed metadata other than the ring's slot kind"
                 );
                 let want: Vec<F> = input.iter().map(|&x| (x * scale).round() / scale).collect();
@@ -192,15 +195,18 @@ where
                 let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); count]);
                 module.ckks_decode_coeffs_into(&pt, &mut decoded).unwrap();
                 assert!(decoded.to_host::<B>() == want, "coefficient decoding differs");
-                assert!(snapshot::<B, _>(&pt) == encoded, "coefficient decoding changed plaintext");
+                assert!(
+                    host_ciphertext::<B, _>(&pt) == encoded,
+                    "coefficient decoding changed plaintext"
+                );
                 observations.push(encoded);
                 for invalid_count in [0, 3, params.n + 1] {
                     let bad_input = vec![F::one(); invalid_count];
                     let mut bad = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&bad_input);
-                    let before = snapshot::<B, _>(&pt);
+                    let before = host_ciphertext::<B, _>(&pt);
                     assert!(module.ckks_encode_coeffs_into(&mut pt, &bad).is_err());
                     assert!(
-                        snapshot::<B, _>(&pt) == before,
+                        host_ciphertext::<B, _>(&pt) == before,
                         "invalid coefficient encoding changed plaintext"
                     );
                     assert!(module.ckks_decode_coeffs_into(&pt, &mut bad).is_err());
@@ -221,9 +227,12 @@ where
                     let mut invalid = input.clone();
                     invalid[count - 1] = invalid_value;
                     let bad = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&invalid);
-                    let before = snapshot::<B, _>(&pt);
+                    let before = host_ciphertext::<B, _>(&pt);
                     assert!(module.ckks_encode_coeffs_into(&mut pt, &bad).is_err());
-                    assert!(snapshot::<B, _>(&pt) == before, "failed quantization changed plaintext");
+                    assert!(
+                        host_ciphertext::<B, _>(&pt) == before,
+                        "failed quantization changed plaintext"
+                    );
                 }
             }
         }
@@ -263,9 +272,9 @@ where
             let mut pt = fixture_plaintext(module, &layout, 53);
             B::ckks_encode_slots_assign_into_impl(module, &mut pt, &mut slots).unwrap();
             let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); len]);
-            let before = snapshot::<B, _>(&pt);
+            let before = host_ciphertext::<B, _>(&pt);
             B::ckks_decode_slots_into_impl(module, &pt, &mut decoded).unwrap();
-            assert!(snapshot::<B, _>(&pt) == before, "slot decoding changed plaintext");
+            assert!(host_ciphertext::<B, _>(&pt) == before, "slot decoding changed plaintext");
             (pt, decoded.to_host::<B>())
         })
         .collect()
@@ -314,7 +323,10 @@ where
     let tested = slot_codec::<BT, F>(t, params);
     assert_eq!(reference.len(), tested.len());
     for ((pt_r, slots_r), (pt_t, slots_t)) in reference.iter().zip(&tested) {
-        assert!(snapshot::<BR, _>(pt_r) == snapshot::<BT, _>(pt_t), "slot encoding differs");
+        assert!(
+            host_ciphertext::<BR, _>(pt_r) == host_ciphertext::<BT, _>(pt_t),
+            "slot encoding differs"
+        );
         assert!(slots_r == slots_t, "slot decoding differs");
     }
 }
@@ -356,8 +368,8 @@ where
         };
         let cr = fixture_ciphertext(r, &layout, 72);
         let ct = fixture_ciphertext(t, &layout, 72);
-        let sr = snapshot::<BR, _>(&cr);
-        let st = snapshot::<BT, _>(&ct);
+        let sr = host_ciphertext::<BR, _>(&cr);
+        let st = host_ciphertext::<BT, _>(&ct);
         let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(r, &plan).unwrap();
         let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(t, &plan).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| {
@@ -377,15 +389,15 @@ where
             assert!(a.slots() == SlotsKind::Complex);
         }
         assert!(
-            snapshot::<BR, _>(&cr) == sr && snapshot::<BT, _>(&ct) == st,
+            host_ciphertext::<BR, _>(&cr) == sr && host_ciphertext::<BT, _>(&ct) == st,
             "PaCo encoding changed its input"
         );
         let mut invalid = layout;
         invalid.glwe_layout.rank = 2usize.into();
         let ir = fixture_ciphertext(r, &invalid, 73);
         let it = fixture_ciphertext(t, &invalid, 73);
-        let before_r = snapshot::<BR, _>(&ir);
-        let before_t = snapshot::<BT, _>(&it);
+        let before_r = host_ciphertext::<BR, _>(&ir);
+        let before_t = host_ciphertext::<BT, _>(&it);
         assert!(
             with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings_impl::<F, _>(
                 r,
@@ -407,7 +419,7 @@ where
             .is_err()
         );
         assert!(
-            snapshot::<BR, _>(&ir) == before_r && snapshot::<BT, _>(&it) == before_t,
+            host_ciphertext::<BR, _>(&ir) == before_r && host_ciphertext::<BT, _>(&it) == before_t,
             "failed PaCo encoding changed its input"
         );
     }
@@ -441,8 +453,8 @@ where
     };
     let cr = fixture_ciphertext(r, &layout, 83);
     let ct = fixture_ciphertext(t, &layout, 83);
-    let sr = snapshot::<BR, _>(&cr);
-    let st = snapshot::<BT, _>(&ct);
+    let sr = host_ciphertext::<BR, _>(&cr);
+    let st = host_ciphertext::<BT, _>(&ct);
     for complex in [false, true] {
         let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(r, &plan, base2k.into(), complex).unwrap();
         let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(t, &plan, base2k.into(), complex).unwrap();
@@ -473,15 +485,15 @@ where
             }
         }
         assert!(
-            snapshot::<BR, _>(&cr) == sr && snapshot::<BT, _>(&ct) == st,
+            host_ciphertext::<BR, _>(&cr) == sr && host_ciphertext::<BT, _>(&ct) == st,
             "SHIP encoding changed its input"
         );
         let mut invalid = layout;
         invalid.glwe_layout.k = (base2k + 1).into();
         let ir = fixture_ciphertext(r, &invalid, 84);
         let it = fixture_ciphertext(t, &invalid, 84);
-        let before_r = snapshot::<BR, _>(&ir);
-        let before_t = snapshot::<BT, _>(&it);
+        let before_r = host_ciphertext::<BR, _>(&ir);
+        let before_t = host_ciphertext::<BT, _>(&it);
         assert!(
             with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings_impl::<F, _>(
                 r,
@@ -505,7 +517,7 @@ where
             .is_err()
         );
         assert!(
-            snapshot::<BR, _>(&ir) == before_r && snapshot::<BT, _>(&it) == before_t,
+            host_ciphertext::<BR, _>(&ir) == before_r && host_ciphertext::<BT, _>(&it) == before_t,
             "failed SHIP encoding changed its input"
         );
     }

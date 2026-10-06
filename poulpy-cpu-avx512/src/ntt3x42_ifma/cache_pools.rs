@@ -223,15 +223,18 @@ mod tests {
             );
             assert!(!NTT3x42IfmaRayonExecutor::should_serialize_inner());
         });
-        assert_eq!(values, [3, 5]);
+        assert!(values == [3, 5], "join_restores_nesting_and_borrows_both_results mismatch");
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn cpu_lists_reject_invalid_ranges() {
-        assert_eq!(parse_cpus("0-3,8,12-13\n"), Some(vec![0, 1, 2, 3, 8, 12, 13]));
+        assert!(
+            parse_cpus("0-3,8,12-13\n") == Some(vec![0, 1, 2, 3, 8, 12, 13]),
+            "cpu_lists_reject_invalid_ranges mismatch"
+        );
         for invalid in ["", "3-1", "abc", "0-1024", "1024"] {
-            assert_eq!(parse_cpus(invalid), None);
+            assert!(parse_cpus(invalid).is_none(), "invalid CPU list was accepted");
         }
     }
 }

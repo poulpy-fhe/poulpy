@@ -166,7 +166,10 @@ where
 
     // First limb should be exactly equal (test are parameterized such that the noise does not reach
     // the first limb)
-    assert_eq!(pt_have.data().at(0, 0), lut.data[0].data().at(0, 0));
+    assert!(
+        pt_have.data().at(0, 0) == lut.data[0].data().at(0, 0),
+        "generic blind rotation result differs"
+    );
 
     // Verify that it effectively compute f(x)
     let mut have: i64 = pt_have.decode_coeff_i64((log_message_modulus + 1).into(), 0);

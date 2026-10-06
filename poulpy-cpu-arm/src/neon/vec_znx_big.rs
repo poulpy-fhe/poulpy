@@ -456,7 +456,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, y)| x.wrapping_add(*y)).collect();
             let mut got = vec![0i128; n];
             vi128_add_neon(n, &mut got, &a, &b);
-            assert_eq!(got, want, "vi128_add_neon mismatch at n={n}");
+            assert!(got == want, "vi128_add_neon mismatch at n={n}");
         }
     }
 
@@ -469,7 +469,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().zip(a.iter()).map(|(x, y)| x.wrapping_add(*y)).collect();
             let mut got = r0;
             vi128_add_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_add_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_add_assign_neon mismatch at n={n}");
         }
     }
 
@@ -482,7 +482,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, &y)| x.wrapping_add(y as i128)).collect();
             let mut got = vec![0i128; n];
             vi128_add_small_neon(n, &mut got, &a, &b);
-            assert_eq!(got, want, "vi128_add_small_neon mismatch at n={n}");
+            assert!(got == want, "vi128_add_small_neon mismatch at n={n}");
         }
     }
 
@@ -495,7 +495,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().zip(a.iter()).map(|(x, &y)| x.wrapping_add(y as i128)).collect();
             let mut got = r0;
             vi128_add_small_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_add_small_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_add_small_assign_neon mismatch at n={n}");
         }
     }
 
@@ -508,7 +508,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, y)| x.wrapping_sub(*y)).collect();
             let mut got = vec![0i128; n];
             vi128_sub_neon(n, &mut got, &a, &b);
-            assert_eq!(got, want, "vi128_sub_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_neon mismatch at n={n}");
         }
     }
 
@@ -521,7 +521,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().zip(a.iter()).map(|(x, y)| x.wrapping_sub(*y)).collect();
             let mut got = r0;
             vi128_sub_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_sub_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_assign_neon mismatch at n={n}");
         }
     }
 
@@ -534,7 +534,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(r0.iter()).map(|(x, y)| x.wrapping_sub(*y)).collect();
             let mut got = r0;
             vi128_sub_negate_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_sub_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -547,7 +547,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(b.iter()).map(|(&x, y)| (x as i128).wrapping_sub(*y)).collect();
             let mut got = vec![0i128; n];
             vi128_sub_small_a_neon(n, &mut got, &a, &b);
-            assert_eq!(got, want, "vi128_sub_small_a_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_small_a_neon mismatch at n={n}");
         }
     }
 
@@ -560,7 +560,7 @@ mod tests {
             let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, &y)| x.wrapping_sub(y as i128)).collect();
             let mut got = vec![0i128; n];
             vi128_sub_small_b_neon(n, &mut got, &a, &b);
-            assert_eq!(got, want, "vi128_sub_small_b_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_small_b_neon mismatch at n={n}");
         }
     }
 
@@ -573,7 +573,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().zip(a.iter()).map(|(x, &y)| x.wrapping_sub(y as i128)).collect();
             let mut got = r0;
             vi128_sub_small_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_sub_small_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_small_assign_neon mismatch at n={n}");
         }
     }
 
@@ -586,7 +586,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().zip(a.iter()).map(|(x, &y)| (y as i128).wrapping_sub(*x)).collect();
             let mut got = r0;
             vi128_sub_small_negate_assign_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_sub_small_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_sub_small_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -598,7 +598,7 @@ mod tests {
             let want: Vec<i128> = a.iter().map(|x| x.wrapping_neg()).collect();
             let mut got = vec![0i128; n];
             vi128_negate_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_negate_neon mismatch at n={n}");
+            assert!(got == want, "vi128_negate_neon mismatch at n={n}");
         }
     }
 
@@ -610,7 +610,7 @@ mod tests {
             let want: Vec<i128> = r0.iter().map(|x| x.wrapping_neg()).collect();
             let mut got = r0;
             vi128_negate_assign_neon(n, &mut got);
-            assert_eq!(got, want, "vi128_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "vi128_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -622,7 +622,7 @@ mod tests {
             let want: Vec<i128> = a.iter().map(|&x| x as i128).collect();
             let mut got = vec![0i128; n];
             vi128_from_small_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_from_small_neon mismatch at n={n}");
+            assert!(got == want, "vi128_from_small_neon mismatch at n={n}");
         }
     }
 
@@ -634,7 +634,7 @@ mod tests {
             let want: Vec<i128> = a.iter().map(|&x| (x as i128).wrapping_neg()).collect();
             let mut got = vec![0i128; n];
             vi128_neg_from_small_neon(n, &mut got, &a);
-            assert_eq!(got, want, "vi128_neg_from_small_neon mismatch at n={n}");
+            assert!(got == want, "vi128_neg_from_small_neon mismatch at n={n}");
         }
     }
 
@@ -655,15 +655,15 @@ mod tests {
         let mut got = vec![0i128; n];
         let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, y)| x.wrapping_add(*y)).collect();
         vi128_add_neon(n, &mut got, &a, &b);
-        assert_eq!(got, want, "boundary add");
+        assert!(got == want, "boundary add");
 
         let want: Vec<i128> = a.iter().zip(b.iter()).map(|(x, y)| x.wrapping_sub(*y)).collect();
         vi128_sub_neon(n, &mut got, &a, &b);
-        assert_eq!(got, want, "boundary sub");
+        assert!(got == want, "boundary sub");
 
         let want: Vec<i128> = a.iter().map(|x| x.wrapping_neg()).collect();
         vi128_negate_neon(n, &mut got, &a);
-        assert_eq!(got, want, "boundary negate");
+        assert!(got == want, "boundary negate");
     }
 
     /// i64 sign-extension boundaries.
@@ -681,7 +681,7 @@ mod tests {
             .map(|(x, &y)| x.wrapping_add(y as i128))
             .collect();
         vi128_add_small_neon(n, &mut got, &big, &small);
-        assert_eq!(got, want, "boundary add_small");
+        assert!(got == want, "boundary add_small");
 
         let want: Vec<i128> = small
             .iter()
@@ -689,7 +689,7 @@ mod tests {
             .map(|(&x, y)| (x as i128).wrapping_sub(*y))
             .collect();
         vi128_sub_small_a_neon(n, &mut got, &small, &big);
-        assert_eq!(got, want, "boundary sub_small_a");
+        assert!(got == want, "boundary sub_small_a");
 
         let want: Vec<i128> = big
             .iter()
@@ -697,14 +697,14 @@ mod tests {
             .map(|(x, &y)| x.wrapping_sub(y as i128))
             .collect();
         vi128_sub_small_b_neon(n, &mut got, &big, &small);
-        assert_eq!(got, want, "boundary sub_small_b");
+        assert!(got == want, "boundary sub_small_b");
 
         let want: Vec<i128> = small.iter().map(|&x| x as i128).collect();
         vi128_from_small_neon(n, &mut got, &small);
-        assert_eq!(got, want, "boundary from_small");
+        assert!(got == want, "boundary from_small");
 
         let want: Vec<i128> = small.iter().map(|&x| (x as i128).wrapping_neg()).collect();
         vi128_neg_from_small_neon(n, &mut got, &small);
-        assert_eq!(got, want, "boundary neg_from_small");
+        assert!(got == want, "boundary neg_from_small");
     }
 }

@@ -1214,8 +1214,11 @@ mod finish_tests {
                             1,
                             &mut vec![0; 3 * n],
                         );
-                        assert_eq!(got, expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
-                        assert_eq!(&source.data()[..2 * n * 8], &input.data()[..2 * n * 8]);
+                        assert!(got == expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
+                        assert!(
+                            source.data()[..2 * n * 8] == input.data()[..2 * n * 8],
+                            "finish_matches_composition_edges mismatch"
+                        );
                     }
                 }
             }

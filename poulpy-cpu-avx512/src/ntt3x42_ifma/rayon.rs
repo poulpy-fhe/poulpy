@@ -1604,10 +1604,16 @@ mod tests {
         let mut actual = vec![0; len];
         <NTT3x42IfmaRayon as ZnxAdd>::znx_add(&mut actual, &a, &b);
         let expected: Vec<_> = a.iter().zip(&b).map(|(&a, &b)| a.wrapping_add(b)).collect();
-        assert_eq!(actual, expected);
+        assert!(
+            actual == expected,
+            "parallel_coefficient_ops_match_wrapping_arithmetic mismatch"
+        );
 
         <NTT3x42IfmaRayon as ZnxMulPowerOfTwo>::znx_mul_power_of_two(11, &mut actual, &a);
         let expected: Vec<_> = a.iter().map(|&a| a.wrapping_mul(1 << 11)).collect();
-        assert_eq!(actual, expected);
+        assert!(
+            actual == expected,
+            "parallel_coefficient_ops_match_wrapping_arithmetic mismatch"
+        );
     }
 }

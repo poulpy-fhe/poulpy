@@ -390,7 +390,7 @@ mod tests {
         let mut bytes = vec![0xaa, 0x55];
         let error = EncryptionMetadata::write_optional(metadata, &mut bytes).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(bytes, [0xaa, 0x55]);
+        assert!(bytes == [0xaa, 0x55], "values differ");
     }
 
     #[test]
@@ -404,12 +404,12 @@ mod tests {
             EncryptionMetadata::from_secret_at(Distribution::TernaryProb(0.3), TorusPrecision(35))
                 .with_fresh_noise(FreshNoiseEstimate::new(71.0, TorusPrecision(35))),
         );
-        assert_ne!(ciphertext, restored);
+        assert!(ciphertext != restored, "values unexpectedly match");
 
         let mut bytes = Vec::new();
         ciphertext.write_to(&mut bytes).unwrap();
         restored.read_from(&mut bytes.as_slice()).unwrap();
-        assert_eq!(ciphertext, restored);
+        assert!(ciphertext == restored, "values differ");
         assert_eq!(restored.encryption_metadata(), ciphertext.encryption_metadata());
 
         bytes[0] ^= 1;

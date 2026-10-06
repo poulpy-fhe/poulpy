@@ -159,6 +159,14 @@ pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> 
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKey<D, W>>,
 }
 
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> PartialEq for CircuitBootstrappingKey<D, BRA, W> {
+    fn eq(&self, other: &Self) -> bool {
+        self.brk == other.brk && self.tsk == other.tsk && self.atk == other.atk
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> Eq for CircuitBootstrappingKey<D, BRA, W> {}
+
 impl<D1, D2, BRA, W> TransferInto<CircuitBootstrappingKey<D2, BRA, W>> for CircuitBootstrappingKey<D1, BRA, W>
 where
     D1: Data + CopyToHost,

@@ -1,5 +1,5 @@
 //! Blind rotation compares coefficient-domain fixtures prepared separately.
-use super::{ParityBackend, fixture_ggsw, fixture_glwe, snapshot_glwe, with_scratch};
+use super::{ParityBackend, fixture_ggsw, fixture_glwe, host_glwe, with_scratch};
 use crate::{api::*, blind_rotation::*, reference::blind_rotation::*};
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::{layouts::*, source::Source};
@@ -44,22 +44,42 @@ fn reject_mismatched_preparation<B: ParityBackend>(
 ) where
     Module<B>: BlindRotationKeyPreparedFactory<CGGI, B>,
 {
-    let snapshot = |key: &BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>| {
+    let host_prepared_key = |key: &BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>| {
         (
             key.dist,
             key.data
                 .iter()
-                .map(|element| (element.ggsw_layout(), B::to_host_bytes(element.data().data())))
+                .map(|element| {
+                    let matrix = element.data();
+                    let storage = poulpy_hal::AlignedBuf::from(B::to_host_bytes(matrix.data()).as_slice());
+                    let host = VmpPMat::<_, B::DftWord, B>::from_data(
+                        storage,
+                        matrix.n(),
+                        matrix.rows(),
+                        matrix.cols_in(),
+                        matrix.cols_out(),
+                        matrix.size(),
+                        matrix.hint(),
+                    );
+                    (element.ggsw_layout(), element.encryption_metadata(), host)
+                })
                 .collect::<Vec<_>>(),
             key.x_pow_a.as_ref().map(|table| {
                 table
                     .iter()
-                    .map(|element| B::to_host_bytes(element.data()))
+                    .map(|element| {
+                        SvpPPol::<_, B::DftWord, B>::from_data(
+                            poulpy_hal::AlignedBuf::from(B::to_host_bytes(element.data()).as_slice()),
+                            element.n(),
+                            element.cols(),
+                            element.hint(),
+                        )
+                    })
                     .collect::<Vec<_>>()
             }),
         )
     };
-    let before = snapshot(prepared);
+    let before = host_prepared_key(prepared);
     let invalid_layout = BlindRotationKeyLayout {
         n_lwe: (layout.n_lwe.as_usize() - 1).into(),
         ..*layout
@@ -71,7 +91,10 @@ fn reject_mismatched_preparation<B: ParityBackend>(
         });
     }));
     assert!(failure.is_err(), "mismatched key dimensions must be rejected");
-    assert_eq!(before, snapshot(prepared), "failed preparation changed the destination");
+    assert!(
+        before == host_prepared_key(prepared),
+        "failed preparation changed the destination"
+    );
 }
 
 fn output_fixture<B: ParityBackend>(
@@ -165,7 +188,7 @@ where
                     let mut switched_t = vec![0; 5];
                     reference.blind_rotation_mod_switch(2 * reference.n() * extension, &mut switched_r, &lwe_r, direction);
                     tested.blind_rotation_mod_switch(2 * tested.n() * extension, &mut switched_t, &lwe_t, direction);
-                    assert_eq!(switched_r, switched_t, "modulus-switch parity");
+                    assert!(switched_r == switched_t, "modulus-switch parity");
                     let mut output_r = output_fixture(reference, &allocation, logical_layout.k);
                     let mut output_t = output_fixture(tested, &allocation, logical_layout.k);
                     with_scratch::<BR, _>(
@@ -176,9 +199,8 @@ where
                         tested.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_t, &key_layout),
                         |s| tested.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
                     );
-                    assert_eq!(
-                        snapshot_glwe::<BR, _>(&output_r),
-                        snapshot_glwe::<BT, _>(&output_t),
+                    assert!(
+                        host_glwe::<BR, _>(&output_r) == host_glwe::<BT, _>(&output_t),
                         "blind-rotation parity"
                     );
                 }
@@ -267,9 +289,8 @@ where
         });
         assert_eq!(actual.dist, expected.dist);
         for (a, b) in actual.keys.iter().zip(&expected.keys) {
-            assert_eq!(
-                super::snapshot_ggsw::<B, _>(a),
-                super::snapshot_ggsw::<B, _>(b),
+            assert!(
+                super::host_ggsw::<B, _>(a) == super::host_ggsw::<B, _>(b),
                 "key encryption parity"
             );
         }
@@ -307,9 +328,8 @@ where
         });
         assert_eq!(actual.dist, expected.dist);
         for (a, b) in actual.keys.iter().zip(&expected.keys) {
-            assert_eq!(
-                super::snapshot_ggsw::<B, _>(a),
-                super::snapshot_ggsw::<B, _>(b),
+            assert!(
+                super::host_ggsw::<B, _>(a) == super::host_ggsw::<B, _>(b),
                 "compressed key/decompression parity"
             );
         }

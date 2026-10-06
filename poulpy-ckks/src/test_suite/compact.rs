@@ -107,9 +107,8 @@ pub fn test_compact_plaintext_embedding<BE, F, E>(
         encoder
             .decode_reim(&embedded.to_host_owned::<BE>(), &mut have_re, &mut have_im)
             .unwrap();
-        assert_eq!(
-            (want_re, want_im),
-            (have_re, have_im),
+        assert!(
+            (want_re, want_im) == (have_re, have_im),
             "switch_ring(compact) != dense at {m} slots"
         );
     }
@@ -174,7 +173,7 @@ pub fn test_compact_plaintext_add_sub_mul<BE, F, E>(
     );
     let dec_dense: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_dense, &sk, &mut scratch.borrow());
     let dec_compact: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_compact, &sk, &mut scratch.borrow());
-    assert_eq!(dec_dense, dec_compact, "add: compact plaintext != dense plaintext");
+    assert!(dec_dense == dec_compact, "add: compact plaintext != dense plaintext");
 
     // sub
     let neg_re2: Vec<F> = q_re2.iter().map(|v| F::zero() - *v).collect();
@@ -201,7 +200,7 @@ pub fn test_compact_plaintext_add_sub_mul<BE, F, E>(
     );
     let dec_dense: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_dense, &sk, &mut scratch.borrow());
     let dec_compact: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_compact, &sk, &mut scratch.borrow());
-    assert_eq!(dec_dense, dec_compact, "sub: compact plaintext != dense plaintext");
+    assert!(dec_dense == dec_compact, "sub: compact plaintext != dense plaintext");
 
     // mul: the compact plaintext is prepared at its own degree and read through
     // the sparse right slot of the convolution.
@@ -227,7 +226,7 @@ pub fn test_compact_plaintext_add_sub_mul<BE, F, E>(
     );
     let dec_dense: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_dense, &sk, &mut scratch.borrow());
     let dec_compact: (Vec<F>, Vec<F>) = ckks_decrypt_decode(&params, module, &encoder, &with_compact, &sk, &mut scratch.borrow());
-    assert_eq!(dec_dense, dec_compact, "mul: compact plaintext != dense plaintext");
+    assert!(dec_dense == dec_compact, "mul: compact plaintext != dense plaintext");
 
     // mul assign, on a fresh encryption of the same values.
     let mut assigned = ckks_encrypt(

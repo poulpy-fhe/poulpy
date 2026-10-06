@@ -1216,7 +1216,7 @@ mod tests {
         b_to_znx128_ref::<Primes30>(n, &mut result, &dc);
 
         let expected: Vec<i128> = [3, 10, 8, 0, 0, 0, 0, 0].to_vec();
-        assert_eq!(result, expected, "AVX-512F NTT convolution mismatch");
+        assert!(result == expected, "AVX-512F NTT convolution mismatch");
     }
 
     /// AVX-512F NTT output matches reference NTT output.
