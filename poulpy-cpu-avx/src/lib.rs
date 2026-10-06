@@ -64,7 +64,7 @@
 //! ## Determinism
 //!
 //! All operations produce **bit-identical results** across different runs and different backends
-//! (when compared to `poulpy-cpu-ref`). Floating-point operations in FFT are constrained to
+//! (when compared to `poulpy-cpu-portable`). Floating-point operations in FFT are constrained to
 //! maintain error < 0.5 ULP, ensuring correct rounding when converting back to integers.
 //!
 //! ## Overflow handling
@@ -101,7 +101,7 @@
 //! - **Convolution**: O(n log n) via FFT-based approach
 //! - **Normalization**: O(n) per limb with vectorized digit extraction
 //!
-//! ## Speedup over reference backend
+//! ## Speedup over the portable backend
 //!
 //! Speedups depend on the host micro-architecture and on the operation profile of the
 //! workload. Run the benches in `poulpy-bench` on the target host for representative
@@ -221,23 +221,23 @@ pub type FFT64CIAvxRayon = FFT64AvxRayon<poulpy_hal::layouts::ConjugateInvariant
 pub type NTT4x30CIAvxRayon = NTT4x30AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64avx,
     crate::FFT64CIAvx,
     crate::FFT64Avx,
-    reference = poulpy_cpu_ref::FFT64CIRef
+    reference = poulpy_cpu_portable::FFT64CIPortable
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30avx,
     crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
-    reference = poulpy_cpu_ref::NTT4x30CIRef
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64avxrayon,
     crate::FFT64CIAvxRayon,
     crate::FFT64AvxRayon,
@@ -245,7 +245,7 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30avxrayon,
     crate::NTT4x30CIAvxRayon,
     crate::NTT4x30AvxRayon,
@@ -253,23 +253,23 @@ poulpy_cpu_ref::conjugate_invariant_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avx,
     crate::FFT64CIAvx,
     crate::FFT64Avx,
-    reference = poulpy_cpu_ref::FFT64CIRef
+    reference = poulpy_cpu_portable::FFT64CIPortable
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avx,
     crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
-    reference = poulpy_cpu_ref::NTT4x30CIRef
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avxrayon,
     crate::FFT64CIAvxRayon,
     crate::FFT64AvxRayon,
@@ -277,7 +277,7 @@ poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_ref::conjugate_invariant_core_test_suite!(
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avxrayon,
     crate::NTT4x30CIAvxRayon,
     crate::NTT4x30AvxRayon,

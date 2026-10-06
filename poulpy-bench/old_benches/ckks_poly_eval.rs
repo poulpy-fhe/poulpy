@@ -258,14 +258,14 @@ fn $fn(c: &mut Criterion) {
     };
 }
 
-poly_eval_bench!(bench_ntt4x30_ref, poulpy_cpu_ref::NTT4x30Ref, "ntt4x30-ref");
+poly_eval_bench!(bench_ntt4x30_portable, poulpy_cpu_portable::NTT4x30Portable, "ntt4x30-portable");
 #[cfg(feature = "enable-avx")]
 poly_eval_bench!(bench_ntt4x30_avx, poulpy_cpu_avx::NTT4x30Avx, "ntt4x30-avx");
 #[cfg(feature = "enable-ifma")]
 poly_eval_bench!(bench_ntt_ifma, poulpy_cpu_avx512::NTT3x42Ifma, "ntt-ifma");
 
 fn bench_ckks_poly_eval(c: &mut Criterion) {
-    bench_ntt4x30_ref(c);
+    bench_ntt4x30_portable(c);
     #[cfg(feature = "enable-avx")]
     bench_ntt4x30_avx(c);
     #[cfg(feature = "enable-ifma")]

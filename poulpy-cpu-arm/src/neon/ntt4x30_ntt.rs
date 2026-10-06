@@ -1,7 +1,7 @@
 //! Q120 forward / inverse NTT — NEON-accelerated kernels.
 
 use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrn_n_u64};
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::kernels::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
@@ -491,11 +491,11 @@ pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P, impl Ring>, data
 mod tests {
 
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
-        arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
+    use poulpy_cpu_portable::kernels::ntt4x30::{
+        arithmetic::{b_from_znx64_portable, b_to_znx128_portable},
         ntt::{NttTable, NttTableInv},
         primes::{PrimeSet, Primes30},
-        standard::ntt_ref,
+        standard::ntt_portable,
     };
 
     /// NEON NTT then NEON iNTT round-trips to the original (mod each Q[k]).
@@ -507,7 +507,7 @@ mod tests {
             let inv = NttTableInv::<Primes30>::new(n);
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
             let mut data = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut data, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data, &coeffs);
             let data_orig = data.clone();
             ntt_neon::<Primes30>(&fwd, &mut data);
             intt_neon::<Primes30>(&inv, &mut data);
@@ -532,10 +532,10 @@ mod tests {
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 13 + 5) % 201 - 100).collect();
             let mut data_neon = vec![0u64; 4 * n];
             let mut data_ref = vec![0u64; 4 * n];
-            b_from_znx64_ref::<Primes30>(n, &mut data_neon, &coeffs);
-            b_from_znx64_ref::<Primes30>(n, &mut data_ref, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data_neon, &coeffs);
+            b_from_znx64_portable::<Primes30>(n, &mut data_ref, &coeffs);
             ntt_neon::<Primes30>(&fwd, &mut data_neon);
-            ntt_ref::<Primes30>(&fwd, &mut data_ref);
+            ntt_portable::<Primes30>(&fwd, &mut data_ref);
             assert_eq!(data_neon, data_ref, "n={n}: NTT NEON vs ref mismatch");
         }
     }
@@ -549,8 +549,8 @@ mod tests {
         let b: Vec<i64> = vec![3, 4, 0, 0, 0, 0, 0, 0];
         let mut da = vec![0u64; 4 * n];
         let mut db = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut da, &a);
-        b_from_znx64_ref::<Primes30>(n, &mut db, &b);
+        b_from_znx64_portable::<Primes30>(n, &mut da, &a);
+        b_from_znx64_portable::<Primes30>(n, &mut db, &b);
         ntt_neon::<Primes30>(&fwd, &mut da);
         ntt_neon::<Primes30>(&fwd, &mut db);
         let mut dc = vec![0u64; 4 * n];
@@ -562,7 +562,7 @@ mod tests {
         }
         intt_neon::<Primes30>(&inv, &mut dc);
         let mut result = vec![0i128; n];
-        b_to_znx128_ref::<Primes30>(n, &mut result, &dc);
+        b_to_znx128_portable::<Primes30>(n, &mut result, &dc);
         let expected: Vec<i128> = vec![3, 10, 8, 0, 0, 0, 0, 0];
         assert_eq!(result, expected, "NEON NTT convolution mismatch");
     }

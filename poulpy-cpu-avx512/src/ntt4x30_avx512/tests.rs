@@ -226,7 +226,7 @@ backend_test_suite! {
 // CHANGE_MODE_N = 1024: for n <= 1024 the AVX NTT runs fully by-block;
 // for n > 1024 it first completes upper levels by-level then switches to
 // by-block for the remaining levels. These suites ensure both modes are
-// exercised and agree with the reference backend.
+// exercised and agree with the oracle.
 
 // n = 1024: last size that uses by-block only.
 cross_backend_test_suite! {
@@ -303,22 +303,22 @@ fn test_gglwe_product_digits_strided_bit_identical() {
 
 #[test]
 fn large_ring_ntt_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 17);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 17);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 17);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 17);
 }
 
 #[test]
 fn large_ring_ntt_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 18);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 18);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 18);
+    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 18);
 }

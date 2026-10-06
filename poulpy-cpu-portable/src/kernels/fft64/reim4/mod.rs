@@ -1,0 +1,378 @@
+mod arithmetic;
+
+pub use arithmetic::*;
+
+use crate::kernels::fft64::reim::as_arr_mut;
+
+pub trait Reim4BlkMatVec {
+    fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
+        reim4_extract_1blk_from_reim_contiguous_portable(m, rows, blk, dst, src)
+    }
+
+    fn reim4_save_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
+        reim4_save_1blk_to_reim_contiguous_portable(m, rows, blk, dst, src)
+    }
+
+    fn reim4_save_1blk<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
+        reim4_save_1blk_to_reim_portable::<OVERWRITE>(m, blk, dst, src)
+    }
+
+    fn reim4_save_2blks<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
+        reim4_save_2blk_to_reim_portable::<OVERWRITE>(m, blk, dst, src)
+    }
+
+    fn reim4_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_vec_mat1col_product_portable(nrows, dst, u, v)
+    }
+
+    fn reim4_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_vec_mat2cols_product_portable(nrows, dst, u, v)
+    }
+
+    fn reim4_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_vec_mat2cols_2ndcol_product_portable(nrows, dst, u, v)
+    }
+
+    fn reim4_real_mat1col_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat1col_product_portable(nrows, dst, u, v)
+    }
+
+    fn reim4_real_mat2cols_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat2cols_product_portable(nrows, dst, u, v)
+    }
+
+    fn reim4_real_mat2cols_2ndcol_prod(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
+        reim4_real_vec_mat2cols_2ndcol_product_portable(nrows, dst, u, v)
+    }
+}
+
+pub trait Reim4Convolution {
+    fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_convolution_1coeff_portable(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_convolution_2coeffs_portable(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_real_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_real_convolution_1coeff_portable(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_real_convolution_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        reim4_real_convolution_2coeffs_portable(k, dst, a, a_size, b, b_size)
+    }
+
+    fn reim4_convolution(dst: &mut [f64], dst_size: usize, offset: usize, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+        assert!(a_size > 0);
+        assert!(b_size > 0);
+
+        for k in (0..dst_size - 1).step_by(2) {
+            Self::reim4_convolution_2coeffs(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+
+        if !dst_size.is_multiple_of(2) {
+            let k: usize = dst_size - 1;
+            Self::reim4_convolution_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+    }
+
+    fn reim4_real_convolution(
+        dst: &mut [f64],
+        dst_size: usize,
+        offset: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+    ) {
+        assert!(a_size > 0);
+        assert!(b_size > 0);
+        for k in (0..dst_size - 1).step_by(2) {
+            Self::reim4_real_convolution_2coeffs(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+        if !dst_size.is_multiple_of(2) {
+            let k = dst_size - 1;
+            Self::reim4_real_convolution_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b, b_size);
+        }
+    }
+
+    /// Column-level convolution over all `m/4` blocks into `dst` (limb stride
+    /// `dst_stride`, re/im halves `m` apart, block offset `4*blk`).
+    ///
+    /// `dst_stride` is the distance, in f64, between consecutive limbs of the
+    /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
+    /// column of a multi-column (column-interleaved) one. `b_log_gap` is
+    /// `log2(N / n)` for a degree-`n` right operand (zero when dense): its block
+    /// rows are gathered through [`reim4_gather_sparse_block_portable`]. `a` takes the
+    /// module degree. `tmp` holds at least `8 * (b_size + min_size)` f64.
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_convolution_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            a_idx += a_stride;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            a_idx += a_stride;
+        }
+    }
+
+    /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
+    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched. `tmp` holds
+    /// at least `8 * (b_size + min_size)` f64, sized by the caller's
+    /// [`convolution_apply_dft_tmp_bytes_portable`](super::convolution::convolution_apply_dft_tmp_bytes_portable).
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                for i in 0..4 {
+                    dst[off + i] += tmp_res[8 * k + i];
+                    dst[off + m + i] += tmp_res[8 * k + 4 + i];
+                }
+            }
+            a_idx += a_stride;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut a_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                for i in 0..4 {
+                    dst[off + i] += tmp_res[8 * k + i];
+                    dst[off + m + i] += tmp_res[8 * k + 4 + i];
+                }
+            }
+            a_idx += a_stride;
+        }
+    }
+
+    /// Pairwise column-level convolution `(a0 + a1) ⊛ (b0 + b1)`; `tmp` must
+    /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
+    /// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand (zero when
+    /// dense): its block rows are summed through
+    /// [`reim4_gather_sparse_block_sum_portable`]. `a0` and `a1` take the module degree.
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_convolution_pairwise_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a0: &[f64],
+        a1: &[f64],
+        a_size: usize,
+        b0: &[f64],
+        b1: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + crate::kernels::fft64::reim::ReimArith + Sized,
+    {
+        let a_row: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_a, tmp) = tmp.split_at_mut(a_row);
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut idx_a: usize = 0;
+        for blk_i in 0..m / 4 {
+            Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
+            if b_log_gap == 0 {
+                Self::reim_add(
+                    tmp_b,
+                    &b0[blk_i * b_row..(blk_i + 1) * b_row],
+                    &b1[blk_i * b_row..(blk_i + 1) * b_row],
+                );
+            } else {
+                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+            }
+            Self::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            idx_a += a_row;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_real_convolution_pairwise_apply(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a0: &[f64],
+        a1: &[f64],
+        a_size: usize,
+        b0: &[f64],
+        b1: &[f64],
+        b_size: usize,
+        b_log_gap: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + crate::kernels::fft64::reim::ReimArith + Sized,
+    {
+        let a_row: usize = a_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_a, tmp) = tmp.split_at_mut(a_row);
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
+        let mut idx_a: usize = 0;
+        for blk_i in 0..m / 4 {
+            Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
+            if b_log_gap == 0 {
+                Self::reim_add(
+                    tmp_b,
+                    &b0[blk_i * b_row..(blk_i + 1) * b_row],
+                    &b1[blk_i * b_row..(blk_i + 1) * b_row],
+                );
+            } else {
+                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+            }
+            Self::reim4_real_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
+            idx_a += a_row;
+        }
+    }
+
+    fn reim4_convolution_by_real_const_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64]) {
+        reim4_convolution_by_real_const_1coeff_portable(k, dst, a, a_size, b)
+    }
+
+    fn reim4_convolution_by_real_const_2coeffs(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64]) {
+        reim4_convolution_by_real_const_2coeffs_portable(k, dst, a, a_size, b)
+    }
+
+    fn reim4_convolution_by_real_const(dst: &mut [f64], dst_size: usize, offset: usize, a: &[f64], a_size: usize, b: &[f64]) {
+        assert!(a_size > 0);
+
+        for k in (0..dst_size - 1).step_by(2) {
+            Self::reim4_convolution_by_real_const_2coeffs(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b);
+        }
+
+        if !dst_size.is_multiple_of(2) {
+            let k: usize = dst_size - 1;
+            Self::reim4_convolution_by_real_const_1coeff(k + offset, as_arr_mut(&mut dst[8 * k..]), a, a_size, b);
+        }
+    }
+}

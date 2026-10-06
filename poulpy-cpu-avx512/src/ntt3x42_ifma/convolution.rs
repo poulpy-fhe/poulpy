@@ -14,7 +14,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_ref::reference::sparse_log_gap;
+use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{
@@ -836,7 +836,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -877,7 +877,7 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1109,7 +1109,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
                 a_size,
                 b_col: col_slice(cast_slice(term.b.data()), term.b.n(), b_size, term.b_col),
                 b_size,
-                b_log_gap: sparse_log_gap(n, term.b.n()),
+                b_log_gap: sparse_log_gap_portable(n, term.b.n()),
                 offset,
                 min_size,
             }
@@ -1253,7 +1253,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap_portable(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

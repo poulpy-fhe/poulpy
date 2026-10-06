@@ -1,16 +1,16 @@
 //! Single ring element (`Z[X]/(X^n+1)`) arithmetic for [`NTT4x30Avx512`](super::NTT4x30Avx512).
 //!
-//! Implements the `Znx*` traits from `poulpy_cpu_ref::reference::znx`. All implementations
+//! Implements the `Znx*` traits from `poulpy_cpu_portable::kernels::znx`. All implementations
 //! delegate to the AVX-512F accelerated functions in `crate::znx_avx512` (same kernels used
 //! by the other AVX-512 backends). These operate on plain `&[i64]` slices and are
 //! backend-independent.
 
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::kernels::znx::{
     ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
     ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
     ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-    ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
-    znx_rotate, znx_zero_ref,
+    ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+    znx_copy_portable, znx_rotate_portable, znx_zero_portable,
 };
 
 use poulpy_hal::layouts::Ring;
@@ -85,7 +85,7 @@ impl<R: Ring> ZnxMulPowerOfTwoAssign for NTT4x30Avx512<R> {
 impl<R: Ring> ZnxCopy for NTT4x30Avx512<R> {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
-        znx_copy_ref(res, a);
+        znx_copy_portable(res, a);
     }
 }
 
@@ -106,14 +106,14 @@ impl<R: Ring> ZnxNegateAssign for NTT4x30Avx512<R> {
 impl<R: Ring> ZnxRotate for NTT4x30Avx512<R> {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
-        znx_rotate::<Self>(p, res, src);
+        znx_rotate_portable::<Self>(p, res, src);
     }
 }
 
 impl<R: Ring> ZnxZero for NTT4x30Avx512<R> {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
-        znx_zero_ref(res);
+        znx_zero_portable(res);
     }
 }
 
@@ -187,7 +187,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30Avx512<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Avx512<R> {
+impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for NTT4x30Avx512<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());

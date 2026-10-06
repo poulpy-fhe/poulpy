@@ -38,11 +38,11 @@ It exists only as an IFMA-accelerated backend, because it relies on IFMA multipl
 
 | Subfamily | Reference | AVX2 / FMA | AVX-512 | NEON |
 |-----------|-----------|------------|---------|------|
-| FFT64  | `FFT64Ref` | `FFT64Avx`, `FFT64AvxRayon` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon`, `FFT64NeonRayon` |
-| NTT4x30 | `NTT4x30Ref` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512`, `NTT4x30Avx512Rayon` | `NTT4x30Neon`, `NTT4x30NeonRayon` |
+| FFT64  | `FFT64Portable` | `FFT64Avx`, `FFT64AvxRayon` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon`, `FFT64NeonRayon` |
+| NTT4x30 | `NTT4x30Portable` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512`, `NTT4x30Avx512Rayon` | `NTT4x30Neon`, `NTT4x30NeonRayon` |
 | NTT3x42 | none | none | `NTT3x42Ifma`, `NTT3x42IfmaRayon` | none |
 
-The `*Ref` types live in `poulpy-cpu-ref` and are portable across every CPU.
+The `*Ref` types live in `poulpy-cpu-portable` and are portable across every CPU.
 They prioritize correctness and validation, not performance; use an accelerated backend for performance-sensitive workloads.
 The `*Avx` types live in `poulpy-cpu-avx`.
 The `*Avx512` and `NTT3x42Ifma` types live in `poulpy-cpu-avx512`.
@@ -51,14 +51,14 @@ The `*Rayon` types use the same arithmetic subfamily and storage formats as thei
 
 | Backend | Crate | Feature | Required target features |
 |---------|-------|---------|--------------------------|
-| `FFT64Ref` | `poulpy-cpu-ref` | none | none |
+| `FFT64Portable` | `poulpy-cpu-portable` | none | none |
 | `FFT64Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `FFT64AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `FFT64Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
 | `FFT64Avx512Rayon` | `poulpy-cpu-avx512` | `enable-rayon` | `+avx512f` |
 | `FFT64Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
 | `FFT64NeonRayon` | `poulpy-cpu-arm` | `enable-rayon` | none |
-| `NTT4x30Ref` | `poulpy-cpu-ref` | none | none |
+| `NTT4x30Portable` | `poulpy-cpu-portable` | none | none |
 | `NTT4x30Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `NTT4x30AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `NTT4x30Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
@@ -80,17 +80,17 @@ A backend is selected by naming its type when you build the `Module`.
 
 ```rust
 use poulpy_hal::layouts::Module;
-use poulpy_cpu_ref::FFT64Ref;
+use poulpy_cpu_portable::FFT64Portable;
 
-let module: Module<FFT64Ref> = Module::new(1 << 10);
+let module: Module<FFT64Portable> = Module::new(1 << 10);
 ```
 
 Switching subfamily, acceleration, or scheduling is a one-line change.
 
 ```rust
-use poulpy_cpu_ref::NTT4x30Ref;
+use poulpy_cpu_portable::NTT4x30Portable;
 
-let module = Module::<NTT4x30Ref>::new(1 << 10);
+let module = Module::<NTT4x30Portable>::new(1 << 10);
 ```
 
 The common pattern in the examples picks the fastest available backend with `cfg`.
@@ -99,7 +99,7 @@ The common pattern in the examples picks the fastest available backend with `cfg
 #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
 use poulpy_cpu_avx::FFT64Avx as BackendImpl;
 #[cfg(not(all(feature = "enable-avx", target_arch = "x86_64")))]
-use poulpy_cpu_ref::FFT64Ref as BackendImpl;
+use poulpy_cpu_portable::FFT64Portable as BackendImpl;
 
 let module = Module::<BackendImpl>::new(n as u64);
 ```
@@ -109,8 +109,8 @@ let module = Module::<BackendImpl>::new(n as u64);
 Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, which delegates to `MaxBase2k` without constructing a module.
 `products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
 Set `squaring = false` for independent products and `true` if any term is a square, counting each square once.
-For a sum of 32 products, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 32, 128, false)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(57)` for `NTT3x42Ifma`.
-For a single square, `Module::<NTT4x30Ref>::max_base2k(1 << 16, 1, 128, true)` returns `Some(55)`; the same query gives `Some(19)` for `FFT64Ref` and `Some(58)` for `NTT3x42Ifma`.
+For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 32, 128, false)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(57)` for `NTT3x42Ifma`.
+For a single square, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 1, 128, true)` returns `Some(55)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(58)` for `NTT3x42Ifma`.
 The estimates cover independent accumulated products or squares of centered-uniform inputs, with Gaussian tails and a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 See [Failure estimates for base-2^K arithmetic](base2k-failure-probability.md) for the models and an example.
 `Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.

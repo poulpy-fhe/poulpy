@@ -2,7 +2,7 @@
 //!
 //! This module provides [`NTT4x30Avx512`], an AVX-512F accelerated backend implementation for
 //! [`poulpy_hal`] that uses Q120 NTT arithmetic (CRT over four ~30-bit primes). It mirrors
-//! the structure of the scalar [`poulpy_cpu_ref::NTT4x30Ref`] backend, with AVX-512F
+//! the structure of the scalar [`poulpy_cpu_portable::NTT4x30Portable`] backend, with AVX-512F
 //! accelerated kernels substituted where available.
 //!
 //! # Layout strategy

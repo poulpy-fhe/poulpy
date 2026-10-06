@@ -81,7 +81,8 @@ where
         let tmp_hadamard: usize = self.bytes_of_vec_znx_big(n, 1, size);
         let tmp_scalar: usize = self.bytes_of_vec_znx_big(1, 1, size);
         let normalize: usize = self.vec_znx_big_normalize_tmp_bytes();
-        (tmp_hadamard + tmp_scalar).next_multiple_of(BE::SCRATCH_ALIGN) + normalize
+        // Each take starts on a SCRATCH_ALIGN boundary.
+        BE::scratch_aligned(tmp_hadamard) + BE::scratch_aligned(tmp_scalar) + normalize
     }
 
     #[allow(clippy::too_many_arguments)]

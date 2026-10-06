@@ -6,7 +6,7 @@
 //! loop on the collapse workload. The kernel below therefore keeps the AVX
 //! backend-specific entry point, but uses unchecked scalar loads/stores.
 
-use poulpy_cpu_ref::reference::fft64::vec_znx_dft::Fft64AutomorphismPlan;
+use poulpy_cpu_portable::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan;
 
 /// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`.
 #[inline(always)]

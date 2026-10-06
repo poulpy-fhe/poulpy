@@ -11,10 +11,10 @@ use core::arch::aarch64::{
 };
 
 #[allow(unused_imports)]
-use poulpy_cpu_ref::reference::fft64::reim::{
-    reim_add_assign_ref, reim_add_ref, reim_addmul_ref, reim_from_znx_i64_ref, reim_mul_assign_ref, reim_mul_ref,
-    reim_negate_assign_ref, reim_negate_ref, reim_sub_assign_ref, reim_sub_negate_assign_ref, reim_sub_ref,
-    reim_to_znx_i64_assign_ref, reim_to_znx_i64_ref,
+use poulpy_cpu_portable::kernels::fft64::reim::{
+    reim_add_assign_portable, reim_add_portable, reim_addmul_portable, reim_from_znx_i64_portable, reim_mul_assign_portable,
+    reim_mul_portable, reim_negate_assign_portable, reim_negate_portable, reim_sub_assign_portable,
+    reim_sub_negate_assign_portable, reim_sub_portable, reim_to_znx_i64_assign_portable, reim_to_znx_i64_portable,
 };
 
 /// `res[i] = a[i] + b[i]` for all `i`.
@@ -43,7 +43,7 @@ pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_add_ref(&mut res[tail..], &a[tail..], &b[tail..]);
+        reim_add_portable(&mut res[tail..], &a[tail..], &b[tail..]);
     }
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn reim_add_assign_neon(res: &mut [f64], a: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_add_assign_ref(&mut res[tail..], &a[tail..]);
+        reim_add_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn reim_sub_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_sub_ref(&mut res[tail..], &a[tail..], &b[tail..]);
+        reim_sub_portable(&mut res[tail..], &a[tail..], &b[tail..]);
     }
 }
 
@@ -117,7 +117,7 @@ pub(crate) fn reim_sub_assign_neon(res: &mut [f64], a: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_sub_assign_ref(&mut res[tail..], &a[tail..]);
+        reim_sub_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -140,7 +140,7 @@ pub(crate) fn reim_sub_negate_assign_neon(res: &mut [f64], a: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_sub_negate_assign_ref(&mut res[tail..], &a[tail..]);
+        reim_sub_negate_assign_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -163,7 +163,7 @@ pub(crate) fn reim_negate_neon(res: &mut [f64], a: &[f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_negate_ref(&mut res[tail..], &a[tail..]);
+        reim_negate_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -183,7 +183,7 @@ pub(crate) fn reim_negate_assign_neon(res: &mut [f64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_negate_assign_ref(&mut res[tail..]);
+        reim_negate_assign_portable(&mut res[tail..]);
     }
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     let tail = span << 2;
     if tail < m {
         // Recombine the tail slices: split halves on m, but tail starts at
-        // `tail` within each half; reim_mul_ref expects the original full
+        // `tail` within each half; reim_mul_portable expects the original full
         // layout. Reconstruct by slicing relative to the original buffers.
         let n = res.len();
         let lo = tail;
@@ -241,7 +241,7 @@ pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
         // res_tail length = (m - tail) + (m - tail) = 2*(m - tail)? No:
         // res_tail = res[lo..n] = [re_tail..re_{m-1}, im_0..im_{m-1}].
         // We need only the slice equivalent to a "full reim vector" for the
-        // tail elements. Using reim_mul_ref directly on the unaligned
+        // tail elements. Using reim_mul_portable directly on the unaligned
         // residual is unsafe — fall back to per-element scalar.
         let _ = (res_tail, hi_off, n); // unused: explicit per-element fallback below.
         for i in tail..m {
@@ -299,11 +299,11 @@ pub(crate) fn reim_mul_assign_neon(res: &mut [f64], a: &[f64]) {
             res[m + i] = ar_v * bi_v + ai_v * br_v;
         }
     }
-    // Note: cannot use reim_mul_assign_ref for the tail because the
+    // Note: cannot use reim_mul_assign_portable for the tail because the
     // reference function assumes a full split-layout slice, but our
     // remainder is at an offset within `res` and `a`. Fall through is
     // exact scalar.
-    let _ = reim_mul_assign_ref; // suppress unused-import on the cfg path
+    let _ = reim_mul_assign_portable; // suppress unused-import on the cfg path
 }
 
 /// Complex addmul: `res += a * b`. Mirrors `reim_addmul_avx2_fma` at
@@ -359,7 +359,7 @@ pub(crate) fn reim_addmul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
             res[m + i] += ar_v * bi_v + ai_v * br_v;
         }
     }
-    let _ = reim_addmul_ref;
+    let _ = reim_addmul_portable;
 }
 
 /// `i64 → f64` exact conversion for `|a[i]| < 2^50` via IEEE 754 bit trick.
@@ -407,7 +407,7 @@ pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_from_znx_i64_ref(&mut res[tail..], &a[tail..]);
+        reim_from_znx_i64_portable(&mut res[tail..], &a[tail..]);
     }
 }
 
@@ -514,7 +514,7 @@ pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64
     }
     let tail = span << 2;
     if tail < n {
-        reim_to_znx_i64_ref(&mut res[tail..], divisor, &a[tail..]);
+        reim_to_znx_i64_portable(&mut res[tail..], divisor, &a[tail..]);
     }
 }
 
@@ -569,7 +569,7 @@ pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
     }
     let tail = span << 2;
     if tail < n {
-        reim_to_znx_i64_assign_ref(&mut res[tail..], divisor);
+        reim_to_znx_i64_assign_portable(&mut res[tail..], divisor);
     }
 }
 
@@ -583,7 +583,7 @@ fn _unused() {
 mod tests {
     #[test]
     fn reim_to_znx_rounding_boundaries() {
-        poulpy_cpu_ref::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Neon>();
+        poulpy_cpu_portable::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Neon>();
     }
 
     use super::*;
@@ -613,7 +613,7 @@ mod tests {
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
             reim_add_neon(&mut got, &a, &b);
-            reim_add_ref(&mut want, &a, &b);
+            reim_add_portable(&mut want, &a, &b);
             assert_eq!(got, want, "reim_add_neon n={n}");
         }
     }
@@ -627,7 +627,7 @@ mod tests {
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
             reim_sub_neon(&mut got, &a, &b);
-            reim_sub_ref(&mut want, &a, &b);
+            reim_sub_portable(&mut want, &a, &b);
             assert_eq!(got, want, "reim_sub_neon n={n}");
         }
     }
@@ -640,7 +640,7 @@ mod tests {
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
             reim_negate_neon(&mut got, &a);
-            reim_negate_ref(&mut want, &a);
+            reim_negate_portable(&mut want, &a);
             assert_eq!(got, want, "reim_negate_neon n={n}");
         }
     }
@@ -666,7 +666,7 @@ mod tests {
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
             reim_mul_neon(&mut got, &a, &b);
-            reim_mul_ref(&mut want, &a, &b);
+            reim_mul_portable(&mut want, &a, &b);
             close_enough(&got, &want, &format!("reim_mul_neon n={n}"));
         }
     }
@@ -681,7 +681,7 @@ mod tests {
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
             reim_from_znx_i64_bnd50_neon(&mut got, &a);
-            reim_from_znx_i64_ref(&mut want, &a);
+            reim_from_znx_i64_portable(&mut want, &a);
             assert_eq!(got, want, "reim_from_znx_i64_bnd50_neon n={n}");
         }
     }
@@ -696,7 +696,7 @@ mod tests {
             let mut got = r0.clone();
             let mut want = r0;
             reim_addmul_neon(&mut got, &a, &b);
-            reim_addmul_ref(&mut want, &a, &b);
+            reim_addmul_portable(&mut want, &a, &b);
             close_enough(&got, &want, &format!("reim_addmul_neon n={n}"));
         }
     }

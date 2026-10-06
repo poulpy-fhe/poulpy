@@ -32,6 +32,16 @@ pub struct Handle<F: DFTFamily> {
     tables: Vec<F::Table>,
     #[cfg(feature = "enable-core")]
     pub(crate) controlled_sampling: bool,
+    /// Plans built on demand by the CKKS encoding.
+    #[cfg(feature = "enable-ckks")]
+    plans: poulpy_hal::layouts::ModulePlanCache,
+}
+
+/// The scheme plan cache of `module`.
+#[cfg(feature = "enable-ckks")]
+pub(crate) fn plan_cache<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>) -> &poulpy_hal::layouts::ModulePlanCache {
+    let handle: &Handle<F> = unsafe { &*module.ptr() };
+    &handle.plans
 }
 
 /// The transform tables of `module` for degree `n`.
@@ -53,6 +63,8 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
             tables,
             #[cfg(feature = "enable-core")]
             controlled_sampling: false,
+            #[cfg(feature = "enable-ckks")]
+            plans: poulpy_hal::layouts::ModulePlanCache::default(),
         })));
         unsafe { Module::from_nonnull(ptr, n) }
     }

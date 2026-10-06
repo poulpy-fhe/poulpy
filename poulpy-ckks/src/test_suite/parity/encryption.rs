@@ -97,10 +97,12 @@ where
 }
 
 /// Registers encryption parity for caller-selected backends, exposing the tested
-/// backend's draws to an optional comparison sampling adapter.
+/// backend's draws to an optional comparison sampling adapter. Optional
+/// `reference_factory = fn(u64) -> Module<backend_ref>` builds the comparison
+/// module with explicit sampling opt-ins; it defaults to `Module::new`.
 #[macro_export]
 macro_rules! ckks_encryption_parity_test_suite {
-    (mod $name:ident, backend_ref=$reference:ty, backend_test=$tested:ty, params=$params:expr $(,)?) => {
+    (mod $name:ident, backend_ref=$reference:ty, backend_test=$tested:ty, $(reference_factory=$factory:expr,)? params=$params:expr $(,)?) => {
         mod $name {
             #[test]
             fn encryption_degree_mismatch_error() {
@@ -113,7 +115,11 @@ macro_rules! ckks_encryption_parity_test_suite {
                 ::poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples(
                     ::poulpy_hal::layouts::Module::<$tested>::new(params.n as u64),
                     |tested| {
-                        let reference = ::poulpy_hal::layouts::Module::<$reference>::new(params.n as u64);
+                        #[allow(unused_mut)]
+                        let mut factory: fn(u64) -> ::poulpy_hal::layouts::Module<$reference> =
+                            ::poulpy_hal::layouts::Module::<$reference>::new;
+                        $( factory = $factory; )?
+                        let reference = factory(params.n as u64);
                         $crate::test_suite::parity::test_encryption_parity::<$reference, $tested>(params, &reference, tested);
                     },
                 );

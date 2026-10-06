@@ -4,9 +4,9 @@ use core::arch::aarch64::{
     int64x2_t, uint64x2_t, vaddq_s64, vaddq_u64, vandq_u64, vdupq_n_s64, vdupq_n_u64, vld1q_s64, vorrq_u64,
     vreinterpretq_s64_u64, vreinterpretq_u64_s64, vshlq_s64, vshlq_u64, vst1q_s64,
 };
-use poulpy_cpu_ref::reference::normalization::{
-    nfc_normalize_floor_ref, nfc_normalize_round_ref, znx_normalize_floor_ref, znx_normalize_round_assign_ref,
-    znx_normalize_round_ref,
+use poulpy_cpu_portable::kernels::normalization::{
+    nfc_normalize_floor_portable, nfc_normalize_round_portable, znx_normalize_floor_portable,
+    znx_normalize_round_assign_portable, znx_normalize_round_portable,
 };
 
 use super::vec_znx_big::{add2_i128, load2_i128, store2_i128};
@@ -132,7 +132,7 @@ pub(crate) fn znx_normalize_floor_neon<const CARRY_IN: bool, const ROUND: bool>(
             vst1q_s64(carry.as_mut_ptr().add(i), high);
         }
     }
-    znx_normalize_floor_ref::<CARRY_IN, ROUND>(base2k, lsh, &a[tail..], &mut carry[tail..]);
+    znx_normalize_floor_portable::<CARRY_IN, ROUND>(base2k, lsh, &a[tail..], &mut carry[tail..]);
 }
 
 #[inline]
@@ -157,7 +157,7 @@ pub(crate) fn znx_normalize_round_neon<const CARRY_IN: bool, const PAD: bool>(
             vst1q_s64(carry.as_mut_ptr().add(i), vaddq_s64(high, vreinterpretq_s64_u64(next)));
         }
     }
-    znx_normalize_round_ref::<CARRY_IN, PAD>(base2k, lsh, padding, &mut res[tail..], &a[tail..], &mut carry[tail..]);
+    znx_normalize_round_portable::<CARRY_IN, PAD>(base2k, lsh, padding, &mut res[tail..], &a[tail..], &mut carry[tail..]);
 }
 
 #[inline]
@@ -181,7 +181,7 @@ pub(crate) fn znx_normalize_round_assign_neon<const CARRY_IN: bool>(
             vst1q_s64(carry.as_mut_ptr().add(i), vaddq_s64(high, vreinterpretq_s64_u64(next)));
         }
     }
-    znx_normalize_round_assign_ref::<CARRY_IN>(base2k, lsh, padding, &mut res[tail..], &mut carry[tail..]);
+    znx_normalize_round_assign_portable::<CARRY_IN>(base2k, lsh, padding, &mut res[tail..], &mut carry[tail..]);
 }
 
 #[inline]
@@ -205,7 +205,7 @@ pub(crate) fn nfc_normalize_floor_neon<const CARRY_IN: bool, const ROUND: bool>(
             store2_i128(carry.as_mut_ptr().add(i), high.0, high.1);
         }
     }
-    nfc_normalize_floor_ref::<CARRY_IN, ROUND>(base2k, lsh, &a[tail..], &mut carry[tail..]);
+    nfc_normalize_floor_portable::<CARRY_IN, ROUND>(base2k, lsh, &a[tail..], &mut carry[tail..]);
 }
 
 #[inline]
@@ -231,5 +231,5 @@ pub(crate) fn nfc_normalize_round_neon<const CARRY_IN: bool, const PAD: bool>(
             store2_i128(carry.as_mut_ptr().add(i), high.0, high.1);
         }
     }
-    nfc_normalize_round_ref::<CARRY_IN, PAD>(base2k, lsh, padding, &mut res[tail..], &a[tail..], &mut carry[tail..]);
+    nfc_normalize_round_portable::<CARRY_IN, PAD>(base2k, lsh, padding, &mut res[tail..], &a[tail..], &mut carry[tail..]);
 }
