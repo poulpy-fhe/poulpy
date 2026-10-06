@@ -14,6 +14,7 @@ use poulpy_hal::layouts::{
 };
 
 use super::NTT4x30Neon;
+use super::convolution::SendPtr;
 use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, ntt32};
 use crate::neon::ntt4x30_packed::{OP_ADD, OP_NEG, OP_SUB, Q, limb_op};
 
@@ -31,7 +32,7 @@ pub(crate) fn packed_limb_mut(data: &mut [u32], n: usize, cols: usize, col: usiz
 
 /// Tables of the packed NTT of degree `n`.
 #[inline(always)]
-fn packed_table<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> &Ntt32Table {
+pub(crate) fn packed_table<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> &Ntt32Table {
     // SAFETY: the handle is initialised before `Module::new` returns and lives as long as the module.
     unsafe { (*module.ptr()).packed_table(n) }
 }
@@ -66,10 +67,10 @@ impl<R: Ring> PackedDft for Module<NTT4x30Neon<R>> {
     }
 }
 
-pub(crate) fn dft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+pub(crate) fn dft_limb<M: PackedDft>(module: &M, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
     match src {
         // A zero limb transforms to zero: the scan stops at the first nonzero coefficient.
-        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled(module, n, dst, src, false),
+        Some(src) if src[..n].iter().any(|&x| x != 0) => module.packed_dft_limb(n, dst, src, false),
         _ => dst.fill(0),
     }
 }
@@ -239,7 +240,29 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
     }
 }
 
-pub(crate) fn vec_znx_dft_add<R: Ring>(
+/// Runs `task` on limb `0..count` of column `col` of `data`, as tasks of the executor `E`.
+fn for_each_limb<E: TaskExecutor>(
+    data: &mut [u32],
+    n: usize,
+    cols: usize,
+    col: usize,
+    count: usize,
+    task: impl Fn(usize, &mut [u32]) + Send + Sync,
+) {
+    if count == 0 {
+        return;
+    }
+    assert!(col < cols && data.len() >= 4 * n * cols * count);
+    let ptr = SendPtr(data.as_mut_ptr());
+    E::for_each(count, |limb| {
+        // Limbs are disjoint, one task each.
+        task(limb, unsafe {
+            std::slice::from_raw_parts_mut(ptr.get().add(4 * n * (limb * cols + col)), 4 * n)
+        })
+    });
+}
+
+pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
@@ -258,8 +281,7 @@ pub(crate) fn vec_znx_dft_add<R: Ring>(
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
     let bp: &[u32] = cast_slice(b.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < sum_size {
             packed_add(
                 n,
@@ -277,10 +299,10 @@ pub(crate) fn vec_znx_dft_add<R: Ring>(
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_add_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
@@ -291,16 +313,12 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring>(
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        packed_add_assign(
-            n,
-            packed_limb_mut(rp, n, rc, res_col, limb),
-            packed_limb(ap, n, ac, a_col, limb),
-        );
-    }
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| {
+        packed_add_assign(n, dst, packed_limb(ap, n, ac, a_col, limb));
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub<R: Ring>(
+pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
@@ -319,8 +337,7 @@ pub(crate) fn vec_znx_dft_sub<R: Ring>(
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
     let bp: &[u32] = cast_slice(b.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < sub_size {
             packed_sub(
                 n,
@@ -338,10 +355,10 @@ pub(crate) fn vec_znx_dft_sub<R: Ring>(
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
@@ -352,16 +369,12 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring>(
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        packed_sub_assign(
-            n,
-            packed_limb_mut(rp, n, rc, res_col, limb),
-            packed_limb(ap, n, ac, a_col, limb),
-        );
-    }
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| {
+        packed_sub_assign(n, dst, packed_limb(ap, n, ac, a_col, limb));
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
@@ -373,17 +386,16 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring>(
     let size = rs.min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < size {
             packed_sub_negate_assign(n, dst, packed_limb(ap, n, ac, a_col, limb));
         } else {
             packed_negate_assign(n, dst);
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_copy<R: Ring>(
+pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
@@ -395,17 +407,17 @@ pub(crate) fn vec_znx_dft_copy<R: Ring>(
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size();
+    let a_size = a.size();
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| {
         let src_limb = offset + limb * step;
-        if src_limb < a.size() {
+        if src_limb < a_size {
             dst.copy_from_slice(packed_limb(ap, n, ac, a_col, src_limb));
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
 pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>, res_col: usize) {
@@ -469,19 +481,19 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     let size = res.size().min(a.size());
     let res_ptr = cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr() as usize;
     let ap: &[u32] = cast_slice(a.data());
-    E::for_each(size, |limb| {
-        let start = 4 * n * (limb * rc + res_col);
-        let dst = unsafe { std::slice::from_raw_parts_mut((res_ptr as *mut u32).add(start), 4 * n) };
-        let src = packed_limb(ap, n, ac, a_col, limb);
-        for (prime, (dst, src)) in dst.chunks_exact_mut(n).zip(src.chunks_exact(n)).enumerate() {
-            // The gather stays scalar and checked, the modular add runs on four lanes.
-            let q = unsafe { vdupq_n_u32(Q[prime]) };
-            for (d, p) in dst.chunks_exact_mut(4).zip(plan.perm.chunks_exact(4)) {
-                let gathered = [src[p[0] as usize], src[p[1] as usize], src[p[2] as usize], src[p[3] as usize]];
-                unsafe {
-                    let sum = vaddq_u32(vld1q_u32(d.as_ptr()), vld1q_u32(gathered.as_ptr()));
-                    vst1q_u32(d.as_mut_ptr(), vminq_u32(sum, vsubq_u32(sum, q)));
-                }
+    // One task per plane: a vector has few limbs at a large `base2k`.
+    E::for_each(4 * size, |task| {
+        let (limb, prime) = (task / 4, task % 4);
+        let start = 4 * n * (limb * rc + res_col) + prime * n;
+        let dst = unsafe { std::slice::from_raw_parts_mut((res_ptr as *mut u32).add(start), n) };
+        let src = &packed_limb(ap, n, ac, a_col, limb)[prime * n..][..n];
+        // The gather stays scalar and checked, the modular add runs on four lanes.
+        let q = unsafe { vdupq_n_u32(Q[prime]) };
+        for (d, p) in dst.chunks_exact_mut(4).zip(plan.perm.chunks_exact(4)) {
+            let gathered = [src[p[0] as usize], src[p[1] as usize], src[p[2] as usize], src[p[3] as usize]];
+            unsafe {
+                let sum = vaddq_u32(vld1q_u32(d.as_ptr()), vld1q_u32(gathered.as_ptr()));
+                vst1q_u32(d.as_mut_ptr(), vminq_u32(sum, vsubq_u32(sum, q)));
             }
         }
     });

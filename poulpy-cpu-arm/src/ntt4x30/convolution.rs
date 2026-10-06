@@ -30,13 +30,13 @@ const ROW: usize = 16;
 const TASK_BLOCKS: usize = 64;
 
 #[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
+pub(super) struct SendPtr<T>(pub(super) *mut T);
 
 unsafe impl<T> Send for SendPtr<T> {}
 unsafe impl<T> Sync for SendPtr<T> {}
 
 impl<T> SendPtr<T> {
-    fn get(self) -> *mut T {
+    pub(super) fn get(self) -> *mut T {
         self.0
     }
 }

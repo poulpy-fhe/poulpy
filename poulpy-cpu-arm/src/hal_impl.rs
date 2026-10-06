@@ -652,7 +652,9 @@ where
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            res, res_col, a, a_col, b, b_col,
+        )
     }
 
     fn vec_znx_dft_add_assign(
@@ -663,7 +665,9 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_assign(res, res_col, a, a_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_assign::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            res, res_col, a, a_col,
+        )
     }
 
     fn vec_znx_dft_sub(
@@ -676,7 +680,9 @@ where
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            res, res_col, a, a_col, b, b_col,
+        )
     }
 
     fn vec_znx_dft_sub_assign(
@@ -687,7 +693,9 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_assign(res, res_col, a, a_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_assign::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            res, res_col, a, a_col,
+        )
     }
 
     fn vec_znx_dft_sub_negate_assign(
@@ -698,7 +706,9 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_negate_assign(res, res_col, a, a_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_negate_assign::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            res, res_col, a, a_col,
+        )
     }
 
     fn vec_znx_dft_copy(
@@ -711,7 +721,9 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_copy::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            step, offset, res, res_col, a, a_col,
+        )
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {

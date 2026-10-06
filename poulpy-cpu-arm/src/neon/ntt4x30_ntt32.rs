@@ -507,6 +507,31 @@ pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: 
     }
 }
 
+/// Plane `p` of [`ntt32`], for callers that transform the four planes of a limb as separate tasks.
+///
+/// `dst` is the plane itself, `n` words.
+#[cfg(feature = "enable-rayon")]
+pub(crate) fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
+    let n = table.n;
+    assert!(dst.len() >= n);
+    assert!(src.len() >= n);
+    let d = dst.as_mut_ptr() as *mut i32;
+    let c = &table.conv[prepared as usize][p];
+    unsafe {
+        let q = vdupq_n_s32(Q[p] as i32);
+        let mut i = 0;
+        while i < n {
+            let (lo, hi, carry) = split_i64(src.as_ptr().add(i));
+            vst1q_s32(d.add(i), residues(lo, hi, carry, c, q));
+            i += 4;
+        }
+        if let Some(ci) = &table.ci {
+            ci[0][p].apply(d, n);
+        }
+        fwd_plane(d, n, &table.fwd[p], Q[p] as i32);
+    }
+}
+
 const QM: [u128; 4] = {
     let q = [Q[0] as u128, Q[1] as u128, Q[2] as u128, Q[3] as u128];
     [q[1] * q[2] * q[3], q[0] * q[2] * q[3], q[0] * q[1] * q[3], q[0] * q[1] * q[2]]
@@ -542,12 +567,14 @@ const HALF_Q_LIMBS: [u64; 3] = [
 /// The sum `floor(Q / 2) + sum_p t[p] * (Q / Q[p])` is accumulated on four coefficients at a time, limb by limb.
 /// Each limb sum stays below `2^63`.
 /// Reducing it modulo `Q` and removing the offset gives the representative in `[-floor(Q / 2), ceil(Q / 2))`.
-unsafe fn crt(dst: *mut i128, t: *const u32, n: usize) {
+///
+/// Only the coefficients in `start..end` are produced, both multiples of four.
+unsafe fn crt(dst: *mut i128, t: *const u32, n: usize, start: usize, end: usize) {
     unsafe {
         let init: [uint64x2_t; 3] = std::array::from_fn(|j| vdupq_n_u64(HALF_Q_LIMBS[j]));
         let mut sums = [0u64; 12];
-        let mut i = 0;
-        while i < n {
+        let mut i = start;
+        while i < end {
             let mut lo = init;
             let mut hi = init;
             for (p, limbs) in QM_LIMBS.iter().enumerate() {
@@ -584,21 +611,43 @@ unsafe fn crt(dst: *mut i128, t: *const u32, n: usize) {
 pub(crate) unsafe fn intt32(table: &Ntt32Table, dst: *mut i128, src: *const u32, work: *mut u32) {
     let n = table.n;
     unsafe {
-        for (p, &q) in Q.iter().enumerate() {
-            inv_plane(
-                (work as *mut i32).add(p * n),
-                (src as *const i32).add(p * n),
-                n,
-                &table.inv[p],
-                &table.fin[p],
-                q as i32,
-            );
-            if let Some(ci) = &table.ci {
-                ci[1][p].apply((work as *mut i32).add(p * n), n);
-            }
+        for p in 0..4 {
+            intt32_plane(table, p, src, work);
         }
-        crt(dst, work, n);
+        crt(dst, work, n, 0, n);
     }
+}
+
+/// Plane `p` of the first stage of [`intt32`], from the limb at `src` into the limb at `work`.
+///
+/// # Safety
+/// `src` and `work` address `4 * n` `u32`, and no other access touches plane `p` of `work` meanwhile.
+pub(crate) unsafe fn intt32_plane(table: &Ntt32Table, p: usize, src: *const u32, work: *mut u32) {
+    let n = table.n;
+    unsafe {
+        let w = (work as *mut i32).add(p * n);
+        inv_plane(
+            w,
+            (src as *const i32).add(p * n),
+            n,
+            &table.inv[p],
+            &table.fin[p],
+            Q[p] as i32,
+        );
+        if let Some(ci) = &table.ci {
+            ci[1][p].apply(w, n);
+        }
+    }
+}
+
+/// Second stage of [`intt32`] on the coefficients `start..end`, both multiples of four.
+///
+/// # Safety
+/// `work` holds the planes written by [`intt32_plane`], `dst` addresses `n` `i128` and does not overlap `work`.
+#[cfg(feature = "enable-rayon")]
+pub(crate) unsafe fn intt32_crt(table: &Ntt32Table, dst: *mut i128, work: *const u32, start: usize, end: usize) {
+    debug_assert!(start.is_multiple_of(4) && end.is_multiple_of(4) && end <= table.n);
+    unsafe { crt(dst, work, table.n, start, end) }
 }
 
 #[cfg(test)]
