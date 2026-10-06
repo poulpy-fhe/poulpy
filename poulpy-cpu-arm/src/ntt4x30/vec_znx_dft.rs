@@ -3,6 +3,7 @@
 //! A limb of a `VecZnxDft` is four planes of `n` canonical `u32` residues, see [`crate::neon::ntt4x30_packed`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use core::arch::aarch64::{vaddq_u32, vdupq_n_u32, vld1q_u32, vminq_u32, vst1q_u32, vsubq_u32};
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_portable::kernels::ntt4x30::{
     NttDFTExecute, NttFromZnx64, NttToZnx128,
@@ -533,6 +534,7 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n());
+        assert!(res.n().is_multiple_of(4));
     }
 
     let n = res.n();
@@ -545,10 +547,14 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
         let dst = unsafe { std::slice::from_raw_parts_mut((res_ptr as *mut u32).add(start), 4 * n) };
         let src = packed_limb(ap, n, ac, a_col, limb);
         for (prime, (dst, src)) in dst.chunks_exact_mut(n).zip(src.chunks_exact(n)).enumerate() {
-            let q = Q[prime];
-            for (d, &p) in dst.iter_mut().zip(plan.perm.iter()) {
-                let sum = *d + src[p as usize];
-                *d = sum.min(sum.wrapping_sub(q));
+            // The gather stays scalar and checked, the modular add runs on four lanes.
+            let q = unsafe { vdupq_n_u32(Q[prime]) };
+            for (d, p) in dst.chunks_exact_mut(4).zip(plan.perm.chunks_exact(4)) {
+                let gathered = [src[p[0] as usize], src[p[1] as usize], src[p[2] as usize], src[p[3] as usize]];
+                unsafe {
+                    let sum = vaddq_u32(vld1q_u32(d.as_ptr()), vld1q_u32(gathered.as_ptr()));
+                    vst1q_u32(d.as_mut_ptr(), vminq_u32(sum, vsubq_u32(sum, q)));
+                }
             }
         }
     });
