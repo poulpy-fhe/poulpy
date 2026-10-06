@@ -21,6 +21,14 @@ use crate::{
 
 use super::LinearTransformationBabySteps;
 
+/// Limbs of the product of a `baby_size`-limb operand by a `diagonal_size`-limb plaintext, from limb `cnv_offset_hi` on.
+///
+/// Limb `k` of a product sums the pairs `i + j = k`, so it has `baby_size + diagonal_size - 1` limbs.
+/// One limb more would be zero: it would be transformed and decomposed like the others, and counted as live.
+pub(super) fn prod_dft_size(baby_size: usize, diagonal_size: usize, cnv_offset_hi: usize) -> usize {
+    (baby_size + diagonal_size - cnv_offset_hi).saturating_sub(1).max(1)
+}
+
 /// PROD block for one giant step of a resident (prepared) transform, kept in DFT
 /// domain.
 ///
@@ -47,7 +55,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
         .plaintext
         .cnv()
         .size();
-    let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
+    let res_dft_size = prod_dft_size(lhs.size(), diagonal_size, cnv_offset_hi);
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
@@ -59,7 +67,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 let diagonal = d.plaintext.cnv();
                 let baby = lhs.baby_step(d.baby);
                 assert_eq!(baby.cols(), cols);
-                assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
+                assert_eq!(prod_dft_size(baby.size(), diagonal.size(), cnv_offset_hi), res_dft_size);
                 CnvDftAccTerm {
                     a: baby.to_backend_ref(),
                     a_col: col,
@@ -83,7 +91,7 @@ where
     BE: Backend,
     M: Convolution<BE>,
 {
-    let res_dft_size = baby_size + diagonal_size - cnv_offset_hi;
+    let res_dft_size = prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
     module.cnv_apply_dft_sum_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
 }
 
@@ -117,7 +125,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     // A compact diagonal is prepared at its own degree; the apply reads it
     // through the sparse right slot of the convolution.
     let diagonal_n = first.plaintext.n().as_usize();
-    let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
+    let res_dft_size = prod_dft_size(lhs.size(), diagonal_size, cnv_offset_hi);
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
@@ -132,7 +140,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     for (term_idx, d) in gs.diagonals.iter().enumerate() {
         let baby = lhs.baby_step(d.baby);
         assert_eq!(baby.cols(), cols);
-        assert_eq!(baby.size() + diagonal_size - cnv_offset_hi, res_dft_size);
+        assert_eq!(prod_dft_size(baby.size(), diagonal_size, cnv_offset_hi), res_dft_size);
         assert_eq!(
             d.plaintext.n().as_usize(),
             diagonal_n,

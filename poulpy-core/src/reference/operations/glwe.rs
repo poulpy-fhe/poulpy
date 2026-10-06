@@ -1187,7 +1187,14 @@ where
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
         let tensor_size = tensor_k.as_usize().div_ceil(base2k);
         let dft_size =
-            normalize_input_limb_bound_with_offset(a_size + b_size - cnv_offset_hi, tensor_size, base2k, base2k, cnv_offset_lo);
+            // A product has `a_size + b_size - 1` limbs: one more would be zero, and a row of the gadget product.
+            normalize_input_limb_bound_with_offset(
+                (a_size + b_size - cnv_offset_hi).saturating_sub(1).max(1),
+                tensor_size,
+                base2k,
+                base2k,
+                cnv_offset_lo,
+            );
         let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_infos, &tensor_infos, tsk);
 
         // `diag` holds d0 = a0 * b0 and d2 = a1 * b1, `cross` holds (a0 + a1) * (b0 + b1) then d1.
