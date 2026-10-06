@@ -358,3 +358,26 @@ fn test_gglwe_product_digits_strided_bit_identical() {
 fn test_gglwe_product_digits_strided_bit_identical_rayon() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT4x30NeonRayon>::new(64), 50);
 }
+
+/// Rank-one tensor on enough limbs for the convolution kernels to reduce their accumulators several times per output.
+#[test]
+fn test_glwe_tensor_many_limbs() {
+    use poulpy_core::{
+        layouts::{Base2K, Degree, GLWELayout, Rank, TorusPrecision},
+        test_suite::parity::test_glwe_tensor_parity_for_layout,
+    };
+    let layout = GLWELayout {
+        n: Degree(1 << 10),
+        base2k: Base2K(52),
+        k: TorusPrecision(52 * 29 + 1),
+        rank: Rank(1),
+    };
+    let comparison = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(u64::from(layout.n.0));
+    let tested = Module::<NTT4x30Neon>::new(u64::from(layout.n.0));
+    test_glwe_tensor_parity_for_layout(&layout, &[0, 51], &comparison, &tested);
+    #[cfg(feature = "enable-rayon")]
+    {
+        let tested = Module::<crate::NTT4x30NeonRayon>::new(u64::from(layout.n.0));
+        test_glwe_tensor_parity_for_layout(&layout, &[0, 51], &comparison, &tested);
+    }
+}

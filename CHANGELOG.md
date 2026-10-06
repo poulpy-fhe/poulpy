@@ -257,6 +257,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `FFT64Neon` converts between `i64` and `f64` with the native AArch64 conversions (`SCVTF`, and `FCVTAS` after the multiplication by the inverse divisor), in place of the IEEE bit manipulation ported from the AVX2 kernels.
+  They are the operations of the reference definition, so the input bound of the previous kernels is gone.
 - `NTT4x30Neon<ConjugateInvariant>` and its Rayon variant run the native 32-bit NTT, with the basis change of the conjugate-invariant ring applied on the packed planes.
 - **Breaking:** the NEON q120 kernels are removed, with the `Ntt*` kernel trait implementations of `NTT4x30Neon` and `NTT4x30NeonRayon` other than `NttDFTExecute`, which forwards to the portable transform for the reference bodies that require it.
   `examples/bench_neon_vs_ref.rs` no longer compares the q120 transforms.
