@@ -153,9 +153,21 @@ pub fn ambient_automorphism(a: &[i64], p: i64) -> Vec<i64> {
 }
 
 /// Shared invariant ring correctness and cross-backend product tests.
+///
+/// Product parity tests compare against `reference`. An optional
+/// `large_radix_reference` selects an independent backend for large-radix checks.
 #[macro_export]
 macro_rules! conjugate_invariant_test_suite {
-    ($name:ident, $backend:ty, $standard:ty) => {
+    ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty) => {
+        $crate::conjugate_invariant_test_suite!(
+            $name,
+            $backend,
+            $standard,
+            reference = $reference,
+            large_radix_reference = $reference
+        );
+    };
+    ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty, large_radix_reference = $large_radix_reference:ty) => {
         mod $name {
             use poulpy_hal::{api::*, layouts::*};
             type BE = $backend;
@@ -324,7 +336,7 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_products_parity() {
                 let module = module(256);
-                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(256);
+                let reference = poulpy_hal::layouts::Module::<$reference>::new(256);
                 for n in [8, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
                     let params = poulpy_hal::test_suite::TestParams {
                         size: 256,
@@ -415,23 +427,34 @@ macro_rules! conjugate_invariant_test_suite {
             #[test]
             fn conjugate_invariant_large_radix_products() {
                 let module = module(8192);
-                let reference = Module::<$crate::NTT4x30CIRef>::new(8192);
+                let reference = Module::<$large_radix_reference>::new(8192);
                 let params = poulpy_hal::test_suite::TestParams {
                     size: 8192,
                     n: 8192,
                     base2k: 19,
                 };
                 poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &reference, &module);
-                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &reference, &module);
+                // The shapes are swept at small degrees: here only the largest
+                // accumulation of the sweep, where precision is tightest.
+                let shape = poulpy_hal::test_suite::vmp::VmpAddShape {
+                    cols_in: 2,
+                    cols_out: 2,
+                    size_in: 4,
+                    size_out: 4,
+                    mat_size: 4,
+                    limb_offset: 0,
+                };
+                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add_shape(&params, &reference, &module, &shape);
             }
         }
     };
 }
 
-/// Core operation parity under an invariant module configuration.
+/// Core operation parity under an invariant module configuration, against
+/// the explicitly selected `reference` backend.
 #[macro_export]
 macro_rules! conjugate_invariant_core_test_suite {
-    ($name:ident, $backend:ty, $standard:ty) => {
+    ($name:ident, $backend:ty, $standard:ty, reference = $reference:ty) => {
         mod $name {
             #[test]
             fn conjugate_invariant_core_parity() {
@@ -440,7 +463,7 @@ macro_rules! conjugate_invariant_core_test_suite {
                 } else {
                     256
                 };
-                let reference = poulpy_hal::layouts::Module::<$crate::FFT64CIRef>::new(n as u64);
+                let reference = poulpy_hal::layouts::Module::<$reference>::new(n as u64);
                 let module = poulpy_hal::layouts::Module::<$backend>::new(n as u64);
                 let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
                 let shapes = poulpy_core::test_suite::parity::ParityShapes {

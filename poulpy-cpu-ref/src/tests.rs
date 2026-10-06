@@ -129,8 +129,46 @@ fn test_convolution_sum_ntt4x30_ref() {
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
 cross_backend_test_suite! {
-    mod vec_znx,
-    backend_ref =  crate::FFT64Ref,
+    mod vec_znx_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_zero_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_matches_wrapper,
+        test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
+        test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
+        test_vec_znx_add_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign_matches_wrapper,
+        test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
+        test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
+        test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
+        test_vec_znx_sub_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_negate_assign,
+        test_vec_znx_rsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh,
+        test_vec_znx_rsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_assign,
+        test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,
+        test_vec_znx_lsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_assign,
+        test_vec_znx_negate => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate,
+        test_vec_znx_negate_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_matches_wrapper,
+        test_vec_znx_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign,
+        test_vec_znx_negate_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign_matches_wrapper,
+        test_vec_znx_rotate => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate,
+        test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
+        test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
+        test_vec_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism_assign,
+        test_scalar_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_scalar_znx_automorphism,
+        test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
+        test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
+        test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
+        test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
+        test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
+        test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,
+        test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
+        test_vec_znx_copy_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_matches_wrapper,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -166,8 +204,19 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod vec_znx_ci,
-    backend_ref =  crate::FFT64Ref,
+    mod vec_znx_ci_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
+        test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_ci_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -176,8 +225,20 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod svp,
-    backend_ref =  crate::FFT64Ref,
+    mod svp_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+    }
+}
+
+cross_backend_test_suite! {
+    mod svp_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -187,8 +248,37 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod vec_znx_big,
-    backend_ref =  crate::FFT64Ref,
+    mod vec_znx_big_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
+        test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
+        test_vec_znx_big_add_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small,
+        test_vec_znx_big_add_small_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_assign,
+        test_vec_znx_big_sub => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub,
+        test_vec_znx_big_sub_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_assign,
+        test_vec_znx_big_automorphism => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism,
+        test_vec_znx_big_automorphism_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism_assign,
+        test_vec_znx_big_negate => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_negate,
+        test_vec_znx_big_negate_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_negate_assign,
+        test_vec_znx_big_normalize => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_normalize,
+        test_vec_znx_big_sub_negate_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_negate_assign,
+        test_vec_znx_big_sub_small_a => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_a,
+        test_vec_znx_big_sub_small_a_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_a_assign,
+        test_vec_znx_big_sub_small_b => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_b,
+        test_vec_znx_big_sub_small_b_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_b_assign,
+        test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
+        test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
+        test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
+        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_big_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -215,8 +305,27 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod vec_znx_dft,
-    backend_ref =  crate::FFT64Ref,
+    mod vec_znx_dft_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
+        test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
+        test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
+        test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
+        test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
+        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+        test_vec_znx_dft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_apply,
+        test_vec_znx_dft_zero => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_zero,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_dft_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -233,8 +342,20 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod vec_znx_dft_automorphism,
-    backend_ref =  crate::FFT64Ref,
+    mod vec_znx_dft_automorphism_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_dft_automorphism_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -244,8 +365,23 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
-    mod vmp,
-    backend_ref =  crate::FFT64Ref,
+    mod vmp_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
+        test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
+        test_vmp_zero => poulpy_hal::test_suite::vmp::test_vmp_zero,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vmp_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
@@ -532,15 +668,47 @@ fn test_gglwe_product_dft_selected_ntt4x30_ref() {
     poulpy_core::test_suite::parity::test_gglwe_product_dft_selected(&Module::<NTT4x30Ref>::new(64), 12);
 }
 
-// Cross-family parity: the NTT backend is exact, so at a radix small enough
-// for FFT64 products to round exactly the two families must agree
-// byte-for-byte. This catches a family-specific limb-window bug that a
-// same-family parity suite cannot see.
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
-    mod core_parity_cross_family,
-    backend_ref = crate::NTT4x30Ref,
+    mod core_parity_fft64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Ref,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
+        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_ntt4x30,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Ref,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
@@ -1410,14 +1578,14 @@ mod canonical_precision_tests {
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64ref,
-    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Ref
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30ref,
-    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::NTT4x30Ref
 );
 
@@ -1426,54 +1594,18 @@ poulpy_core::core_encryption_parity_test_suite!(
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_sub_degree_fft64ref,
-    backend_ref = crate::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Ref,
     params = TestParams { size: 1<<7, n: 1<<7, base2k: 12 },
     test_size = 1<<8,
 );
-
-#[cfg(feature = "enable-core")]
-poulpy_core::core_parity_test_suite! {
-    mod core_parity_ntt4x30,
-    backend_ref = crate::FFT64Ref,
-    backend_test = crate::NTT4x30Ref,
-    // computes at the module degree, no sweep
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
-    tests = {
-        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
-        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
-        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
-        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
-        glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
-        glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
-        gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
-        gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
-        gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
-        polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
-        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
-        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
-        sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
-        preparation => poulpy_core::test_suite::parity::test_preparation_contract,
-        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
-        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
-        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
-        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
-        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
-    }
-}
 
 // A module computes every operation of a smaller degree as a module of that
 // degree does.
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_sub_degree_fft64,
-    backend_ref = crate::FFT64Ref,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Ref,
     params = TestParams { size: 1<<7, base2k: 12, n: 1<<7 },
     test_size = 1<<8,
@@ -1511,7 +1643,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_sub_degree_ntt4x30,
-    backend_ref = crate::NTT4x30Ref,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<7, base2k: 12, n: 1<<7 },
     test_size = 1<<8,

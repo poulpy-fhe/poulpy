@@ -245,7 +245,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  crate::FFT64Avx,
     backend_test = crate::FFT64AvxRayon,
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 12, n: 8 }, 256),
     tests = {

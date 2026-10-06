@@ -237,13 +237,13 @@ mod tuning {
 }
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64avx,
-    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30avx,
-    backend_ref = poulpy_cpu_ref::test_suite::ControlledSamplingFFT64Ref,
+    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx,
     params = crate::tests::bounded_emulation_params(poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 }, 64),
 );

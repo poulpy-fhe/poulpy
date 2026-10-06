@@ -241,6 +241,15 @@ impl DFTFamily for Ntt4x30 {
             *r = a[bitrev((2 * m - e - 1) / 2, bits)];
         }
     }
+
+    // Products are lane-wise, so they apply to the stored slots as they are.
+    fn ci_mul_acc(res: &mut [Residues], a: &[Residues], b: &[Residues]) {
+        Self::mul_acc(res, a, b);
+    }
+
+    fn ci_mul_assign(res: &mut [Residues], a: &[Residues]) {
+        Self::mul_assign(res, a);
+    }
 }
 
 #[cfg(test)]
