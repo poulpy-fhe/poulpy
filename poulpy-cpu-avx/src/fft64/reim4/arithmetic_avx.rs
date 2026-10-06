@@ -1181,7 +1181,7 @@ mod tests {
         unsafe { reim4_extract_1blk_from_reim_contiguous_avx(m, rows, blk, &mut dst_avx, &src) };
         reim4_extract_1blk_from_reim_contiguous_portable(m, rows, blk, &mut dst_ref, &src);
 
-        assert_eq!(dst_avx, dst_ref, "reim4_extract_1blk: AVX vs ref mismatch");
+        assert!(dst_avx == dst_ref, "reim4_extract_1blk: AVX vs ref mismatch");
 
         // Also verify save round-trip
         let mut out_avx = vec![0f64; 2 * rows * m];
@@ -1189,7 +1189,7 @@ mod tests {
         unsafe { reim4_save_1blk_to_reim_contiguous_avx(m, rows, blk, &mut out_avx, &dst_avx) };
         reim4_save_1blk_to_reim_contiguous_portable(m, rows, blk, &mut out_ref, &dst_ref);
 
-        assert_eq!(out_avx, out_ref, "reim4_save_1blk: AVX vs ref mismatch");
+        assert!(out_avx == out_ref, "reim4_save_1blk: AVX vs ref mismatch");
     }
 
     /// AVX `reim4_vec_mat1col_product` matches reference.

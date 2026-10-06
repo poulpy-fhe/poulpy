@@ -142,11 +142,12 @@ where
             &mut scratch.borrow(),
         );
 
-        let want = BE::to_host_bytes(&want.data);
-        let have = BE::to_host_bytes(&have.data);
-        assert_ne!(want, sentinel, "reference VMP did not overwrite the destination");
-        assert_eq!(
-            have, want,
+        assert!(
+            BE::to_host_bytes(&want.data) != sentinel,
+            "reference VMP did not overwrite the destination"
+        );
+        assert!(
+            have == want,
             "strided VMP mismatch for dsize={dsize}, a_size={a_size}, sparse={sparse}"
         );
     }
@@ -586,7 +587,7 @@ where
                 1,
                 &mut scratch.borrow(),
             );
-            BE::to_host_bytes(&res.data)
+            res
         };
 
         let mut scratch = ScratchOwned::<BE>::alloc(
@@ -596,8 +597,8 @@ where
         );
         let want = product(&key_of(&sel_pmat, &effective_layout, 1), &mut scratch);
         let have = product(&key_of(&parent_pmat, &effective_layout, stride), &mut scratch);
-        assert_eq!(
-            have, want,
+        assert!(
+            have == want,
             "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
 
@@ -606,9 +607,8 @@ where
         let mut refilled = mat.clone();
         poison(&mut refilled, 0);
         let refilled_pmat = prepare(&refilled, rows, &mut prep);
-        assert_eq!(
-            product(&key_of(&refilled_pmat, &effective_layout, stride), &mut scratch),
-            have,
+        assert!(
+            product(&key_of(&refilled_pmat, &effective_layout, stride), &mut scratch) == have,
             "skipped rows changed the output for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
     }

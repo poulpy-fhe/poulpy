@@ -15,8 +15,8 @@ use crate::{
         VecZnxFillUniformSourceAll, VecZnxScalarProduct, VecZnxSubNegateAssign,
     },
     layouts::{
-        DigestU64, HostDataRef, Module, ScalarZnx, ScalarZnxOwned, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut,
-        ZnxView, ZnxViewMut,
+        HostDataRef, Module, ScalarZnx, ScalarZnxOwned, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, ZnxView,
+        ZnxViewMut,
     },
     source::Source,
 };
@@ -167,11 +167,11 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
 
         let a_ref = big_from_small(module_ref, &a);
         let a = download_vec_znx::<BR>(&a);
-        let a_digest = a.digest_u64();
+        let a_before = a.clone();
 
         let a_test = big_from_small(module_test, &upload_vec_znx::<BT>(&a));
 
-        assert_eq!(a.digest_u64(), a_digest);
+        assert!(a == a_before, "input changed");
 
         for b_size in [1, 2, 3, 4] {
             let mut b = module_ref.vec_znx_alloc(params.n, cols, b_size);
@@ -179,11 +179,11 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
 
             let b_ref = big_from_small(module_ref, &b);
             let b = download_vec_znx::<BR>(&b);
-            let b_digest = b.digest_u64();
+            let b_before = b.clone();
 
             let b_test = big_from_small(module_test, &upload_vec_znx::<BT>(&b));
 
-            assert_eq!(b.digest_u64(), b_digest);
+            assert!(b == b_before, "input changed");
 
             for res_size in [1, 2, 3, 4] {
                 let mut res_big_ref: VecZnxBigOwned<BR> = module_ref.vec_znx_big_alloc(params.n, cols, res_size);
@@ -212,7 +212,7 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(res_small_ref == res_small_test, "test_vec_znx_big_add: result mismatch");
             }
         }
     }
@@ -267,7 +267,10 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_add_assign: result mismatch"
+            );
         }
     }
 }
@@ -304,7 +307,7 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
             let mut b_ref = module_ref.vec_znx_alloc(params.n, cols, b_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_ref, &mut source);
             let b = download_vec_znx::<BR>(&b_ref);
-            let b_digest: u64 = b.digest_u64();
+            let b_before = b.clone();
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
@@ -331,11 +334,11 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
                     );
                 }
 
-                assert_eq!(b.digest_u64(), b_digest);
+                assert!(b == b_before, "input changed");
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(res_small_ref == res_small_test, "test_vec_znx_big_add_small: result mismatch");
             }
         }
     }
@@ -373,7 +376,7 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
 
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -398,12 +401,15 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
+            assert!(a == a_before, "input changed");
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_add_small_assign: result mismatch"
+            );
         }
     }
 }
@@ -456,7 +462,10 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(
+                    res_small_ref == res_small_test,
+                    "test_vec_znx_big_automorphism: result mismatch"
+                );
             }
         }
     }
@@ -510,7 +519,10 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_automorphism_assign: result mismatch"
+            );
         }
     }
 }
@@ -556,7 +568,7 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(res_small_ref == res_small_test, "test_vec_znx_big_negate: result mismatch");
         }
     }
 }
@@ -605,7 +617,10 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
         let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
         let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-        assert_eq!(res_small_ref, res_small_test);
+        assert!(
+            res_small_ref == res_small_test,
+            "test_vec_znx_big_negate_assign: result mismatch"
+        );
     }
 }
 
@@ -673,7 +688,7 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                 let res_test =
                     normalize_big_to_host_with_offset(module_test, base2k, res_offset, res_size, &a_test, &mut scratch_test);
 
-                assert_eq!(res_ref, res_test);
+                assert!(res_ref == res_test, "test_vec_znx_big_normalize: result mismatch");
 
                 let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
                 let res_ref = normalize_big_to_host_with_precision(
@@ -694,7 +709,7 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                     &a_test,
                     &mut scratch_test,
                 );
-                assert_eq!(res_ref, res_test);
+                assert!(res_ref == res_test, "test_vec_znx_big_normalize: result mismatch");
                 assert_canonical(&res_test, base2k, res_k);
             }
             for (a_base, res_base, res_k, offset) in super::vec_znx::cross_normalization_cases(a_size, res_size) {
@@ -716,8 +731,8 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                     &a_test,
                     &mut scratch_test,
                 );
-                assert_eq!(
-                    res_ref, res_test,
+                assert!(
+                    res_ref == res_test,
                     "a_base={a_base} res_base={res_base} k={res_k} offset={offset}"
                 );
                 assert_canonical(&res_test, res_base, res_k);
@@ -788,7 +803,7 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(res_small_ref == res_small_test, "test_vec_znx_big_sub: result mismatch");
             }
         }
     }
@@ -843,7 +858,10 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_sub_assign: result mismatch"
+            );
         }
     }
 }
@@ -897,7 +915,10 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_sub_negate_assign: result mismatch"
+            );
         }
     }
 }
@@ -969,7 +990,10 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(
+                    res_small_ref == res_small_test,
+                    "test_vec_znx_big_sub_small_a: result mismatch"
+                );
             }
         }
     }
@@ -1042,7 +1066,10 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
                 let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(
+                    res_small_ref == res_small_test,
+                    "test_vec_znx_big_sub_small_b: result mismatch"
+                );
             }
         }
     }
@@ -1080,7 +1107,7 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
 
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1105,12 +1132,15 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
+            assert!(a == a_before, "input changed");
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
             let res_small_test = normalize_big_to_host(module_test, base2k, &res_big_test, &mut scratch_test);
 
-            assert_eq!(res_small_ref, res_small_test);
+            assert!(
+                res_small_ref == res_small_test,
+                "test_vec_znx_big_sub_small_a_assign: result mismatch"
+            );
         }
     }
 }
@@ -1147,7 +1177,7 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
 
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1173,7 +1203,7 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
+                assert!(a == a_before, "input changed");
 
                 let res_small_ref =
                     normalize_big_to_host_with_offset(module_ref, base2k, res_offset, res_size, &res_big_ref, &mut scratch_ref);
@@ -1186,7 +1216,10 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
                     &mut scratch_test,
                 );
 
-                assert_eq!(res_small_ref, res_small_test);
+                assert!(
+                    res_small_ref == res_small_test,
+                    "test_vec_znx_big_sub_small_b_assign: result mismatch"
+                );
             }
         }
     }
@@ -1239,7 +1272,7 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
 
             let got_ref = normalize_big_to_host(module_ref, base2k, &res_ref, &mut scratch_ref);
             let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
-            assert_eq!(got_ref, got_test);
+            assert!(got_ref == got_test, "test_vec_znx_big_from_small: result mismatch");
 
             // The input is canonical, so with room to hold it the round trip is
             // the identity and the limbs past it are zero.
@@ -1254,7 +1287,7 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
                         }
                     }
                 }
-                assert_eq!(got_ref, want);
+                assert!(got_ref == want, "test_vec_znx_big_from_small: result mismatch");
             }
         }
     }
@@ -1307,7 +1340,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
 
                 let got_ref = normalize_big_to_host(module_ref, base2k, &res_ref, &mut scratch_ref);
                 let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
-                assert_eq!(got_ref, got_test);
+                assert!(got_ref == got_test, "test_vec_znx_big_inner_sum: result mismatch");
 
                 let mut want_host = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 for j in 0..cols {
@@ -1319,7 +1352,7 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
                 }
                 let want_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&want_host));
                 let want = normalize_big_to_host(module_ref, base2k, &want_ref, &mut scratch_ref);
-                assert_eq!(got_ref, want, "res_coeff {res_coeff}");
+                assert!(got_ref == want, "res_coeff {res_coeff}");
             }
         }
     }
@@ -1397,7 +1430,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
 
                     let got_ref = normalize_big_to_host(module_ref, base2k, &res_ref, &mut scratch_ref);
                     let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
-                    assert_eq!(got_ref, got_test);
+                    assert!(got_ref == got_test, "test_vec_znx_big_col_weighted_sum: result mismatch");
 
                     let mut want_host = VecZnxOwned::<i64>::alloc(params.n, 1, res_size);
                     for limb in 0..res_size {
@@ -1412,7 +1445,7 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
                     }
                     let want_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&want_host));
                     let want = normalize_big_to_host(module_ref, base2k, &want_ref, &mut scratch_ref);
-                    assert_eq!(got_ref, want, "weights_col {weights_col} coeffs {coeffs}");
+                    assert!(got_ref == want, "weights_col {weights_col} coeffs {coeffs}");
                 }
             }
         }
@@ -1488,7 +1521,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
 
             let got_ref = normalize_big_to_host(module_ref, base2k, &res_ref, &mut scratch_ref);
             let got_test = normalize_big_to_host(module_test, base2k, &res_test, &mut scratch_test);
-            assert_eq!(got_ref, got_test);
+            assert!(got_ref == got_test, "test_vec_znx_scalar_product: result mismatch");
 
             let mut want_host = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
             for j in 0..cols {
@@ -1499,7 +1532,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             }
             let want_ref = big_from_small(module_ref, &upload_vec_znx::<BR>(&want_host));
             let want = normalize_big_to_host(module_ref, base2k, &want_ref, &mut scratch_ref);
-            assert_eq!(got_ref, want);
+            assert!(got_ref == want, "test_vec_znx_scalar_product: result mismatch");
         }
     }
 }

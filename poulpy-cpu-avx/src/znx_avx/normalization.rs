@@ -935,7 +935,7 @@ mod tests {
             let digit: __m256i = get_digit_avx(x_256, mask, sign);
             _mm256_storeu_si256(y1.as_mut_ptr() as *mut __m256i, digit);
         }
-        assert_eq!(y0, y1);
+        assert!(y0 == y1, "test_get_digit_avx_internal mismatch");
     }
 
     #[test]
@@ -975,7 +975,7 @@ mod tests {
             let digit: __m256i = get_carry_avx(x_256, d_256, base2k_vec, top_mask);
             _mm256_storeu_si256(y1.as_mut_ptr() as *mut __m256i, digit);
         }
-        assert_eq!(y0, y1);
+        assert!(y0 == y1, "test_get_carry_avx_internal mismatch");
     }
 
     #[test]
@@ -1014,14 +1014,14 @@ mod tests {
         znx_normalize_first_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_first_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_first_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_first_step_assign_avx_internal mismatch");
 
         znx_normalize_first_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_first_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_first_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_first_step_assign_avx_internal mismatch");
     }
 
     #[test]
@@ -1060,14 +1060,14 @@ mod tests {
         znx_normalize_middle_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_middle_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_middle_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_middle_step_assign_avx_internal mismatch");
 
         znx_normalize_middle_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_middle_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_middle_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_middle_step_assign_avx_internal mismatch");
     }
 
     #[test]
@@ -1106,14 +1106,14 @@ mod tests {
         znx_normalize_final_step_assign_portable(base2k, 0, &mut y0, &mut c0);
         znx_normalize_final_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_final_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_final_step_assign_avx_internal mismatch");
 
         znx_normalize_final_step_assign_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_normalize_final_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_final_step_assign_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_final_step_assign_avx_internal mismatch");
     }
 
     #[test]
@@ -1153,14 +1153,14 @@ mod tests {
         znx_normalize_first_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_first_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_first_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_first_step_avx_internal mismatch");
 
         znx_normalize_first_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_first_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_first_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_first_step_avx_internal mismatch");
     }
 
     #[test]
@@ -1201,14 +1201,14 @@ mod tests {
         znx_normalize_middle_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_middle_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_middle_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_middle_step_avx_internal mismatch");
 
         znx_normalize_middle_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_middle_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_middle_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_middle_step_avx_internal mismatch");
     }
 
     #[test]
@@ -1249,14 +1249,14 @@ mod tests {
         znx_normalize_final_step_portable::<OVERWRITE>(base2k, 0, &mut y0, &a, &mut c0);
         znx_normalize_final_step_avx::<OVERWRITE>(base2k, 0, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_final_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_final_step_avx_internal mismatch");
 
         znx_normalize_final_step_portable::<OVERWRITE>(base2k, base2k - 1, &mut y0, &a, &mut c0);
         znx_normalize_final_step_avx::<OVERWRITE>(base2k, base2k - 1, &mut y1, &a, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "test_znx_normalize_final_step_avx_internal mismatch");
+        assert!(c0 == c1, "test_znx_normalize_final_step_avx_internal mismatch");
     }
 
     #[test]
@@ -1296,14 +1296,14 @@ mod tests {
         znx_extract_digit_addmul_portable(base2k, 0, &mut y0, &mut c0);
         znx_extract_digit_addmul_avx(base2k, 0, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "znx_extract_digit_addmul_internal mismatch");
+        assert!(c0 == c1, "znx_extract_digit_addmul_internal mismatch");
 
         znx_extract_digit_addmul_portable(base2k, base2k - 1, &mut y0, &mut c0);
         znx_extract_digit_addmul_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "znx_extract_digit_addmul_internal mismatch");
+        assert!(c0 == c1, "znx_extract_digit_addmul_internal mismatch");
     }
 
     #[test]
@@ -1342,8 +1342,8 @@ mod tests {
         znx_normalize_digit_portable(base2k, &mut y0, &mut c0);
         znx_normalize_digit_avx(base2k, &mut y1, &mut c1);
 
-        assert_eq!(y0, y1);
-        assert_eq!(c0, c1);
+        assert!(y0 == y1, "znx_normalize_digit_internal mismatch");
+        assert!(c0 == c1, "znx_normalize_digit_internal mismatch");
     }
 
     #[test]

@@ -25,6 +25,17 @@ pub struct CKKSPlaintext<D: Data, W: ZnxWord, R: Ring> {
     _ring: std::marker::PhantomData<R>,
 }
 
+impl<D: Data, W: ZnxWord, R: Ring> PartialEq for CKKSPlaintext<D, W, R>
+where
+    GLWEPlaintext<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.meta == other.meta
+    }
+}
+
+impl<D: Data, W: ZnxWord, R: Ring> Eq for CKKSPlaintext<D, W, R> where GLWEPlaintext<D, W>: Eq {}
+
 impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: CKKSMeta) -> Self {
         Self {

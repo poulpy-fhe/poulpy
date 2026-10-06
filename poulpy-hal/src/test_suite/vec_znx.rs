@@ -14,9 +14,7 @@ use crate::{
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
         VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
-    layouts::{
-        DigestU64, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut,
-    },
+    layouts::{HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -83,7 +81,10 @@ pub fn test_vec_znx_zero_matches_wrapper<BR: crate::test_suite::TestBackend, BT:
             }
             module_test.vec_znx_zero(&mut vec_znx_backend_mut::<BT>(&mut backend), col_i);
 
-            assert_eq!(expected, download_vec_znx::<BT>(&backend));
+            assert!(
+                expected == download_vec_znx::<BT>(&backend),
+                "test_vec_znx_zero_matches_wrapper: result mismatch"
+            );
         }
     }
 }
@@ -109,7 +110,7 @@ pub fn test_vec_znx_encode_vec_i64() {
             a.encode_vec_i64(base2k, col_i, k, &have);
             let mut want: Vec<i64> = vec![i64::default(); n];
             a.decode_vec_i64(base2k, col_i, k, &mut want);
-            assert_eq!(have, want, "{:?} != {:?}", have, want);
+            assert!(have == want, "integer encoding round trip differs");
         })
     }
 }
@@ -139,7 +140,7 @@ pub fn test_vec_znx_add_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
         );
     }
     let b = download_scalar_znx::<BR>(&b_ref);
-    let b_digest: u64 = b.digest_u64();
+    let b_before = b.clone();
     let b_test = upload_scalar_znx::<BT>(&b);
 
     for res_size in [1usize, 2, 3, 4] {
@@ -168,10 +169,10 @@ pub fn test_vec_znx_add_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
             );
         }
 
-        assert_eq!(b.digest_u64(), b_digest);
-        assert_eq!(
-            download_vec_znx::<BR>(&rest_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(b == b_before, "input changed");
+        assert!(
+            download_vec_znx::<BR>(&rest_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_add_scalar_assign: result mismatch"
         );
     }
 }
@@ -194,14 +195,14 @@ pub fn test_vec_znx_add_matches_reference<BR: crate::test_suite::TestBackend, BT
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for b_size in [1, 2, 3, 4] {
             let mut b_ref = module_ref.vec_znx_alloc(params.n, cols, b_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_ref, &mut source);
             let b = download_vec_znx::<BR>(&b_ref);
-            let b_digest: u64 = b.digest_u64();
+            let b_before = b.clone();
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
@@ -232,11 +233,11 @@ pub fn test_vec_znx_add_matches_reference<BR: crate::test_suite::TestBackend, BT
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(b.digest_u64(), b_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&wrapper_backend),
-                    download_vec_znx::<BT>(&backend_owned)
+                assert!(a == a_before, "input changed");
+                assert!(b == b_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&wrapper_backend) == download_vec_znx::<BT>(&backend_owned),
+                    "test_vec_znx_add_matches_reference: result mismatch"
                 );
             }
         }
@@ -261,7 +262,7 @@ pub fn test_vec_znx_add_assign<BR: crate::test_suite::TestBackend, BT: crate::te
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -288,10 +289,10 @@ pub fn test_vec_znx_add_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_add_assign: result mismatch"
             );
         }
     }
@@ -313,7 +314,7 @@ pub fn test_vec_znx_add_assign_matches_wrapper<BR: crate::test_suite::TestBacken
         let mut a_backend = module_test.vec_znx_alloc(params.n, cols, a_size);
         module_test.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
         let a = download_vec_znx::<BT>(&a_backend);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
 
         for res_size in [1, 2, 3, 4] {
             let mut wrapper_backend = module_test.vec_znx_alloc(params.n, cols, res_size);
@@ -339,10 +340,10 @@ pub fn test_vec_znx_add_assign_matches_wrapper<BR: crate::test_suite::TestBacken
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BT>(&wrapper_backend),
-                download_vec_znx::<BT>(&backend_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BT>(&wrapper_backend) == download_vec_znx::<BT>(&backend_backend),
+                "test_vec_znx_add_assign_matches_wrapper: result mismatch"
             );
         }
     }
@@ -366,7 +367,7 @@ pub fn test_vec_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -395,10 +396,10 @@ pub fn test_vec_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_automorphism: result mismatch"
             );
 
             let p: i64 = 5;
@@ -421,10 +422,10 @@ pub fn test_vec_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_automorphism: result mismatch"
             );
         }
     }
@@ -476,9 +477,9 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_automorphism_assign: result mismatch"
         );
 
         let p: i64 = 7;
@@ -499,9 +500,9 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_automorphism_assign: result mismatch"
         );
     }
 }
@@ -524,7 +525,7 @@ pub fn test_vec_znx_copy<BR: crate::test_suite::TestBackend, BT: crate::test_sui
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -551,8 +552,11 @@ pub fn test_vec_znx_copy<BR: crate::test_suite::TestBackend, BT: crate::test_sui
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(download_vec_znx::<BR>(&res_0_backend), download_vec_znx::<BT>(&res_1_backend));
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_0_backend) == download_vec_znx::<BT>(&res_1_backend),
+                "test_vec_znx_copy: result mismatch"
+            );
         }
     }
 }
@@ -596,9 +600,9 @@ pub fn test_vec_znx_copy_matches_wrapper<BR: crate::test_suite::TestBackend, BT:
                 a_col,
             );
 
-            assert_eq!(
-                download_vec_znx::<BT>(&wrapper_backend),
-                download_vec_znx::<BT>(&backend_backend)
+            assert!(
+                download_vec_znx::<BT>(&wrapper_backend) == download_vec_znx::<BT>(&backend_backend),
+                "test_vec_znx_copy_matches_wrapper: result mismatch"
             );
         }
     }
@@ -629,7 +633,7 @@ pub fn test_scalar_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crat
         );
     }
     let a = download_scalar_znx::<BR>(&a_ref);
-    let a_digest: u64 = a.digest_u64();
+    let a_before = a.clone();
     let a_test = upload_scalar_znx::<BT>(&a);
 
     let mut res_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
@@ -671,10 +675,10 @@ pub fn test_scalar_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crat
             );
         }
 
-        assert_eq!(a.digest_u64(), a_digest);
-        assert_eq!(
-            download_scalar_znx::<BR>(&res_ref_backend),
-            download_scalar_znx::<BT>(&res_test_backend)
+        assert!(a == a_before, "input changed");
+        assert!(
+            download_scalar_znx::<BR>(&res_ref_backend) == download_scalar_znx::<BT>(&res_test_backend),
+            "test_scalar_znx_automorphism: result mismatch"
         );
     }
 }
@@ -698,7 +702,7 @@ pub fn test_vec_znx_mul_xp_minus_one<BR: crate::test_suite::TestBackend, BT: cra
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
 
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -727,10 +731,10 @@ pub fn test_vec_znx_mul_xp_minus_one<BR: crate::test_suite::TestBackend, BT: cra
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BT>(&res_test_backend),
-                download_vec_znx::<BR>(&res_ref_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BT>(&res_test_backend) == download_vec_znx::<BR>(&res_ref_backend),
+                "test_vec_znx_mul_xp_minus_one: result mismatch"
             );
 
             let p: i64 = 5;
@@ -753,10 +757,10 @@ pub fn test_vec_znx_mul_xp_minus_one<BR: crate::test_suite::TestBackend, BT: cra
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BT>(&res_test_backend),
-                download_vec_znx::<BR>(&res_ref_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BT>(&res_test_backend) == download_vec_znx::<BR>(&res_ref_backend),
+                "test_vec_znx_mul_xp_minus_one: result mismatch"
             );
         }
     }
@@ -807,9 +811,9 @@ pub fn test_vec_znx_mul_xp_minus_one_assign<BR: crate::test_suite::TestBackend, 
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_mul_xp_minus_one_assign: result mismatch"
         );
 
         let p: i64 = 7;
@@ -829,9 +833,9 @@ pub fn test_vec_znx_mul_xp_minus_one_assign<BR: crate::test_suite::TestBackend, 
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_mul_xp_minus_one_assign: result mismatch"
         );
     }
 }
@@ -854,7 +858,7 @@ pub fn test_vec_znx_negate<BR: crate::test_suite::TestBackend, BT: crate::test_s
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -881,10 +885,10 @@ pub fn test_vec_znx_negate<BR: crate::test_suite::TestBackend, BT: crate::test_s
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_negate: result mismatch"
             );
         }
     }
@@ -929,9 +933,9 @@ pub fn test_vec_znx_negate_matches_wrapper<BR: crate::test_suite::TestBackend, B
                 a_col,
             );
 
-            assert_eq!(
-                download_vec_znx::<BT>(&wrapper_backend),
-                download_vec_znx::<BT>(&backend_backend)
+            assert!(
+                download_vec_znx::<BT>(&wrapper_backend) == download_vec_znx::<BT>(&backend_backend),
+                "test_vec_znx_negate_matches_wrapper: result mismatch"
             );
         }
     }
@@ -965,9 +969,9 @@ pub fn test_vec_znx_negate_assign<BR: crate::test_suite::TestBackend, BT: crate:
             module_test.vec_znx_negate_assign(&mut vec_znx_backend_mut::<BT>(&mut res_test_backend), i);
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_negate_assign: result mismatch"
         );
     }
 }
@@ -996,9 +1000,9 @@ pub fn test_vec_znx_negate_assign_matches_wrapper<BR: crate::test_suite::TestBac
             module_test.vec_znx_negate_assign(&mut vec_znx_backend_mut::<BT>(&mut wrapper_backend), col_i);
             module_test.vec_znx_negate_assign(&mut vec_znx_backend_mut::<BT>(&mut backend_backend), col_i);
 
-            assert_eq!(
-                download_vec_znx::<BT>(&wrapper_backend),
-                download_vec_znx::<BT>(&backend_backend)
+            assert!(
+                download_vec_znx::<BT>(&wrapper_backend) == download_vec_znx::<BT>(&backend_backend),
+                "test_vec_znx_negate_assign_matches_wrapper: result mismatch"
             );
         }
     }
@@ -1027,7 +1031,7 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1064,10 +1068,10 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(a == a_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_normalize: result mismatch"
                 );
             }
 
@@ -1104,8 +1108,8 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                 }
                 let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
                 let res_test_host = download_vec_znx::<BT>(&res_test_backend);
-                assert_eq!(
-                    res_ref_host, res_test_host,
+                assert!(
+                    res_ref_host == res_test_host,
                     "a_base={a_base} res_base={res_base} k={res_k} offset={offset}"
                 );
                 assert_canonical(&res_test_host, res_base, res_k);
@@ -1165,7 +1169,10 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
 
         let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
         let res_test_host = download_vec_znx::<BT>(&res_test_backend);
-        assert_eq!(res_ref_host, res_test_host);
+        assert!(
+            res_ref_host == res_test_host,
+            "test_vec_znx_normalize_assign: result mismatch"
+        );
         assert_canonical(&res_test_host, base2k, res_k);
     }
 }
@@ -1188,7 +1195,7 @@ pub fn test_vec_znx_rotate<BR: crate::test_suite::TestBackend, BT: crate::test_s
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1217,10 +1224,10 @@ pub fn test_vec_znx_rotate<BR: crate::test_suite::TestBackend, BT: crate::test_s
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_rotate: result mismatch"
             );
 
             let p: i64 = 5;
@@ -1243,10 +1250,10 @@ pub fn test_vec_znx_rotate<BR: crate::test_suite::TestBackend, BT: crate::test_s
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_rotate: result mismatch"
             );
         }
     }
@@ -1298,9 +1305,9 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_rotate_assign: result mismatch"
         );
 
         let p: i64 = 5;
@@ -1321,9 +1328,9 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
+        assert!(
+            download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+            "test_vec_znx_rotate_assign: result mismatch"
         );
     }
 }
@@ -1351,7 +1358,7 @@ pub fn test_vec_znx_fill_uniform<B: crate::test_suite::TestBackend>(params: &Tes
         (0..cols).for_each(|col_j| {
             if col_j != col_i {
                 (0..size).for_each(|limb_i| {
-                    assert_eq!(a.at(col_j, limb_i), zero);
+                    assert!(a.at(col_j, limb_i) == zero, "test_vec_znx_fill_uniform: result mismatch");
                 })
             } else {
                 let std: f64 = a.stats(base2k, col_i).std();
@@ -1405,10 +1412,9 @@ pub fn test_vec_znx_fill_uniform<B: crate::test_suite::TestBackend>(params: &Tes
                     }
 
                     module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<B>(&mut actual), col, &mut source);
-                    assert_eq!(
-                        download_vec_znx::<B>(&actual),
-                        expected,
-                        "uniform sampling differs from the contract: seed={seed:?}, base2k={base2k}, k={k}, col={col}"
+                    assert!(
+                        download_vec_znx::<B>(&actual) == expected,
+                        "uniform sampling differs from the contract: base2k={base2k}, k={k}, col={col}"
                     );
                     // The call consumes exactly one 32-byte seed from its caller,
                     // regardless of the number of generated limbs or coefficients.
@@ -1416,8 +1422,8 @@ pub fn test_vec_znx_fill_uniform<B: crate::test_suite::TestBackend>(params: &Tes
                     let mut expected_next = [0u8; 96];
                     source.fill_bytes(&mut actual_next);
                     expected_source.fill_bytes(&mut expected_next);
-                    assert_eq!(
-                        actual_next, expected_next,
+                    assert!(
+                        actual_next == expected_next,
                         "uniform sampling advanced the caller source incorrectly"
                     );
                 }
@@ -1449,7 +1455,7 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1489,10 +1495,10 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(a == a_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_lsh: result mismatch"
                 );
                 // A left shift by the source width has moved every bit of `a`
                 // above the integer part, whatever the destination width.
@@ -1553,9 +1559,9 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 );
             }
 
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_lsh_assign: result mismatch"
             );
             if k >= res_size * base2k {
                 assert!(
@@ -1590,7 +1596,7 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1624,10 +1630,10 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(a == a_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_rsh: result mismatch"
                 );
                 // At exactly the width a source just past half a unit of the last
                 // limb still rounds to one, so zero is only promised past it.
@@ -1688,9 +1694,9 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 );
             }
 
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_rsh_assign: result mismatch"
             );
             // At exactly the width a source just past half a unit of the last
             // limb still rounds to one, so zero is only promised past it.
@@ -1722,14 +1728,14 @@ pub fn test_vec_znx_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suit
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for b_size in [1, 2, 3, 4] {
             let mut b_ref = module_ref.vec_znx_alloc(params.n, cols, b_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_ref, &mut source);
             let b = download_vec_znx::<BR>(&b_ref);
-            let b_digest: u64 = b.digest_u64();
+            let b_before = b.clone();
             let b_test = upload_vec_znx::<BT>(&b);
 
             for res_size in [1, 2, 3, 4] {
@@ -1760,12 +1766,12 @@ pub fn test_vec_znx_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(b.digest_u64(), b_digest);
+                assert!(a == a_before, "input changed");
+                assert!(b == b_before, "input changed");
 
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_sub: result mismatch"
                 );
             }
         }
@@ -1790,7 +1796,7 @@ pub fn test_vec_znx_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::te
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1817,10 +1823,10 @@ pub fn test_vec_znx_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_sub_assign: result mismatch"
             );
         }
     }
@@ -1844,7 +1850,7 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -1871,10 +1877,10 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
                 );
             }
 
-            assert_eq!(a.digest_u64(), a_digest);
-            assert_eq!(
-                download_vec_znx::<BR>(&res_ref_backend),
-                download_vec_znx::<BT>(&res_test_backend)
+            assert!(a == a_before, "input changed");
+            assert!(
+                download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                "test_vec_znx_sub_negate_assign: result mismatch"
             );
         }
     }
@@ -1918,7 +1924,10 @@ pub fn test_vec_znx_ci_embed_trace<BR: crate::test_suite::TestBackend, BT: crate
                 );
             }
             let embedded = download_vec_znx::<BR>(&embedded_ref);
-            assert_eq!(embedded, download_vec_znx::<BT>(&embedded_test));
+            assert!(
+                embedded == download_vec_znx::<BT>(&embedded_test),
+                "test_vec_znx_ci_embed_trace: result mismatch"
+            );
             for col in 0..cols {
                 for limb in 0..res_size {
                     let res = embedded.at(col, limb);
@@ -1964,7 +1973,10 @@ pub fn test_vec_znx_ci_embed_trace<BR: crate::test_suite::TestBackend, BT: crate
             }
             let traced = download_vec_znx::<BR>(&traced_ref);
             let round_trip = download_vec_znx::<BR>(&round_trip);
-            assert_eq!(traced, download_vec_znx::<BT>(&traced_test));
+            assert!(
+                traced == download_vec_znx::<BT>(&traced_test),
+                "test_vec_znx_ci_embed_trace: result mismatch"
+            );
             for col in 0..cols {
                 for limb in 0..res_size {
                     let (res, twice) = (traced.at(col, limb), round_trip.at(col, limb));
@@ -2027,7 +2039,10 @@ pub fn test_scalar_znx_ci_embed<BR: crate::test_suite::TestBackend, BT: crate::t
         );
     }
     let res = download_scalar_znx::<BR>(&res_ref);
-    assert_eq!(res, download_scalar_znx::<BT>(&res_test));
+    assert!(
+        res == download_scalar_znx::<BT>(&res_test),
+        "test_scalar_znx_ci_embed: result mismatch"
+    );
     for col in 0..cols {
         let (res, a) = (res.at(col, 0), a.at(col, 0));
         assert_eq!((res[0], res[half]), (a[0], 0));
@@ -2057,7 +2072,7 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
 
         let a = download_vec_znx::<BR>(&a_ref);
-        let a_digest: u64 = a.digest_u64();
+        let a_before = a.clone();
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
@@ -2083,10 +2098,10 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(a == a_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_switch_ring: result mismatch"
                 );
             }
 
@@ -2112,10 +2127,10 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
                     );
                 }
 
-                assert_eq!(a.digest_u64(), a_digest);
-                assert_eq!(
-                    download_vec_znx::<BR>(&res_ref_backend),
-                    download_vec_znx::<BT>(&res_test_backend)
+                assert!(a == a_before, "input changed");
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend) == download_vec_znx::<BT>(&res_test_backend),
+                    "test_vec_znx_switch_ring: result mismatch"
                 );
             }
         }
@@ -2162,9 +2177,9 @@ pub fn test_vec_znx_switch_ring_matches_wrapper<BR: crate::test_suite::TestBacke
                     a_col,
                 );
 
-                assert_eq!(
-                    download_vec_znx::<BT>(&wrapper_backend),
-                    download_vec_znx::<BT>(&backend_backend)
+                assert!(
+                    download_vec_znx::<BT>(&wrapper_backend) == download_vec_znx::<BT>(&backend_backend),
+                    "test_vec_znx_switch_ring_matches_wrapper: result mismatch"
                 );
             }
         }

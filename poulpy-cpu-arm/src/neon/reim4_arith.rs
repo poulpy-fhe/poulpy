@@ -324,7 +324,7 @@ mod tests {
         let mut want = vec![0f64; 8 * rows];
         reim4_extract_1blk_contiguous_neon(m, rows, blk, &mut got, &src);
         reim4_extract_1blk_from_reim_contiguous_portable(m, rows, blk, &mut want, &src);
-        assert_eq!(got, want);
+        assert!(got == want, "reim4_extract_1blk_contiguous_neon_matches_ref mismatch");
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
         let mut want = vec![0f64; 2 * rows * m];
         reim4_save_1blk_contiguous_neon(m, rows, blk, &mut got, &src);
         reim4_save_1blk_to_reim_contiguous_portable(m, rows, blk, &mut want, &src);
-        assert_eq!(got, want);
+        assert!(got == want, "reim4_save_1blk_contiguous_neon_matches_ref mismatch");
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
                 reim4_save_1blk_neon::<false>(m, blk, &mut got, &src);
                 reim4_save_1blk_to_reim_portable::<false>(m, blk, &mut want, &src);
             }
-            assert_eq!(got, want, "overwrite={overwrite}");
+            assert!(got == want, "overwrite={overwrite}");
         }
     }
 
@@ -377,7 +377,7 @@ mod tests {
                 reim4_save_2blks_neon::<false>(m, blk, &mut got, &src);
                 reim4_save_2blk_to_reim_portable::<false>(m, blk, &mut want, &src);
             }
-            assert_eq!(got, want, "overwrite={overwrite}");
+            assert!(got == want, "overwrite={overwrite}");
         }
     }
 

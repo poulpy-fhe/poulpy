@@ -28,10 +28,7 @@ fn check_embedding<F: DFTFamily>(min_log_n: usize, matches: impl Fn(F::Dft, F::D
                 let mut expected = vec![F::Dft::default(); big];
                 F::forward(&big_table, &mut expected, &coefficients);
                 for (&actual, &expected) in actual.iter().zip(&expected) {
-                    assert!(
-                        matches(actual, expected),
-                        "embedding {n} -> {big} at coefficient {position}: {actual:?} != {expected:?}"
-                    );
+                    assert!(matches(actual, expected), "embedding {n} -> {big} at coefficient {position}");
                 }
             }
         }
@@ -62,5 +59,5 @@ fn ntt_embedding_preserves_coefficients_wider_than_i64() {
     Ntt4x30::inverse(&Ntt4x30::table(64), &mut actual, &embedded);
     let mut expected = vec![0; 64];
     expected[48] = 1i128 << 80;
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 }

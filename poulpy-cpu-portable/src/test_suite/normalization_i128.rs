@@ -57,9 +57,8 @@ pub fn test_i128_normalize_fused<BE: I128NormalizeOps>() {
                 &mut want_carry,
             );
             BE::znx_extract_digit_addmul_normalize_i128::<false>(base2k, scale, res_base2k, &mut res, &mut input, &mut carry);
-            assert_eq!(
-                (&res, &input, &carry),
-                (&want_res, &want_input, &want_carry),
+            assert!(
+                (&res, &input, &carry) == (&want_res, &want_input, &want_carry),
                 "take={base2k} res_base2k={res_base2k}"
             );
             input.clone_from(&original_input);
@@ -77,12 +76,12 @@ pub fn test_i128_normalize_fused<BE: I128NormalizeOps>() {
                 &mut want_carry,
             );
             BE::znx_extract_digit_addmul_normalize_i128::<true>(base2k, scale, res_base2k, &mut res, &mut input, &mut carry);
-            assert_eq!((&res, &input, &carry), (&want_res, &want_input, &want_carry));
+            assert!((&res, &input, &carry) == (&want_res, &want_input, &want_carry));
             input.clone_from(&original_input);
             want_input.clone_from(&original_input);
             crate::kernels::znx::znx_extract_digit_mul_i128_portable(base2k, scale, &mut want_res, &mut want_input);
             BE::znx_extract_digit_mul_i128(base2k, scale, &mut res, &mut input);
-            assert_eq!((&res, &input), (&want_res, &want_input));
+            assert!((&res, &input) == (&want_res, &want_input));
         }
     }
 }
@@ -124,15 +123,14 @@ fn test_boundary_kernels<B: I128NormalizeOps>() {
         let (mut got, mut want) = (carry.clone(), carry.clone());
         nfc_normalize_floor_portable::<INPUT, MODE>(k, lsh, &a[1..], &mut want[1..n + 1]);
         B::nfc_normalize_floor::<INPUT, MODE>(k, lsh, &a[1..], &mut got[1..n + 1]);
-        assert_eq!(got, want, "wide floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
+        assert!(got == want, "wide floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
         let output: Vec<_> = a.iter().map(|&v| v as i64).collect();
         let (mut got_c, mut want_c) = (carry.clone(), carry.clone());
         let (mut got_r, mut want_r) = (output.clone(), output.clone());
         nfc_normalize_round_portable::<INPUT, MODE>(k, lsh, padding, &mut want_r[1..n + 1], &a[1..], &mut want_c[1..]);
         B::nfc_normalize_round::<INPUT, MODE>(k, lsh, padding, &mut got_r[1..n + 1], &a[1..], &mut got_c[1..]);
-        assert_eq!(
-            (got_r, got_c),
-            (want_r, want_c),
+        assert!(
+            (got_r, got_c) == (want_r, want_c),
             "wide round k={k} lsh={lsh} padding={padding} n={n} input={INPUT} pad={MODE}"
         );
         if INPUT && MODE {
@@ -141,12 +139,12 @@ fn test_boundary_kernels<B: I128NormalizeOps>() {
                 *out += v as i128;
             }
             B::nfc_add_small_carry(&mut got[1..n + 1], &output[1..]);
-            assert_eq!(got, want);
+            assert!(got == want);
             let (mut got_r, mut want_r) = (output.clone(), output);
             let (mut got_a, mut want_a) = (a.clone(), a);
             znx_extract_digit_addmul_i128_portable(k, 63 - k, &mut want_r[1..n + 1], &mut want_a[1..]);
             B::znx_extract_digit_addmul_i128(k, 63 - k, &mut got_r[1..n + 1], &mut got_a[1..]);
-            assert_eq!((got_r, got_a), (want_r, want_a), "wide tail k={k} n={n}");
+            assert!((got_r, got_a) == (want_r, want_a), "wide tail k={k} n={n}");
         }
     }
     for k in 1..=63 {

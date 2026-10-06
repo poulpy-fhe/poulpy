@@ -2,7 +2,7 @@
 use std::{cell::Cell, collections::HashMap};
 
 use super::{
-    helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{HostCiphertext, assert_untagged, fixture_ciphertext, host_ciphertext, with_scratch},
     keys::{key_layout, prepared_automorphism_key, prepared_gglwe},
 };
 use crate::{
@@ -18,9 +18,9 @@ use poulpy_core::{
         GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxWord};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxView, ZnxViewMut, ZnxWord};
 
-type Outcome = [Vec<Snapshot>; 2];
+type Outcome = [Vec<HostCiphertext>; 2];
 type SwitchKeys<B> = RingSwitchKeys<GGLWEPrepared<<B as Backend>::OwnedBuf, B>>;
 type AutomorphismKeys<B> = HashMap<i64, GLWEAutomorphismKeyPrepared<<B as Backend>::OwnedBuf, B>>;
 
@@ -80,7 +80,7 @@ where
         B::ckks_fold_impl(module, &mut folded, ins, ring_switch.map(|keys| &keys.inbound), scratch)
     })
     .expect("fold");
-    let folded_snapshot = folded.iter().map(snapshot::<B, _>).collect();
+    let folded_host = folded.iter().map(host_ciphertext::<B, _>).collect();
     let mut refreshed: Vec<_> = folded
         .iter()
         .enumerate()
@@ -118,9 +118,9 @@ where
     })
     .expect("unfold");
     [
-        folded_snapshot,
+        folded_host,
         outs.into_iter()
-            .map(|ct| snapshot::<B, _>(&relabel::<_, _, R, Standard>(ct)))
+            .map(|ct| host_ciphertext::<B, _>(&relabel::<_, _, R, Standard>(ct)))
             .collect(),
     ]
 }
@@ -356,18 +356,17 @@ where
             let paired = i > 0;
             let mut expected = transparent(module, &layout(degree, 19, 80, 12, ins[i].slots()), i as i64 + 1);
             expected.set_k((60 - usize::from(paired)).into());
-            let mut expected = snapshot::<B, _>(&expected);
+            let mut expected = host_ciphertext::<B, _>(&expected);
             if paired {
-                expected.digits.iter_mut().for_each(|digit| *digit *= 2);
+                expected.0.data_mut().raw_mut().iter_mut().for_each(|digit| *digit *= 2);
             }
-            let actual = snapshot::<B, _>(out);
-            assert_eq!(
-                actual.layout, expected.layout,
-                "unfold metadata at degree {degree}, input {i}"
+            let actual = host_ciphertext::<B, _>(out);
+            assert!(
+                actual.0 == expected.0 && actual.1 == expected.1,
+                "unfold values or metadata at degree {degree}, input {i}"
             );
-            assert_eq!(actual.digits, expected.digits, "unfold values at degree {degree}, input {i}");
             if !paired {
-                assert!(actual.canonical, "singleton unfold must preserve canonical digits");
+                assert!(actual.2, "singleton unfold must preserve canonical digits");
             }
         }
     }
@@ -414,8 +413,8 @@ where
         let mut folded: Vec<_> = (0..B::ckks_fold_count_impl(module, &outs, n.into()))
             .map(|_| fixture_ciphertext(module, &layout(n, 15, 60, 12, SlotsKind::Complex), 219))
             .collect();
-        let before_out: Vec<_> = outs.iter().map(snapshot::<B, _>).collect();
-        let before_folded: Vec<_> = folded.iter().map(snapshot::<B, _>).collect();
+        let before_out: Vec<_> = outs.iter().map(host_ciphertext::<B, _>).collect();
+        let before_folded: Vec<_> = folded.iter().map(host_ciphertext::<B, _>).collect();
         let keys_layout = CKKSFoldKeysLayout {
             ring_switch: Some(RingSwitchKeys {
                 inbound: outbound.gglwe_layout(),
@@ -428,14 +427,12 @@ where
             B::ckks_unfold_impl(module, &mut outs, &mut folded, Some(&outbound), keys, scratch)
         });
         assert!(result.is_err(), "{name}: invalid unfold should fail");
-        assert_eq!(
-            before_out,
-            outs.iter().map(snapshot::<B, _>).collect::<Vec<_>>(),
+        assert!(
+            before_out == outs.iter().map(host_ciphertext::<B, _>).collect::<Vec<_>>(),
             "{name}: failed unfold changed outputs"
         );
-        assert_eq!(
-            before_folded,
-            folded.iter().map(snapshot::<B, _>).collect::<Vec<_>>(),
+        assert!(
+            before_folded == folded.iter().map(host_ciphertext::<B, _>).collect::<Vec<_>>(),
             "{name}: failed unfold changed folded ciphertexts"
         );
     }
@@ -470,22 +467,19 @@ where
         .collect();
         let denormalized: Vec<_> = canonical.iter().map(|ct| denormalize(module, ct)).collect();
         let (want, have) = if degree == n {
-            (fold_snapshots(module, &canonical), fold_snapshots(module, &denormalized))
+            (fold_outputs(module, &canonical), fold_outputs(module, &denormalized))
         } else {
             let ci = |cts: Vec<CKKSCiphertextOwned<B>>| -> Vec<CKKSRingCiphertext<B, ConjugateInvariant>> {
                 cts.into_iter().skip(1).map(relabel).collect()
             };
-            (
-                fold_snapshots(module, &ci(canonical)),
-                fold_snapshots(module, &ci(denormalized)),
-            )
+            (fold_outputs(module, &ci(canonical)), fold_outputs(module, &ci(denormalized)))
         };
-        assert_eq!(have, want, "non-canonical inputs of degree {degree} fold differently");
+        assert!(have == want, "non-canonical inputs of degree {degree} fold differently");
     }
 }
 
 /// Folds `ins` into ciphertexts of the module degree, under the bootstrap secret.
-fn fold_snapshots<B, R>(module: &Module<B>, ins: &[CKKSRingCiphertext<B, R>]) -> Vec<Snapshot>
+fn fold_outputs<B, R>(module: &Module<B>, ins: &[CKKSRingCiphertext<B, R>]) -> Vec<HostCiphertext>
 where
     B: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
     R: Ring,
@@ -505,7 +499,7 @@ where
         B::ckks_fold_impl(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
     })
     .unwrap();
-    folded.iter().map(snapshot::<B, _>).collect()
+    folded.iter().map(host_ciphertext::<B, _>).collect()
 }
 
 /// Unfolding conjugate-invariant outputs at a larger scale than the refreshed
@@ -561,7 +555,7 @@ where
         },
         meta: ct.meta(),
     });
-    let mut digits = snapshot::<B, _>(ct).digits;
+    let mut digits = host_ciphertext::<B, _>(ct).0.data().raw().to_vec();
     digits.resize(2 * n * (size + 1), 0);
     for j in (1..=size).rev() {
         for i in 0..2 * n {
@@ -598,5 +592,5 @@ where
     check_ci_unfold_width(tested);
     let want = run_fold(params, reference);
     assert_untagged("fold", want.iter().flatten().flatten());
-    assert_eq!(want, run_fold(params, tested), "fold differs");
+    assert!(want == run_fold(params, tested), "fold differs");
 }

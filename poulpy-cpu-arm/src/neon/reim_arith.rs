@@ -614,7 +614,7 @@ mod tests {
             let mut want = vec![0f64; n];
             reim_add_neon(&mut got, &a, &b);
             reim_add_portable(&mut want, &a, &b);
-            assert_eq!(got, want, "reim_add_neon n={n}");
+            assert!(got == want, "reim_add_neon n={n}");
         }
     }
 
@@ -628,7 +628,7 @@ mod tests {
             let mut want = vec![0f64; n];
             reim_sub_neon(&mut got, &a, &b);
             reim_sub_portable(&mut want, &a, &b);
-            assert_eq!(got, want, "reim_sub_neon n={n}");
+            assert!(got == want, "reim_sub_neon n={n}");
         }
     }
 
@@ -641,7 +641,7 @@ mod tests {
             let mut want = vec![0f64; n];
             reim_negate_neon(&mut got, &a);
             reim_negate_portable(&mut want, &a);
-            assert_eq!(got, want, "reim_negate_neon n={n}");
+            assert!(got == want, "reim_negate_neon n={n}");
         }
     }
 
@@ -682,7 +682,7 @@ mod tests {
             let mut want = vec![0f64; n];
             reim_from_znx_i64_bnd50_neon(&mut got, &a);
             reim_from_znx_i64_portable(&mut want, &a);
-            assert_eq!(got, want, "reim_from_znx_i64_bnd50_neon n={n}");
+            assert!(got == want, "reim_from_znx_i64_bnd50_neon n={n}");
         }
     }
 

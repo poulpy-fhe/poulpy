@@ -8,7 +8,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-fn exercise<B>(params: CKKSTestParams, module: &Module<B>) -> (Vec<Snapshot>, Vec<[u8; 32]>)
+fn exercise<B>(params: CKKSTestParams, module: &Module<B>) -> (Vec<HostCiphertext>, Vec<[u8; 32]>)
 where
     B: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     Module<B>: GLWESecretPreparedFactory<B> + GLWEMaskFill<B>,
@@ -28,7 +28,7 @@ where
                 let ct_layout = layout(params, rank, 4 * params.base2k + 3, params.base2k, sparse, slots);
                 let pt_layout = layout(params, 0, params.base2k + 3, params.base2k, sparse, slots);
                 let pt = fixture_plaintext(module, &pt_layout, 67);
-                let before = snapshot::<B, _>(&pt);
+                let before = host_ciphertext::<B, _>(&pt);
 
                 let mut ct = fixture_ciphertext(module, &ct_layout, 99);
                 let mut e = Source::new([71; 32]);
@@ -37,10 +37,10 @@ where
                     B::ckks_encrypt_sk_impl(module, &mut ct, &pt, &prepared, &mut e, &mut a, scratch)
                 })
                 .unwrap();
-                assert_eq!(before, snapshot::<B, _>(&pt), "encryption changed plaintext");
-                results.push(snapshot::<B, _>(&ct));
+                assert!(before == host_ciphertext::<B, _>(&pt), "encryption changed plaintext");
+                results.push(host_ciphertext::<B, _>(&ct));
                 sources.extend([e.new_seed(), a.new_seed()]);
-                let before_ct = snapshot::<B, _>(&ct);
+                let before_ct = host_ciphertext::<B, _>(&ct);
                 for delta in [params.base2k - 2, params.base2k, params.base2k + 2] {
                     let out_layout = layout(params, 0, delta + 1, delta, sparse, slots);
                     let mut out = fixture_plaintext(module, &out_layout, 98);
@@ -49,8 +49,8 @@ where
                     })
                     .unwrap();
                     assert_eq!(out.meta(), out_layout.meta);
-                    results.push(snapshot::<B, _>(&out));
-                    assert_eq!(before_ct, snapshot::<B, _>(&ct), "decryption changed ciphertext");
+                    results.push(host_ciphertext::<B, _>(&out));
+                    assert!(before_ct == host_ciphertext::<B, _>(&ct), "decryption changed ciphertext");
                 }
                 // Preserve a wide allocation while lowering only meaningful
                 // precision: extraction still writes every allocated limb.
@@ -64,19 +64,22 @@ where
                 })
                 .unwrap();
                 assert_eq!(out.meta(), before_meta);
-                results.push(snapshot::<B, _>(&out));
-                assert_eq!(before_ct, snapshot::<B, _>(&ct), "decryption changed ciphertext");
+                results.push(host_ciphertext::<B, _>(&out));
+                assert!(before_ct == host_ciphertext::<B, _>(&ct), "decryption changed ciphertext");
                 let mut bad_layout = pt_layout;
                 bad_layout.glwe_layout.base2k = (params.base2k - 1).into();
                 let mut out = fixture_plaintext(module, &bad_layout, 98);
-                let unchanged = snapshot::<B, _>(&out);
+                let unchanged = host_ciphertext::<B, _>(&out);
                 assert!(
                     with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes_impl(module, &out, &ct), |scratch| {
                         B::ckks_decrypt_impl(module, &mut out, &ct, &prepared, scratch)
                     })
                     .is_err()
                 );
-                assert_eq!(unchanged, snapshot::<B, _>(&out), "failed decryption changed plaintext");
+                assert!(
+                    unchanged == host_ciphertext::<B, _>(&out),
+                    "failed decryption changed plaintext"
+                );
             }
         }
     }
@@ -93,7 +96,7 @@ where
     Module<BR>: GLWESecretPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWESecretPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(exercise(params, r), exercise(params, t));
+    assert!(exercise(params, r) == exercise(params, t), "encryption result differs");
 }
 
 /// Registers encryption parity for caller-selected backends, exposing the tested

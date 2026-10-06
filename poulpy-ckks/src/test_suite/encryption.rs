@@ -5,7 +5,7 @@ use super::helpers::{
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
     gen_sk, quantized_slots, test_vector_1,
 };
-use super::parity::helpers::snapshot;
+use super::parity::helpers::host_ciphertext;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
@@ -195,8 +195,8 @@ where
     let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
     let mut scratch = ScratchOwned::<BE>::alloc(0);
-    let ct_before = snapshot::<BE, _>(&ct);
-    let pt_before = snapshot::<BE, _>(&pt);
+    let ct_before = host_ciphertext::<BE, _>(&ct);
+    let pt_before = host_ciphertext::<BE, _>(&pt);
     let mut xe = Source::new([1; 32]);
     let mut xa = Source::new([2; 32]);
 
@@ -209,13 +209,13 @@ where
         };
         let err = call_module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.arena()).unwrap_err();
         assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
-        assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+        assert!(pt_before == host_ciphertext::<BE, _>(&pt), "encryption result differs");
 
         let err = call_module
             .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
             .unwrap_err();
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
-        assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+        assert!(ct_before == host_ciphertext::<BE, _>(&ct), "encryption result differs");
     }
 
     // A plaintext scale above the ciphertext precision fails before encryption.
@@ -233,7 +233,7 @@ where
             required_bits: 9,
         },
     );
-    assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+    assert!(ct_before == host_ciphertext::<BE, _>(&ct), "encryption result differs");
     assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
     assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }

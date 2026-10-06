@@ -823,7 +823,7 @@ mod tests {
         unsafe { vec_mat1col_product_bbc_avx512(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbc: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_bbc: AVX-512F vs ref mismatch");
     }
 
     /// AVX-512F `vec_mat1col_product_x2_bbc` matches reference (single column, two simultaneous outputs).
@@ -856,7 +856,7 @@ mod tests {
         unsafe { vec_mat1col_product_x2_bbc_avx512::<false>(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_x2_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_x2_bbc: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_x2_bbc: AVX-512F vs ref mismatch");
     }
 
     /// AVX-512F `vec_mat2cols_product_x2_bbc` matches reference (two columns, two simultaneous outputs).
@@ -898,7 +898,7 @@ mod tests {
         unsafe { vec_mat2cols_product_x2_bbc_avx512(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat2cols_product_x2_bbc_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat2cols_product_x2_bbc: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat2cols_product_x2_bbc: AVX-512F vs ref mismatch");
     }
 
     #[test]
@@ -976,8 +976,8 @@ mod tests {
             );
         }
 
-        assert_eq!(
-            res_avx, res_ref,
+        assert!(
+            res_avx == res_ref,
             "vec_mat1col_product_blkpair_bbc_pm: AVX-512F vs ref mismatch"
         );
 
@@ -986,7 +986,13 @@ mod tests {
         unsafe {
             vec_mat1col_product_blkpair_bbc_pm_x2_avx512(&meta, ell, &mut res_pair0, &mut res_pair1, &x_pm, &x_pm, &y_pm, 4 * ell)
         };
-        assert_eq!(res_pair0, res_ref);
-        assert_eq!(res_pair1, res_ref);
+        assert!(
+            res_pair0 == res_ref,
+            "vec_mat1col_product_blkpair_bbc_pm_avx512_vs_ref mismatch"
+        );
+        assert!(
+            res_pair1 == res_ref,
+            "vec_mat1col_product_blkpair_bbc_pm_avx512_vs_ref mismatch"
+        );
     }
 }

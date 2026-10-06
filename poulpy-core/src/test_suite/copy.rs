@@ -72,7 +72,7 @@ where
                     }
                 }
             }
-            let original = src.data.raw().to_vec();
+            let original = src.clone();
             for dst_base in [base - 1, base, base + 1] {
                 for dst_k in [base - 3, src_k - 3, src_k, src_k + 3] {
                     // Dirty spare limbs must be cleared, including when only
@@ -99,7 +99,7 @@ where
                         dst.noise() == expected_noise,
                         "copy noise: rank {src_rank} -> {dst_rank}, tagged={tagged}"
                     );
-                    assert_eq!(src.data.raw(), original, "copy changed the source");
+                    assert!(src == original, "copy changed the source");
                     assert_canonical(&dst.data, dst_base, dst_k);
                     for col in 0..=dst_rank {
                         for j in 0..module.n() {
@@ -137,7 +137,7 @@ where
     assert_eq!(module.glwe_copy_tmp_bytes(&dst, &src), 0);
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
-    assert_eq!(dst.data.raw(), src.data.raw());
+    assert!(dst == src, "values differ");
 
     // Every evaluation clears freshness, even matching inputs or an identity.
     src.noise = provenance(1);
@@ -187,7 +187,7 @@ where
             module.glwe_lsh_sub(&mut dst, &other, 1, &mut scratch.borrow());
             assert_eq!(dst.noise(), expected, "shift sub: rank={rank}");
             if rank == 0 {
-                assert_eq!(dst.data.at(1, 0), mask, "plaintext shifts changed the mask");
+                assert!(dst.data.at(1, 0) == mask, "plaintext shifts changed the mask");
             }
         }
     }

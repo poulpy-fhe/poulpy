@@ -1240,7 +1240,7 @@ mod tests {
         unsafe { b_from_znx64_avx512(n, &mut res_avx, &coeffs) };
         b_from_znx64_portable::<Primes30>(n, &mut res_ref, &coeffs);
 
-        assert_eq!(res_avx, res_ref, "b_from_znx64: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "b_from_znx64: AVX-512F vs ref mismatch");
     }
 
     /// AVX-512F `c_from_b` (Barrett reduction to Montgomery u32) matches reference.
@@ -1258,7 +1258,7 @@ mod tests {
         unsafe { c_from_b_avx512(n, &mut res_avx, &b) };
         c_from_b_portable::<Primes30>(n, &mut res_ref, &b);
 
-        assert_eq!(res_avx, res_ref, "c_from_b: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "c_from_b: AVX-512F vs ref mismatch");
     }
 
     /// AVX-512F `vec_mat1col_product_bbb` matches reference.
@@ -1283,7 +1283,7 @@ mod tests {
         unsafe { vec_mat1col_product_bbb_avx512(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_bbb_portable::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
-        assert_eq!(res_avx, res_ref, "vec_mat1col_product_bbb: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "vec_mat1col_product_bbb: AVX-512F vs ref mismatch");
     }
 
     /// Fused `reduce_b_and_apply_crt` matches two-step `reduce_b_to_canonical` + barrett.
@@ -1313,7 +1313,7 @@ mod tests {
                 let t2 = reduce_b_and_apply_crt(xv, q, mu, pow32_crt, pow16_crt, crt);
                 _mm256_storeu_si256(fused.as_mut_ptr() as *mut __m256i, t2);
             }
-            assert_eq!(fused, two_step, "reduce_b_and_apply_crt mismatch at j={j}");
+            assert!(fused == two_step, "reduce_b_and_apply_crt mismatch at j={j}");
         }
     }
 
@@ -1332,7 +1332,7 @@ mod tests {
         unsafe { b_to_znx128_avx512(n, &mut res_avx, &b) };
         b_to_znx128_portable::<Primes30>(n, &mut res_ref, &b);
 
-        assert_eq!(res_avx, res_ref, "b_to_znx128: AVX-512F vs ref mismatch");
+        assert!(res_avx == res_ref, "b_to_znx128: AVX-512F vs ref mismatch");
     }
 
     // ── Planar fold helper tests ────────────────────────────────────────────
@@ -1406,7 +1406,7 @@ mod tests {
                 let (blo, bhi) = load_lohi(&b);
                 cmp_ge_u128(ahi, alo, bhi, blo)
             };
-            assert_eq!(got, expected, "cmp_ge_u128 mismatch\na={a:?}\nb={b:?}");
+            assert_eq!(got, expected, "cmp_ge_u128 mismatch");
         }
     }
 
@@ -1431,7 +1431,7 @@ mod tests {
                 let (rlo, rhi) = add128_masked(alo, ahi, addlo, addhi, mask);
                 store_lohi(rlo, rhi)
             };
-            assert_eq!(got, expected, "add128_masked mismatch mask={mask:08b}\na={a:?}\nadd={add:?}");
+            assert!(got == expected, "add128_masked mismatch mask={mask:08b}");
         }
     }
 
@@ -1456,7 +1456,7 @@ mod tests {
                 let (rlo, rhi) = sub128_masked(alo, ahi, sublo, subhi, mask);
                 store_lohi(rlo, rhi)
             };
-            assert_eq!(got, expected, "sub128_masked mismatch mask={mask:08b}\na={a:?}\nsub={sub:?}");
+            assert!(got == expected, "sub128_masked mismatch mask={mask:08b}");
         }
     }
 
@@ -1508,7 +1508,7 @@ mod tests {
             unsafe { b_to_znx128_avx512_planar(n, &mut res_avx, &b) };
             b_to_znx128_portable::<Primes30>(n, &mut res_ref, &b);
 
-            assert_eq!(res_avx, res_ref, "b_to_znx128_planar vs ref mismatch at n={n}");
+            assert!(res_avx == res_ref, "b_to_znx128_planar vs ref mismatch at n={n}");
         }
     }
 

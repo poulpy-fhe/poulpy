@@ -98,7 +98,7 @@ mod tests {
             znx_automorphism_portable(p, &mut r0, &a);
             znx_automorphism_avx512(p, &mut r1, &a);
         }
-        assert_eq!(r0, r1);
+        assert!(r0 == r1, "test_znx_automorphism_internal mismatch");
     }
 
     #[test]

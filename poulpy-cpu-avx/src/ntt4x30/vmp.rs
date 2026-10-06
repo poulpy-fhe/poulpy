@@ -748,7 +748,7 @@ mod tests {
                     extract_1blk_from_contiguous_q120b_portable(n, row_max, blk, &mut dst_ref, &src);
                     unsafe { extract_1blk_from_contiguous_q120b_avx2(n, row_max, blk, &mut dst_avx, &src) };
 
-                    assert_eq!(dst_avx, dst_ref, "n={n}, row_max={row_max}, blk={blk}");
+                    assert!(dst_avx == dst_ref, "n={n}, row_max={row_max}, blk={blk}");
                 }
             }
         }

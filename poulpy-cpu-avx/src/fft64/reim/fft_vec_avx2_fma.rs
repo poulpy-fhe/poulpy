@@ -373,7 +373,7 @@ mod tests {
         let mut res_ref = vec![0f64; n];
         unsafe { reim_add_avx2_fma(&mut res_avx, &a, &b) };
         reim_add_portable(&mut res_ref, &a, &b);
-        assert_eq!(res_avx, res_ref, "reim_add: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "reim_add: AVX2 vs ref mismatch");
     }
 
     #[test]
@@ -385,7 +385,7 @@ mod tests {
         let mut res_ref = vec![0f64; n];
         unsafe { reim_sub_avx2_fma(&mut res_avx, &a, &b) };
         reim_sub_portable(&mut res_ref, &a, &b);
-        assert_eq!(res_avx, res_ref, "reim_sub: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "reim_sub: AVX2 vs ref mismatch");
     }
 
     #[test]
@@ -396,7 +396,7 @@ mod tests {
         let mut res_ref = vec![0f64; n];
         unsafe { reim_negate_avx2_fma(&mut res_avx, &a) };
         reim_negate_portable(&mut res_ref, &a);
-        assert_eq!(res_avx, res_ref, "reim_negate: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "reim_negate: AVX2 vs ref mismatch");
     }
 
     #[test]
@@ -449,6 +449,6 @@ mod tests {
         let mut res_ref = init.clone();
         unsafe { reim_sub_negate_assign_avx2_fma(&mut res_avx, &a) };
         reim_sub_negate_assign_portable(&mut res_ref, &a);
-        assert_eq!(res_avx, res_ref, "reim_sub_negate_assign: AVX2 vs ref mismatch");
+        assert!(res_avx == res_ref, "reim_sub_negate_assign: AVX2 vs ref mismatch");
     }
 }

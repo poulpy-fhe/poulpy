@@ -1206,8 +1206,8 @@ mod relinearize_tests {
                                 &prepared,
                                 &mut reference_scratch.borrow(),
                             );
-                            assert_eq!(
-                                got, expected,
+                            assert!(
+                                got == expected,
                                 "n={n}, rank={rank}, base2k={base2k}, dsize={dsize}, res_base2k={res_base2k}"
                             );
                         }
@@ -1307,16 +1307,16 @@ mod prepared_tensor_tests {
                             }))
                             .is_err()
                         );
-                        assert_eq!(got, before, "short scratch mutated the output");
+                        assert!(got == before, "short scratch mutated the output");
                     }
                     let before_a = a.clone();
                     let before_right = right.data().to_vec();
                     module.glwe_tensor_apply_prepared_right(offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
-                    assert_eq!(a, before_a);
-                    assert_eq!(&right.data()[..], &before_right);
+                    assert!(a == before_a, "operand modified");
+                    assert!(right.data()[..] == before_right[..], "prepared operand modified");
                     glwe_tensor_apply_prepared_right(&module, offset, &mut expected, &a, &right, b_size, &mut scratch.borrow());
-                    assert_eq!(
-                        got, expected,
+                    assert!(
+                        got == expected,
                         "n={n}, rank={rank}, base={base}, lazy={lazy}, k={k}, offset={offset}"
                     );
                     let bytes = module.glwe_tensor_apply_tmp_bytes(&got, &a, &b);
@@ -1324,7 +1324,7 @@ mod prepared_tensor_tests {
                     // Fresh garbage, so every limb the ordinary path fails to write differs from `expected`.
                     module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);
                     module.glwe_tensor_apply(offset, &mut got, &a, &b, &mut scratch.borrow());
-                    assert_eq!(got, expected, "ordinary/prepared n={n} k={k} offset={offset}");
+                    assert!(got == expected, "ordinary/prepared n={n} k={k} offset={offset}");
                 }
             }
         }

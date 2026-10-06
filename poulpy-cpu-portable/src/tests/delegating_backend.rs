@@ -43,7 +43,6 @@ const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 fn downstream_baby_step_preparation_preserves_cache_shape() {
     use poulpy_core::layouts::LinearTransformationBabySteps;
     use poulpy_hal::api::Convolution;
-    use poulpy_hal::layouts::DataView;
     let module = Module::<FFT64Portable>::new(256);
     let input = sample_glwe();
     let mut normalized = module.glwe_alloc_from_infos(&input);
@@ -64,9 +63,9 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
             &mut scratch.borrow(),
         );
     }
-    assert_eq!(cache.baby_steps().collect::<Vec<_>>(), vec![0, 1]);
+    assert!(cache.baby_steps().collect::<Vec<_>>() == vec![0, 1]);
     for rot in cache.baby_steps() {
-        assert_eq!(cache.baby_step(rot).data(), expected.baby_step(0).data());
+        assert!(cache.baby_step(rot) == expected.baby_step(0));
         assert_eq!(cache.baby_step(rot).cols(), 3);
         assert_eq!(cache.baby_step(rot).size(), normalized.size());
     }
@@ -324,7 +323,7 @@ fn delegating_backend_manual_family_matches_fft64_portable() {
     module_delegating.glwe_mul_xp_minus_one(-7, &mut delegating_out, &input);
     module_ref.glwe_mul_xp_minus_one(-7, &mut ref_out, &input);
 
-    assert_eq!(delegating_out, ref_out);
+    assert!(delegating_out == ref_out);
 }
 
 #[test]
@@ -341,7 +340,7 @@ fn public_core_dispatch_reaches_override_and_forwards_assign() {
     assert_eq!(ROTATE_OVERRIDE_CALLS.get(), before + 1);
     module_ref.glwe_rotate(11, &mut ref_out, &input);
 
-    assert_eq!(delegating_out, ref_out);
+    assert!(delegating_out == ref_out);
 }
 
 #[test]
@@ -354,7 +353,7 @@ fn public_core_dispatch_forwards_unchanged_method_with_own_scratch() {
     let mut expected_scratch = ScratchOwned::<FFT64Portable>::alloc(module_ref.glwe_rotate_tmp_bytes());
     module_delegating.glwe_rotate_assign(-11, &mut actual, &mut actual_scratch.borrow());
     module_ref.glwe_rotate_assign(-11, &mut expected, &mut expected_scratch.borrow());
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 }
 
 #[test]
@@ -369,10 +368,10 @@ fn public_core_dispatch_accepts_direct_impl_with_callable_reference() {
     module.glwe_add_into(&mut actual, &a, &b);
     reference.glwe_add_into(&mut expected, &a, &b);
     assert_eq!(ADD_IMPL_CALLS.get(), before + 1);
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
     module.glwe_add_assign(&mut actual, &a);
     reference.glwe_add_assign(&mut expected, &a);
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 }
 
 #[test]
@@ -386,7 +385,7 @@ fn direct_reference_rotation_bypasses_backend_override() {
     module.glwe_rotate_reference(19, &mut actual, &input);
     reference.glwe_rotate(19, &mut expected, &input);
     assert_eq!(ROTATE_OVERRIDE_CALLS.get(), before);
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 }
 
 #[test]
@@ -417,7 +416,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
     module.ggsw_rotate(-13, &mut actual, &input);
     reference.ggsw_rotate(-13, &mut expected, &input);
     assert_eq!(ROTATE_OVERRIDE_CALLS.get(), before + rows);
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 
     let actual_bytes = module.ggsw_rotate_tmp_bytes();
     let expected_bytes = reference.ggsw_rotate_tmp_bytes();
@@ -436,7 +435,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
     );
     assert_eq!(ROTATE_ASSIGN_CALLS.get(), before + rows);
     assert_eq!(GGSW_ASSIGN_CALLS.get(), before_ggsw + 1);
-    assert_eq!(actual, expected);
+    assert!(actual == expected);
 }
 
 #[test]
@@ -500,9 +499,9 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         &mut poisoned_scratch::<FFT64Portable>(expected_bytes).borrow(),
     );
     assert_eq!(TRACE_ASSIGN_CALLS.get(), before + 1);
-    assert_eq!(actual, expected);
-    assert_eq!(input, saved_input);
-    assert_eq!(key, saved_key);
+    assert!(actual == expected);
+    assert!(input == saved_input);
+    assert!(key == saved_key);
 }
 
 #[test]

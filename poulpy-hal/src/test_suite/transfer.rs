@@ -20,14 +20,14 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
         assert!(padded >= len, "from_host_bytes: len {len}");
         let mut all = vec![0xffu8; padded];
         BE::copy_to_host(&owned, &mut all);
-        assert_eq!(&all[..len], &src[..], "from_host_bytes round trip, len {len}");
+        assert!(all[..len] == src[..], "from_host_bytes round trip, len {len}");
         assert!(
             all[len..].iter().all(|&b| b == 0),
             "from_host_bytes padding not zero, len {len}"
         );
         let mut back = vec![0u8; len];
         BE::copy_to_host(&owned, &mut back);
-        assert_eq!(back, src, "copy_to_host at the unpadded length, len {len}");
+        assert!(back == src, "copy_to_host at the unpadded length, len {len}");
 
         // Owned buffer filled through copy_from_host, poisoned first so the
         // zero tail is the transfer's own and not the allocation's.
@@ -37,7 +37,7 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
         BE::copy_from_host(&mut owned2, &src);
         let mut all2 = vec![0xffu8; BE::len_bytes(&owned2)];
         BE::copy_to_host(&owned2, &mut all2);
-        assert_eq!(&all2[..len], &src[..], "copy_from_host, len {len}");
+        assert!(all2[..len] == src[..], "copy_from_host, len {len}");
         assert!(
             all2[len..].iter().all(|&b| b == 0),
             "copy_from_host padding not zero, len {len}"
@@ -49,7 +49,7 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
         BE::copy_host_to_view(&mut BE::view_mut(&mut owned3), &src);
         let mut back3 = vec![0u8; len];
         BE::copy_view_to_host(&BE::view(&owned3), &mut back3);
-        assert_eq!(back3, src, "view copies, len {len}");
+        assert!(back3 == src, "view copies, len {len}");
         let mut all3 = vec![0xffu8; BE::len_bytes(&owned3)];
         BE::copy_view_to_host(&BE::view(&owned3), &mut all3);
         assert!(

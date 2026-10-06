@@ -847,10 +847,19 @@ mod tests {
     fn uniform_schedule_is_balanced() {
         // 5 units at g = 4: ⌈5/4⌉ = 2 groups of sizes {3, 2} — never [4, 1].
         let d = PaCoDFTPlan::uniform(5, 4, 2, 30, 16).unwrap();
-        assert_eq!(d.factorization_depth(), [3, 2]);
-        assert_eq!(PaCoDFTPlan::uniform(4, 2, 2, 30, 16).unwrap().factorization_depth(), [2, 2],);
-        assert_eq!(PaCoDFTPlan::uniform(3, 100, 2, 30, 16).unwrap().factorization_depth(), [3],);
-        assert_eq!(PaCoDFTPlan::uniform(1, 1, 2, 30, 16).unwrap().factorization_depth(), [1],);
+        assert!(d.factorization_depth() == [3, 2], "plan result differs");
+        assert!(
+            PaCoDFTPlan::uniform(4, 2, 2, 30, 16).unwrap().factorization_depth() == [2, 2],
+            "plan result differs"
+        );
+        assert!(
+            PaCoDFTPlan::uniform(3, 100, 2, 30, 16).unwrap().factorization_depth() == [3],
+            "plan result differs"
+        );
+        assert!(
+            PaCoDFTPlan::uniform(1, 1, 2, 30, 16).unwrap().factorization_depth() == [1],
+            "plan result differs"
+        );
     }
 
     #[test]

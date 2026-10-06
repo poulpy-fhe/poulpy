@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchOwned, ToOwnedDeep, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -27,8 +27,8 @@ use crate::{
     error::{CoreError, Result},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, GetAutomorphismKey,
+        GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
@@ -87,10 +87,9 @@ fn twin_layout(parent: &GGLWELayout, dsize: Dsize) -> (GGLWELayout, usize) {
     (twin, dsize.as_usize() / parent.dsize().as_usize())
 }
 
-/// Byte equality of two GLWE ciphertexts.
+/// Native equality of two GLWE ciphertexts, including their canonical flags.
 fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>, what: &str) {
-    assert_eq!(have.glwe_layout(), want.glwe_layout(), "{what}: metadata");
-    assert_eq!(have.data.raw(), want.data.raw(), "{what}");
+    assert!(have.to_owned_deep() == want.to_owned_deep(), "{what}");
     assert_eq!(have.is_canonical(), want.is_canonical(), "{what}: canonical flag");
 }
 

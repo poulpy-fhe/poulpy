@@ -15,12 +15,13 @@
 //! The [`super::noise`] suite additionally checks scheme noise bounds. Backend
 //! crates register these contract suites for their supported implementations.
 
-/// `assert_eq!` on two evaluation outputs that also requires the reference to
-/// be untagged; equality, which includes the tag, then covers the other.
+/// Quiet equality on two evaluation outputs that also requires the reference
+/// to be untagged; equality, which includes the tag, then covers the other.
 macro_rules! assert_eval_eq {
     ($want:expr, $have:expr, $($msg:tt)+) => {{
-        assert_eq!($want, $have, $($msg)+);
-        assert!(crate::layouts::LWEInfos::noise(&$want).is_none(), "noise tag kept, {}", format_args!($($msg)+));
+        let (want, have) = (&$want, &$have);
+        assert!(want == have, $($msg)+);
+        assert!(crate::layouts::LWEInfos::noise(want).is_none(), "noise tag kept, {}", format_args!($($msg)+));
     }};
 }
 
@@ -28,9 +29,10 @@ macro_rules! assert_eval_eq {
 /// which GLWE equality ignores.
 macro_rules! assert_glwe_eq {
     ($want:expr, $have:expr, $($msg:tt)+) => {{
-        assert_eq!($want, $have, $($msg)+);
-        assert!(crate::layouts::LWEInfos::noise(&$want).is_none(), "noise tag kept, {}", format_args!($($msg)+));
-        assert_eq!($want.is_canonical(), $have.is_canonical(), "canonical flag, {}", format_args!($($msg)+));
+        let (want, have) = (&$want, &$have);
+        assert!(want == have, $($msg)+);
+        assert!(crate::layouts::LWEInfos::noise(want).is_none(), "noise tag kept, {}", format_args!($($msg)+));
+        assert!(want.is_canonical() == have.is_canonical(), "canonical flag, {}", format_args!($($msg)+));
     }};
 }
 

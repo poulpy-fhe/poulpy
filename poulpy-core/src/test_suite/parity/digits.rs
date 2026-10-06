@@ -160,8 +160,8 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
             let matrix = download_mat_znx::<BR>(&matrix);
             let want = product(r, &a, &matrix, params.base2k, dsize);
             let have = product(t, &a, &matrix, params.base2k, dsize);
-            assert_eq!(
-                want, have,
+            assert!(
+                want == have,
                 "digit product dsize={dsize} input={cols_in} output={cols_out} size={size} sparse={sparse}"
             );
         }

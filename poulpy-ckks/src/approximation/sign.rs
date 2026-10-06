@@ -179,7 +179,7 @@ mod tests {
     fn zero_margin_matches_wrapper() {
         let plain = sign_composite_coeffs(0.1_f64, 15.0, &[15], 8, RemezOptions::default()).unwrap();
         let explicit = sign_composite_coeffs_with_margin(0.1_f64, 0.0, 15.0, &[15], 8, RemezOptions::default()).unwrap();
-        assert_eq!(plain, explicit);
+        assert!(plain == explicit, "sign result differs");
     }
 
     #[test]

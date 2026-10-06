@@ -98,7 +98,7 @@ where
                     let mut bc = carry.clone();
                     reference(k, lsh, &mut r, &a, &mut rc);
                     backend(k, lsh, &mut b, &a, &mut bc);
-                    assert_eq!((&r, &rc), (&b, &bc), "step={index}, k={k}, lsh={lsh}, n={n}");
+                    assert!((&r, &rc) == (&b, &bc), "step={index}, k={k}, lsh={lsh}, n={n}");
                     let base = 1i128 << k;
                     for i in 0..n {
                         let total = ((a[i] as i128) << lsh) + if index < 2 { 0 } else { carry[i] as i128 };
@@ -119,7 +119,7 @@ where
                     let mut bc = carry.clone();
                     reference(k, lsh, &mut r, &mut rc);
                     backend(k, lsh, &mut b, &mut bc);
-                    assert_eq!((&r, &rc), (&b, &bc), "assign k={k}, lsh={lsh}, n={n}");
+                    assert!((&r, &rc) == (&b, &bc), "assign k={k}, lsh={lsh}, n={n}");
                 }
                 for first in [true, false] {
                     let mut rc = carry.clone();
@@ -131,7 +131,7 @@ where
                         znx_normalize_middle_step_carry_only_portable(k, lsh, &a, &mut rc);
                         B::znx_normalize_middle_step_carry_only(k, lsh, &a, &mut bc);
                     }
-                    assert_eq!(rc, bc, "carry only k={k}, lsh={lsh}, n={n}");
+                    assert!(rc == bc, "carry only k={k}, lsh={lsh}, n={n}");
                 }
                 let mut r = vec![0; n];
                 let mut b = r.clone();
@@ -139,14 +139,14 @@ where
                 let mut bs = a.clone();
                 znx_extract_digit_addmul_portable(k - lsh, lsh, &mut r, &mut rs);
                 B::znx_extract_digit_addmul(k - lsh, lsh, &mut b, &mut bs);
-                assert_eq!((&r, &rs), (&b, &bs), "extract k={k}, lsh={lsh}, n={n}");
+                assert!((&r, &rs) == (&b, &bs), "extract k={k}, lsh={lsh}, n={n}");
                 r.fill(0);
                 b.fill(1i64 << 62);
                 rs.copy_from_slice(&a);
                 bs.copy_from_slice(&a);
                 znx_extract_digit_addmul_portable(k - lsh, lsh, &mut r, &mut rs);
                 B::znx_extract_digit_mul(k - lsh, lsh, &mut b, &mut bs);
-                assert_eq!((&r, &rs), (&b, &bs), "extract overwrite k={k}, lsh={lsh}, n={n}");
+                assert!((&r, &rs) == (&b, &bs), "extract overwrite k={k}, lsh={lsh}, n={n}");
                 for overwrite in [false, true] {
                     for (i, value) in r.iter_mut().enumerate() {
                         *value = if overwrite || k == 1 {
@@ -170,9 +170,8 @@ where
                     } else {
                         B::znx_extract_digit_addmul_normalize::<false>(k - lsh, lsh, k, &mut b, &mut bs, &mut bc);
                     }
-                    assert_eq!(
-                        (&r, &rs, &rc),
-                        (&b, &bs, &bc),
+                    assert!(
+                        (&r, &rs, &rc) == (&b, &bs, &bc),
                         "fused overwrite={overwrite}, k={k}, lsh={lsh}, n={n}"
                     );
                 }
@@ -182,7 +181,7 @@ where
                 bs.fill(0);
                 znx_normalize_digit_portable(k, &mut r, &mut rs);
                 B::znx_normalize_digit(k, &mut b, &mut bs);
-                assert_eq!((&r, &rs), (&b, &bs), "digit k={k}, lsh={lsh}, n={n}");
+                assert!((&r, &rs) == (&b, &bs), "digit k={k}, lsh={lsh}, n={n}");
             }
         }
     }
@@ -212,7 +211,7 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
         let (mut got, mut want) = (carry.clone(), carry.clone());
         znx_normalize_floor_portable::<INPUT, MODE>(k, lsh, &a[1..], &mut want[1..n + 1]);
         B::znx_normalize_floor::<INPUT, MODE>(k, lsh, &a[1..], &mut got[1..n + 1]);
-        assert_eq!(got, want, "floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
+        assert!(got == want, "floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
         for i in 1..n + 1 {
             let value = ((a[i] as i128) << lsh) + if INPUT { carry[i] as i128 } else { 0 };
             assert_eq!(got[i] as i128, (value + if MODE { 1i128 << (k - 1) } else { 0 }) >> k);
@@ -221,9 +220,8 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
         let (mut got_r, mut want_r) = (a.clone(), a.clone());
         znx_normalize_round_portable::<INPUT, MODE>(k, lsh, padding, &mut want_r[1..n + 1], &a[1..], &mut want_c[1..]);
         B::znx_normalize_round::<INPUT, MODE>(k, lsh, padding, &mut got_r[1..n + 1], &a[1..], &mut got_c[1..]);
-        assert_eq!(
-            (&got_r, &got_c),
-            (&want_r, &want_c),
+        assert!(
+            (&got_r, &got_c) == (&want_r, &want_c),
             "round k={k} lsh={lsh} padding={padding} n={n} input={INPUT} pad={MODE}"
         );
         for i in 1..n + 1 {
@@ -240,9 +238,8 @@ fn test_boundary_kernels<B: I64NormalizeOps>() {
             let (mut got_r, mut want_r) = (a.clone(), a);
             znx_normalize_round_assign_portable::<INPUT>(k, lsh, padding, &mut want_r[1..n + 1], &mut want_c[1..]);
             B::znx_normalize_round_assign::<INPUT>(k, lsh, padding, &mut got_r[1..n + 1], &mut got_c[1..]);
-            assert_eq!(
-                (got_r, got_c),
-                (want_r, want_c),
+            assert!(
+                (got_r, got_c) == (want_r, want_c),
                 "round assign k={k} lsh={lsh} padding={padding} n={n}"
             );
         }

@@ -108,6 +108,14 @@ where
     pub(crate) ks_lwe: GLWEToLWEKey<D, W>,
 }
 
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> PartialEq for BDDKey<D, BRA, W> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cbt == other.cbt && self.ks_glwe == other.ks_glwe && self.ks_lwe == other.ks_lwe
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> Eq for BDDKey<D, BRA, W> {}
+
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKey<D, BRA, W> {
     pub fn alloc_from_infos<M, A: BDDKeyInfos>(module: &M, infos: &A) -> Self
     where

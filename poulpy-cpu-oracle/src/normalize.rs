@@ -93,26 +93,26 @@ mod tests {
     #[test]
     fn rounding_ties_go_toward_positive_infinity() {
         for (input, expected) in [(-3, -1), (-1, 0), (1, 1), (3, 2)] {
-            assert_eq!(normalize_digits(&[input], 5, 4, 4, 0), [expected, 0, 0]);
+            assert!(normalize_digits(&[input], 5, 4, 4, 0) == [expected, 0, 0]);
         }
     }
 
     #[test]
     fn partial_width_and_centered_carry() {
-        assert_eq!(normalize_digits(&[3], 4, 4, 3, 0), [4, 0, 0]);
-        assert_eq!(normalize_digits(&[-3], 4, 4, 3, 0), [-2, 0, 0]);
-        assert_eq!(normalize_digits(&[8, 8], 4, 4, 8, 0), [-7, -8, 0]);
-        assert_eq!(normalize_digits(&[15, 15], 4, 4, 8, 0), [0, -1, 0]);
-        assert_eq!(normalize_digits(&[15, 15], 4, 4, 0, 0), [0, 0, 0]);
+        assert!(normalize_digits(&[3], 4, 4, 3, 0) == [4, 0, 0]);
+        assert!(normalize_digits(&[-3], 4, 4, 3, 0) == [-2, 0, 0]);
+        assert!(normalize_digits(&[8, 8], 4, 4, 8, 0) == [-7, -8, 0]);
+        assert!(normalize_digits(&[15, 15], 4, 4, 8, 0) == [0, -1, 0]);
+        assert!(normalize_digits(&[15, 15], 4, 4, 0, 0) == [0, 0, 0]);
     }
 
     #[test]
     fn wide_inputs_and_extreme_offsets() {
-        assert_eq!(normalize_digits(&[i128::MAX], 64, 64, 64, 0), [-1, 0, 0]);
-        assert_eq!(normalize_digits(&[i128::MIN], 64, 64, 64, 0), [0, 0, 0]);
+        assert!(normalize_digits(&[i128::MAX], 64, 64, 64, 0) == [-1, 0, 0]);
+        assert!(normalize_digits(&[i128::MIN], 64, 64, 64, 0) == [0, 0, 0]);
         for offset in [i64::MIN, i64::MAX] {
             for input in [i128::MIN, -1, 1, i128::MAX] {
-                assert_eq!(normalize_digits(&[input], 64, 4, 8, offset), [0, 0, 0]);
+                assert!(normalize_digits(&[input], 64, 4, 8, offset) == [0, 0, 0]);
             }
         }
     }

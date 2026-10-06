@@ -29,7 +29,7 @@ where
                     reim4_real_vec_mat2cols_2ndcol_product_portable(rows, &mut expected, &a, &b);
                 }
             }
-            assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+            assert!(actual.map(f64::to_bits) == expected.map(f64::to_bits));
         }
     }
     for a_size in [0, 1, 2, 3, 7, 14] {
@@ -43,10 +43,10 @@ where
                 if a_size != 0 && b_size != 0 {
                     reim4_real_convolution_2coeffs_portable(k, &mut expected, &a, a_size, &b, b_size);
                 }
-                assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+                assert!(actual.map(f64::to_bits) == expected.map(f64::to_bits));
                 let mut single = [123.0; 8];
                 BE::reim4_real_convolution_1coeff(k, &mut single, &a, a_size, &b, b_size);
-                assert_eq!(single.map(f64::to_bits), actual.map(f64::to_bits)[..8]);
+                assert!(single.map(f64::to_bits) == actual.map(f64::to_bits)[..8]);
             }
         }
     }
@@ -97,7 +97,7 @@ pub fn test_conjugate_invariant_ntt_basis_change<P: crate::kernels::ntt4x30::pri
                 plans[k].apply(&mut expected[k..], 4);
             }
             apply(&plans, &mut actual);
-            assert_eq!(actual, expected, "n={n}, inverse={inverse}, prime bits={}", P::LOG_Q);
+            assert!(actual == expected, "n={n}, inverse={inverse}, prime bits={}", P::LOG_Q);
         }
     }
     let mut plans = std::array::from_fn(|k| BasisChange::new(8, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, false));
@@ -238,9 +238,9 @@ macro_rules! conjugate_invariant_test_suite {
                             0,
                         );
                         for limb in 0..2 {
-                            assert_eq!(
-                                auto.at(0, limb),
-                                $crate::test_suite::conjugate_invariant::ambient_automorphism(a.at(0, limb), p)
+                            assert!(
+                                auto.at(0, limb)
+                                    == $crate::test_suite::conjugate_invariant::ambient_automorphism(a.at(0, limb), p)
                             );
                         }
                         module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a), 0);

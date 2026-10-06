@@ -606,7 +606,7 @@ mod tests {
             let mut want = vec![0i64; n];
             znx_add_neon(&mut got, &a, &b);
             znx_add_portable(&mut want, &a, &b);
-            assert_eq!(got, want, "znx_add_neon mismatch at n={n}");
+            assert!(got == want, "znx_add_neon mismatch at n={n}");
         }
     }
 
@@ -620,7 +620,7 @@ mod tests {
             let mut want = r0;
             znx_add_assign_neon(&mut got, &a);
             znx_add_assign_portable(&mut want, &a);
-            assert_eq!(got, want, "znx_add_assign_neon mismatch at n={n}");
+            assert!(got == want, "znx_add_assign_neon mismatch at n={n}");
         }
     }
 
@@ -634,7 +634,7 @@ mod tests {
             let mut want = vec![0i64; n];
             znx_sub_neon(&mut got, &a, &b);
             znx_sub_portable(&mut want, &a, &b);
-            assert_eq!(got, want, "znx_sub_neon mismatch at n={n}");
+            assert!(got == want, "znx_sub_neon mismatch at n={n}");
         }
     }
 
@@ -648,7 +648,7 @@ mod tests {
             let mut want = r0;
             znx_sub_assign_neon(&mut got, &a);
             znx_sub_assign_portable(&mut want, &a);
-            assert_eq!(got, want, "znx_sub_assign_neon mismatch at n={n}");
+            assert!(got == want, "znx_sub_assign_neon mismatch at n={n}");
         }
     }
 
@@ -662,7 +662,7 @@ mod tests {
             let mut want = r0;
             znx_sub_negate_assign_neon(&mut got, &a);
             znx_sub_negate_assign_portable(&mut want, &a);
-            assert_eq!(got, want, "znx_sub_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "znx_sub_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -675,7 +675,7 @@ mod tests {
             let mut want = vec![0i64; n];
             znx_negate_neon(&mut got, &a);
             znx_negate_portable(&mut want, &a);
-            assert_eq!(got, want, "znx_negate_neon mismatch at n={n}");
+            assert!(got == want, "znx_negate_neon mismatch at n={n}");
         }
     }
 
@@ -688,7 +688,7 @@ mod tests {
             let mut want = r0;
             znx_negate_assign_neon(&mut got);
             znx_negate_assign_portable(&mut want);
-            assert_eq!(got, want, "znx_negate_assign_neon mismatch at n={n}");
+            assert!(got == want, "znx_negate_assign_neon mismatch at n={n}");
         }
     }
 
@@ -708,15 +708,15 @@ mod tests {
 
         znx_add_neon(&mut got, &a, &b);
         znx_add_portable(&mut want, &a, &b);
-        assert_eq!(got, want);
+        assert!(got == want, "test_znx_boundary_values mismatch");
 
         znx_sub_neon(&mut got, &a, &b);
         znx_sub_portable(&mut want, &a, &b);
-        assert_eq!(got, want);
+        assert!(got == want, "test_znx_boundary_values mismatch");
 
         znx_negate_neon(&mut got, &a);
         znx_negate_portable(&mut want, &a);
-        assert_eq!(got, want);
+        assert!(got == want, "test_znx_boundary_values mismatch");
     }
 
     #[test]
@@ -733,7 +733,7 @@ mod tests {
                     let mut want = vec![0i64; n];
                     znx_automorphism_rotate_neon(p, k, &mut got, &a);
                     znx_automorphism_rotate_portable(p, k, &mut want, &a);
-                    assert_eq!(got, want, "znx_automorphism_rotate_neon mismatch at n={n}, p={p}, k={k}");
+                    assert!(got == want, "znx_automorphism_rotate_neon mismatch at n={n}, p={p}, k={k}");
                 }
             }
         }

@@ -4,7 +4,7 @@ use poulpy_ckks::layouts::{DFTMatrix, DFTOutputFormat, DFTPlan, Decode, Encode, 
 use poulpy_ckks::{CKKSInfos, CoeffsMeta};
 use poulpy_core::layouts::LinearTransformationPrepared;
 use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
-use poulpy_hal::layouts::{DataView, Module, ScratchOwned};
+use poulpy_hal::layouts::{Module, ScratchOwned};
 
 fn plan(kind: poulpy_ckks::layouts::DFTType, format: DFTOutputFormat) -> DFTPlan {
     DFTPlan::new(kind, vec![(1, 1), (2, 2)], format, CoeffsMeta::from_delta_budget(12, 2)).unwrap()
@@ -34,7 +34,7 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
     }
     let custom = matrix.try_with_factor_operands(&module, factors).unwrap();
     let reference = module.ckks_prepare_dft_matrix(&matrix, &mut scratch.borrow());
-    assert_eq!(custom.plan().schedule(), reference.plan().schedule());
+    assert!(custom.plan().schedule() == reference.plan().schedule());
     assert_eq!(custom.plan().kind(), reference.plan().kind());
     assert_eq!(custom.plan().format(), reference.plan().format());
     assert_eq!(custom.consumed_bits(), reference.consumed_bits());
@@ -42,7 +42,7 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
         assert_eq!(a.index(), b.index());
         for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
             for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
-                assert_eq!(a.plaintext.cnv().data(), b.plaintext.cnv().data());
+                assert!(a.plaintext.cnv() == b.plaintext.cnv());
             }
         }
     }
@@ -460,7 +460,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     assert!(DFT_QUERIES.get() >= 2);
     // S2C-first: SlotsToCoeffs runs in place on the input, CoeffsToSlots reads the raised ciphertext.
     let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
-    assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 64, 64)]);
+    assert!(layouts == [(DFTType::Encode, 256, 256), (DFTType::Decode, 64, 64)]);
 
     let plan = BootstrappingPlan::new(
         BootstrappingPipeline::C2SFirst,
@@ -481,7 +481,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
     // C2S-first: both transforms run on working-width ciphertexts.
     let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
-    assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 256, 256)]);
+    assert!(layouts == [(DFTType::Encode, 256, 256), (DFTType::Decode, 256, 256)]);
 }
 
 #[test]

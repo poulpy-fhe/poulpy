@@ -214,8 +214,8 @@ where
         let res_ab = idft_apply_to_host(module_b, base2k, &dft_ab, size, &mut scratch_b);
         let res_ba = idft_apply_to_host(module_a, base2k, &dft_ba, size, &mut scratch_a);
 
-        assert_eq!(res_aa, res_ab, "consuming A's DFT buffer on B diverges (size={size})");
-        assert_eq!(res_bb, res_ba, "consuming B's DFT buffer on A diverges (size={size})");
+        assert!(res_aa == res_ab, "consuming A's DFT buffer on B diverges (size={size})");
+        assert!(res_bb == res_ba, "consuming B's DFT buffer on A diverges (size={size})");
     }
 }
 

@@ -232,7 +232,7 @@ mod tests {
                     let mut expected = actual.clone();
                     reference.apply(&mut expected, 1);
                     unsafe { basis_change_plane(plan, &mut actual, q) };
-                    assert_eq!(actual, expected, "n={n}, inverse={inverse}, prime={k}");
+                    assert!(actual == expected, "n={n}, inverse={inverse}, prime={k}");
                 }
             }
         }

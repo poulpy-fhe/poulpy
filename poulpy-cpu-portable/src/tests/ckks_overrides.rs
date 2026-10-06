@@ -295,7 +295,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
         polynomial::{Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
         reference::eval_mod::{CKKSEvalModOpsReference, ckks_eval_mod_tmp_bytes_reference},
     };
-    use poulpy_hal::layouts::{HostBytesBackend, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{HostBytesBackend, ZnxViewMut};
     let module = Module::<OverrideBackend>::new(64);
     let reference = Module::<crate::FFT64Portable>::new(64);
     let host = Module::<HostBytesBackend>::new(64);
@@ -371,11 +371,11 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
                 .ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, &mut exact)
                 .unwrap();
             assert_eq!(MAX_COPY_CAPACITY.get(), capacity);
-            assert_eq!(dst.data().raw(), expected.data().raw());
+            assert!(dst == expected);
             assert_eq!(dst.meta(), expected.meta());
             assert_eq!(dst.k(), expected.k());
             assert_eq!(dst.max_size(), capacity);
-            assert_eq!(src.data().raw(), source_before.data().raw());
+            assert!(src == source_before);
             assert_eq!(src.meta(), source_before.meta());
             assert_eq!(src.k(), source_before.k());
         }
@@ -619,7 +619,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
     use poulpy_ckks::CKKSInfos;
     use poulpy_ckks::reference::{conjugate::CKKSConjugateReference, copy::CKKSCopyReference, rotate::CKKSRotateReference};
     use poulpy_core::{GLWECopy, GLWEShift};
-    use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::ZnxViewMut;
     let module = Module::<OverrideBackend>::new(64);
     let query = CoreQueryOverrides {
         module: &module,
@@ -659,8 +659,8 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
             let mut owned = ScratchOwned::<OverrideBackend>::alloc(bytes);
             let (mut exact, _) = owned.borrow().split_at(bytes);
             query.ckks_copy_reference(&mut dst, &src, &mut exact).unwrap();
-            assert_eq!(*query.copy_calls.borrow(), [original_layout, original_layout]);
-            assert_eq!(dst.data().raw(), expected.data().raw());
+            assert!(*query.copy_calls.borrow() == [original_layout, original_layout]);
+            assert!(dst == expected);
             assert_eq!(dst.meta(), src.meta());
             assert_eq!(dst.k(), src.k());
             assert_eq!(dst.max_size(), original_layout.1);
@@ -717,7 +717,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
             } else {
                 vec![ImagCoreCall::LeftShift(64 - output_k), ImagCoreCall::RotateAssign(-32)]
             };
-            assert_eq!(*query.imag_calls.borrow(), expected);
+            assert!(*query.imag_calls.borrow() == expected);
             assert_eq!(dst.log_delta(), src.log_delta());
             assert_eq!(dst.log_budget(), output_k - src.log_delta());
             assert_eq!(dst.log_sparsity(), src.log_sparsity());
@@ -731,7 +731,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
             let k = dst.k();
             query.imag_calls.borrow_mut().clear();
             query.ckks_div_i_assign_reference(&mut dst, &mut exact).unwrap();
-            assert_eq!(*query.imag_calls.borrow(), [ImagCoreCall::RotateAssign(-32)]);
+            assert!(*query.imag_calls.borrow() == [ImagCoreCall::RotateAssign(-32)]);
             assert_eq!(dst.meta(), meta);
             assert_eq!(dst.k(), k);
         }

@@ -411,9 +411,8 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 0,
                 &mut scratch.borrow(),
             );
-            assert_eq!(
-                download_vec_znx::<NTT4x30Oracle>(&got_be),
-                download_vec_znx::<NTT4x30Oracle>(&want_be),
+            assert!(
+                download_vec_znx::<NTT4x30Oracle>(&got_be) == download_vec_znx::<NTT4x30Oracle>(&want_be),
                 "vec_znx_rsh_assign mismatch for size={size} k={k}"
             );
         }

@@ -233,7 +233,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
     pt_want[data as usize * (1 << log_gap_out)] = pt_glwe.data().at(0, 0)[0];
-    assert_eq!(pt_res.data().at(0, 0), pt_want);
+    assert!(pt_res.data().at(0, 0) == pt_want, "test suite result differs");
 }
 
 pub fn test_circuit_bootstrapping_to_constant<
@@ -429,5 +429,5 @@ pub fn test_circuit_bootstrapping_to_constant<
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
     pt_want[0] = pt_glwe.data().at(0, 0)[0].wrapping_mul(data);
     println!("pt_res: {pt_res}");
-    assert_eq!(pt_res.data().at(0, 0), pt_want);
+    assert!(pt_res.data().at(0, 0) == pt_want, "test suite result differs");
 }

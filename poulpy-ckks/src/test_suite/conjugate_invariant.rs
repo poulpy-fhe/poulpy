@@ -210,9 +210,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             .ckks_rotate_into(&mut exhausted, &ct1, 0, &empty, &mut rotation_scratch.arena())
             .is_err()
     );
-    assert_eq!(exhausted.meta(), exhausted_before.meta());
-    assert_eq!(exhausted.k(), exhausted_before.k());
-    assert_eq!(exhausted.data().data().as_ref(), exhausted_before.data().data().as_ref());
+    assert!(exhausted == exhausted_before, "rejected rotation changed its output");
 
     let sparse_slots = slots / 4;
     let mut compact = module.ckks_pt_vec_alloc_compact(sparse_slots, params.base2k.into(), params.prec().k());

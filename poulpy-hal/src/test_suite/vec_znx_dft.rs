@@ -189,7 +189,7 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
 
                 let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
                 let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
+                assert!(res_ref == res_test, "test_vec_znx_dft_add: result mismatch");
             }
         }
     }
@@ -245,7 +245,7 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
 
             let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
             let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-            assert_eq!(res_ref, res_test);
+            assert!(res_ref == res_test, "test_vec_znx_dft_add_assign: result mismatch");
         }
     }
 }
@@ -383,7 +383,7 @@ fn assert_idft_integer_limbs<BE>(
             let observed = download_vec_znx::<BE>(&observed);
             assert!(observed.at(0, 0).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
             assert!(observed.at(0, 1).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
-            assert_eq!(observed.at(0, 2), expected.at(col, limb), "col {col}, limb {limb}");
+            assert!(observed.at(0, 2) == expected.at(col, limb), "col {col}, limb {limb}");
         }
     }
 }
@@ -621,7 +621,7 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
 
                 let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
                 let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-                assert_eq!(res_ref, res_test);
+                assert!(res_ref == res_test, "test_vec_znx_dft_sub: result mismatch");
             }
         }
     }
@@ -677,7 +677,7 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
 
             let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
             let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-            assert_eq!(res_ref, res_test);
+            assert!(res_ref == res_test, "test_vec_znx_dft_sub_assign: result mismatch");
         }
     }
 }
@@ -732,7 +732,7 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 
             let res_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_dft_ref, &mut scratch_ref);
             let res_test = idft_tmpa_to_host(module_test, base2k, &mut res_dft_test, &mut scratch_test);
-            assert_eq!(res_ref, res_test);
+            assert!(res_ref == res_test, "test_vec_znx_dft_sub_negate_assign: result mismatch");
         }
     }
 }
@@ -791,8 +791,8 @@ fn contract_check_one_backend<BE>(
             }
             let res_coeff = download_vec_znx::<BE>(&res_coeff_backend);
 
-            assert_eq!(
-                res_dft_normalized, res_coeff,
+            assert!(
+                res_dft_normalized == res_coeff,
                 "DFT-domain automorphism != coefficient-domain automorphism for p={p}, size={size}"
             );
         }
@@ -903,8 +903,8 @@ fn automorphism_add_check_one_backend<BE>(
 
             let have = idft_tmpa_to_host(module, base2k, &mut res_have, scratch);
             let want = idft_tmpa_to_host(module, base2k, &mut res_want, scratch);
-            assert_eq!(
-                want, have,
+            assert!(
+                want == have,
                 "automorphism_add != automorphism + add for p={p}, a_size={a_size}, res_size={res_size}"
             );
         }
@@ -1033,8 +1033,8 @@ where
                     );
                     let res_want = download_vec_znx::<BE>(&res_want_backend);
 
-                    assert_eq!(
-                        res_want, res_have,
+                    assert!(
+                        res_want == res_have,
                         "idft_normalize_consume != idft + add_small + normalize for a_size={a_size}, res_size={res_size}, \
                          res_base2k={res_base2k}, addend={with_addend}, col={col}"
                     );
@@ -1146,13 +1146,13 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
 
                 let got_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_ref, &mut scratch_ref);
                 let got_test = idft_tmpa_to_host(module_test, base2k, &mut res_test, &mut scratch_test);
-                assert_eq!(got_ref, got_test, "step {step} offset {offset}");
+                assert!(got_ref == got_test, "step {step} offset {offset}");
 
                 let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
                 for col in 0..cols {
                     set_expected_idft_column(&mut want, col, &a, step, offset);
                 }
-                assert_eq!(got_ref, want, "step {step} offset {offset}");
+                assert!(got_ref == want, "step {step} offset {offset}");
             }
         }
     }
@@ -1203,7 +1203,7 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
 
         let got_ref = idft_tmpa_to_host(module_ref, base2k, &mut dft_ref, &mut scratch_ref);
         let got_test = idft_tmpa_to_host(module_test, base2k, &mut dft_test, &mut scratch_test);
-        assert_eq!(got_ref, got_test);
+        assert!(got_ref == got_test, "test_vec_znx_dft_zero: result mismatch");
 
         let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, size);
         for limb in 0..size {
@@ -1212,6 +1212,6 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
                 want.at_mut(j, limb).copy_from_slice(a_host.at(j, limb));
             }
         }
-        assert_eq!(got_ref, want);
+        assert!(got_ref == want, "test_vec_znx_dft_zero: result mismatch");
     }
 }

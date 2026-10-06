@@ -82,9 +82,8 @@ fn check_binary<BE: TestBackend>(
             col,
         );
     }
-    assert_eq!(
-        download_vec_znx::<BE>(&want),
-        download_vec_znx::<BE>(&have),
+    assert!(
+        download_vec_znx::<BE>(&want) == download_vec_znx::<BE>(&have),
         "{what}: a.n()={} b.n()={} sizes=({}, {}, {res_size})",
         a.n(),
         b.n(),
@@ -128,9 +127,8 @@ fn check_assign<BE: TestBackend>(
             col,
         );
     }
-    assert_eq!(
-        download_vec_znx::<BE>(&want),
-        download_vec_znx::<BE>(&have),
+    assert!(
+        download_vec_znx::<BE>(&want) == download_vec_znx::<BE>(&have),
         "{what}: a.n()={} a.size()={} res_size={res_size}",
         a.n(),
         a.size()
@@ -431,9 +429,8 @@ where
                             col,
                         );
                     }
-                    assert_eq!(
-                        normalized(module, base2k, &want, &mut scratch),
-                        normalized(module, base2k, &have, &mut scratch),
+                    assert!(
+                        normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                         "{what}: a.n()={a_n} b.n()={b_n} sizes=({a_size}, {b_size}, {res_size})"
                     );
                 }
@@ -459,9 +456,8 @@ where
                         col,
                     );
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
+                assert!(
+                    normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                     "vec_znx_big_add_small: a.n()={a_n} b.n()={b_n}"
                 );
                 for col in 0..cols {
@@ -482,9 +478,8 @@ where
                         col,
                     );
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
+                assert!(
+                    normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                     "vec_znx_big_sub_small_a: a.n()={a_n} b.n()={b_n}"
                 );
                 for col in 0..cols {
@@ -505,9 +500,8 @@ where
                         col,
                     );
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
+                assert!(
+                    normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                     "vec_znx_big_sub_small_b: a.n()={a_n} b.n()={b_n}"
                 );
             }
@@ -526,9 +520,8 @@ where
                     op(&mut want.to_backend_mut(), col, &a_dense.to_backend_ref(), col);
                     op(&mut have.to_backend_mut(), col, &a_own.to_backend_ref(), col);
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
+                assert!(
+                    normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                     "{what}: a.n()={sparse_n} sizes=({a_size}, {res_size})"
                 );
             }
@@ -547,9 +540,8 @@ where
                 );
                 module.vec_znx_big_from_small(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a), col);
             }
-            assert_eq!(
-                normalized(module, base2k, &want, &mut scratch),
-                normalized(module, base2k, &have, &mut scratch),
+            assert!(
+                normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                 "vec_znx_big_from_small: a.n()={sparse_n} sizes=({a_size}, {res_size})"
             );
             for (what, op) in small_assign.iter() {
@@ -564,9 +556,8 @@ where
                     );
                     op(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a), col);
                 }
-                assert_eq!(
-                    normalized(module, base2k, &want, &mut scratch),
-                    normalized(module, base2k, &have, &mut scratch),
+                assert!(
+                    normalized(module, base2k, &want, &mut scratch) == normalized(module, base2k, &have, &mut scratch),
                     "{what}: a.n()={sparse_n} sizes=({a_size}, {res_size})"
                 );
             }

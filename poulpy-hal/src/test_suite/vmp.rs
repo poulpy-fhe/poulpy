@@ -16,8 +16,7 @@ use crate::{
         VmpExtractSelectedRows, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
-        Backend, DigestU64, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
-        VecZnxOwned,
+        Backend, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxOwned,
     },
     source::Source,
 };
@@ -88,7 +87,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mut a_ref_backend = module_ref.vec_znx_alloc(params.n, cols_in, size_in);
                     module_ref.vec_znx_fill_uniform_source_all(base2k, size_in * base2k, &mut a_ref_backend, &mut source);
                     let a = download_vec_znx::<BR>(&a_ref_backend);
-                    let a_digest: u64 = a.digest_u64();
+                    let a_before = a.clone();
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
                     let mut mat_ref_backend = module_ref.mat_znx_alloc(params.n, rows, cols_in, cols_out, size_out);
@@ -106,7 +105,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         }
                     }
                     let mat = download_mat_znx::<BR>(&mat_ref_backend);
-                    let mat_digest: u64 = mat.digest_u64();
+                    let mat_before = mat.clone();
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
                     let mut pmat_ref: VmpPMatOwned<BR> =
@@ -125,7 +124,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         &mut scratch_test.arena(),
                     );
 
-                    assert_eq!(mat.digest_u64(), mat_digest);
+                    assert!(mat == mat_before, "input changed");
 
                     let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
                     let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
@@ -143,7 +142,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         &mut scratch_test.arena(),
                     );
 
-                    assert_eq!(a.digest_u64(), a_digest);
+                    assert!(a == a_before, "input changed");
 
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
@@ -179,7 +178,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
                     let res_small_ref = download_vec_znx::<BR>(&res_small_ref_backend);
                     let res_small_test = download_vec_znx::<BT>(&res_small_test_backend);
-                    assert_eq!(res_small_ref, res_small_test);
+                    assert!(res_small_ref == res_small_test, "test_vmp_apply_dft: result mismatch");
                 }
             }
         }
@@ -248,7 +247,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut a_ref_backend = module_ref.vec_znx_alloc(params.n, cols_in, size_in);
                     module_ref.vec_znx_fill_uniform_source_all(base2k, size_in * base2k, &mut a_ref_backend, &mut source);
                     let a = download_vec_znx::<BR>(&a_ref_backend);
-                    let a_digest: u64 = a.digest_u64();
+                    let a_before = a.clone();
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
                     let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_in, size_in);
@@ -291,7 +290,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         module_test.vec_znx_dft_zero(&mut prefix_test, 0);
                     }
 
-                    assert_eq!(a.digest_u64(), a_digest);
+                    assert!(a == a_before, "input changed");
 
                     let mut mat_ref_backend = module_ref.mat_znx_alloc(params.n, rows, cols_in, cols_out, size_out);
                     for row in 0..rows {
@@ -308,7 +307,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         }
                     }
                     let mat = download_mat_znx::<BR>(&mat_ref_backend);
-                    let mat_digest: u64 = mat.digest_u64();
+                    let mat_before = mat.clone();
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
                     let mut pmat_ref: VmpPMatOwned<BR> =
@@ -327,7 +326,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         &mut scratch_test.arena(),
                     );
 
-                    assert_eq!(mat.digest_u64(), mat_digest);
+                    assert!(mat == mat_before, "input changed");
 
                     let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
                     let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
@@ -381,7 +380,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
                     let res_small_ref = download_vec_znx::<BR>(&res_small_ref_backend);
                     let res_small_test = download_vec_znx::<BT>(&res_small_test_backend);
-                    assert_eq!(res_small_ref, res_small_test);
+                    assert!(res_small_ref == res_small_test, "test_vmp_apply_dft_to_dft: result mismatch");
                 }
             }
         }
@@ -470,11 +469,10 @@ where
                         let mut got: VmpPMatOwned<BE> =
                             module.vmp_pmat_alloc(params.n, res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
                         module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
-                        // Compared through the backend's host download rather
-                        // than `digest_u64`, which needs host-resident buffers.
-                        assert_eq!(
-                            BE::to_host_bytes(DataView::data(&got)),
-                            BE::to_host_bytes(DataView::data(&expected)),
+                        // Compared through the backend's host download: prepared
+                        // storage need not be host-resident.
+                        assert!(
+                            BE::to_host_bytes(DataView::data(&got)) == BE::to_host_bytes(DataView::data(&expected)),
                             "cols_in={cols_in} cols_out={cols_out} step={step} rows={res_rows} size={res_size}"
                         );
                     }
@@ -960,10 +958,16 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
     let res_acc_small_ref_v = download_vec_znx::<BR>(&res_acc_small_ref);
     let res_acc_small_test_v = download_vec_znx::<BT>(&res_acc_small_test);
 
-    assert_eq!(res_apply_small_ref_v, res_acc_small_ref_v);
-    assert_eq!(res_apply_small_test_v, res_acc_small_test_v);
-    assert_eq!(
-        res_apply_small_ref_v, res_apply_small_test_v,
+    assert!(
+        res_apply_small_ref_v == res_acc_small_ref_v,
+        "test_vmp_apply_dft_to_dft_add: result mismatch"
+    );
+    assert!(
+        res_apply_small_test_v == res_acc_small_test_v,
+        "test_vmp_apply_dft_to_dft_add: result mismatch"
+    );
+    assert!(
+        res_apply_small_ref_v == res_apply_small_test_v,
         "cols_in={cols_in} cols_out={cols_out} size_in={size_in} size_out={size_out} mat_size={mat_size} limb_offset={limb_offset}"
     );
 }
@@ -1097,8 +1101,14 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     }
 
     let want = VecZnxOwned::<i64>::alloc(params.n, cols, size);
-    assert_eq!(download_vec_znx::<BR>(&res_ref_backend), want);
-    assert_eq!(download_vec_znx::<BT>(&res_test_backend), want);
+    assert!(
+        download_vec_znx::<BR>(&res_ref_backend) == want,
+        "test_vmp_zero: result mismatch"
+    );
+    assert!(
+        download_vec_znx::<BT>(&res_test_backend) == want,
+        "test_vmp_zero: result mismatch"
+    );
 }
 
 /// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_add` panic when `a` or

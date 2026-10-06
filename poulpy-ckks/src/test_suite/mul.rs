@@ -121,7 +121,10 @@ where
         .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
         .unwrap();
     assert_eq!(prepared_result.noise(), None);
-    assert_eq!(ckks_snapshot(&prepared_result), ckks_snapshot(&ct_res));
+    assert!(
+        prepared_result.to_host_owned::<BE>() == ct_res.to_host_owned::<BE>(),
+        "prepared multiplication differs from ordinary multiplication"
+    );
 
     let mut unknown = ct2.clone();
     GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);

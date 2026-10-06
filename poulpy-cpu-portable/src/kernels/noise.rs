@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn encryption_table_matches_integer_construction() {
-        assert_eq!(cumulative_table(3.2), ENCRYPTION_CDT);
+        assert!(cumulative_table(3.2) == ENCRYPTION_CDT);
         assert_eq!(cumulative_table(1.0).len(), 6);
         assert_eq!(cumulative_table(10.75).len(), 64);
     }
@@ -722,8 +722,8 @@ mod tests {
             let mut source_vector = Source::new([51; 32]);
             add_table_scalar(&mut scalar, 3, &ENCRYPTION_CDT, &mut source_scalar);
             add_table(&mut vector, 3, &ENCRYPTION_CDT, &mut source_vector);
-            assert_eq!(scalar, vector);
-            assert_eq!(source_scalar.new_seed(), source_vector.new_seed());
+            assert!(scalar == vector);
+            assert!(source_scalar.new_seed() == source_vector.new_seed());
         }
     }
 
@@ -771,7 +771,7 @@ mod tests {
             assert!(res.at(0, limb).iter().all(|x| *x == 0));
         }
         assert!(res.at(1, size - 1).iter().all(|x| *x == 0));
-        assert_eq!(parent.new_seed(), expected_parent.new_seed());
+        assert!(parent.new_seed() == expected_parent.new_seed());
     }
 
     #[test]
@@ -854,7 +854,7 @@ mod tests {
                     assert!(res.at(0, limb).iter().all(|&x| x == 91));
                 }
                 assert!(res.at(1, size).iter().all(|&x| x == 0));
-                assert_eq!(source.new_seed(), replay.new_seed());
+                assert!(source.new_seed() == replay.new_seed());
             }
         }
         assert!(RejectionGaussian::<u128>::new(2f64.powi(31)).is_none());
@@ -904,7 +904,7 @@ mod tests {
                 assert!(positive);
             }
             assert!(res.at(1, size).iter().all(|x| *x == 0));
-            assert_eq!(source.new_seed(), expected.new_seed());
+            assert!(source.new_seed() == expected.new_seed());
         }
     }
 
@@ -960,7 +960,7 @@ mod tests {
             for limb in 0..6 {
                 result.at_mut(1, limb).fill(7);
             }
-            let before: Vec<_> = (0..6).flat_map(|limb| result.at(1, limb).iter().copied()).collect();
+            let before = result.clone();
             let mut source = Source::new([99; 32]);
             let mut pristine = Source::new([99; 32]);
             let error = catch_unwind(AssertUnwindSafe(|| {
@@ -979,9 +979,8 @@ mod tests {
                 .copied()
                 .or_else(|| error.downcast_ref::<String>().map(String::as_str));
             assert_eq!(actual, Some(message));
-            assert_eq!(source.new_seed(), pristine.new_seed());
-            let after: Vec<_> = (0..6).flat_map(|limb| result.at(1, limb).iter().copied()).collect();
-            assert_eq!(after, before);
+            assert!(source.new_seed() == pristine.new_seed());
+            assert!(result == before, "invalid noise parameters mutated output");
             assert!((0..6).all(|limb| result.at(0, limb).iter().all(|&x| x == 0)));
         }
     }

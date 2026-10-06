@@ -49,18 +49,18 @@ mod tests {
         let src = [1i64, 2, 3, 4];
         let mut res = [0i64; 4];
         znx_rotate(1, &mut res, &src);
-        assert_eq!(res, [-4, 1, 2, 3]);
+        assert!(res == [-4, 1, 2, 3], "host znx result differs");
         znx_rotate(-1, &mut res, &src);
-        assert_eq!(res, [2, 3, 4, -1]);
+        assert!(res == [2, 3, 4, -1], "host znx result differs");
     }
 
     #[test]
     fn switch_ring_down_keeps_multiples_and_up_interleaves_zeros() {
         let mut down = [0i64; 2];
         znx_switch_ring(&mut down, &[1, 2, 3, 4]);
-        assert_eq!(down, [1, 3]);
+        assert!(down == [1, 3], "host znx result differs");
         let mut up = [9i64; 4];
         znx_switch_ring(&mut up, &[5, 6]);
-        assert_eq!(up, [5, 0, 6, 0]);
+        assert!(up == [5, 0, 6, 0], "host znx result differs");
     }
 }

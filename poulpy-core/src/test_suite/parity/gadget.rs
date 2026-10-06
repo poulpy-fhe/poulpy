@@ -125,7 +125,7 @@ where
                     );
                     a_t.transfer_into(&mut have);
                     assert_eval_eq!(a_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
-                    assert_eq!(a_r, out_r, "{} differs from into form", stringify!($assign));
+                    assert!(a_r == out_r, "{} differs from into form", stringify!($assign));
                 }};
             }
             check!(
@@ -387,8 +387,8 @@ where
             );
             let mut short_have = r.ggsw_alloc_from_infos(&short);
             short_t.transfer_into(&mut short_have);
-            assert_eq!(
-                short_r, short_have,
+            assert!(
+                short_r == short_have,
                 "ggsw keyswitch shorter result: rank={rank} dsize={dsize}"
             );
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);

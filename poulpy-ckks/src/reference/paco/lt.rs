@@ -720,7 +720,7 @@ mod tests {
                 .iter()
                 .map(|m| (m.indexes().len(), conjugate_by_low_bitrev(m, log_p).indexes().len()))
                 .collect();
-            assert_eq!(counts, want, "C={c} {schedule:?}");
+            assert!(counts == want, "C={c} {schedule:?}");
         }
     }
 
@@ -804,8 +804,8 @@ mod tests {
                 [5] => (vec![64], vec![64]),
                 _ => unreachable!(),
             };
-            assert_eq!(nat_counts, want_nat, "g1={g1} natural");
-            assert_eq!(brl_counts, want_brl, "g1={g1} bitrevlow");
+            assert!(nat_counts == want_nat, "g1={g1} natural");
+            assert!(brl_counts == want_brl, "g1={g1} bitrevlow");
         }
     }
 

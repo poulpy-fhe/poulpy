@@ -120,7 +120,7 @@ mod tests {
                 znx_automorphism_rotate_portable(p, k, &mut r0, &a);
                 znx_automorphism_rotate_avx(p, k, &mut r1, &a);
 
-                assert_eq!(r0, r1, "mismatch for p={p}, k={k}");
+                assert!(r0 == r1, "mismatch for p={p}, k={k}");
             }
         }
     }

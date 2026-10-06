@@ -17,8 +17,8 @@ use crate::{
         VecZnxIdftApplyTmpA, VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
     layouts::{
-        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned,
-        ZnxView, ZnxViewMut, ZnxZero,
+        CnvDftAccTerm, CnvPVecL, CnvPVecR, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView,
+        ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
@@ -109,7 +109,7 @@ where
                 &mut scratch.arena(),
             );
 
-            assert_eq!(res_want, res_have);
+            assert!(res_want == res_have, "test_convolution_by_const: result mismatch");
         }
     }
 }
@@ -220,8 +220,8 @@ where
             };
             let res_have = normalized(&acc_have, &mut scratch);
             let res_want = normalized(&acc_want, &mut scratch);
-            assert_eq!(
-                res_want, res_have,
+            assert!(
+                res_want == res_have,
                 "cnv_by_const_apply_add != apply + big add for offsets ({base_offset}, {add_offset})"
             );
         }
@@ -339,7 +339,7 @@ where
                     &mut scratch.arena(),
                 );
 
-                assert_eq!(res_want, res_have);
+                assert!(res_want == res_have, "test_convolution: result mismatch");
             }
         }
     }
@@ -455,7 +455,7 @@ where
                     module.vec_znx_dft_add_assign(&mut res_ref.to_backend_mut(), res_col, &tmp_dft.to_backend_ref(), 0);
 
                     assert!(
-                        BE::to_host_bytes(res_acc.data()) == BE::to_host_bytes(res_ref.data()),
+                        res_acc == res_ref,
                         "accumulate != apply + add (res_col={res_col} a_col={a_col} b_col={b_col} cnv_offset={cnv_offset})"
                     );
                 }
@@ -613,7 +613,10 @@ where
         );
         let have = download_vec_znx::<BE>(&have_backend);
         let want = download_vec_znx::<BE>(&want_backend);
-        assert_eq!(have, want, "fused accumulate != per-term sequence (cnv_offset={cnv_offset})");
+        assert!(
+            have == want,
+            "fused accumulate != per-term sequence (cnv_offset={cnv_offset})"
+        );
     }
 }
 
@@ -766,7 +769,7 @@ where
                     &mut scratch.arena(),
                 );
 
-                assert_eq!(res_want, res_have);
+                assert!(res_want == res_have, "test_convolution_pairwise: result mismatch");
             }
         }
     }
@@ -1202,7 +1205,7 @@ where
             form(&mut have_dft, &b_prep, &mut scratch);
             let want = idft_normalized(module, base2k, &mut want_dft, res_col, &mut scratch);
             let have = idft_normalized(module, base2k, &mut have_dft, res_col, &mut scratch);
-            assert_eq!(want, have, "{what} {label}");
+            assert!(want == have, "{what} {label}");
         };
 
         for cnv_offset in [0usize, 1, 3] {

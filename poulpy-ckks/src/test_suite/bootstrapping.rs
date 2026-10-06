@@ -36,7 +36,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard, ZnxView},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -975,17 +975,8 @@ where
 }
 
 fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKSCiphertextOwned<BE>) {
-    assert_eq!(got.meta(), want.meta());
-    assert_eq!(got.k(), want.k());
-    let got = got.to_host_owned::<BE>();
-    let want = want.to_host_owned::<BE>();
-    for col in 0..got.data().cols() {
-        for limb in 0..got.size() {
-            assert_eq!(
-                got.data().at(col, limb),
-                want.data().at(col, limb),
-                "bootstrap output col={col} limb={limb}"
-            );
-        }
-    }
+    assert!(
+        got.to_host_owned::<BE>() == want.to_host_owned::<BE>(),
+        "bootstrap output differs"
+    );
 }

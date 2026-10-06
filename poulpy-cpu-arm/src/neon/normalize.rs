@@ -486,8 +486,8 @@ mod tests {
                 let mut want_c = c0;
                 nfc_middle_step_neon(b, l, &mut got_r, &a, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(b, l, &mut want_r, &a, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
-                assert_eq!(got_c, want_c, "carry mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_c == want_c, "carry mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -508,8 +508,8 @@ mod tests {
                 let mut want_c = c0;
                 nfc_middle_step_assign_neon(b, l, &mut got_r, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step_assign(b, l, &mut want_r, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
-                assert_eq!(got_c, want_c, "carry mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_c == want_c, "carry mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -531,8 +531,8 @@ mod tests {
                 let mut want_c = c0;
                 nfc_middle_step_into_neon::<AddOp>(b, l, &mut got_r, &a, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step_into::<AddOp>(b, l, &mut want_r, &a, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
-                assert_eq!(got_c, want_c, "carry mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_c == want_c, "carry mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -554,8 +554,8 @@ mod tests {
                 let mut want_c = c0;
                 nfc_middle_step_into_neon::<SubOp>(b, l, &mut got_r, &a, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step_into::<SubOp>(b, l, &mut want_r, &a, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
-                assert_eq!(got_c, want_c, "carry mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_c == want_c, "carry mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -576,7 +576,7 @@ mod tests {
                 let mut want_c = c0;
                 nfc_final_step_assign_neon(b, l, &mut got_r, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_final_step_assign(b, l, &mut want_r, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -597,7 +597,7 @@ mod tests {
                 let mut want_c = c0;
                 nfc_final_step_into_neon::<AddOp>(b, l, &mut got_r, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_final_step_into::<AddOp>(b, l, &mut want_r, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }
@@ -618,7 +618,7 @@ mod tests {
                 let mut want_c = c0;
                 nfc_final_step_into_neon::<SubOp>(b, l, &mut got_r, &mut got_c);
                 <NTT4x30Portable as I128NormalizeOps>::nfc_final_step_into::<SubOp>(b, l, &mut want_r, &mut want_c);
-                assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
+                assert!(got_r == want_r, "res mismatch n={n} base2k={b} lsh={l}");
             }
         }
     }

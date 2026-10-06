@@ -743,9 +743,8 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let me: DFTMatrix<BE, Encode, Split> = module
             .ckks_new_dft_matrix::<Encode, Split>(base2k, &pe, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(
-            pe.galois_elements(log_n, order),
-            me.galois_elements(order),
+        assert!(
+            pe.galois_elements(log_n, order) == me.galois_elements(order),
             "dense encode galois"
         );
         assert!(!pe.is_sparse_repack(log_n));
@@ -756,9 +755,8 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let md: DFTMatrix<BE, Decode, Split> = module
             .ckks_new_dft_matrix::<Decode, Split>(base2k, &pd, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(
-            pd.galois_elements(log_n, order),
-            md.galois_elements(order),
+        assert!(
+            pd.galois_elements(log_n, order) == md.galois_elements(order),
             "dense decode galois"
         );
         assert_factor_degrees("dense decode", &pd, &md, p.n);
@@ -779,9 +777,8 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let me: DFTMatrix<BE, Encode, Repack> = module
             .ckks_new_dft_matrix::<Encode, Repack>(base2k, &pe, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(
-            pe.galois_elements(log_n, order),
-            me.galois_elements(order),
+        assert!(
+            pe.galois_elements(log_n, order) == me.galois_elements(order),
             "sparse encode galois"
         );
         assert_factor_degrees("sparse encode", &pe, &me, p.n);
@@ -790,9 +787,8 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let md: DFTMatrix<BE, Decode, Repack> = module
             .ckks_new_dft_matrix::<Decode, Repack>(base2k, &pd, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(
-            pd.galois_elements(log_n, order),
-            md.galois_elements(order),
+        assert!(
+            pd.galois_elements(log_n, order) == md.galois_elements(order),
             "sparse decode galois"
         );
         assert_factor_degrees("sparse decode", &pd, &md, p.n);

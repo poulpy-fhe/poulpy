@@ -50,6 +50,14 @@ pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     _phantom: PhantomData<(W, B)>,
 }
 
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecR<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecR<D, W, B> {}
+
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B> {
     fn n(&self) -> usize {
         self.shape.n()
@@ -176,6 +184,14 @@ pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     shape: CnvPVecShape,
     _phantom: PhantomData<(W, B)>,
 }
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecL<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecL<D, W, B> {}
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B> {
     fn n(&self) -> usize {

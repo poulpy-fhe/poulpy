@@ -174,7 +174,10 @@ where
                     &keys_t,
                     &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
                 );
-                assert_eq!(lhs_r.baby_steps().collect::<Vec<_>>(), lhs_t.baby_steps().collect::<Vec<_>>());
+                assert!(
+                    lhs_r.baby_steps().collect::<Vec<_>>() == lhs_t.baby_steps().collect::<Vec<_>>(),
+                    "values differ"
+                );
                 assert_eq!((lhs_r.size(), lhs_r.cols()), (lhs_t.size(), lhs_t.cols()));
 
                 let mut twin_t = t.glwe_alloc_from_infos(&ct);
@@ -187,11 +190,7 @@ where
                     &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
                 );
                 for (have, want) in lhs_twin.values.values().zip(lhs_t.values.values()) {
-                    assert!(
-                        BT::to_host_bytes(poulpy_hal::layouts::DataView::data(have))
-                            == BT::to_host_bytes(poulpy_hal::layouts::DataView::data(want)),
-                        "baby steps, unnormalized input rank={rank}"
-                    );
+                    assert!(have == want, "baby steps, unnormalized input rank={rank}");
                 }
 
                 if dsize == 1 && pt_k == base + 1 {
@@ -274,8 +273,8 @@ where
                     let mut want = r.glwe_alloc_from_infos(&ct);
                     input_r.transfer_into(&mut want);
                     want.noise = None;
-                    assert_eq!(out_r, want, "reference identity linear transformation rank={rank}");
-                    assert_eq!(have, want, "backend identity linear transformation rank={rank}");
+                    assert!(out_r == want, "reference identity linear transformation rank={rank}");
+                    assert!(have == want, "backend identity linear transformation rank={rank}");
                     r.glwe_eval_linear_transformation_into(
                         base,
                         &mut out_r,
@@ -305,8 +304,8 @@ where
                         .borrow(),
                     );
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, want, "reference streamed identity rank={rank}");
-                    assert_eq!(have, want, "backend streamed identity rank={rank}");
+                    assert!(out_r == want, "reference streamed identity rank={rank}");
+                    assert!(have == want, "backend streamed identity rank={rank}");
                 }
 
                 let mut rhs_r = LinearTransformation {

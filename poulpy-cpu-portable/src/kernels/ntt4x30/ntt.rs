@@ -881,7 +881,7 @@ mod tests {
                 for k in 0..4 {
                     let orig = data_orig[4 * i + k] % Primes30::Q[k] as u64;
                     let got = data[4 * i + k] % Primes30::Q[k] as u64;
-                    assert_eq!(orig, got, "n={n} i={i} k={k}: mismatch after NTT+iNTT round-trip");
+                    assert!(orig == got, "n={n} i={i} k={k}: mismatch after NTT+iNTT round-trip");
                 }
             }
         }
@@ -925,7 +925,7 @@ mod tests {
         b_to_znx128_portable::<Primes30>(n, &mut result, &dc);
 
         let expected: Vec<i128> = [3, 10, 8, 0, 0, 0, 0, 0].to_vec();
-        assert_eq!(result, expected, "NTT convolution mismatch");
+        assert!(result == expected, "NTT convolution mismatch");
     }
 
     fn large_ring_convolution<P: PrimeSetCrt4>(bits: u32) {

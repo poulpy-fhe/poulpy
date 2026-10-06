@@ -260,8 +260,11 @@ where
             module_test.glwe_sub_negate_assign(&mut res_test, &pt_test);
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
-            assert_eq!(res_ref, expected, "plaintext minus GLWE: reference mask sign and limb tails");
-            assert_eq!(have, expected, "plaintext minus GLWE: backend mask sign and limb tails");
+            assert!(
+                res_ref == expected,
+                "plaintext minus GLWE: reference mask sign and limb tails"
+            );
+            assert!(have == expected, "plaintext minus GLWE: backend mask sign and limb tails");
         }
     }
 }
@@ -566,19 +569,21 @@ fn test_glwe_tensor_parity_case<BR, BT>(
         module_test.glwe_tensor_apply(cnv_offset, &mut out_test, &a_test, &b_test, &mut scratch_test.borrow());
         let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
         out_test.transfer_into(&mut have);
-        assert_eq!(
-            out_ref, have,
+        assert!(
+            out_ref == have,
             "glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
-            a_infos.k, a_infos.rank
+            a_infos.k,
+            a_infos.rank
         );
         if let Some((twin_a, twin_b)) = twins {
             let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test));
             module_test.glwe_tensor_apply(cnv_offset, &mut out_test, twin_a, twin_b, &mut scratch_test.borrow());
             out_test.transfer_into(&mut have);
-            assert_eq!(
-                out_ref, have,
+            assert!(
+                out_ref == have,
                 "glwe_tensor_apply, unnormalized operands: k={:?} rank={:?} offset={cnv_offset}",
-                a_infos.k, a_infos.rank
+                a_infos.k,
+                a_infos.rank
             );
         }
 
@@ -608,16 +613,18 @@ fn test_glwe_tensor_parity_case<BR, BT>(
             b_size,
             &mut scratch_test.borrow(),
         );
-        assert_eq!(
-            prepared_ref, out_ref,
+        assert!(
+            prepared_ref == out_ref,
             "glwe_tensor_apply_prepared_right versus glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
-            a_infos.k, a_infos.rank
+            a_infos.k,
+            a_infos.rank
         );
         out_test.transfer_into(&mut have);
-        assert_eq!(
-            prepared_ref, have,
+        assert!(
+            prepared_ref == have,
             "glwe_tensor_apply_prepared_right: k={:?} rank={:?} offset={cnv_offset}",
-            a_infos.k, a_infos.rank
+            a_infos.k,
+            a_infos.rank
         );
 
         let mut scratch_ref = poisoned_scratch::<BR>(module_ref.glwe_tensor_square_apply_tmp_bytes(&out_ref, &a_ref));
@@ -626,19 +633,21 @@ fn test_glwe_tensor_parity_case<BR, BT>(
         module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, &a_test, &mut scratch_test.borrow());
         let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
         out_test.transfer_into(&mut have);
-        assert_eq!(
-            out_ref, have,
+        assert!(
+            out_ref == have,
             "glwe_tensor_square_apply: k={:?} rank={:?} offset={cnv_offset}",
-            a_infos.k, a_infos.rank
+            a_infos.k,
+            a_infos.rank
         );
         if let Some((twin_a, _)) = twins {
             let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test));
             module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, twin_a, &mut scratch_test.borrow());
             out_test.transfer_into(&mut have);
-            assert_eq!(
-                out_ref, have,
+            assert!(
+                out_ref == have,
                 "glwe_tensor_square_apply, unnormalized operand: k={:?} rank={:?} offset={cnv_offset}",
-                a_infos.k, a_infos.rank
+                a_infos.k,
+                a_infos.rank
             );
         }
     }
@@ -865,8 +874,8 @@ pub fn test_glwe_shift_parity<BR, BT>(
                 assert_eq!(res_test.k(), res_infos.k);
                 let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                 res_test.transfer_into(&mut have);
-                assert_eq!(res_ref, expected, "raw X^p - 1: reference radix and limb tails");
-                assert_eq!(have, expected, "raw X^p - 1: backend radix and limb tails");
+                assert!(res_ref == expected, "raw X^p - 1: reference radix and limb tails");
+                assert!(have == expected, "raw X^p - 1: backend radix and limb tails");
             }
         }
     }

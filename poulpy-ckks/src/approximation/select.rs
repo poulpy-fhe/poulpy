@@ -356,6 +356,6 @@ mod tests {
         let choice =
             degree_for_precision_multi_interval(sign, &intervals, Parity::Odd, 5.0, 31, SplitStrategy::MinDepth).unwrap();
         assert!(choice.bits() >= 5.0);
-        assert_eq!(choice.minimax.intervals, intervals);
+        assert!(choice.minimax.intervals == intervals, "select result differs");
     }
 }

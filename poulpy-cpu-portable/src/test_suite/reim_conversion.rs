@@ -32,12 +32,12 @@ pub fn test_reim_to_znx_rounding<BE: ReimArith>() {
 
             let mut have = vec![0i64; input.len()];
             BE::reim_to_znx(&mut have, divisor, &input);
-            assert_eq!(have, want, "out-of-place: value={value}, divisor={divisor}");
+            assert!(have == want, "out-of-place: value={value}, divisor={divisor}");
 
             let mut inplace = input;
             BE::reim_to_znx_assign(&mut inplace, divisor);
             let have: Vec<i64> = inplace.iter().map(|x| x.to_bits() as i64).collect();
-            assert_eq!(have, want, "in-place: value={value}, divisor={divisor}");
+            assert!(have == want, "in-place: value={value}, divisor={divisor}");
         }
     }
 }

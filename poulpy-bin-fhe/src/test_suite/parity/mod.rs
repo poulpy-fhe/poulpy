@@ -13,8 +13,8 @@ pub mod lifecycle;
 use poulpy_core::{
     ComponentNoise, Distribution, TransferInto,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -26,61 +26,43 @@ use poulpy_hal::{
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost> {}
 impl<B: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for B {}
 
-/// Coefficient-domain representation including precision, noise estimate and allocated tails.
-#[derive(PartialEq, Eq)]
-pub(crate) struct GlweSnapshot {
-    layout: GLWELayout,
-    capacity: usize,
-    noise: Option<ComponentNoise>,
-    bytes: Vec<u8>,
-}
-impl std::fmt::Debug for GlweSnapshot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GlweSnapshot")
-            .field("layout", &self.layout)
-            .field("capacity", &self.capacity)
-            .field("noise", &self.noise)
-            .finish()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct GgswSnapshot {
-    layout: GGSWLayout,
-    rows: Vec<GlweSnapshot>,
-}
+pub(crate) type HostGlwe = GLWE<poulpy_hal::AlignedBuf, i64>;
+pub(crate) type HostGgsw = GGSW<poulpy_hal::AlignedBuf, i64>;
 
 /// Asserts evaluation outputs carry no noise tag, which equality between backends would miss.
-pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a GlweSnapshot>) {
+pub(crate) fn assert_untagged<'a, T: LWEInfos + 'a>(label: &str, outputs: impl IntoIterator<Item = &'a T>) {
     for (i, output) in outputs.into_iter().enumerate() {
-        assert!(output.noise.is_none(), "{label} output {i} kept a noise tag");
+        assert!(output.noise().is_none(), "{label} output {i} kept a noise tag");
     }
 }
 
-pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> GlweSnapshot {
+pub(crate) fn host_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> HostGlwe {
+    use poulpy_core::layouts::SetK;
+
     let view = ct.to_backend_ref();
-    let mut bytes = vec![0; view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>()];
-    B::copy_view_to_host(view.data().data(), &mut bytes);
-    GlweSnapshot {
-        layout: view.glwe_layout(),
-        capacity: view.max_size(),
-        noise: view.noise(),
-        bytes,
-    }
+    let module = Module::<HostBytesBackend>::new(view.n().as_usize() as u64);
+    let mut layout = view.glwe_layout();
+    layout.k = (view.max_size() * view.base2k().as_usize()).into();
+    let mut host = module.glwe_alloc_from_infos(&layout);
+    let bytes = view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>();
+    B::copy_view_to_host(view.data().data(), &mut host.data_mut().data_mut().as_mut()[..bytes]);
+    host.set_k(view.k());
+    host.set_canonical(view.is_canonical());
+    GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut host, view.noise());
+    host
 }
 
-pub(crate) fn snapshot_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(ct: &A) -> GgswSnapshot {
+pub(crate) fn host_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(ct: &A) -> HostGgsw {
     let view = ct.to_backend_ref();
-    let mut rows = Vec::new();
+    let module = Module::<HostBytesBackend>::new(view.n().as_usize() as u64);
+    let mut host = module.ggsw_alloc_from_infos(&view);
     for row in 0..view.dnum().as_usize() {
         for col in 0..=view.rank().as_usize() {
-            rows.push(snapshot_glwe::<B, _>(&view.at_view(row, col)));
+            host_glwe::<B, _>(&view.at_view(row, col)).transfer_into(&mut host.at_mut(row, col));
         }
     }
-    GgswSnapshot {
-        layout: view.ggsw_layout(),
-        rows,
-    }
+    GGSWToBackendMut::<HostBytesBackend>::set_noise(&mut host, view.noise());
+    host
 }
 
 /// Uniform digits in `[-2^(base2k-1), 2^(base2k-1))`, as the backend mask sampler draws them.

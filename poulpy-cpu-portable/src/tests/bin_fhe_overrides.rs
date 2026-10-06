@@ -162,7 +162,7 @@ unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
         poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_ref(module, res, lwe, lut, key, &mut rest);
         let mut marker_after = [0u8; EXTRA];
         Self::copy_view_to_host(&Self::view_ref_mut(&marker), &mut marker_after);
-        assert_eq!(marker_after, [0x5A; EXTRA]);
+        assert!(marker_after == [0x5A; EXTRA]);
     }
 }
 
@@ -436,7 +436,7 @@ fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
         let mut actual = [0i64; 5];
         poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<OpaqueBackend, _>(64, &mut expected, &lwe, direction);
         module.blind_rotation_mod_switch(64, &mut actual, &lwe, direction);
-        assert_eq!(actual, expected);
+        assert!(actual == expected);
     }
     assert_eq!(STAGING_CALLS.get(), 2);
 }
@@ -472,7 +472,7 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
     key.set_distribution(poulpy_core::Distribution::ZERO);
     let mut output = module.glwe_alloc_from_infos(&layout);
     output.data_mut().data_mut().fill(0x55);
-    let before = output.data().data().to_vec();
+    let before = output.to_host_owned::<crate::FFT64Portable>();
     let lut_layout = LookUpTableLayout {
         n: 32usize.into(),
         extension_factor: 1,
@@ -502,9 +502,8 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
             )))
             .is_err()
         );
-        assert_eq!(
-            output.data().data().as_slice(),
-            before.as_slice(),
+        assert!(
+            output.to_host_owned::<crate::FFT64Portable>() == before,
             "invalid shape mutated output"
         );
     }
@@ -731,15 +730,15 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     assert_eq!(LUT_SET_CALLS.get(), 2);
     let expected = [vec![256; 4], vec![-256; 8], vec![512; 8], vec![-512; 8], vec![-256; 4]].concat();
     for lut in [&direct, &wrapped] {
-        assert_eq!(opaque_lut_coefficients(lut), expected);
+        assert!(opaque_lut_coefficients(lut) == expected);
         assert_eq!(lut.drift(), 4);
         assert!(matches!(lut.rotation_direction(), LookUpTableRotationDirection::Right));
     }
     module.lookup_table_rotate(3, &mut direct);
     assert_eq!(LUT_ROTATE_CALLS.get(), 1);
     let rotated = [vec![256; 7], vec![-256; 8], vec![512; 8], vec![-512; 8], vec![-256; 1]].concat();
-    assert_eq!(opaque_lut_coefficients(&direct), rotated);
-    assert_eq!(opaque_lut_coefficients(&wrapped), expected);
+    assert!(opaque_lut_coefficients(&direct) == rotated);
+    assert!(opaque_lut_coefficients(&wrapped) == expected);
     assert_eq!(direct.drift(), 4);
     assert!(matches!(direct.rotation_direction(), LookUpTableRotationDirection::Right));
 }

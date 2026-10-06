@@ -859,8 +859,14 @@ mod window_shape_tests {
         let v = ramp(8, 2, 4);
         let shape = v.shape().window_coeffs(3, 2).window_limbs(1, 2, 2);
         let w = VecZnx::<&[u8], i64>::from_shape(v.data().as_slice(), shape);
-        assert_eq!(w.at(1, 0), &[1103, 1104]);
-        assert_eq!(w.at(0, 1), &[3003, 3004]);
+        assert!(
+            w.at(1, 0) == [1103, 1104],
+            "window_view_reads_the_expected_elements: result mismatch"
+        );
+        assert!(
+            w.at(0, 1) == [3003, 3004],
+            "window_view_reads_the_expected_elements: result mismatch"
+        );
     }
 
     #[test]

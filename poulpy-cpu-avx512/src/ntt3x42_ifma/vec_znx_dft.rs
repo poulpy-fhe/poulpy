@@ -1406,11 +1406,11 @@ mod finish_tests {
                             1,
                             &mut vec![0; 3 * n],
                         );
-                        assert_eq!(got, expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
+                        assert!(got == expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
                         for limb in 0..source.size() {
-                            assert_eq!(
-                                packed_limb(cast_slice(source.data()), n, 2, 0, limb),
-                                packed_limb(cast_slice(input.data()), n, 2, 0, limb),
+                            assert!(
+                                packed_limb(cast_slice(source.data()), n, 2, 0, limb)
+                                    == packed_limb(cast_slice(input.data()), n, 2, 0, limb),
                                 "untouched column, limb={limb}"
                             );
                         }
@@ -1566,14 +1566,14 @@ mod finish_tests {
                                         1,
                                         &mut vec![0x12345678; 3 * n],
                                     );
-                                    assert_eq!(
-                                        got, expected,
+                                    assert!(
+                                        got == expected,
                                         "n={n}, base2k={base2k}, k={k}, offset={offset}, add_size={add_size}"
                                     );
                                     for limb in 0..source.size() {
-                                        assert_eq!(
-                                            packed_limb(cast_slice(source.data()), n, 2, 0, limb),
-                                            packed_limb(cast_slice(input.data()), n, 2, 0, limb),
+                                        assert!(
+                                            packed_limb(cast_slice(source.data()), n, 2, 0, limb)
+                                                == packed_limb(cast_slice(input.data()), n, 2, 0, limb),
                                             "untouched column, limb={limb} threads={threads} nested={nested}"
                                         );
                                     }

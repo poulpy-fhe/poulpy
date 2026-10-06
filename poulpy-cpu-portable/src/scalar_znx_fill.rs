@@ -160,6 +160,6 @@ mod tests {
         let mut b = fresh(256, 1);
         a.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
         b.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
-        assert_eq!(a.at(0, 0), b.at(0, 0));
+        assert!(a == b);
     }
 }

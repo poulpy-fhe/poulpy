@@ -2083,7 +2083,7 @@ fn test_normalize_blocked_matches_single_range() {
                     &mut carry,
                 );
                 for j in 0..size {
-                    assert_eq!(whole.at(0, j), blocked.at(0, j));
+                    assert!(whole.at(0, j) == blocked.at(0, j));
                 }
             }
         }

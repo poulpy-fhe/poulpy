@@ -283,6 +283,6 @@ mod tests {
         b_ntt3x42_ifma_to_znx128_ref(n, &mut result, &dc);
 
         let expected: Vec<i128> = vec![3, 10, 8, 0, 0, 0, 0, 0];
-        assert_eq!(result, expected, "NTT convolution mismatch");
+        assert!(result == expected, "NTT convolution mismatch");
     }
 }

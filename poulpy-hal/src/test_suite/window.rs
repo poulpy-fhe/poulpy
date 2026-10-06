@@ -180,9 +180,8 @@ where
 
             let res_after = download_vec_znx::<BE>(&res_be);
             let rm_after = download_vec_znx::<BE>(&rm_be);
-            assert_eq!(
-                materialize(&res_after, shape),
-                rm_after,
+            assert!(
+                materialize(&res_after, shape) == rm_after,
                 "op {op} window {w:?}: windowed result differs from dense oracle"
             );
             assert_untouched_outside(&res_before, &res_after, shape);
@@ -413,10 +412,9 @@ where
         let hbm = download_big::<BE>(&big_bm);
         for j in 0..shape.size() {
             for col in 0..cols {
-                assert_eq!(hr.at(col, j), hrm.at(col, j), "big add window {w:?} col {col} limb {j}");
-                assert_eq!(
-                    hb.at(col, j),
-                    hbm.at(col, j),
+                assert!(hr.at(col, j) == hrm.at(col, j), "big add window {w:?} col {col} limb {j}");
+                assert!(
+                    hb.at(col, j) == hbm.at(col, j),
                     "big sub/negate window {w:?} col {col} limb {j}"
                 );
             }
@@ -540,9 +538,8 @@ where
                 }
 
                 let res_after = download_vec_znx::<BE>(&res_be);
-                assert_eq!(
-                    materialize(&res_after, shape),
-                    download_vec_znx::<BE>(&rm_be),
+                assert!(
+                    materialize(&res_after, shape) == download_vec_znx::<BE>(&rm_be),
                     "window {w:?} op {op} k {k}: windowed result differs from the dense oracle"
                 );
                 assert_untouched_outside(&res_before, &res_after, shape);
@@ -612,9 +609,8 @@ where
                 );
             }
             let res_after = download_vec_znx::<BE>(&res_be);
-            assert_eq!(
-                materialize(&res_after, shape),
-                download_vec_znx::<BE>(&rm_be),
+            assert!(
+                materialize(&res_after, shape) == download_vec_znx::<BE>(&rm_be),
                 "window {w:?} offset {res_offset} k {res_k}: windowed big normalize differs from the dense oracle"
             );
             assert_untouched_outside(&res_before, &res_after, shape);

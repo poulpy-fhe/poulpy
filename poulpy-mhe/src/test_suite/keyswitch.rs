@@ -184,10 +184,16 @@ where
             (0..rank_out.as_usize()).for_each(|_| {
                 want_xe.new_seed();
             });
-            assert_eq!(source_xe.new_seed(), want_xe.new_seed());
+            assert!(
+                source_xe.new_seed() == want_xe.new_seed(),
+                "encryption randomness consumption differs"
+            );
             let mut want_smudge = Source::new([30 + i as u8; 32]);
             want_smudge.new_seed();
-            assert_eq!(source_smudge.new_seed(), want_smudge.new_seed());
+            assert!(
+                source_smudge.new_seed() == want_smudge.new_seed(),
+                "flood randomness consumption differs"
+            );
             assert!(dst.inner.is_canonical());
             if i > 0 {
                 module.mhe_glwe_public_keyswitch_share_aggregate(&mut acc, &share);

@@ -322,14 +322,14 @@ mod tests {
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
         ];
         for strategy in strategies {
-            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
+            assert!(compact.evaluate(&v, strategy) == dense.evaluate(&v, strategy), "{strategy:?}");
         }
         compact.transpose();
         dense.transpose();
-        assert_eq!(compact.get(-1), Some(&vec![-1.0, 2.0]));
+        assert!(compact.get(-1) == Some(&vec![-1.0, 2.0]), "values differ");
         assert_eq!(compact.period(-3), Some(1));
         for strategy in strategies {
-            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
+            assert!(compact.evaluate(&v, strategy) == dense.evaluate(&v, strategy), "{strategy:?}");
         }
         let rejected = std::panic::catch_unwind(|| {
             let mut d = Diagonals::new(4);

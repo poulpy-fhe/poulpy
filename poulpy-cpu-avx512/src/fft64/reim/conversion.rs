@@ -319,7 +319,7 @@ mod tests {
         unsafe { reim_from_znx_i64_bnd50_fma(&mut res_avx512, &a) };
         reim_from_znx_i64_portable(&mut res_ref, &a);
 
-        assert_eq!(res_avx512, res_ref, "reim_from_znx_i64: AVX-512 vs ref mismatch");
+        assert!(res_avx512 == res_ref, "reim_from_znx_i64: AVX-512 vs ref mismatch");
     }
 
     /// AVX-512 `reim_to_znx_i64_bnd63_avx512` matches reference for exact-float inputs.
@@ -336,6 +336,6 @@ mod tests {
         unsafe { reim_to_znx_i64_bnd63_avx512(&mut res_avx512, divisor, &a) };
         reim_to_znx_i64_portable(&mut res_ref, divisor, &a);
 
-        assert_eq!(res_avx512, res_ref, "reim_to_znx_i64: AVX-512 vs ref mismatch");
+        assert!(res_avx512 == res_ref, "reim_to_znx_i64: AVX-512 vs ref mismatch");
     }
 }

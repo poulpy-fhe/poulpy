@@ -536,7 +536,7 @@ mod tests {
             b_from_znx64_portable::<Primes30>(n, &mut data_ref, &coeffs);
             ntt_neon::<Primes30>(&fwd, &mut data_neon);
             ntt_portable::<Primes30>(&fwd, &mut data_ref);
-            assert_eq!(data_neon, data_ref, "n={n}: NTT NEON vs ref mismatch");
+            assert!(data_neon == data_ref, "n={n}: NTT NEON vs ref mismatch");
         }
     }
 
@@ -564,6 +564,6 @@ mod tests {
         let mut result = vec![0i128; n];
         b_to_znx128_portable::<Primes30>(n, &mut result, &dc);
         let expected: Vec<i128> = vec![3, 10, 8, 0, 0, 0, 0, 0];
-        assert_eq!(result, expected, "NEON NTT convolution mismatch");
+        assert!(result == expected, "NEON NTT convolution mismatch");
     }
 }

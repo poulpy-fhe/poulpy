@@ -680,9 +680,9 @@ mod tests {
     #[test]
     fn all_lists_every_preset_once() {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
-        assert_eq!(
-            names,
-            ["n16_d35_k600_p19_c2s", "n16_d35_k720_p19_s2c", "n15_d35_k180_p18_c2s"]
+        assert!(
+            names == ["n16_d35_k600_p19_c2s", "n16_d35_k720_p19_s2c", "n15_d35_k180_p18_c2s"],
+            "bootstrapping result differs"
         );
     }
 

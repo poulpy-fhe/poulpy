@@ -315,9 +315,9 @@ mod tests {
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
         ];
         for strategy in strategies {
-            assert_eq!(
-                compact.evaluate((vre.as_slice(), vim.as_slice()), strategy),
-                dense.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+            assert!(
+                compact.evaluate((vre.as_slice(), vim.as_slice()), strategy)
+                    == dense.evaluate((vre.as_slice(), vim.as_slice()), strategy),
                 "{strategy:?}"
             );
         }
@@ -325,9 +325,9 @@ mod tests {
         let dd = dense.compose(&dense);
         assert_eq!(cc.diagonal_period(1), Some(2), "composed period is the lcm of the terms");
         for strategy in strategies {
-            assert_eq!(
-                cc.evaluate((vre.as_slice(), vim.as_slice()), strategy),
-                dd.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+            assert!(
+                cc.evaluate((vre.as_slice(), vim.as_slice()), strategy)
+                    == dd.evaluate((vre.as_slice(), vim.as_slice()), strategy),
                 "compose {strategy:?}"
             );
         }
@@ -335,11 +335,11 @@ mod tests {
         let mut c2 = compact.clone();
         c2.conjugate();
         c2.scale(&2.0);
-        assert_eq!(c2.re.get(0), Some(&vec![2.0, 4.0]));
-        assert_eq!(c2.im.get(0), Some(&vec![-1.0]));
+        assert!(c2.re.get(0) == Some(&vec![2.0, 4.0]), "complex diagonals result differs");
+        assert!(c2.im.get(0) == Some(&vec![-1.0]), "complex diagonals result differs");
         let mut t = compact.clone();
         t.transpose();
-        assert_eq!(t.re.get(-1), Some(&vec![3.0]));
+        assert!(t.re.get(-1) == Some(&vec![3.0]), "complex diagonals result differs");
         assert_eq!(t.diagonal_period(-3), Some(4));
 
         // A map whose longest period is two is encoded on two slots.
@@ -354,13 +354,13 @@ mod tests {
             .iter()
             .flat_map(|g| g.diagonals.iter().map(|d| d.plaintext.clone()))
             .collect();
-        assert_eq!(
-            got,
-            vec![
+        assert!(
+            got == vec![
                 (vec![1.0, 2.0], vec![0.5, 0.5]),
                 (vec![3.0, 3.0], vec![0.0, 0.0]),
                 (vec![0.0, 0.0], vec![1.0, 0.0]),
-            ]
+            ],
+            "complex diagonals result differs"
         );
     }
 
@@ -374,7 +374,10 @@ mod tests {
         b.re.set(0, vec![10.0, 20.0, 30.0]);
         let c = a.compose(&b);
         assert_eq!(c.diagonal_period(0), Some(6));
-        assert_eq!(c.re.get(0), Some(&vec![10.0, 40.0, 30.0, 20.0, 20.0, 60.0]));
+        assert!(
+            c.re.get(0) == Some(&vec![10.0, 40.0, 30.0, 20.0, 20.0, 60.0]),
+            "complex diagonals result differs"
+        );
 
         let mut mixed = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
         mixed.re.set(1, vec![1.0, 2.0]);

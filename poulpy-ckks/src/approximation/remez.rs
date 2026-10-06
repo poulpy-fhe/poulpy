@@ -893,7 +893,7 @@ mod tests {
         let measured = sup_error_on_intervals(&mm.poly, &intervals, sign, 8000);
 
         assert!(mm.converged, "multi-interval sign fit did not converge");
-        assert_eq!(mm.intervals, intervals);
+        assert!(mm.intervals == intervals, "remez result differs");
         assert_eq!(mm.poly.interval(), (-1.0, 1.0));
         assert!(measured < 0.025, "degree-15 sign error {measured:e} unexpectedly large");
         assert!(
@@ -935,7 +935,10 @@ mod tests {
     fn exchange_removes_a_weak_interior_pair() {
         let extrema = vec![(0.0, 10.0), (1.0, -1.0), (2.0, 1.0), (3.0, -10.0), (4.0, 10.0), (5.0, -10.0)];
         let selected = select_alternating(extrema, 4).unwrap();
-        assert_eq!(selected, vec![(0.0, 10.0), (3.0, -10.0), (4.0, 10.0), (5.0, -10.0)]);
+        assert!(
+            selected == vec![(0.0, 10.0), (3.0, -10.0), (4.0, 10.0), (5.0, -10.0)],
+            "remez result differs"
+        );
     }
 
     #[test]
