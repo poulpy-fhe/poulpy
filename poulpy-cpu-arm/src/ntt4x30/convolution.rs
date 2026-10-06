@@ -20,8 +20,9 @@ use poulpy_hal::layouts::{
 };
 use std::mem::size_of;
 
-use super::vec_znx_dft::PackedDft;
+use super::vec_znx_dft::{PackedDft, dft_tmp_words, prepare_tmp_words};
 use crate::neon::ntt4x30_packed::{DOT_CHUNK, DOT_SHORT, Plane, add_mod, limb_to_prepared, planes, redc_acc};
+use poulpy_hal::layouts::Ring;
 
 /// `u32` per limb of a block.
 const ROW: usize = 16;
@@ -266,9 +267,9 @@ unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
     }
 }
 
-/// Scratch for one transform and one packed limb.
-pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
-    6 * n * size_of::<u64>()
+/// Scratch for one packed limb and the forward transform, per worker.
+pub(crate) fn cnv_prepare_tmp_bytes<R: Ring>(n: usize) -> usize {
+    prepare_tmp_words::<R>(n) * size_of::<u64>()
 }
 
 /// Scatters one packed limb into row `limb` of every block of a prepared column.
@@ -321,13 +322,14 @@ fn prepare<BE, E: TaskExecutor>(
     let left_ptr = left.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
     let right_ptr = right.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
     // Tasks write distinct limbs of distinct columns.
-    E::for_each_chunked(cols * size, tmp, 6 * n, |tmp, task| {
+    let dft_words = dft_tmp_words::<<Module<BE> as NttModuleHandle>::Ring>(n);
+    E::for_each_chunked(cols * size, tmp, 2 * n + dft_words, |tmp, task| {
         let col = task / size;
         let limb = task % size;
         let dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
         let dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
         if limb < min_size {
-            let (tmp_b, tmp_packed) = tmp.split_at_mut(4 * n);
+            let (tmp_b, tmp_packed) = tmp.split_at_mut(dft_words);
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
             module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none(), tmp_b);
             if let Some(dst) = dst_l {

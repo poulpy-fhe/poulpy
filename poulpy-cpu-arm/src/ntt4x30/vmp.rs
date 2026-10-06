@@ -21,7 +21,7 @@ use poulpy_hal::{
 
 use crate::NTT4x30Neon;
 use crate::neon::ntt4x30_packed::{DotState, add_mod, dot_rows, planes};
-use crate::ntt4x30::vec_znx_dft::dft_limb_scaled;
+use crate::ntt4x30::vec_znx_dft::{dft_limb_scaled, dft_tmp_words, prepare_tmp_words};
 use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_hal::layouts::Ring;
@@ -45,9 +45,9 @@ impl SendU32Ptr {
 
 /// Scratch space (in bytes) required by the VMP prepare kernel.
 ///
-/// Holds one q120b polynomial for the transform and one packed limb.
-pub(crate) fn vmp_prepare_tmp_bytes_neon(n: usize) -> usize {
-    6 * n * size_of::<u64>()
+/// Holds one packed limb and the forward transform scratch.
+pub(crate) fn vmp_prepare_tmp_bytes_neon<R: Ring>(n: usize) -> usize {
+    prepare_tmp_words::<R>(n) * size_of::<u64>()
 }
 
 /// VMP prepare into the block-major prepared layout.
@@ -67,14 +67,14 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_neon(n));
+    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_neon::<R>(n));
     assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_blocks = n / 4;
 
-    let (tmp_b, tmp_packed) = tmp.split_at_mut(4 * n);
+    let (tmp_b, tmp_packed) = tmp.split_at_mut(dft_tmp_words::<R>(n));
     let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp_packed)[..4 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat: &mut [u32] = cast_slice_mut(res.data_mut());

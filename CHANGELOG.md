@@ -257,6 +257,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30NeonRayon` raises its `ScratchWorkers` caps to 32 for every family, from 8 (4 for prepare), which left most of a wide pool idle in the vector-matrix product, the convolution and the inverse transform.
+  The scratch of the NEON NTT4x30 transforms is sized by what the native NTT needs on the standard ring: half the previous size for the inverse transform and a third for the prepare kernels, so the larger caps reserve about as much as before.
 - `NTT4x30Neon` and `NTT4x30NeonRayon` override `cnv_apply_dft_sum` with a fused kernel: the terms of a sum are accumulated together, sixteen at a time, so an output limb is reduced and stored once per group where the derived body reduced, read and wrote it for every term.
 - The CRT reconstruction after the NEON inverse NTT accumulates its sum on four coefficients at a time in limbs of 30 bits, and folds the centering into the reduction.
 - `NTT4x30Neon` and `NTT4x30NeonRayon` implement `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits: one pass over the prepared matrix accumulates every digit of an output limb, with one store and one Montgomery step per 12 products, where the reference body ran one accumulating vector-matrix product per digit.

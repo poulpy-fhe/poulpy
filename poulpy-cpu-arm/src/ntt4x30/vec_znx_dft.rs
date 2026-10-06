@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{
 };
 
 use super::NTT4x30Neon;
-use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, ntt32};
+use crate::neon::ntt4x30_ntt32::{MIN_N, Ntt32Table, intt32, ntt32};
 use crate::neon::ntt4x30_packed::{OP_ADD, OP_NEG, OP_SUB, Q, limb_op, pack_limb, unpack_limb};
 
 #[inline(always)]
@@ -39,12 +39,37 @@ fn packed_table<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> Option<&N
     unsafe { (*module.ptr()).packed_table(n) }
 }
 
-/// Length in `u64` of the scratch the forward transform of one limb needs.
+/// Length in `u64` of the scratch the forward transform of one limb of degree `n` needs on ring `R`.
 ///
-/// The packed NTT works in place, the q120 fallback widens the limb.
+/// The packed NTT of the standard ring works in place, the q120 fallback widens the limb.
+#[inline(always)]
+pub(crate) fn dft_tmp_words<R: Ring>(n: usize) -> usize {
+    if R::CYCLOTOMIC_ORDER_FACTOR == 2 && n >= MIN_N {
+        0
+    } else {
+        4 * n
+    }
+}
+
+/// Length in `u64` of the scratch the inverse transform of one limb of degree `n` needs on ring `R`.
+///
+/// The packed NTT moves the planes to the scratch, the q120 fallback widens the limb.
+#[inline(always)]
+pub(crate) fn idft_tmp_words<R: Ring>(n: usize) -> usize {
+    if dft_tmp_words::<R>(n) == 0 { 2 * n } else { 4 * n }
+}
+
+/// Length in `u64` of the scratch a prepare kernel needs per limb: one packed limb and the forward transform scratch.
+#[inline(always)]
+pub(crate) fn prepare_tmp_words<R: Ring>(n: usize) -> usize {
+    2 * n + dft_tmp_words::<R>(n)
+}
+
+/// [`dft_tmp_words`] for the ring and degree of an operand of `module`.
 #[inline(always)]
 pub(crate) fn dft_tmp_len<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize) -> usize {
-    if packed_table(module, n).is_some() { 0 } else { 4 * n }
+    debug_assert_eq!(packed_table(module, n).is_some(), dft_tmp_words::<R>(n) == 0);
+    dft_tmp_words::<R>(n)
 }
 
 /// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
@@ -71,7 +96,7 @@ pub(crate) fn dft_limb_scaled<R: Ring>(
 
 /// Forward transform into a packed limb, for drivers shared by the serial and Rayon backends.
 pub(crate) trait PackedDft {
-    /// See [`dft_limb_scaled`], `tmp` holding `4 * n` words.
+    /// See [`dft_limb_scaled`], `tmp` holding [`dft_tmp_words`] words.
     fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool, tmp: &mut [u64]);
 }
 
@@ -98,7 +123,7 @@ where
 
 /// Inverse transform of one packed limb.
 ///
-/// `tmp` holds `4 * n` words.
+/// `tmp` holds [`idft_tmp_words`] words.
 pub(crate) fn idft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64])
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
@@ -192,8 +217,8 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     }
 }
 
-pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
-    4 * n * size_of::<u64>()
+pub(crate) fn vec_znx_idft_apply_tmp_bytes<R: Ring>(n: usize) -> usize {
+    idft_tmp_words::<R>(n) * size_of::<u64>()
 }
 
 pub(crate) fn vec_znx_idft_apply<R: Ring>(

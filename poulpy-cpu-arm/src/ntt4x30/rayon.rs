@@ -602,7 +602,7 @@ where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        super::vmp::vmp_prepare_tmp_bytes_neon(module.n())
+        super::vmp::vmp_prepare_tmp_bytes_neon::<R>(module.n())
     }
 
     fn vmp_prepare(
@@ -611,7 +611,7 @@ where
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::vmp::vmp_prepare_tmp_bytes_neon(res.n());
+        let bytes = super::vmp::vmp_prepare_tmp_bytes_neon::<R>(res.n());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_prepare_neon_pm(base_module(module), &mut base_vmp_mut::<R>(res), a, tmp);
     }
@@ -741,7 +741,7 @@ where
 {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+            * super::convolution::cnv_prepare_tmp_bytes::<R>(module.n())
     }
 
     fn cnv_prepare_left(
@@ -750,7 +750,7 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes::<R>(res.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -762,7 +762,7 @@ where
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+            * super::convolution::cnv_prepare_tmp_bytes::<R>(module.n())
     }
 
     fn cnv_prepare_right(
@@ -771,7 +771,7 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes::<R>(res.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -996,7 +996,7 @@ where
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+            * super::convolution::cnv_prepare_tmp_bytes::<R>(module.n())
     }
 
     fn cnv_prepare_self(
@@ -1006,7 +1006,7 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(left.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes::<R>(left.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             left.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -1249,7 +1249,9 @@ where
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
         NTT4x30Neon::<R>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
-            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT)
+                * super::vec_znx_dft::idft_tmp_words::<R>(module.n())
+                * size_of::<u64>(),
         )
     }
 
@@ -1281,7 +1283,7 @@ where
         let size = res.size();
         let min_size = size.min(a.size());
         let a_data: &[u32] = cast_slice(a.raw());
-        let per_worker = 4 * n;
+        let per_worker = super::vec_znx_dft::idft_tmp_words::<R>(n);
         let workers = poulpy_cpu_rayon::workers_within(
             size.min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
             per_worker * size_of::<u64>(),
@@ -1519,10 +1521,10 @@ where
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30NeonRayon<R> {
-    const PREPARE: usize = 4;
-    const APPLY: usize = 8;
-    const VMP: usize = 8;
-    const IDFT: usize = 8;
+    const PREPARE: usize = 32;
+    const APPLY: usize = 32;
+    const VMP: usize = 32;
+    const IDFT: usize = 32;
 }
 
 impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30NeonRayon<R> {
