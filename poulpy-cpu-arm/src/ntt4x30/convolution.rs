@@ -215,12 +215,67 @@ impl Acc {
     }
 }
 
-/// Computes block `blk` of every output limb.
+/// Blocks whose outputs are staged together before they reach the result.
 ///
-/// `a0`, `a1` are left columns, `b0`, `b1` right columns, each from its first block.
-#[allow(clippy::too_many_arguments)]
+/// The planes of the output limbs are `4 n` bytes apart, so their write streams fall in the same cache sets.
+/// Storing one block at a time evicts every line before its four blocks are written.
+/// A run fills whole lines, which are then written once.
+const RUN: usize = 32;
+
+/// Output limbs staged together, [`RUN`] blocks of four planes each.
+const STAGE_LIMBS: usize = 32;
+
+/// Stage of [`STAGE_LIMBS`] limbs over a run of blocks: plane `p` of limb `k` holds its run at `((k * 4 + p) * RUN) * 4`.
+type Stage = std::mem::MaybeUninit<[u32; STAGE_LIMBS * 4 * RUN * 4]>;
+
+/// Stores the canonical vectors of block `b` of the run for staged limb `k`.
 #[inline(always)]
-unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
+unsafe fn stage_store(stage: *mut u32, k: usize, b: usize, r: &[uint32x4_t; 4]) {
+    unsafe {
+        for (p, &r) in r.iter().enumerate() {
+            vst1q_u32(stage.add(((k * 4 + p) * RUN + b) * 4), r);
+        }
+    }
+}
+
+/// Moves `count` staged limbs of a run of `len` blocks from block `blk` to limbs `first..` of column `res_col`.
+///
+/// Limbs below `add_below` receive the sum of their content and the stage, the others are overwritten.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+unsafe fn stage_flush(
+    c: &[Plane; 4],
+    stage: *const u32,
+    res: *mut u32,
+    res_col: usize,
+    res_cols: usize,
+    n: usize,
+    first: usize,
+    count: usize,
+    add_below: usize,
+    blk: usize,
+    len: usize,
+) {
+    unsafe {
+        for k in 0..count {
+            let dst = res.add(((first + k) * res_cols + res_col) * 4 * n + 4 * blk);
+            for (p, c) in c.iter().enumerate() {
+                let (d, s) = (dst.add(p * n), stage.add((k * 4 + p) * RUN * 4));
+                if first + k < add_below {
+                    for b in 0..len {
+                        vst1q_u32(d.add(4 * b), add_mod(vld1q_u32(d.add(4 * b)), vld1q_u32(s.add(4 * b)), c.q));
+                    }
+                } else {
+                    std::ptr::copy_nonoverlapping(s, d, 4 * len);
+                }
+            }
+        }
+    }
+}
+
+/// One run of `len` blocks from block `blk` of a convolution, see [`apply`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn conv_run<const ACC: bool, const PAIRWISE: bool>(
     c: &[Plane; 4],
     res: *mut u32,
     res_col: usize,
@@ -229,6 +284,7 @@ unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
     min_size: usize,
     offset: usize,
     blk: usize,
+    len: usize,
     a0: *const u32,
     a1: *const u32,
     a_size: usize,
@@ -238,33 +294,35 @@ unsafe fn conv_block<const ACC: bool, const PAIRWISE: bool>(
     b_log_gap: usize,
 ) {
     unsafe {
-        for k in 0..min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            let a_off = packed_row_offset(a_size, k_abs + 1 - j_max, blk);
-            let b_off = (b_size - j_max) * ROW;
-            let acc = Acc::new().push_block::<PAIRWISE>(
-                c,
-                blk,
-                a0.add(a_off),
-                a1.add(a_off),
-                b0.add(b_off),
-                b1.add(b_off),
-                b_size,
-                b_log_gap,
-                j_max - j_min,
-            );
-            let r = acc.finish(c);
-            let dst = res.add((k * res_cols + res_col) * 4 * n + 4 * blk);
-            for p in 0..4 {
-                let d = dst.add(p * n);
-                if ACC {
-                    vst1q_u32(d, add_mod(vld1q_u32(d), r[p], c[p].q));
-                } else {
-                    vst1q_u32(d, r[p]);
+        let mut stage = Stage::uninit();
+        let sp = stage.as_mut_ptr() as *mut u32;
+        let mut first = 0;
+        while first < min_size {
+            let count = (min_size - first).min(STAGE_LIMBS);
+            for b in 0..len {
+                for k in 0..count {
+                    let k_abs = first + k + offset;
+                    let j_min = k_abs.saturating_sub(a_size - 1);
+                    let j_max = (k_abs + 1).min(b_size);
+                    let a_off = packed_row_offset(a_size, k_abs + 1 - j_max, blk + b);
+                    let b_off = (b_size - j_max) * ROW;
+                    let acc = Acc::new().push_block::<PAIRWISE>(
+                        c,
+                        blk + b,
+                        a0.add(a_off),
+                        a1.add(a_off),
+                        b0.add(b_off),
+                        b1.add(b_off),
+                        b_size,
+                        b_log_gap,
+                        j_max - j_min,
+                    );
+                    stage_store(sp, k, b, &acc.finish(c));
                 }
             }
+            let add_below = if ACC { min_size } else { 0 };
+            stage_flush(c, sp, res, res_col, res_cols, n, first, count, add_below, blk, len);
+            first += count;
         }
     }
 }
@@ -453,8 +511,9 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let n_blocks = n / 4;
     E::for_each(n_blocks.div_ceil(TASK_BLOCKS), |task| unsafe {
         let c = planes();
-        for blk in task * TASK_BLOCKS..((task + 1) * TASK_BLOCKS).min(n_blocks) {
-            conv_block::<ACC, PAIRWISE>(
+        let end = ((task + 1) * TASK_BLOCKS).min(n_blocks);
+        for blk in (task * TASK_BLOCKS..end).step_by(RUN) {
+            conv_run::<ACC, PAIRWISE>(
                 &c,
                 res_ptr.get(),
                 res_col,
@@ -463,6 +522,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
                 min_size,
                 offset,
                 blk,
+                RUN.min(end - blk),
                 a0.as_ptr(),
                 a1.as_ptr(),
                 a_size,
@@ -604,29 +664,42 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
         let res_ptr = SendPtr(res_u32.as_mut_ptr());
         E::for_each(n_blocks.div_ceil(TASK_BLOCKS), |task| unsafe {
             let c = planes();
-            for blk in task * TASK_BLOCKS..((task + 1) * TASK_BLOCKS).min(n_blocks) {
-                for k in 0..limbs {
-                    let mut acc = Acc::new();
-                    for term in sum_terms {
-                        if k < term.limbs {
-                            let k_abs = k + term.offset;
-                            let j_min = k_abs.saturating_sub(term.a_size - 1);
-                            let j_max = (k_abs + 1).min(term.b_size);
-                            let a = term.a.add(packed_row_offset(term.a_size, k_abs + 1 - j_max, blk));
-                            let b = term.b.add((term.b_size - j_max) * ROW);
-                            acc = acc.push_block::<false>(&c, blk, a, a, b, b, term.b_size, term.b_log_gap, j_max - j_min);
+            let end = ((task + 1) * TASK_BLOCKS).min(n_blocks);
+            let mut stage = Stage::uninit();
+            let sp = stage.as_mut_ptr() as *mut u32;
+            for blk in (task * TASK_BLOCKS..end).step_by(RUN) {
+                let len = RUN.min(end - blk);
+                let mut first = 0;
+                while first < limbs {
+                    let count = (limbs - first).min(STAGE_LIMBS);
+                    for b in 0..len {
+                        for k in first..first + count {
+                            let mut acc = Acc::new();
+                            for term in sum_terms {
+                                if k < term.limbs {
+                                    let k_abs = k + term.offset;
+                                    let j_min = k_abs.saturating_sub(term.a_size - 1);
+                                    let j_max = (k_abs + 1).min(term.b_size);
+                                    let a = term.a.add(packed_row_offset(term.a_size, k_abs + 1 - j_max, blk + b));
+                                    let b_row = term.b.add((term.b_size - j_max) * ROW);
+                                    acc = acc.push_block::<false>(
+                                        &c,
+                                        blk + b,
+                                        a,
+                                        a,
+                                        b_row,
+                                        b_row,
+                                        term.b_size,
+                                        term.b_log_gap,
+                                        j_max - j_min,
+                                    );
+                                }
+                            }
+                            stage_store(sp, k - first, b, &acc.finish(&c));
                         }
                     }
-                    let r = acc.finish(&c);
-                    let dst = res_ptr.get().add((k * res_cols + res_col) * 4 * n + 4 * blk);
-                    for (p, &r) in r.iter().enumerate() {
-                        let d = dst.add(p * n);
-                        if k < written {
-                            vst1q_u32(d, add_mod(vld1q_u32(d), r, c[p].q));
-                        } else {
-                            vst1q_u32(d, r);
-                        }
-                    }
+                    stage_flush(&c, sp, res_ptr.get(), res_col, res_cols, n, first, count, written, blk, len);
+                    first += count;
                 }
             }
         });

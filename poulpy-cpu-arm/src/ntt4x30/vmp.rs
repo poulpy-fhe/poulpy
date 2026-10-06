@@ -7,7 +7,7 @@
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use core::arch::aarch64::{vld1q_u32, vst1q_u32};
+use core::arch::aarch64::{uint32x4_t, vld1q_u32, vst1q_u32};
 use poulpy_cpu_portable::kernels::vmp_select::assert_extractable_portable;
 
 use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, primes::Primes30};
@@ -127,9 +127,59 @@ pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
 
 /// Blocks processed together.
 ///
-/// Inputs are gathered in runs of this many blocks.
-/// One block at a time would touch every input limb for 16 bytes, which costs a large part of the products.
-const GROUP: usize = 8;
+/// Inputs are gathered and outputs staged in runs of this many blocks.
+/// The planes of a vector are `4 n` bytes apart, so their streams fall in the same cache sets.
+/// One block at a time touches every plane for 16 bytes and evicts each line before its four blocks are done.
+/// A run reads and writes whole lines once.
+const GROUP: usize = 32;
+
+/// Outputs staged together, one output being a limb of a column: [`GROUP`] blocks of four planes each.
+const STAGE_OUTPUTS: usize = 64;
+
+/// Stage of [`STAGE_OUTPUTS`] outputs over a group of blocks: plane `p` of output `o` holds its run at `(o * 4 + p) * GROUP * 4`.
+type Stage = std::mem::MaybeUninit<[u32; STAGE_OUTPUTS * ROW * GROUP]>;
+
+/// Stores the canonical vectors of block `b` of the group for staged output `o`.
+#[inline(always)]
+unsafe fn stage_store(stage: *mut u32, o: usize, b: usize, r: &[uint32x4_t; 4]) {
+    unsafe {
+        for (p, &r) in r.iter().enumerate() {
+            vst1q_u32(stage.add(((o * 4 + p) * GROUP + b) * 4), r);
+        }
+    }
+}
+
+/// Moves `count` staged outputs of a group of `len` blocks from block `blk` to the outputs `first..` of `res`.
+///
+/// The outputs are overwritten when `OVERWRITE` is set and accumulated otherwise.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+unsafe fn stage_flush<const OVERWRITE: bool>(
+    c: &[Plane; 4],
+    stage: *const u32,
+    res: *mut u32,
+    n: usize,
+    first: usize,
+    count: usize,
+    blk: usize,
+    len: usize,
+) {
+    unsafe {
+        for o in 0..count {
+            let dst = res.add((first + o) * 4 * n + 4 * blk);
+            for (p, c) in c.iter().enumerate() {
+                let (d, s) = (dst.add(p * n), stage.add((o * 4 + p) * GROUP * 4));
+                if OVERWRITE {
+                    std::ptr::copy_nonoverlapping(s, d, 4 * len);
+                } else {
+                    for b in 0..len {
+                        vst1q_u32(d.add(4 * b), add_mod(vld1q_u32(d.add(4 * b)), vld1q_u32(s.add(4 * b)), c.q));
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Scratch space (in bytes) required by the VMP apply kernels, per worker.
 ///
@@ -210,21 +260,20 @@ unsafe fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
         for row in 0..row_max {
             gather_limb(n, blk, len, a.add(row * 4 * n), x, row, row_max, &c);
         }
-        for b in 0..len {
-            let xb = x.add(b * row_max * ROW);
-            let block = pmat.add(((blk + b) * ncols + limb_offset) * nrows * ROW);
-            for col in 0..cols {
-                let r = dot_rows(xb, block.add(col * nrows * ROW), row_max, &c);
-                let dst = res_ptr.get().add(col * 4 * n + 4 * (blk + b));
-                for (p, c) in c.iter().enumerate() {
-                    let d = dst.add(p * n);
-                    if OVERWRITE {
-                        vst1q_u32(d, r[p]);
-                    } else {
-                        vst1q_u32(d, add_mod(vld1q_u32(d), r[p], c.q));
-                    }
+        let mut stage = Stage::uninit();
+        let sp = stage.as_mut_ptr() as *mut u32;
+        let mut first = 0;
+        while first < cols {
+            let count = (cols - first).min(STAGE_OUTPUTS);
+            for b in 0..len {
+                let xb = x.add(b * row_max * ROW);
+                let block = pmat.add(((blk + b) * ncols + limb_offset + first) * nrows * ROW);
+                for o in 0..count {
+                    stage_store(sp, o, b, &dot_rows(xb, block.add(o * nrows * ROW), row_max, &c));
                 }
             }
+            stage_flush::<OVERWRITE>(&c, sp, res_ptr.get(), n, first, count, blk, len);
+            first += count;
         }
     });
 
@@ -420,11 +469,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
                     gather_limb(n, blk, len, a.add(flat * 4 * n), x, digit.x_off + row, total_rows, &c);
                 }
             }
-            for b in 0..len {
-                let xb = x.add(b * total_rows * ROW);
-                let block = pmat.add((blk + b) * ncols * nrows * ROW);
-                for limb in 0..active_limbs {
-                    for col in 0..cols_out {
+            let outputs = active_limbs * cols_out;
+            let mut stage = Stage::uninit();
+            let sp = stage.as_mut_ptr() as *mut u32;
+            let mut first = 0;
+            while first < outputs {
+                let count = (outputs - first).min(STAGE_OUTPUTS);
+                for b in 0..len {
+                    let xb = x.add(b * total_rows * ROW);
+                    let block = pmat.add((blk + b) * ncols * nrows * ROW);
+                    for o in 0..count {
+                        let (limb, col) = ((first + o) / cols_out, (first + o) % cols_out);
                         let mut state = DotState::new();
                         for (di, digit) in digits.iter().enumerate() {
                             if limb < digit.out_limbs {
@@ -432,13 +487,11 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>
                                 state = state.push_rows(xb.add(digit.x_off * ROW), m, digit.rows, &c);
                             }
                         }
-                        let r = state.finish(&c);
-                        let dst = res_ptr.get().add((limb * cols_out + col) * 4 * n + 4 * (blk + b));
-                        for (p, &r) in r.iter().enumerate() {
-                            vst1q_u32(dst.add(p * n), r);
-                        }
+                        stage_store(sp, o, b, &state.finish(&c));
                     }
                 }
+                stage_flush::<true>(&c, sp, res_ptr.get(), n, first, count, blk, len);
+                first += count;
             }
         });
     }
