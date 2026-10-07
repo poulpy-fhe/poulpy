@@ -42,6 +42,11 @@
 //! No platform-specific intrinsics or assembly are used.
 
 mod module;
+// Wired into the backend by the next change.
+#[allow(dead_code)]
+mod ntt32;
+#[allow(dead_code)]
+mod packed;
 mod prim;
 mod vec_znx_big;
 mod znx;
