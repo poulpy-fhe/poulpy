@@ -316,6 +316,19 @@ fn test_transform_domain_packed_byte_sizes() {
     );
 }
 
+cross_backend_test_suite! {
+    mod word_compat,
+    backend_ref =  poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = crate::NTT4x30Neon,
+    params = TestParams { size: 1<<8, base2k: 50, n: 8 },
+    tests = {
+        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
+        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
+        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
+    }
+}
+
 // Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
