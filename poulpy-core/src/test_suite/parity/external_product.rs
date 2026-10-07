@@ -153,7 +153,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     let mut normalized=$module.glwe_alloc_from_infos(&res_infos);
                     for col in 0..rank+1 {
                         let tmp=$module.vec_znx_idft_normalize_consume_tmp_bytes(normalized.data.size(),size);
-                        $module.vec_znx_idft_normalize_consume(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64> as VecZnxToBackendMut<$be>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
+                        $module.vec_znx_idft_normalize_consume(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64> as VecZnxToBackendMut<$be>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),0,col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
                     }
                     normalized
                 }};

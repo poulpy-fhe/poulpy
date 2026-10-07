@@ -236,7 +236,7 @@ fn finish_giant(
     {
         let (mut small, mut work) = arena.borrow().take_vec_znx_scratch(module.n(), 1, mask_size);
         for col in 1..acc.cols() {
-            module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, prod, col, base, None, &mut work);
+            module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, 0, prod, col, base, None, &mut work);
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col - 1, &small.to_backend_ref(), 0);
         }
     }

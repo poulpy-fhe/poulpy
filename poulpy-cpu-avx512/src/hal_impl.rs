@@ -529,6 +529,7 @@ where
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
+        res_offset: i64,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -562,7 +563,7 @@ where
             &mut res_ref,
             res_base2k,
             res_k,
-            0,
+            res_offset,
             res_col,
             &&big_ref,
             a_base2k,
@@ -976,6 +977,7 @@ mod ifma_impl {
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
             res_k: usize,
+            res_offset: i64,
             res_col: usize,
             a: &mut VecZnxDftBackendMut<'_, Self>,
             a_col: usize,
@@ -988,7 +990,7 @@ mod ifma_impl {
             let (tmp, arena) = take_host_typed::<Self, u64>(arena, 3 * n);
             let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
             crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
-                module, res, res_base2k, res_k, 0, res_col, a, a_col, a_base2k, addend, tmp, carry,
+                module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, tmp, carry,
             );
         }
         fn vec_znx_dft_apply(

@@ -2,10 +2,11 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
-        VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes,
-        VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
+        VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApplyTmpA, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRshAssign,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
@@ -623,6 +624,8 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
+        + VecZnxIdftNormalizeConsume<BE>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxBigBytesOf
         + GLWENormalize<BE>,
 {
@@ -1054,12 +1057,12 @@ where
         let convolve = self
             .cnv_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size)
             .max(self.cnv_pairwise_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size));
-        let digits = self.bytes_of_vec_znx_big(n, 1, dft_size) + self.vec_znx_big_normalize_tmp_bytes();
+        let digits = self.vec_znx_idft_normalize_consume_tmp_bytes(dft_size, dft_size);
         let product = self.bytes_of_vec_znx_dft(n, 1, dft_size)
             + self.bytes_of_vec_znx_dft(n, 2, ks_size)
             + self
                 .gglwe_product_dft_tmp_bytes_reference(ks_size, dft_size, tsk)
-                .max(self.bytes_of_vec_znx_big(n, 2, ks_size) + self.vec_znx_big_normalize_tmp_bytes());
+                .max(self.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size));
         let tail = columns + BE::bytes_of_vec_znx(n, 1, dft_size) + convolve.max(digits).max(product);
 
         prepared + prepare.max(tail)
@@ -1220,21 +1223,19 @@ where
         }
 
         // d2 goes back to digits at the alignment of the convolution output: no shift here.
-        {
-            let (mut d2_big, mut norm_scratch) = scratch.borrow().take_vec_znx_big_scratch(n, 1, dft_size);
-            self.vec_znx_idft_apply_tmpa(&mut d2_big, 0, &mut diag, 1);
-            self.vec_znx_big_normalize(
-                &mut d2_digits,
-                base2k,
-                dft_size * base2k,
-                0,
-                0,
-                &d2_big.to_backend_ref(),
-                base2k,
-                0,
-                &mut norm_scratch.borrow(),
-            );
-        }
+        // The inverse consumes column 1 of `diag` and leaves d0 in column 0.
+        self.vec_znx_idft_normalize_consume(
+            &mut d2_digits,
+            base2k,
+            dft_size * base2k,
+            0,
+            0,
+            &mut diag,
+            1,
+            base2k,
+            None,
+            &mut scratch.borrow(),
+        );
 
         let (mut d2_dft, scratch) = scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
         self.vec_znx_dft_apply(1, 0, &mut d2_dft, 0, &d2_digits.to_backend_ref(), 0);
@@ -1246,24 +1247,19 @@ where
         self.vec_znx_dft_add_assign(&mut res_dft, 0, &diag.to_backend_ref(), 0);
         self.vec_znx_dft_add_assign(&mut res_dft, 1, &cross.to_backend_ref(), 0);
 
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(n, 2, ks_size);
-        for i in 0..2 {
-            self.vec_znx_idft_apply_tmpa(&mut res_big, i, &mut res_dft, i);
-        }
-
         res.set_canonical(true);
-        let res_big_ref = res_big.to_backend_ref();
         let mut res_backend = res.to_backend_mut();
         for i in 0..2 {
-            self.vec_znx_big_normalize(
+            self.vec_znx_idft_normalize_consume(
                 &mut res_backend.data,
                 base2k,
                 res_k.as_usize(),
                 cnv_offset_lo,
                 i,
-                &res_big_ref,
-                base2k,
+                &mut res_dft,
                 i,
+                base2k,
+                None,
                 &mut scratch.borrow(),
             );
         }

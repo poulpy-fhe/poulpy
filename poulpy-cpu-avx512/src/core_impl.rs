@@ -754,6 +754,7 @@ macro_rules! impl_rank_one_tensoring {
                         res.data_mut(),
                         res_base2k,
                         res_k,
+                        0,
                         i,
                         &mut output,
                         i,
