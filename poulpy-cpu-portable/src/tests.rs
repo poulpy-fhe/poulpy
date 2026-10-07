@@ -154,6 +154,13 @@ fn test_transform_domain_packed_byte_sizes() {
     );
 }
 
+/// The fused interleaved-digit product against the core reference body, on the same backend.
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Portable>::new(64), 50);
+}
+
 /// Rank-one tensor on enough limbs for the convolution kernels to reduce their accumulators several times per output.
 #[cfg(feature = "enable-core")]
 #[test]

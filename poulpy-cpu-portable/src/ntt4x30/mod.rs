@@ -21,6 +21,7 @@
 //! | `vec_znx_dft`   | Transform-domain vectors                                            |
 //! | `svp`           | Scalar-vector product                                               |
 //! | `vmp`           | Vector-matrix product                                               |
+//! | `vmp_strided`   | Interleaved-digit product of `poulpy-core`, fused in one pass       |
 //! | `convolution`   | Bivariate convolution                                               |
 //! | `hal_impl`      | Wiring of the above into the `poulpy_hal` extension points          |
 //! | `znx`           | Single ring element (`Z[X]/(X^n+1)`) arithmetic                     |
@@ -46,9 +47,13 @@ mod svp;
 mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp;
+#[cfg(feature = "enable-core")]
+mod vmp_strided;
 mod znx;
 
 pub use module::NTT4x30PortableHandle;
+#[cfg(feature = "enable-core")]
+pub(crate) use vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 
 use std::marker::PhantomData;
 
