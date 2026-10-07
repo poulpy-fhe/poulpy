@@ -445,7 +445,9 @@ macro_rules! impl_glwe_tensoring_reference {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::operations::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
+                    module, res, a, a_size, b_size,
+                )
             }
 
             fn glwe_tensor_apply_prepared_right<R, A, BP>(
@@ -456,7 +458,9 @@ macro_rules! impl_glwe_tensoring_reference {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
             {
-                $crate::reference::operations::glwe_tensor_apply_prepared_right(module, cnv_offset, res, a, b, b_size, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_reference(
+                    module, cnv_offset, res, a, b, b_size, scratch,
+                )
             }
 
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(

@@ -621,7 +621,7 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 A: GLWEInfos,
             {
-                poulpy_core::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+                module.glwe_tensor_apply_prepared_right_tmp_bytes_reference(res, a, a_size, b_size)
             }
 
             fn glwe_tensor_apply_prepared_right<R, A, BP>(
@@ -780,20 +780,48 @@ macro_rules! impl_rank_one_tensoring {
     };
 }
 
-impl_rank_one_tensoring!(NTT4x30Avx512, false, poulpy_core::glwe_tensor_apply_prepared_right);
-impl_rank_one_tensoring!(NTT4x30CIAvx512, false, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT4x30Avx512,
+    false,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
+impl_rank_one_tensoring!(
+    NTT4x30CIAvx512,
+    false,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(NTT4x30Avx512Rayon, false, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT4x30Avx512Rayon,
+    false,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(NTT4x30CIAvx512Rayon, false, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT4x30CIAvx512Rayon,
+    false,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 #[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(NTT3x42Ifma, true, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT3x42Ifma,
+    true,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 #[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(NTT3x42CIIfma, true, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT3x42CIIfma,
+    true,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(NTT3x42IfmaRayon, true, ifma_prepared_tensor);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(NTT3x42CIIfmaRayon, true, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(
+    NTT3x42CIIfmaRayon,
+    true,
+    GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
+);
 
 unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512<R>
 where
@@ -1030,7 +1058,7 @@ fn ifma_prepared_tensor<R, A, BP>(
         || res.base2k() != a.base2k()
         || res.size() < MIN_LIMBS
     {
-        poulpy_core::glwe_tensor_apply_prepared_right(module, offset, res, a, b, b_size, scratch);
+        module.glwe_tensor_apply_prepared_right_reference(offset, res, a, b, b_size, scratch);
         return;
     }
     type BE = NTT3x42IfmaRayon;
@@ -1041,7 +1069,7 @@ fn ifma_prepared_tensor<R, A, BP>(
     // The prepared right operand may be sparse: a power of two dividing the ring degree.
     poulpy_hal::layouts::check_degree::<BE>(n, b.to_backend_ref().n());
     assert!(a_size <= a.size(), "effective input exceeds its allocation");
-    assert!(scratch.available() >= poulpy_core::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size));
+    assert!(scratch.available() >= module.glwe_tensor_apply_prepared_right_tmp_bytes_reference(res, a, a_size, b_size));
     let result_base = res.base2k().as_usize();
     // Preserve the prepared product's rounding before the pairwise subtraction.
     let full_k = res.size() * result_base;

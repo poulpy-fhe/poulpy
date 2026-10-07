@@ -531,6 +531,24 @@ pub trait GLWETensoringReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_tensor_apply_prepared_right_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_tensor_apply_prepared_right_reference<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
@@ -852,6 +870,30 @@ where
             res_base2k,
             &mut scratch,
         );
+    }
+
+    fn glwe_tensor_apply_prepared_right_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+    {
+        glwe_tensor_apply_prepared_right_tmp_bytes(self, res, a, a_size, b_size)
+    }
+
+    fn glwe_tensor_apply_prepared_right_reference<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b, b_size, scratch)
     }
 
     fn glwe_tensor_apply_reference<R, A, B>(
