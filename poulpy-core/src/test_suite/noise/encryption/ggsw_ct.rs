@@ -87,7 +87,7 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     assert!(
-                        ct.noise(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        ct.noise_stats(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
                             .std()
                             .log2()
                             <= noise_f(col)
@@ -193,7 +193,7 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     let noise_have: f64 = ct
-                        .noise(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     assert!(
@@ -363,7 +363,7 @@ where
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     assert!(
-                        ct.noise(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
+                        ct.noise_stats(module, row, col, &pt_scalar.to_ref(), &sk_prepared, &mut scratch.borrow())
                             .std()
                             .log2()
                             <= noise_f(col)

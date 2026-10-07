@@ -86,7 +86,7 @@ where
             for col in 0..tensor_key.rank_in().as_usize() {
                 let noise_have = tensor_key
                     .0
-                    .noise(
+                    .noise_stats(
                         module,
                         row,
                         col,
@@ -181,7 +181,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             for col in 0..tensor_key.rank_in().as_usize() {
                 let noise_have = tensor_key
                     .0
-                    .noise(
+                    .noise_stats(
                         module,
                         row,
                         col,
