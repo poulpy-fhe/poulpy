@@ -1197,7 +1197,13 @@ mod prepared_tensor_tests {
     fn prepared_tensor_matches_reference() {
         type BE = NTT3x42IfmaRayon;
         let mut source = Source::new([67; 32]);
-        for (n, rank, base) in [(65536usize, 1usize, 52usize), (65536, 1, 26), (32768, 1, 52), (256, 2, 26)] {
+        for (n, rank, base) in [
+            (65536usize, 1usize, 52usize),
+            (65536, 1, 26),
+            (131072, 1, 52),
+            (32768, 1, 52),
+            (256, 2, 26),
+        ] {
             let module = Module::<BE>::new(n as u64);
             let layout = GLWELayout {
                 n: n.into(),
@@ -1240,6 +1246,10 @@ mod prepared_tensor_tests {
                     (15 * base - 1, 2 * base),
                     (16 * base - 1, 23 * base + 7),
                 ] {
+                    // Above the fast-path threshold: one shape keeps the larger ring within the CI budget.
+                    if n > 65536 && offset != base - 1 {
+                        continue;
+                    }
                     let output = GLWELayout { k: k.into(), ..layout };
                     let mut got = module.glwe_tensor_alloc_from_infos(&output);
                     let mut expected = module.glwe_tensor_alloc_from_infos(&output);

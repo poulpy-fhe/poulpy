@@ -1417,6 +1417,8 @@ mod finish_tests {
             check_streaming_finish(threads, false, &[256, 65536]);
         }
         check_streaming_finish(3, true, &[65536]);
+        // Above the stream threshold: one addend size keeps the larger ring within the CI budget.
+        check_streaming_finish(16, false, &[131072]);
     }
 
     #[cfg(feature = "enable-rayon")]
@@ -1434,7 +1436,7 @@ mod finish_tests {
                     let module = Module::<NTT3x42Ifma>::new((n * 2) as u64);
                     let host = Module::<HostBytesBackend>::new((n * 2) as u64);
                     for base2k in [1usize, 17, 52, 63] {
-                        if n == 65536 && base2k != 52 {
+                        if n >= 65536 && base2k != 52 {
                             continue;
                         }
                         let mut source = module.vec_znx_dft_alloc(n, 2, 5);
@@ -1467,6 +1469,9 @@ mod finish_tests {
                             }
                         }
                         for add_size in [0, 3, 7] {
+                            if n > 65536 && add_size != 3 {
+                                continue;
+                            }
                             let mut add = host.vec_znx_alloc(n, 2, add_size.max(1));
                             for j in 0..add.size() {
                                 for (i, value) in add.at_mut(0, j).iter_mut().enumerate() {
@@ -1505,7 +1510,7 @@ mod finish_tests {
                                     let mut expected = got.clone();
                                     let mut input = module.vec_znx_dft_alloc(n, 2, 5);
                                     input.data_mut().copy_from_slice(source.data());
-                                    if n == 65536 {
+                                    if n >= 65536 {
                                         idft_normalize_consume_ifma::<_, CheckedExecutor>(
                                             &module,
                                             &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
