@@ -522,14 +522,3 @@ fn large_ring_ntt_log17() {
 fn large_ring_ntt_rayon_log17() {
     poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 17);
 }
-
-#[test]
-fn large_ring_ntt_log18() {
-    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 18);
-}
-
-#[cfg(feature = "enable-rayon")]
-#[test]
-fn large_ring_ntt_rayon_log18() {
-    poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 18);
-}

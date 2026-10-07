@@ -43,9 +43,4 @@ mod tests {
     fn large_ring_ntt_log17() {
         super::test_ntt_ring_degree::<crate::NTT4x30Portable>(1 << 17);
     }
-
-    #[test]
-    fn large_ring_ntt_log18() {
-        super::test_ntt_ring_degree::<crate::NTT4x30Portable>(1 << 18);
-    }
 }

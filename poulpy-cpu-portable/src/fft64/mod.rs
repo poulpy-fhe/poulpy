@@ -65,3 +65,16 @@ pub use crate::kernels::fft64::module::FFTModuleHandle;
 /// output buffers and scratch space, preventing data races at the API level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Portable<R: Ring = Standard>(PhantomData<R>);
+
+#[cfg(test)]
+mod tests {
+    use poulpy_hal::layouts::{MAX_RING_DEGREE, Module};
+
+    use super::FFT64Portable;
+
+    #[test]
+    #[should_panic(expected = "exceeds the supported maximum")]
+    fn module_rejects_degrees_above_the_cap() {
+        let _ = Module::<FFT64Portable>::new(2 * MAX_RING_DEGREE);
+    }
+}

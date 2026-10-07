@@ -297,6 +297,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 
 /// Primary entry point for polynomial operations in the backend-selected ring.
 ///
+/// Largest ring degree a [`Module`] accepts, on the standard and the
+/// conjugate-invariant ring alike.
+pub const MAX_RING_DEGREE: u64 = 1 << 17;
+
 /// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
 /// [`api`](crate::api) trait methods are dispatched through this type.
@@ -307,6 +311,8 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 ///
 /// The module **owns** its handle; dropping the `Module` calls
 /// [`Backend::destroy`].
+///
+/// `N` is at most [`MAX_RING_DEGREE`] on every ring.
 #[repr(C)]
 pub struct Module<B: Backend> {
     ptr: NonNull<B::Handle>,
@@ -369,6 +375,10 @@ impl<B: Backend> Module<B> {
     #[inline]
     pub unsafe fn from_nonnull(ptr: NonNull<B::Handle>, n: u64) -> Self {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
+        assert!(
+            n <= MAX_RING_DEGREE,
+            "ring degree {n} exceeds the supported maximum {MAX_RING_DEGREE}"
+        );
         Self {
             ptr,
             n,
@@ -382,6 +392,10 @@ impl<B: Backend> Module<B> {
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn from_raw_parts(ptr: *mut B::Handle, n: u64) -> Self {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
+        assert!(
+            n <= MAX_RING_DEGREE,
+            "ring degree {n} exceeds the supported maximum {MAX_RING_DEGREE}"
+        );
         Self {
             ptr: NonNull::new(ptr).expect("null module ptr"),
             n,
