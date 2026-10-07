@@ -8,7 +8,7 @@ pub use crate::api::GGLWEEncryptSk;
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
+    GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWESecretPreparedToBackendRef,
@@ -23,19 +23,17 @@ pub trait GGLWEEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -64,101 +62,101 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let res = &mut res.to_backend_mut();
-        let pt_backend = pt.to_backend_ref();
-        let sk_ref = sk.to_backend_ref();
+        {
+            let res = &mut res.to_backend_mut();
+            let pt_backend = pt.to_backend_ref();
+            let sk_ref = sk.to_backend_ref();
 
-        assert_eq!(
-            res.rank_in(),
-            pt_backend.cols() as u32,
-            "res.rank_in(): {} != pt.cols(): {}",
-            res.rank_in(),
-            pt_backend.cols()
-        );
-        assert_eq!(
-            res.rank_out(),
-            sk_ref.rank(),
-            "res.rank_out(): {} != sk.rank(): {}",
-            res.rank_out(),
-            sk_ref.rank()
-        );
-        assert_eq!(res.n(), sk_ref.n());
-        assert_eq!(pt_backend.n() as u32, sk_ref.n());
-        assert!(
-            scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
-            "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
-        );
-        assert!(
-            res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
-            "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
-            res.dnum(),
-            res.dsize(),
-            res.base2k(),
-            res.dnum().0 * res.dsize().0 * res.base2k().0,
-            res.k()
-        );
+            assert_eq!(
+                res.rank_in(),
+                pt_backend.cols() as u32,
+                "res.rank_in(): {} != pt.cols(): {}",
+                res.rank_in(),
+                pt_backend.cols()
+            );
+            assert_eq!(
+                res.rank_out(),
+                sk_ref.rank(),
+                "res.rank_out(): {} != sk.rank(): {}",
+                res.rank_out(),
+                sk_ref.rank()
+            );
+            assert_eq!(res.n(), sk_ref.n());
+            assert_eq!(pt_backend.n() as u32, sk_ref.n());
+            assert!(
+                scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
+                "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
+            );
+            assert!(
+                res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
+                "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
+                res.dnum(),
+                res.dsize(),
+                res.base2k(),
+                res.dnum().0 * res.dsize().0 * res.base2k().0,
+                res.k()
+            );
 
-        let dnum: usize = res.dnum().into();
-        let dsize: usize = res.dsize().into();
-        let base2k: usize = res.base2k().into();
-        let rank_in: usize = res.rank_in().into();
-        let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
-        let tmp_pt_k = tmp_pt.k().as_usize();
+            let dnum: usize = res.dnum().into();
+            let dsize: usize = res.dsize().into();
+            let base2k: usize = res.base2k().into();
+            let rank_in: usize = res.rank_in().into();
+            let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
+            let tmp_pt_k = tmp_pt.k().as_usize();
 
-        // For each input column (i.e. rank) produces a GGLWE of rank_out+1 columns
-        //
-        // Example for ksk rank 2 to rank 3:
-        //
-        // (-(a0*s0 + a1*s1 + a2*s2) + s0', a0, a1, a2)
-        // (-(b0*s0 + b1*s1 + b2*s2) + s1', b0, b1, b2)
-        //
-        // Example ksk rank 2 to rank 1
-        //
-        // (-(a*s) + s0, a)
-        // (-(b*s) + s1, b)
-        for col_i in 0..rank_in {
-            for row_i in 0..dnum {
-                // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                self.vec_znx_zero(&mut tmp_pt.data, 0);
-                self.vec_znx_add_scalar_assign(
-                    &mut tmp_pt.to_backend_mut().data,
-                    0,
-                    (dsize - 1) + row_i * dsize,
-                    &pt_backend,
-                    col_i,
-                );
-                self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
-                let mut res_view = res.at_view_mut(row_i, col_i);
-                self.fill_glwe_mask_from_source(&mut res_view, source_xa);
-                self.glwe_encrypt_sk_internal(
-                    base2k,
-                    &mut res_view.data,
-                    Some((tmp_pt.to_backend_ref(), 0)),
-                    sk,
-                    enc_infos,
-                    source_xe,
-                    &mut scratch_1.borrow(),
-                );
+            // For each input column (i.e. rank) produces a GGLWE of rank_out+1 columns
+            //
+            // Example for ksk rank 2 to rank 3:
+            //
+            // (-(a0*s0 + a1*s1 + a2*s2) + s0', a0, a1, a2)
+            // (-(b0*s0 + b1*s1 + b2*s2) + s1', b0, b1, b2)
+            //
+            // Example ksk rank 2 to rank 1
+            //
+            // (-(a*s) + s0, a)
+            // (-(b*s) + s1, b)
+            for col_i in 0..rank_in {
+                for row_i in 0..dnum {
+                    // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
+                    self.vec_znx_zero(&mut tmp_pt.data, 0);
+                    self.vec_znx_add_scalar_assign(
+                        &mut tmp_pt.to_backend_mut().data,
+                        0,
+                        (dsize - 1) + row_i * dsize,
+                        &pt_backend,
+                        col_i,
+                    );
+                    self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+                    let mut res_view = res.at_view_mut(row_i, col_i);
+                    self.fill_glwe_mask_from_source(&mut res_view, source_xa);
+                    self.glwe_encrypt_sk_internal(
+                        base2k,
+                        res_view.k().as_usize(),
+                        &mut res_view.data,
+                        Some((tmp_pt.to_backend_ref(), 0)),
+                        sk,
+                        source_xe,
+                        &mut scratch_1.borrow(),
+                    );
+                }
             }
+            drop(tmp_pt);
+            scratch.wipe(GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res));
         }
-        drop(tmp_pt);
-        scratch.wipe(GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res));
     }
 }

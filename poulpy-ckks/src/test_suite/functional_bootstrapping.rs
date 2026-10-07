@@ -313,11 +313,11 @@ fn run_case<BE, F, E>(
         Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
     };
     let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: tp.atk_layout().layout,
-        tensor_key: tp.tsk_layout().layout,
+        automorphism_key: tp.atk_layout(),
+        tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in),
+            sparse_to_dense: tp.ksk_layout(k_boot),
         }),
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);

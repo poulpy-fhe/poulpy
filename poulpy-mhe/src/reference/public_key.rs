@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GLWEPublicKeyCompressedGenerate, GetDistribution,
+    Distribution, GLWEPublicKeyCompressedGenerate, GetDistribution,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -15,17 +15,15 @@ pub trait GLWEPublicKeyMHEProtocolReference<BE: Backend> {
         A: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_key_share_gen_reference<S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S>(
         &self,
         res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
 
 impl<BE: Backend> GLWEPublicKeyMHEProtocolReference<BE> for Module<BE>
@@ -43,17 +41,15 @@ where
         self.glwe_public_key_compressed_generate_tmp_bytes(infos)
     }
 
-    fn mhe_glwe_public_key_share_gen_reference<S, E>(
+    fn mhe_glwe_public_key_share_gen_reference<S>(
         &self,
         res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
-        E: EncryptionInfos,
     {
         assert!(
             res.n().as_usize() == self.n(),
@@ -69,6 +65,6 @@ where
             !matches!(sk_ref.dist(), Distribution::NONE | Distribution::ENCAPSULATED(_)),
             "invalid secret: a public key share needs a samplable distribution"
         );
-        self.glwe_public_key_compressed_generate(&mut res.key, sk, seed, enc_infos, source_xe, scratch);
+        self.glwe_public_key_compressed_generate(&mut res.key, sk, seed, source_xe, scratch);
     }
 }

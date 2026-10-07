@@ -8,7 +8,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
-    EncryptionLayout, GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk,
+    GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
@@ -46,7 +46,7 @@ where
                     let dnum_in: usize = k_in / in_base2k;
                     let dnum_ksk: usize = k_in.div_ceil(key_base2k * dsize);
 
-                    let gglwe_s0s1_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                    let gglwe_s0s1_infos = GLWESwitchingKeyLayout {
                         n: n.into(),
                         base2k: in_base2k.into(),
                         dnum: dnum_in.into(),
@@ -54,10 +54,9 @@ where
                         dsize: dsize_in.into(),
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s0s1.into(),
-                    })
-                    .unwrap();
+                    };
 
-                    let gglwe_s1s2_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                    let gglwe_s1s2_infos = GLWESwitchingKeyLayout {
                         n: n.into(),
                         base2k: key_base2k.into(),
                         dnum: dnum_ksk.into(),
@@ -65,8 +64,7 @@ where
                         dsize: dsize.into(),
                         rank_in: rank_out_s0s1.into(),
                         rank_out: rank_out_s1s2.into(),
-                    })
-                    .unwrap();
+                    };
 
                     let gglwe_s0s2_infos: GLWESwitchingKeyLayout = GLWESwitchingKeyLayout {
                         n: n.into(),
@@ -117,7 +115,6 @@ where
                         &mut gglwe_s0s1,
                         &sk0,
                         &sk1,
-                        &gglwe_s0s1_infos,
                         &mut source_xe,
                         &mut source_xa,
                         &mut scratch_enc.arena(),
@@ -128,7 +125,6 @@ where
                         &mut gglwe_s1s2,
                         &sk1,
                         &sk2,
-                        &gglwe_s1s2_infos,
                         &mut source_xe,
                         &mut source_xa,
                         &mut scratch_enc.arena(),
@@ -209,7 +205,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                 let dnum_in: usize = k_out / out_base2k;
                 let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
 
-                let gglwe_s0s1_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                let gglwe_s0s1_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: out_base2k.into(),
                     dnum: dnum_in.into(),
@@ -217,10 +213,9 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
-                })
-                .unwrap();
+                };
 
-                let gglwe_s1s2_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                let gglwe_s1s2_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
                     dnum: dnum_ksk.into(),
@@ -228,8 +223,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     dsize: dsize.into(),
                     rank_in: rank_out.into(),
                     rank_out: rank_out.into(),
-                })
-                .unwrap();
+                };
 
                 let mut gglwe_s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_s0s1_infos);
@@ -285,7 +279,6 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     &mut gglwe_s0s1,
                     &sk0,
                     &sk1,
-                    &gglwe_s0s1_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch_enc.arena(),
@@ -296,7 +289,6 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     &mut gglwe_s1s2,
                     &sk1,
                     &sk2,
-                    &gglwe_s1s2_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch_enc.arena(),

@@ -1,6 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
-    ScratchArenaTakeCore,
+    GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill, GLWENormalize, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
         GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank,
@@ -27,21 +26,19 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         A: GGSWInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_ggsw_share_gen_reference<P, S, U, E>(
+    fn mhe_ggsw_share_gen_reference<P, S, U>(
         &self,
         res: &mut GGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
     fn mhe_ggsw_share_finalize_tmp_bytes_reference<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
     where
@@ -100,21 +97,19 @@ where
                 .max(self.vec_znx_normalize_tmp_bytes())
     }
 
-    fn mhe_ggsw_share_gen_reference<P, S, U, E>(
+    fn mhe_ggsw_share_gen_reference<P, S, U>(
         &self,
         res: &mut GGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         assert!(
             res.n().as_usize() == self.n(),
@@ -159,20 +154,12 @@ where
             for col in 0..r {
                 self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), col);
             }
-            self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), enc_infos, source_xe, &mut scratch_2);
+            self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), source_xe, &mut scratch_2);
             for j in 0..r {
                 // Entry (row, i) of `circ_s[j]` encrypts zero under `sk` over row `i` of
                 // the gadget row's common mask matrix; entry (row, l) of `circ_u[j]`
                 // encrypts the message (at `l == j`, zero elsewhere) under `u` over its column `l`.
-                self.gglwe_compressed_encrypt_sk(
-                    &mut res.circ_s[j],
-                    &zero,
-                    sk,
-                    seeds.new_seed(),
-                    enc_infos,
-                    source_xe,
-                    &mut scratch_2,
-                );
+                self.gglwe_compressed_encrypt_sk(&mut res.circ_s[j], &zero, sk, seeds.new_seed(), source_xe, &mut scratch_2);
                 let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
                 for row in 0..dnum {
@@ -188,7 +175,7 @@ where
                             self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
                             self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
                         }
-                        self.glwe_encrypt_sk_with_mask(col, &row_pt, u, enc_infos, source_xe, &mut scratch_2);
+                        self.glwe_encrypt_sk_with_mask(col, &row_pt, u, source_xe, &mut scratch_2);
                         let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);
                         self.vec_znx_copy(
                             dst.at_view_mut(row, l).data_mut(),

@@ -49,7 +49,13 @@ ckks_backend_rank2_test_suite!(
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::{bootstrapping_preset_keys_roundtrip, bootstrapping_presets_meet_precision};
+
+    #[test]
+    #[ignore = "generates a full-size preset key set; opt in with --ignored"]
+    fn ntt4x30_preset_keys_roundtrip() {
+        bootstrapping_preset_keys_roundtrip::<crate::NTT4x30Portable>(52);
+    }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
@@ -121,6 +127,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64portable_encryption,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Portable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -180,6 +187,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30portable_encryption,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::NTT4x30Portable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -229,6 +237,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64portable_encryption_rank2,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Portable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -251,6 +260,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30portable_encryption_rank2,
     backend_ref = poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::NTT4x30Portable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -293,6 +303,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64portable_encryption,
     backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
     backend_test = crate::FFT64CIPortable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -334,6 +345,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30portable_encryption,
     backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
     backend_test = crate::NTT4x30CIPortable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -378,6 +390,7 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64portable_encryption_rank2,
     backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
     backend_test = crate::FFT64CIPortable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -398,5 +411,6 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30portable_encryption_rank2,
     backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
     backend_test = crate::NTT4x30CIPortable,
+    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }

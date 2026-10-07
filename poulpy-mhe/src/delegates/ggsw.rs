@@ -1,9 +1,6 @@
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
+    prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
@@ -20,23 +17,21 @@ impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
         BE::mhe_ggsw_share_gen_tmp_bytes(self, infos)
     }
 
-    fn mhe_ggsw_share_gen<P, S, U, E>(
+    fn mhe_ggsw_share_gen<P, S, U>(
         &self,
         res: &mut GGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
-        BE::mhe_ggsw_share_gen(self, res, pt, sk, u, seed, enc_infos, source_xe, scratch)
+        BE::mhe_ggsw_share_gen(self, res, pt, sk, u, seed, source_xe, scratch)
     }
 
     fn mhe_ggsw_share_aggregate(&self, res: &mut GGSWShareOwned<BE>, a: &GGSWShareOwned<BE>) {

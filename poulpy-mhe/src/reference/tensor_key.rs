@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionInfos, GLWEEncryptPk, GetDistribution, ScratchArenaTakeCore,
+    Distribution, GLWEEncryptPk, GetDistribution, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
@@ -18,19 +18,17 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_tensor_key_share_gen_reference<S, K, E>(
+    fn mhe_glwe_tensor_key_share_gen_reference<S, K>(
         &self,
         res: &mut GLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
@@ -50,19 +48,17 @@ where
             + self.glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)
     }
 
-    fn mhe_glwe_tensor_key_share_gen_reference<S, K, E>(
+    fn mhe_glwe_tensor_key_share_gen_reference<S, K>(
         &self,
         res: &mut GLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         assert!(
             res.n().as_usize() == self.n(),
@@ -112,7 +108,6 @@ where
                             &pt,
                             1 + a,
                             pk,
-                            enc_infos,
                             source_xu,
                             source_xe,
                             &mut scratch_1.borrow(),

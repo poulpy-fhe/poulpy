@@ -1,5 +1,5 @@
 use crate::bdd_arithmetic::*;
-use poulpy_core::{layouts::*, *};
+use poulpy_core::layouts::*;
 use poulpy_hal::{layouts::*, source::Source};
 /// Backend implementation contract for [`FheUintPreparedEncryptSk`].
 ///
@@ -9,16 +9,14 @@ use poulpy_hal::{layouts::*, source::Source};
 pub unsafe trait FheUintPreparedEncryptSkImpl<T: UnsignedInteger + ToBits>: Backend<ZnxWord = i64> {
     fn fhe_uint_prepared_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize;
     #[allow(clippy::too_many_arguments)]
-    fn fhe_uint_prepared_encrypt_sk<S, E>(
+    fn fhe_uint_prepared_encrypt_sk<S>(
         module: &Module<Self>,
         res: &mut FheUintPrepared<Self::OwnedBuf, T, Self>,
         value: T,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }

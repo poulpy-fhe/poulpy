@@ -3,7 +3,7 @@
 //! smudging noise.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, SmudgingNoise,
+    DEFAULT_SIGMA_XE, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, Noise,
     layouts::{
         Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
         GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -29,9 +29,9 @@ use crate::{
 
 /// Smudging noise sigma of every party, well above the fresh noise.
 const SIGMA_FLOOD: f64 = 1024.0;
-const FLOOD: SmudgingNoise = SmudgingNoise::Gaussian {
-    log_sigma: 10,
-    cutoff: 6,
+const FLOOD: Noise = Noise::Gaussian {
+    sigma: 1024.0,
+    cutoff_factor: 6,
 };
 
 pub fn test_glwe_private_keyswitch<BE>(module: &Module<BE>)
@@ -52,7 +52,6 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties_in = input_secrets(module);
     let parties_out = party_secrets(module);
     let sk_out = ideal_secret(module, &parties_out);
@@ -64,7 +63,7 @@ where
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
-    let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
+    let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
     let mask = ciphertext_mask(module, &ct);
 
     let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
@@ -126,7 +125,6 @@ where
             k: TorusPrecision(k_out.0 + BASE2K.0),
             ..share_layout
         };
-        let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
         let parties_in = input_secrets(module);
         let parties_out: Vec<Secret<BE>> = (0..PARTIES)
             .map(|i| secret_from_seed_at(module, rank_out, [100 + i as u8; 32]))
@@ -143,7 +141,7 @@ where
 
         let pk_out = collective_public_key(module, &parties_out, &pk_layout);
 
-        let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &enc_infos, &mut scratch);
+        let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
         let mask = ciphertext_mask(module, &ct);
 
         let mut acc = module.glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
@@ -162,7 +160,6 @@ where
                     sk_in,
                     &pk_out,
                     FLOOD,
-                    &enc_infos,
                     &mut source_xu,
                     &mut source_xe,
                     &mut source_smudge,
@@ -243,7 +240,6 @@ where
         k: TorusPrecision(K.0 - BASE2K.0),
         ..layout
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (_, sk_in) = secret_from_seed(module, [150u8; 32]);
     let pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
@@ -258,7 +254,6 @@ where
         &sk_in,
         &pk_out,
         FLOOD,
-        &enc_infos,
         &mut Source::new([20u8; 32]),
         &mut Source::new([10u8; 32]),
         &mut Source::new([30u8; 32]),
@@ -329,7 +324,6 @@ where
 {
     let layout = glwe_layout(module);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &layout, &layout));
     for (res_layout, rank_in, pk_layout, expected) in [
@@ -367,7 +361,6 @@ where
                 &sk_in,
                 &pk_out,
                 FLOOD,
-                &enc_infos,
                 &mut Source::new([20u8; 32]),
                 &mut Source::new([10u8; 32]),
                 &mut Source::new([30u8; 32]),
@@ -448,17 +441,16 @@ where
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&public_layout);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(public_layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout)
             .max(module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &public_layout, &public_layout)),
     );
-    let expected = "invalid smudging: Gaussian bound outside the precision";
+    let expected = "invalid noise: Gaussian bound outside the precision";
     // A `k`-bit bound at the sampled precision `k`, which the other layouts would accept.
-    let too_wide = |k: TorusPrecision| SmudgingNoise::Gaussian {
-        log_sigma: k.as_usize() - 3,
-        cutoff: 6,
+    let too_wide = |k: TorusPrecision| Noise::Gaussian {
+        sigma: 2.0f64.powi((k.as_usize() - 3) as i32),
+        cutoff_factor: 6,
     };
     // CKS samples into the narrower result.
     let mut res = GLWEPrivateKeyswitchShare {
@@ -491,7 +483,6 @@ where
             &sk,
             &pk,
             too_wide(public_layout.k),
-            &enc_infos,
             &mut source_xu,
             &mut source_xe,
             &mut source_smudge,
@@ -525,7 +516,6 @@ where
 fn encrypted_plaintext<BE>(
     module: &Module<BE>,
     sk: &GLWESecretPrepared<AlignedBuf, BE>,
-    enc_infos: &EncryptionLayout<GLWELayout>,
     scratch: &mut ScratchOwned<BE>,
 ) -> (GLWEPlaintext<AlignedBuf, i64>, GLWE<AlignedBuf, i64>)
 where
@@ -547,7 +537,6 @@ where
         &mut ct,
         &pt,
         sk,
-        enc_infos,
         &mut Source::new([31u8; 32]),
         &mut Source::new([32u8; 32]),
         &mut scratch.borrow(),

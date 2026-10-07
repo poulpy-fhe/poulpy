@@ -89,11 +89,11 @@ crate.
 ## Smudging
 
 A protocol whose share is a function of the parties' secrets adds a flood to
-every share: a `SmudgingNoise`, either a discrete Gaussian with an explicit
-cutoff or a uniform distribution on consecutive integers. The flood is sampled
-on the precision grid of the value it hides, which each protocol trait names,
-so that it reaches its bottom bit; on a coarser grid the low bits would be
-exact linear equations in the secrets.
+every share: a `Noise`, either a discrete Gaussian with a dimensionless
+`cutoff_factor` multiplying `sigma` or a uniform distribution on consecutive
+integers. The flood is sampled on the precision grid of the value it hides,
+which each protocol trait names, so that it reaches its bottom bit; on a
+coarser grid the low bits would be exact linear equations in the secrets.
 
 Each party provisions its own flood, so that its shares hide its secret
 whichever other parties are corrupt. For a statistical margin `lambda`, the
@@ -103,13 +103,13 @@ flood must dominate the input encryption, evaluation and rounding errors by
 - For a fixed integer discrepancy vector `e`, the untruncated Gaussian shifts
   by at most `||e||_2 / (2 sigma)` in statistical distance, the uniform
   distribution by at most `||e||_1 / 2^bits`.
-- A cutoff omits at most `tau = 2 exp(-cutoff^2 / 2)` per coefficient, so
+- Truncation omits at most `tau = 2 exp(-cutoff_factor^2 / 2)` per coefficient, so
   comparing two worlds of `M` conditioned samples costs at most `2 M tau`.
-  Choose it for the whole transcript, separately from the shift budget.
+  Choose the factor for the whole transcript, separately from the shift budget.
 - Random input-error tails and repeated or adaptive calls need their own
   bounds.
 
-Correctness needs the sum of every party's flood bound, `cutoff * 2^log_sigma`
+Correctness needs the sum of every party's flood bound, `floor(cutoff_factor * sigma)`
 or `2^(bits-1)`, the input and conversion errors and any fresh encryption noise
 to fit the decoding margin. The protocols check the flood against the sampling
 precision before drawing randomness. They cannot infer the input error or

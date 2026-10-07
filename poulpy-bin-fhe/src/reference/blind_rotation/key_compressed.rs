@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_core::{
-    Distribution, EncryptionInfos, GGSWCompressedEncryptSk, GetDistribution,
+    Distribution, GGSWCompressedEncryptSk, GetDistribution,
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 use poulpy_hal::{
@@ -22,18 +22,16 @@ where
 }
 
 /// Canonical lower-layer composition for `blind_rotation_key_compressed_encrypt_sk`.
-pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1, E>(
+pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     sk_glwe: &S0,
     sk_lwe: &S1,
     seed_xa: [u8; 32],
-    enc_infos: &E,
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    E: EncryptionInfos,
     S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWCompressedEncryptSk<BE>,
@@ -67,15 +65,7 @@ pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1, E>(
             pt_host[..word_bytes].copy_from_slice(&sk_host[i * word_bytes..(i + 1) * word_bytes]);
             BE::copy_from_host(&mut pt.data, &pt_host);
             let mut scratch_iter = scratch.borrow();
-            module.ggsw_compressed_encrypt_sk(
-                ggsw,
-                &pt,
-                sk_glwe,
-                source_xa.new_seed(),
-                enc_infos,
-                source_xe,
-                &mut scratch_iter,
-            );
+            module.ggsw_compressed_encrypt_sk(ggsw, &pt, sk_glwe, source_xa.new_seed(), source_xe, &mut scratch_iter);
         }
     }
 }

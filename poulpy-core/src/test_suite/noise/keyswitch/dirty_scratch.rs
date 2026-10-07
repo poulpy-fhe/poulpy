@@ -21,7 +21,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
-    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
+    GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     layouts::{
         GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
@@ -64,13 +64,12 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         let k_ksk: usize = k_in + key_base2k * dsize;
         let dnum: usize = k_in.div_ceil(key_base2k * dsize);
 
-        let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: base2k.into(),
             k: k_in.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_infos: GLWELayout = GLWELayout {
             n: n.into(),
@@ -79,7 +78,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             rank: rank.into(),
         };
 
-        let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+        let ksk_infos = GLWESwitchingKeyLayout {
             n: n.into(),
             base2k: key_base2k.into(),
             dnum: dnum.into(),
@@ -87,8 +86,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             dsize: dsize.into(),
             rank_in: rank.into(),
             rank_out: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
         let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -119,21 +117,12 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        module.glwe_switching_key_encrypt_sk(
-            &mut ksk,
-            &sk,
-            &sk,
-            &ksk_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.arena(),
-        );
+        module.glwe_switching_key_encrypt_sk(&mut ksk, &sk, &sk, &mut source_xe, &mut source_xa, &mut scratch.arena());
 
         module.glwe_encrypt_sk(
             &mut glwe_in,
             &pt_in,
             &sk_prepared,
-            &glwe_in_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -204,13 +193,12 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         let k_ggsw: usize = k_in + key_base2k * dsize;
         let dnum: usize = k_in.div_ceil(key_base2k * dsize);
 
-        let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: base2k.into(),
             k: k_in.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_infos: GLWELayout = GLWELayout {
             n: n.into(),
@@ -219,15 +207,14 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             rank: rank.into(),
         };
 
-        let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+        let ggsw_infos = GGSWLayout {
             n: n.into(),
             base2k: key_base2k.into(),
             dnum: dnum.into(),
             k_aux: (dsize * key_base2k + module.log_n()).into(),
             dsize: dsize.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut ggsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -264,7 +251,6 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             &mut ggsw,
             &pt_ggsw,
             &sk_prepared,
-            &ggsw_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -274,7 +260,6 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             &mut glwe_in,
             &pt_in,
             &sk_prepared,
-            &glwe_in_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

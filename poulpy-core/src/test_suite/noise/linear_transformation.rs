@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
     LinearTransformationBabySteps,
     error::{CoreError, Result},
     layouts::{
@@ -94,22 +94,20 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let dsize = 2;
     let dnum = k_in.div_ceil(key_base2k * dsize);
 
-    let ct_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let ct_infos = GLWELayout {
         n: n.into(),
         base2k: in_base2k.into(),
         k: k_in.into(),
         rank: rank.into(),
-    })
-    .unwrap();
-    let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+    };
+    let atk_infos = GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
         dnum: dnum.into(),
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
         dsize: dsize.into(),
-    })
-    .unwrap();
+    };
 
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
     let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
@@ -149,7 +147,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         &mut ct,
         &pt,
         &sk_prepared,
-        &ct_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -162,7 +159,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             &mut atk,
             module.galois_element(rot),
             &sk,
-            &atk_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

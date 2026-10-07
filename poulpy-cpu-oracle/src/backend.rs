@@ -30,6 +30,8 @@ pub type NTT4x30CIOracle = NTT4x30Oracle<ConjugateInvariant>;
 /// by `log2(n)`.
 pub struct Handle<F: DFTFamily> {
     tables: Vec<F::Table>,
+    #[cfg(feature = "enable-core")]
+    pub(crate) controlled_sampling: bool,
     /// Plans built on demand by the CKKS encoding.
     #[cfg(feature = "enable-ckks")]
     plans: poulpy_hal::layouts::ModulePlanCache,
@@ -59,6 +61,8 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
         let tables = (0..=top).map(|log_n| F::table(1 << log_n)).collect();
         let ptr = NonNull::from(Box::leak(Box::new(Handle::<F> {
             tables,
+            #[cfg(feature = "enable-core")]
+            controlled_sampling: false,
             #[cfg(feature = "enable-ckks")]
             plans: poulpy_hal::layouts::ModulePlanCache::default(),
         })));

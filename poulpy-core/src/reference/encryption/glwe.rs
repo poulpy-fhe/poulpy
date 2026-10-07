@@ -15,7 +15,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GLWEMaskFill, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
+    GLWEMaskFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -72,46 +72,40 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_sk_reference<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn glwe_encrypt_zero_sk_reference<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -144,123 +138,131 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_reference<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-        let pt_backend = pt.to_backend_ref();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
         {
-            let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+            let res = &mut res.to_backend_mut();
+            let pt_backend = pt.to_backend_ref();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            {
+                let mut res_ref = &mut *res;
+                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+            }
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                Some((pt_backend, 0)),
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
         }
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            &mut res.data,
-            Some((pt_backend, 0)),
-            sk,
-            enc_infos,
-            source_xe,
-            scratch,
-        );
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        res.set_canonical(true);
     }
 
-    fn glwe_encrypt_zero_sk_reference<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, S>(
         &self,
         res: &mut R,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        {
+            let res = &mut res.to_backend_mut();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            {
+                let mut res_ref = &mut *res;
+                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+            }
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                None,
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        }
         res.set_canonical(false);
-        let res = &mut res.to_backend_mut();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
-        {
-            let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
-        }
-        self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 
-    fn glwe_encrypt_sk_with_mask_reference<R, P, S, E>(
+    fn glwe_encrypt_sk_with_mask_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        {
+            let res = &mut res.to_backend_mut();
+            let pt_backend = pt.to_backend_ref();
+            let sk_ref = sk.to_backend_ref();
+
+            assert_eq!(res.rank(), sk_ref.rank());
+            operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            assert!(
+                scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+
+            self.glwe_encrypt_sk_internal(
+                res.base2k().into(),
+                res.k().as_usize(),
+                &mut res.data,
+                Some((pt_backend, 0)),
+                sk,
+                source_xe,
+                scratch,
+            );
+            scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
+        }
         res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-        let pt_backend = pt.to_backend_ref();
-        let sk_ref = sk.to_backend_ref();
-
-        assert_eq!(res.rank(), sk_ref.rank());
-        operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
-        assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            &mut res.data,
-            Some((pt_backend, 0)),
-            sk,
-            enc_infos,
-            source_xe,
-            scratch,
-        );
-        scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
     }
 }
 
@@ -273,20 +275,18 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         R: GLWEInfos,
         K: GLWEInfos;
 
-    fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
+    fn glwe_encrypt_pk_at_col_reference<R, P, K>(
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
@@ -312,20 +312,18 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
 
-    fn glwe_encrypt_pk_at_col_reference<R, P, K, E>(
+    fn glwe_encrypt_pk_at_col_reference<R, P, K>(
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
         if let Some((_, col)) = pt {
@@ -340,7 +338,6 @@ where
             pt.map(|(pt, col)| (pt.to_backend_ref(), col)),
             body_noise,
             pk,
-            enc_infos,
             source_xu,
             source_xe,
             scratch,
@@ -351,19 +348,17 @@ where
 
 pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_internal<R, K, E>(
+    fn glwe_encrypt_pk_internal<R, K>(
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
         body_noise: bool,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
@@ -375,136 +370,135 @@ where
         + VecZnxDftZero<BE>
         + VecZnxZero<BE>
         + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigAddNormal<BE>
+        + VecZnxBigAddNoise<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigAddSmallAssign<BE>
         + ModuleN
         + ScalarZnxFillDistribution<BE>,
 {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_internal<R, K, E>(
+    fn glwe_encrypt_pk_internal<R, K>(
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
         body_noise: bool,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
-        E: EncryptionInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        res.set_canonical(true);
-        let res = &mut res.to_backend_mut();
-
-        assert_eq!(res.base2k(), pk.base2k());
-        assert_eq!(res.n(), pk.n());
-        assert_eq!(res.rank(), pk.rank());
-        assert!(pk.k() >= res.k(), "invalid public key: less precise than the output");
-        if let Some((pt, _)) = &pt {
-            assert_eq!(pt.base2k(), pk.base2k());
-            assert_eq!(pt.n(), pk.n());
-        }
-
-        let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
-        assert!(
-            pk.data.cols_out() == pk.data.cols_in() + 1,
-            "invalid public key: entry count differs from its rank"
-        );
-        let n: usize = operand_degree(self.n(), &[res.n(), pk.n()]);
-        let base2k: usize = pk.base2k().into();
-        let noise_infos = enc_infos.noise_infos();
-        let size_pk: usize = pk.size();
-        let res_k: usize = res.k().as_usize();
-        let rank: usize = pk.data.cols_in();
-
-        // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
-        let dist: Distribution = match pk.dist() {
-            Distribution::NONE => panic!(
-                "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
-                 Self::generate"
-            ),
-            Distribution::ENCAPSULATED(_) => panic!("invalid public key: secret is tagged for encapsulation"),
-            // A zero ephemeral leaves the ciphertext as the message plus fresh noise.
-            Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
-                panic!("invalid public key: zero ephemeral distribution")
-            }
-            Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if p.is_nan() || *p <= 0.0 => {
-                panic!("invalid public key: zero ephemeral distribution")
-            }
-            dist => *dist,
-        };
-
-        let scratch = scratch.borrow();
-        let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
-        let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
-        for l in 0..rank {
-            self.scalar_znx_fill_distribution(&mut u.to_backend_mut(), l, dist, source_xu);
-            self.vec_znx_dft_apply(
-                1,
-                0,
-                &mut u_dft.to_backend_mut(),
-                l,
-                &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
-                l,
-            );
-        }
-
-        let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, size_pk);
-        self.vmp_apply_dft_to_dft(
-            &mut res_dft.to_backend_mut(),
-            &u_dft.to_backend_ref(),
-            &pk.data,
-            0,
-            &mut scratch_1.borrow(),
-        );
-
+        // Validate before any mutation; the flag is set once the output is written.
         {
-            let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
-            for i in 0..rank + 1 {
-                self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
-                if i > 0 || body_noise {
-                    self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
-                }
+            let res = &mut res.to_backend_mut();
 
-                if let Some((pt, col)) = &pt
-                    && *col == i
-                {
-                    self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
-                }
+            assert_eq!(res.base2k(), pk.base2k());
+            assert_eq!(res.n(), pk.n());
+            assert_eq!(res.rank(), pk.rank());
+            assert!(pk.k() >= res.k(), "invalid public key: less precise than the output");
+            if let Some((pt, _)) = &pt {
+                assert_eq!(pt.base2k(), pk.base2k());
+                assert_eq!(pt.n(), pk.n());
+            }
 
-                self.vec_znx_big_normalize(
-                    &mut res.data,
-                    base2k,
-                    res_k,
+            let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
+            assert!(
+                pk.data.cols_out() == pk.data.cols_in() + 1,
+                "invalid public key: entry count differs from its rank"
+            );
+            let n: usize = operand_degree(self.n(), &[res.n(), pk.n()]);
+            let base2k: usize = pk.base2k().into();
+            let size_pk: usize = pk.size();
+            let res_k: usize = res.k().as_usize();
+            let rank: usize = pk.data.cols_in();
+
+            // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
+            let dist: Distribution = match pk.dist() {
+                Distribution::NONE => panic!(
+                    "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
+                 Self::generate"
+                ),
+                Distribution::ENCAPSULATED(_) => panic!("invalid public key: secret is tagged for encapsulation"),
+                // A zero ephemeral leaves the ciphertext as the message plus fresh noise.
+                Distribution::ZERO | Distribution::TernaryFixed(0) | Distribution::BinaryFixed(0) => {
+                    panic!("invalid public key: zero ephemeral distribution")
+                }
+                Distribution::TernaryProb(p) | Distribution::BinaryProb(p) if p.is_nan() || *p <= 0.0 => {
+                    panic!("invalid public key: zero ephemeral distribution")
+                }
+                dist => *dist,
+            };
+
+            let scratch = scratch.borrow();
+            let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
+            let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
+            for l in 0..rank {
+                self.scalar_znx_fill_distribution(&mut u.to_backend_mut(), l, dist, source_xu);
+                self.vec_znx_dft_apply(
+                    1,
                     0,
-                    i,
-                    &ci_big.to_backend_ref(),
-                    base2k,
-                    0,
-                    &mut scratch_2,
+                    &mut u_dft.to_backend_mut(),
+                    l,
+                    &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
+                    l,
                 );
             }
+
+            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, size_pk);
+            self.vmp_apply_dft_to_dft(
+                &mut res_dft.to_backend_mut(),
+                &u_dft.to_backend_ref(),
+                &pk.data,
+                0,
+                &mut scratch_1.borrow(),
+            );
+
+            {
+                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
+                for i in 0..rank + 1 {
+                    self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
+                    if i > 0 || body_noise {
+                        self.vec_znx_big_add_noise(base2k, res_k, &mut ci_big, 0, Noise::ENCRYPTION, source_xe);
+                    }
+
+                    if let Some((pt, col)) = &pt
+                        && *col == i
+                    {
+                        self.vec_znx_big_add_small_assign(&mut ci_big.to_backend_mut(), 0, &pt.data, 0);
+                    }
+
+                    self.vec_znx_big_normalize(
+                        &mut res.data,
+                        base2k,
+                        res_k,
+                        0,
+                        i,
+                        &ci_big.to_backend_ref(),
+                        base2k,
+                        0,
+                        &mut scratch_2,
+                    );
+                }
+            }
         }
+        res.set_canonical(true);
     }
 }
 
 pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_internal<'pt, S, E>(
+    fn glwe_encrypt_sk_internal<'pt, S>(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -524,27 +518,25 @@ where
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxAddNormal<BE>
+        + VecZnxAddNoise<BE>
         + VecZnxNormalize<BE>
         + VecZnxSubAssign<BE>
         + VecZnxSubNegateAssign<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_sk_internal<'pt, S, E>(
+    fn glwe_encrypt_sk_internal<'pt, S>(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         let sk = sk.to_backend_ref();
-        let noise_infos = enc_infos.noise_infos();
 
         assert!(
             sk.dist != Distribution::NONE,
@@ -603,7 +595,7 @@ where
         }
 
         // c[0] += e
-        self.vec_znx_add_normal(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
+        self.vec_znx_add_noise(base2k, k, &mut c0.to_backend_mut(), 0, Noise::ENCRYPTION, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt

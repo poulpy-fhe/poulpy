@@ -3,7 +3,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
         Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
@@ -23,9 +23,8 @@ use poulpy_bin_fhe::{
         LookupTableFactory,
     },
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingExecute, CircuitBootstrappingKey,
-        CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
-        CircuitBootstrappingKeyPreparedFactory,
+        CircuitBootstrappingExecute, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout,
+        CircuitBootstrappingKeyPrepared, CircuitBootstrappingKeyPreparedFactory,
     },
 };
 
@@ -87,15 +86,12 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
     let mut sk_lwe: LWESecret<AlignedBuf, i64> = module.lwe_secret_alloc(params.bin_fhe_params.n_lwe.into());
     module.lwe_secret_fill_binary_block(&mut sk_lwe, params.block_size, &mut source_xs);
 
-    let brk_enc_infos = EncryptionLayout::new_from_default_sigma(brk_infos).unwrap();
-
     let mut brk: BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         BlindRotationKey::<BE::OwnedBuf, BRA, BE::ZnxWord>::alloc(&module, &brk_infos);
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
         &sk_glwe_dft,
         &sk_lwe,
-        &brk_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -211,8 +207,6 @@ pub fn runner_circuit_bootstrapping<
     let ct_lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-    let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
-
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.circuit_bootstrapping_execute_tmp_bytes(7, params.extension_factor, &res, &cbt_infos));
     let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
@@ -221,7 +215,6 @@ pub fn runner_circuit_bootstrapping<
         &mut cbt_key,
         &sk_lwe,
         &sk_glwe,
-        &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

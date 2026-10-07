@@ -11,7 +11,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
     layouts::{
         GGLWECompressedSeedMut, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -27,19 +27,17 @@ pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
@@ -70,115 +68,115 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.seed_mut().len()];
-
         {
-            let mut res = res.to_backend_mut();
-            let pt_backend = pt.to_backend_ref();
-            let sk_ref = sk.to_backend_ref();
+            let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.seed_mut().len()];
 
-            assert_eq!(
-                res.rank_in(),
-                pt_backend.cols() as u32,
-                "res.rank_in(): {} != pt.cols(): {}",
-                res.rank_in(),
-                pt_backend.cols()
-            );
-            assert_eq!(
-                res.rank_out(),
-                sk_ref.rank(),
-                "res.rank_out(): {} != sk.rank(): {}",
-                res.rank_out(),
-                sk_ref.rank()
-            );
-            assert_eq!(res.n(), sk_ref.n());
-            assert_eq!(pt_backend.n() as u32, sk_ref.n());
-            assert!(
-                scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res),
-                "scratch.available(): {} < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
-            );
-            assert!(
-                res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
-                "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
-                res.dnum(),
-                res.dsize(),
-                res.base2k(),
-                res.dnum().0 * res.dsize().0 * res.base2k().0,
-                res.k()
-            );
+            {
+                let mut res = res.to_backend_mut();
+                let pt_backend = pt.to_backend_ref();
+                let sk_ref = sk.to_backend_ref();
 
-            let dnum: usize = res.dnum().into();
-            let dsize: usize = res.dsize().into();
-            let base2k: usize = res.base2k().into();
-            let rank_in: usize = res.rank_in().into();
+                assert_eq!(
+                    res.rank_in(),
+                    pt_backend.cols() as u32,
+                    "res.rank_in(): {} != pt.cols(): {}",
+                    res.rank_in(),
+                    pt_backend.cols()
+                );
+                assert_eq!(
+                    res.rank_out(),
+                    sk_ref.rank(),
+                    "res.rank_out(): {} != sk.rank(): {}",
+                    res.rank_out(),
+                    sk_ref.rank()
+                );
+                assert_eq!(res.n(), sk_ref.n());
+                assert_eq!(pt_backend.n() as u32, sk_ref.n());
+                assert!(
+                    scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res),
+                    "scratch.available(): {} < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes: {}",
+                    scratch.available(),
+                    self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
+                );
+                assert!(
+                    res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
+                    "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
+                    res.dnum(),
+                    res.dsize(),
+                    res.base2k(),
+                    res.dnum().0 * res.dsize().0 * res.base2k().0,
+                    res.k()
+                );
 
-            let mut source_xa = Source::new(seed);
+                let dnum: usize = res.dnum().into();
+                let dsize: usize = res.dsize().into();
+                let base2k: usize = res.base2k().into();
+                let rank_in: usize = res.rank_in().into();
 
-            let scratch = scratch.borrow();
-            let (mut tmp_pt, mut scratch_1) = scratch.take_glwe_plaintext_scratch(&res);
-            let tmp_pt_k = tmp_pt.k().as_usize();
+                let mut source_xa = Source::new(seed);
 
-            for col_j in 0..rank_in {
-                for row_i in 0..dnum {
-                    // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                    self.vec_znx_zero(&mut tmp_pt.data, 0);
-                    {
-                        let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_add_scalar_assign(
-                            &mut tmp_pt_backend.data,
-                            0,
-                            (dsize - 1) + row_i * dsize,
-                            &pt_backend,
-                            col_j,
+                let scratch = scratch.borrow();
+                let (mut tmp_pt, mut scratch_1) = scratch.take_glwe_plaintext_scratch(&res);
+                let tmp_pt_k = tmp_pt.k().as_usize();
+
+                for col_j in 0..rank_in {
+                    for row_i in 0..dnum {
+                        // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
+                        self.vec_znx_zero(&mut tmp_pt.data, 0);
+                        {
+                            let mut tmp_pt_backend = tmp_pt.to_backend_mut();
+                            self.vec_znx_add_scalar_assign(
+                                &mut tmp_pt_backend.data,
+                                0,
+                                (dsize - 1) + row_i * dsize,
+                                &pt_backend,
+                                col_j,
+                            );
+                        }
+                        scratch_1 = scratch_1.apply_mut(|scratch| {
+                            let mut tmp_pt_backend = tmp_pt.to_backend_mut();
+                            self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt_backend.data, 0, scratch)
+                        });
+
+                        let (seed, _) = source_xa.branch();
+                        seeds[row_i * rank_in + col_j] = seed;
+
+                        let tmp_pt_backend = tmp_pt.to_backend_ref();
+                        let base2k = res.base2k().into();
+                        let scratch_full = scratch_1.borrow();
+                        let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
+                        self.fill_glwe_mask_from_seed(&mut full_ct, seed);
+                        self.glwe_encrypt_sk_internal(
+                            base2k,
+                            full_ct.k().as_usize(),
+                            &mut full_ct.data,
+                            Some((tmp_pt_backend, 0)),
+                            sk,
+                            source_xe,
+                            &mut scratch_2,
                         );
+                        let full_ct_ref = full_ct.to_backend_ref();
+                        let mut ct = res.at_view_mut(row_i, col_j);
+                        self.vec_znx_copy(&mut ct.data, 0, &full_ct_ref.data, 0);
                     }
-                    scratch_1 = scratch_1.apply_mut(|scratch| {
-                        let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt_backend.data, 0, scratch)
-                    });
-
-                    let (seed, _) = source_xa.branch();
-                    seeds[row_i * rank_in + col_j] = seed;
-
-                    let tmp_pt_backend = tmp_pt.to_backend_ref();
-                    let base2k = res.base2k().into();
-                    let scratch_full = scratch_1.borrow();
-                    let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_seed(&mut full_ct, seed);
-                    self.glwe_encrypt_sk_internal(
-                        base2k,
-                        &mut full_ct.data,
-                        Some((tmp_pt_backend, 0)),
-                        sk,
-                        enc_infos,
-                        source_xe,
-                        &mut scratch_2,
-                    );
-                    let full_ct_ref = full_ct.to_backend_ref();
-                    let mut ct = res.at_view_mut(row_i, col_j);
-                    self.vec_znx_copy(&mut ct.data, 0, &full_ct_ref.data, 0);
                 }
-            }
-        };
+            };
 
-        res.seed_mut().copy_from_slice(&seeds);
-        scratch.wipe(self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
+            res.seed_mut().copy_from_slice(&seeds);
+            scratch.wipe(self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
+        }
     }
 }

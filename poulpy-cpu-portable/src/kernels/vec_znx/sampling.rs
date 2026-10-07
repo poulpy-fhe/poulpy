@@ -1,8 +1,9 @@
 use crate::{
-    kernels::znx::{znx_add_normal_f64_portable, znx_fill_uniform_portable},
+    kernels::{noise::add_noise_portable, znx::znx_fill_uniform_portable},
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
     source::Source,
 };
+use poulpy_core::Noise;
 
 pub fn vec_znx_fill_uniform_portable<'r, BE>(
     base2k: usize,
@@ -33,25 +34,16 @@ pub fn vec_znx_fill_uniform_portable<'r, BE>(
     }
 }
 
-pub fn vec_znx_add_normal_portable<'r, BE>(
+pub fn vec_znx_add_noise_portable<'r, BE>(
     base2k: usize,
+    k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
-    k: usize,
-    sigma: f64,
-    bound: f64,
+    noise: Noise,
     source: &mut Source,
 ) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
-    assert!(
-        (bound.log2().ceil() as i64) < 64,
-        "invalid bound: ceil(log2(bound))={} > 63",
-        (bound.log2().ceil() as i64)
-    );
-
-    let limb: usize = k.div_ceil(base2k) - 1;
-    let shift: u32 = ((limb + 1) * base2k - k) as u32;
-    znx_add_normal_f64_portable(res.at_mut(res_col, limb), sigma, bound, shift, source)
+    add_noise_portable(base2k, k, res, res_col, noise, source);
 }

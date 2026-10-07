@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -27,7 +27,7 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
         secret: &mut P,
         mask: &C,
         sk: &S,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -70,21 +70,19 @@ impl<BE: Backend + GLWEShareToEncMHEProtocolImpl> GLWEShareToEncMHEProtocol<BE> 
         BE::mhe_glwe_share_to_enc_share_gen_tmp_bytes(self, res_infos, secret_infos)
     }
 
-    fn mhe_glwe_share_to_enc_share_gen<P, S, E>(
+    fn mhe_glwe_share_to_enc_share_gen<P, S>(
         &self,
         res: &mut GLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
-        BE::mhe_glwe_share_to_enc_share_gen(self, res, secret, sk, seed, enc_infos, source_xe, scratch)
+        BE::mhe_glwe_share_to_enc_share_gen(self, res, secret, sk, seed, source_xe, scratch)
     }
 
     fn mhe_glwe_share_to_enc_share_aggregate(&self, res: &mut GLWEShareToEncShareOwned<BE>, a: &GLWEShareToEncShareOwned<BE>) {

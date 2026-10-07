@@ -11,7 +11,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
+    GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
         GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
@@ -52,23 +52,21 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
 
     let dnum: usize = k_ct.div_ceil(key_base2k * dsize);
 
-    let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let glwe_out_infos = GLWELayout {
         n: n.into(),
         base2k: out_base2k.into(),
         k: k_ct.into(),
         rank: rank.into(),
-    })
-    .unwrap();
+    };
 
-    let key_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+    let key_infos = GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
         dnum: dnum.into(),
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
         dsize: dsize.into(),
-    })
-    .unwrap();
+    };
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module)
@@ -100,7 +98,6 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
             &mut tmp,
             *gal_el,
             &sk,
-            &key_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -115,15 +112,7 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
         .step_by(5)
         .map(|_| {
             let mut ct = module.glwe_alloc_from_infos(&glwe_out_infos);
-            module.glwe_encrypt_sk(
-                &mut ct,
-                &pt,
-                &sk_prep,
-                &glwe_out_infos,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            module.glwe_encrypt_sk(&mut ct, &pt, &sk_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
             module.glwe_rotate_assign(-5, &mut pt, &mut scratch.borrow());
             ct
         })

@@ -611,8 +611,8 @@ where
     standard.glwe_secret_prepare(&mut embedded_sk, &embedded);
     let (std_sk_raw, std_sk) = gen_sk_with_raw(&std_params, &standard, &std_host, [42; 32]);
     let ring_switch = RingSwitchKeys {
-        inbound: std_params.ksk_layout(k_in).layout,
-        outbound: std_params.ksk_layout(k_out).layout,
+        inbound: std_params.ksk_layout(k_in),
+        outbound: std_params.ksk_layout(k_out),
     }
     .generate(
         &standard,

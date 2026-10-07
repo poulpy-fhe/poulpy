@@ -1,6 +1,6 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef,
@@ -44,7 +44,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -100,14 +100,13 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
     /// the inner product of `mask`, the mask of the ciphertext, with `sk_in`,
     /// with smudging noise drawn with `flood` as its body error.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
+    fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
-        flood: SmudgingNoise,
-        enc_infos: &E,
+        flood: Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -115,8 +114,7 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
     ) where
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout.

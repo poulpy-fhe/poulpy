@@ -6,7 +6,7 @@ use poulpy_hal::{
 use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
-    Distribution, EncryptionLayout, TransferInto,
+    Distribution, TransferInto,
     layouts::{Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -50,16 +50,6 @@ impl BlindRotationKeyInfos for BlindRotationKeyLayout {
 
     fn n_lwe(&self) -> Degree {
         self.n_lwe
-    }
-}
-
-impl BlindRotationKeyInfos for EncryptionLayout<BlindRotationKeyLayout> {
-    fn n_glwe(&self) -> Degree {
-        self.layout.n_glwe()
-    }
-
-    fn n_lwe(&self) -> Degree {
-        self.layout.n_lwe()
     }
 }
 

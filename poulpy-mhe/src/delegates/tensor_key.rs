@@ -1,7 +1,4 @@
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef};
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
@@ -18,21 +15,19 @@ impl<BE: Backend + GLWETensorKeyMHEProtocolImpl> GLWETensorKeyMHEProtocol<BE> fo
         BE::mhe_glwe_tensor_key_share_gen_tmp_bytes(self, res_infos, pk_infos)
     }
 
-    fn mhe_glwe_tensor_key_share_gen<S, K, E>(
+    fn mhe_glwe_tensor_key_share_gen<S, K>(
         &self,
         res: &mut GLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
-        BE::mhe_glwe_tensor_key_share_gen(self, res, sk, pk, enc_infos, source_xu, source_xe, scratch)
+        BE::mhe_glwe_tensor_key_share_gen(self, res, sk, pk, source_xu, source_xe, scratch)
     }
 
     fn mhe_glwe_tensor_key_share_aggregate(&self, res: &mut GLWETensorKeyShareOwned<BE>, a: &GLWETensorKeyShareOwned<BE>) {

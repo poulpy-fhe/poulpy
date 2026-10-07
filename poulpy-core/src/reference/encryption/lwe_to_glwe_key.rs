@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
+    GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef, LWEInfos,
         LWESecretToBackendRef, Rank,
@@ -25,19 +25,17 @@ pub trait LWEToGLWESwitchingKeyEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretPreparedToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
@@ -64,19 +62,17 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn lwe_to_glwe_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe: &S1,
         sk_glwe: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: LWESecretToBackendRef<BE>,
         S2: GLWESecretPreparedToBackendRef<BE>,
-        E: EncryptionInfos,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
         let sk_lwe = sk_lwe.to_backend_ref();
@@ -116,15 +112,7 @@ where
 
             let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
             let sk_lwe_as_glwe_data = sk_lwe_as_glwe.data_mut();
-            self.gglwe_encrypt_sk(
-                res,
-                &sk_lwe_as_glwe_data,
-                sk_glwe,
-                enc_infos,
-                source_xe,
-                source_xa,
-                &mut enc_scratch,
-            );
+            self.gglwe_encrypt_sk(res, &sk_lwe_as_glwe_data, sk_glwe, source_xe, source_xa, &mut enc_scratch);
         }
         scratch.wipe(tmp_bytes);
     }

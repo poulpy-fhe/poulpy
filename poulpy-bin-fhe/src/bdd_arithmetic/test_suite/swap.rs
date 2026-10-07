@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
-    EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
+    GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
 };
 use poulpy_hal::AlignedBuf;
@@ -45,9 +45,6 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let t: i64 = 11;
     let f: i64 = 37;
     let k_pt: usize = 8;
@@ -60,38 +57,14 @@ where
 
         let mut ct_t = module.glwe_alloc_from_infos(&glwe_infos);
         let mut ct_f = module.glwe_alloc_from_infos(&glwe_infos);
-        module.glwe_encrypt_sk(
-            &mut ct_t,
-            &pt_t,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
-        module.glwe_encrypt_sk(
-            &mut ct_f,
-            &pt_f,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut ct_t, &pt_t, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        module.glwe_encrypt_sk(&mut ct_f, &pt_f, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
         let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt_sel.raw_mut()[0] = bit;
-        module.ggsw_encrypt_sk(
-            &mut s,
-            &pt_sel,
-            sk,
-            &ggsw_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.ggsw_encrypt_sk(&mut s, &pt_sel, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
@@ -128,9 +101,6 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let a: i64 = 19;
     let b: i64 = 53;
     let k_pt: usize = 8;
@@ -143,38 +113,14 @@ where
 
         let mut ct_a = module.glwe_alloc_from_infos(&glwe_infos);
         let mut ct_b = module.glwe_alloc_from_infos(&glwe_infos);
-        module.glwe_encrypt_sk(
-            &mut ct_a,
-            &pt_a,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
-        module.glwe_encrypt_sk(
-            &mut ct_b,
-            &pt_b,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut ct_a, &pt_a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        module.glwe_encrypt_sk(&mut ct_b, &pt_b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
         let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt_sel.raw_mut()[0] = bit;
-        module.ggsw_encrypt_sk(
-            &mut s,
-            &pt_sel,
-            sk,
-            &ggsw_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.ggsw_encrypt_sk(&mut s, &pt_sel, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), &mut scratch.borrow());
@@ -213,9 +159,6 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
 
@@ -228,37 +171,13 @@ where
         let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
             FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
-        a_enc.encrypt_sk(
-            module,
-            a,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-        b_enc.encrypt_sk(
-            module,
-            b,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         pt.raw_mut()[0] = bit;
-        module.ggsw_encrypt_sk(
-            &mut s,
-            &pt,
-            sk,
-            &ggsw_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.ggsw_encrypt_sk(&mut s, &pt, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         module.cswap(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), &mut scratch.borrow());
@@ -296,39 +215,20 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let data: Vec<u32> = (0..32).map(|i| i as u32).collect_vec();
 
     let mut data_enc: Vec<FheUint<BE::OwnedBuf, u32, BE::ZnxWord>> = (0..data.len())
         .map(|i| {
             let mut ct: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
                 FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
-            ct.encrypt_sk(
-                module,
-                data[i],
-                sk,
-                &glwe_enc_infos,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            ct.encrypt_sk(module, data[i], sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
             ct
         })
         .collect_vec();
 
     for idx in 0..data.len() as u32 {
         let mut idx_enc = FheUintPrepared::alloc_from_infos(module, &ggsw_infos);
-        idx_enc.encrypt_sk(
-            module,
-            idx,
-            sk,
-            &ggsw_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        idx_enc.encrypt_sk(module, idx, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         module.glwe_blind_retrieval_statefull(&mut data_enc, &idx_enc, 0, 5, &mut scratch.borrow());
 
@@ -368,24 +268,13 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let data: Vec<u32> = (0..25).map(|i| i as u32).collect_vec();
 
     let data_enc: Vec<FheUint<BE::OwnedBuf, u32, BE::ZnxWord>> = (0..data.len())
         .map(|i| {
             let mut ct: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
                 FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
-            ct.encrypt_sk(
-                module,
-                data[i],
-                sk,
-                &glwe_enc_infos,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            ct.encrypt_sk(module, data[i], sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
             ct
         })
         .collect_vec();
@@ -398,7 +287,6 @@ where
             module,
             idx << offset,
             sk,
-            &ggsw_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

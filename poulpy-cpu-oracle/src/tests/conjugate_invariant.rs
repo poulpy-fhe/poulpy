@@ -204,8 +204,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 12, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 
@@ -216,8 +216,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 17, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 

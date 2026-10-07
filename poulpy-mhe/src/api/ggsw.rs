@@ -1,9 +1,6 @@
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos,
+    prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Backend, ScalarZnxToBackendRef, ScratchArena},
@@ -59,21 +56,19 @@ pub trait GGSWMHEProtocol<BE: Backend> {
     /// columns. `u` is the ephemeral secret, of `sk`'s rank, this party's
     /// ephemeral key share was generated from.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_ggsw_share_gen<P, S, U, E>(
+    fn mhe_ggsw_share_gen<P, S, U>(
         &self,
         res: &mut GGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        U: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout and seeds.

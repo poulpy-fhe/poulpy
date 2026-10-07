@@ -15,10 +15,10 @@
 #[macro_export]
 macro_rules! impl_sampling_host {
     ($be:ty, fft64) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_normal_portable::<_, $be>);
+        $crate::impl_sampling_host!(@impl $be, $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_noise_portable::<_, $be>);
     };
     ($be:ty, ntt4x30) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_portable::<_, $be>);
+        $crate::impl_sampling_host!(@impl $be, $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_noise_portable::<_, $be>);
     };
     (@impl $be:ty, $big_kernel:expr) => {
         unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
@@ -52,68 +52,46 @@ macro_rules! impl_sampling_host {
                 }
             }
 
-            fn vec_znx_add_normal(
-                _module: &::poulpy_hal::layouts::Module<$be>,
-                base2k: usize,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
-                res_col: usize,
-                noise: ::poulpy_core::NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::kernels::vec_znx::vec_znx_add_normal_portable::<$be>(
-                    base2k,
-                    res,
-                    res_col,
-                    noise.k,
-                    noise.sigma,
-                    noise.bound,
-                    &mut source,
-                );
-            }
-
-            fn vec_znx_big_add_normal(
-                _module: &::poulpy_hal::layouts::Module<$be>,
-                base2k: usize,
-                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be>,
-                res_col: usize,
-                noise: ::poulpy_core::NoiseInfos,
-                seed: [u8; 32],
-            ) {
-                let mut source = ::poulpy_hal::source::Source::new(seed);
-                $big_kernel(
-                    base2k,
-                    &mut res,
-                    res_col,
-                    noise.k,
-                    noise.sigma,
-                    noise.bound,
-                    &mut source,
-                );
-            }
-        }
-    };
-}
-
-/// Implements exact integer smudging for a host backend with `i64` torus limbs.
-/// The sampler has variable running time and uses the private seed supplied by
-/// the Core sampling delegate.
-#[macro_export]
-macro_rules! impl_smudging_host {
-    ($be:ty) => {
-        unsafe impl ::poulpy_core::oep::SmudgingSamplingImpl for $be {
-            fn vec_znx_add_smudging(
+            fn vec_znx_add_noise(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 base2k: usize,
                 k: usize,
                 res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
                 res_col: usize,
-                noise: ::poulpy_core::SmudgingNoise,
+                noise: ::poulpy_core::Noise,
                 seed: [u8; 32],
             ) {
-                assert!(res.n() == module.n(), "invalid smudging: degree mismatch");
+                assert!(res.n().is_power_of_two() && res.n() <= module.n(), "noise degree outside module");
                 let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::kernels::smudging::vec_znx_add_smudging_portable::<$be>(base2k, k, res, res_col, noise, &mut source);
+                $crate::kernels::vec_znx::vec_znx_add_noise_portable::<$be>(
+                    base2k,
+                    k,
+                    res,
+                    res_col,
+                    noise,
+                    &mut source,
+                );
+            }
+
+            fn vec_znx_big_add_noise(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                base2k: usize,
+                k: usize,
+                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be>,
+                res_col: usize,
+                noise: ::poulpy_core::Noise,
+                seed: [u8; 32],
+            ) {
+                assert!(res.n().is_power_of_two() && res.n() <= module.n(), "noise degree outside module");
+                let mut source = ::poulpy_hal::source::Source::new(seed);
+                $big_kernel(
+                    base2k,
+                    k,
+                    &mut res,
+                    res_col,
+                    noise,
+                    &mut source,
+                );
             }
         }
     };

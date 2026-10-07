@@ -4,7 +4,7 @@
 //! may select this adapter, another adapter, or backends with matching streams.
 use super::{ControlledSamplingFFT64CIPortable, ControlledSamplingFFT64Portable};
 use poulpy_core::{
-    Distribution, NoiseInfos,
+    Distribution, Noise,
     oep::SamplingImpl,
     test_suite::parity::controlled_sampling::{noise_samples, scalar_samples},
 };
@@ -25,32 +25,44 @@ macro_rules! impl_controlled_sampling {
                 let samples = scalar_samples(res.n(), dist, seed);
                 res.at_mut(col, 0).copy_from_slice(&samples);
             }
-            fn vec_znx_add_normal(
+            fn vec_znx_add_noise(
                 _: &Module<Self>,
                 base2k: usize,
+                k: usize,
                 res: &mut VecZnxBackendMut<'_, Self>,
                 col: usize,
-                noise: NoiseInfos,
+                noise: Noise,
                 seed: [u8; 32],
             ) {
-                let samples = noise_samples(res.n(), base2k, noise, seed, false);
-                let (limb, shift) = noise.target_limb_and_shift(base2k);
-                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-                    *dst += sample << shift;
+                noise.validate();
+                assert!((1..=63).contains(&base2k));
+                assert!(k > 0 && k.div_ceil(base2k) <= res.size());
+                assert!(col < res.cols());
+                let samples = noise_samples(res.n(), base2k, k, noise, seed, false);
+                for (limb, digits) in samples.chunks(res.n()).enumerate() {
+                    for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
+                        *dst = dst.wrapping_add(*digit);
+                    }
                 }
             }
-            fn vec_znx_big_add_normal(
+            fn vec_znx_big_add_noise(
                 _: &Module<Self>,
                 base2k: usize,
+                k: usize,
                 res: &mut VecZnxBigBackendMut<'_, Self>,
                 col: usize,
-                noise: NoiseInfos,
+                noise: Noise,
                 seed: [u8; 32],
             ) {
-                let samples = noise_samples(res.n(), base2k, noise, seed, true);
-                let (limb, shift) = noise.target_limb_and_shift(base2k);
-                for (dst, sample) in res.at_mut(col, limb).iter_mut().zip(samples) {
-                    *dst += sample << shift;
+                noise.validate();
+                assert!((1..=63).contains(&base2k));
+                assert!(k > 0 && k.div_ceil(base2k) <= res.size());
+                assert!(col < res.cols());
+                let samples = noise_samples(res.n(), base2k, k, noise, seed, true);
+                for (limb, digits) in samples.chunks(res.n()).enumerate() {
+                    for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
+                        *dst = dst.wrapping_add(*digit);
+                    }
                 }
             }
         }
@@ -81,27 +93,30 @@ mod tests {
         ) {
             FFT64Portable::scalar_znx_fill_distribution(module.reinterpret(), res, col, dist, changed_seed(seed));
         }
-        fn vec_znx_add_normal(
+        fn vec_znx_add_noise(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             res: &mut VecZnxBackendMut<'_, Self>,
             col: usize,
-            noise: NoiseInfos,
+            noise: Noise,
             seed: [u8; 32],
         ) {
-            FFT64Portable::vec_znx_add_normal(module.reinterpret(), base2k, res, col, noise, changed_seed(seed));
+            FFT64Portable::vec_znx_add_noise(module.reinterpret(), base2k, k, res, col, noise, changed_seed(seed));
         }
-        fn vec_znx_big_add_normal(
+        fn vec_znx_big_add_noise(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             res: &mut VecZnxBigBackendMut<'_, Self>,
             col: usize,
-            noise: NoiseInfos,
+            noise: Noise,
             seed: [u8; 32],
         ) {
-            FFT64Portable::vec_znx_big_add_normal(
+            FFT64Portable::vec_znx_big_add_noise(
                 module.reinterpret(),
                 base2k,
+                k,
                 &mut res.reborrow_backend_mut().into_backend::<FFT64Portable>(),
                 col,
                 noise,

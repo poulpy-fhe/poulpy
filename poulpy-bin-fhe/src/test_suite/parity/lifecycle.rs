@@ -6,8 +6,7 @@ use crate::{
         ExecuteBDDCircuit1WTo1W, ExecuteBDDCircuit2WTo1W, FheUintPrepare, FheUintPreparedEncryptSk,
     },
     bdd_arithmetic::{
-        BDDEncryptionInfos, BDDKey, BDDKeyInfos, BDDKeyLayout, FheUint, FheUintPrepared, FheUintPreparedFactory,
-        GetBitCircuitInfo, Node,
+        BDDKey, BDDKeyInfos, BDDKeyLayout, FheUint, FheUintPrepared, FheUintPreparedFactory, GetBitCircuitInfo, Node,
     },
     blind_rotation::{BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
@@ -177,13 +176,12 @@ where
         let mut sk_lwe = reference.lwe_secret_alloc(6usize.into());
         reference.lwe_secret_fill_binary_block(&mut sk_lwe, 3, &mut Source::new([67; 32]));
         let mut raw_ref = BDDKey::alloc_from_infos(reference, &layout);
-        let enc = BDDEncryptionInfos::from_default_sigma(&layout).unwrap();
+
         with_scratch::<BR, _>(reference.bdd_key_encrypt_sk_tmp_bytes(&layout), |s| {
             reference.bdd_key_encrypt_sk(
                 &mut raw_ref,
                 &sk_lwe,
                 &sk,
-                &enc,
                 &mut Source::new([71; 32]),
                 &mut Source::new([73; 32]),
                 s,
@@ -348,7 +346,7 @@ where
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([83; 32]));
         let mut sk_lwe = module.lwe_secret_alloc(6usize.into());
         module.lwe_secret_fill_binary_block(&mut sk_lwe, 3, &mut Source::new([89; 32]));
-        let enc = BDDEncryptionInfos::from_default_sigma(&layout).unwrap();
+
         let mut expected = BDDKey::alloc_from_infos(module, &layout);
         let mut actual = BDDKey::alloc_from_infos(module, &layout);
         let circuit_bytes =
@@ -362,7 +360,6 @@ where
                 &mut expected.cbt,
                 &sk_lwe,
                 &sk,
-                &enc.cbt,
                 &mut Source::new([109; 32]),
                 &mut Source::new([113; 32]),
                 scratch,
@@ -375,7 +372,6 @@ where
                     &mut actual.cbt,
                     &sk_lwe,
                     &sk,
-                    &enc.cbt,
                     &mut Source::new([109; 32]),
                     &mut Source::new([113; 32]),
                     scratch,
@@ -393,7 +389,6 @@ where
                 &mut expected,
                 &sk_lwe,
                 &sk,
-                &enc,
                 &mut Source::new([97; 32]),
                 &mut Source::new([101; 32]),
                 s,
@@ -404,7 +399,6 @@ where
                 &mut actual,
                 &sk_lwe,
                 &sk,
-                &enc,
                 &mut Source::new([97; 32]),
                 &mut Source::new([101; 32]),
                 s,
@@ -424,18 +418,17 @@ where
             k_aux: (15 + module.n().ilog2() as usize).into(),
             rank: layout.cbt_layout.brk_layout.rank,
         };
-        let enc = poulpy_core::EncryptionLayout::new_from_default_sigma(output).unwrap();
+
         for value in [0u8, 0xA5, u8::MAX] {
             let mut expected = module.alloc_fhe_uint_prepared_from_infos(&output);
             let mut actual = module.alloc_fhe_uint_prepared_from_infos(&output);
             let bytes = crate::reference::bdd::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference::<B, _>(module, &output);
             with_scratch::<B, _>(bytes, |s| {
-                crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<u8, B, _, _>(
+                crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<u8, B, _>(
                     module,
                     &mut expected,
                     value,
                     &sk_prepared,
-                    &enc,
                     &mut Source::new([103; 32]),
                     &mut Source::new([107; 32]),
                     s,
@@ -448,7 +441,6 @@ where
                         &mut actual,
                         value,
                         &sk_prepared,
-                        &enc,
                         &mut Source::new([103; 32]),
                         &mut Source::new([107; 32]),
                         s,

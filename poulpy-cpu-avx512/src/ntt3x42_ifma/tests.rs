@@ -193,8 +193,8 @@ mod ntt3x42_ifma_tests {
         params = TestParams { size: 1<<12, base2k: 50, n: 1<<12 },
         tests = {
             test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
-            test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-            test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+            test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+            test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
         }
     }
 

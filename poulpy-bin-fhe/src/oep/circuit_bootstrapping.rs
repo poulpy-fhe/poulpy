@@ -2,8 +2,8 @@
 use crate::{
     blind_rotation::BlindRotationAlgo,
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyInfos,
-        CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan, CircuitBootstrappingPlanLayout,
+        CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan,
+        CircuitBootstrappingPlanLayout,
     },
 };
 use poulpy_core::{
@@ -175,7 +175,6 @@ pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: B
         res: &mut CircuitBootstrappingKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
@@ -288,7 +287,6 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
                 res: &mut $crate::circuit_bootstrapping::CircuitBootstrappingKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                 sk_lwe: &S0,
                 sk_glwe: &S1,
-                enc_infos: &$crate::circuit_bootstrapping::CircuitBootstrappingEncryptionInfos,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 source_xa: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -301,7 +299,7 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
                     + ::poulpy_core::GetDistribution,
             {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_reference::<S0, S1, _, $algo, Self>(
-                    module, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch,
+                    module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                 )
             }
         }

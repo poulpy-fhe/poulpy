@@ -2,7 +2,7 @@
 //! finalized aggregate decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk, GLWENoise,
+    DEFAULT_SIGMA_XE, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk, GLWENoise,
     layouts::{
         GGLWE, GGLWEAtViewRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWEPlaintextLayout, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
@@ -52,7 +52,6 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pt_layout = GLWEPlaintextLayout {
@@ -94,7 +93,7 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.glwe_compressed_encrypt_sk(dst, &pts[i], sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.glwe_compressed_encrypt_sk(dst, &pts[i], sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
@@ -125,7 +124,6 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let messages = party_messages(module);
@@ -142,15 +140,7 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.gglwe_compressed_encrypt_sk(
-            dst,
-            messages[i].0.data(),
-            sk,
-            SEEDS[0],
-            &enc_infos,
-            &mut source_xe,
-            &mut scratch.borrow(),
-        );
+        module.gglwe_compressed_encrypt_sk(dst, messages[i].0.data(), sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.gglwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
@@ -194,7 +184,6 @@ where
         base2k: BASE2K,
         k,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pk = collective_public_key(module, &parties, &pk_layout);
@@ -232,7 +221,6 @@ where
                         &mut dst_be.at_view_mut(row, col),
                         &pt,
                         &pk,
-                        &enc_infos,
                         &mut source_xu,
                         &mut source_xe,
                         &mut scratch.borrow(),

@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use poulpy_core::EncryptionInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
@@ -23,12 +22,11 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk<Dct, Dpt, S, E: EncryptionInfos>(
+    fn ckks_encrypt_sk<Dct, Dpt, S>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -38,13 +36,7 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        ensure_encryption_degrees(
-            "ckks_encrypt_sk",
-            self.n(),
-            ct.n().as_usize(),
-            sk.to_backend_ref().n().as_usize(),
-        )?;
-        BE::ckks_encrypt_sk_impl(self, ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        BE::ckks_encrypt_sk_impl(self, ct, pt, sk, source_xe, source_xa, scratch)
     }
 }
 

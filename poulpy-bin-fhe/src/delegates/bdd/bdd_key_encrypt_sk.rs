@@ -18,7 +18,6 @@ where
         res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -26,6 +25,6 @@ where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::bdd_key_encrypt_sk::<S0, S1>(self, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch)
+        BE::bdd_key_encrypt_sk::<S0, S1>(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)
     }
 }

@@ -10,7 +10,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
@@ -51,13 +51,12 @@ where
             let n: usize = module.n();
             let dnum: usize = k_in.div_ceil(key_base2k * dsize);
 
-            let ct_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let ct_in_infos = GLWELayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
                 k: k_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let ct_out_infos: GLWELayout = GLWELayout {
                 n: n.into(),
@@ -66,15 +65,14 @@ where
                 rank: rank.into(),
             };
 
-            let autokey_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+            let autokey_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 rank: rank.into(),
                 dsize: dsize.into(),
-            })
-            .unwrap();
+            };
 
             let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
@@ -112,7 +110,6 @@ where
                 &mut autokey,
                 p,
                 &sk,
-                &autokey_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -122,7 +119,6 @@ where
                 &mut ct_in,
                 &pt_in,
                 &sk_prepared,
-                &ct_in_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -186,23 +182,21 @@ where
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(key_base2k * dsize);
 
-            let ct_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let ct_out_infos = GLWELayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 k: k_out.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let autokey_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+            let autokey_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 rank: rank.into(),
                 dsize: dsize.into(),
-            })
-            .unwrap();
+            };
 
             let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
@@ -238,7 +232,6 @@ where
                 &mut autokey,
                 p,
                 &sk,
-                &autokey_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -248,7 +241,6 @@ where
                 &mut ct,
                 &pt_want,
                 &sk_prepared,
-                &ct_out_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

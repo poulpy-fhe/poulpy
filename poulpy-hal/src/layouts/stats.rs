@@ -2,11 +2,12 @@ use dashu_float::{FBig, round::mode::HalfEven};
 
 use crate::layouts::{Backend, HostDataRef, VecZnx, VecZnxBig};
 
-/// Summary statistics (max absolute value and standard deviation) of a
+/// Summary statistics (mean, max absolute value and standard deviation) of a
 /// polynomial vector's decoded floating-point coefficients.
 pub struct Stats {
     max: f64,
     std: f64,
+    mean: f64,
 }
 
 impl Stats {
@@ -18,6 +19,16 @@ impl Stats {
     /// Returns the standard deviation of the coefficients.
     pub fn std(&self) -> f64 {
         self.std
+    }
+
+    /// Returns the mean coefficient value.
+    pub fn mean(&self) -> f64 {
+        self.mean
+    }
+
+    /// Returns the uncentered second moment of the coefficients.
+    pub fn second_moment(&self) -> f64 {
+        self.std * self.std + self.mean * self.mean
     }
 }
 
@@ -54,6 +65,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         Stats {
             std: variance.to_f64().value().sqrt(),
             max: max.to_f64().value(),
+            mean: avg.to_f64().value(),
         }
     }
 }

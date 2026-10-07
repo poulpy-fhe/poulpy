@@ -4,8 +4,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    Distribution, NoiseInfos,
-    api::{ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal},
+    Distribution, Noise,
+    api::{ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise},
     oep::SamplingImpl,
 };
 
@@ -24,51 +24,36 @@ where
     }
 }
 
-impl<BE> VecZnxAddNormal<BE> for Module<BE>
+impl<BE> VecZnxAddNoise<BE> for Module<BE>
 where
     BE: Backend + SamplingImpl,
 {
-    fn vec_znx_add_normal(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        noise: NoiseInfos,
-        source: &mut Source,
-    ) {
-        BE::vec_znx_add_normal(self, base2k, res, res_col, noise, source.new_seed());
-    }
-}
-
-impl<BE> VecZnxBigAddNormal<BE> for Module<BE>
-where
-    BE: Backend + SamplingImpl,
-{
-    fn vec_znx_big_add_normal(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
-        res_col: usize,
-        noise: NoiseInfos,
-        source: &mut Source,
-    ) {
-        BE::vec_znx_big_add_normal(self, base2k, res, res_col, noise, source.new_seed());
-    }
-}
-
-impl<BE> crate::VecZnxAddSmudging<BE> for Module<BE>
-where
-    BE: Backend + crate::oep::SmudgingSamplingImpl,
-{
-    fn vec_znx_add_smudging(
+    fn vec_znx_add_noise(
         &self,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
-        noise: crate::SmudgingNoise,
+        noise: Noise,
         source: &mut Source,
     ) {
-        BE::vec_znx_add_smudging(self, base2k, k, res, res_col, noise, source.new_seed());
+        BE::vec_znx_add_noise(self, base2k, k, res, res_col, noise, source.new_seed());
+    }
+}
+
+impl<BE> VecZnxBigAddNoise<BE> for Module<BE>
+where
+    BE: Backend + SamplingImpl,
+{
+    fn vec_znx_big_add_noise(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        noise: Noise,
+        source: &mut Source,
+    ) {
+        BE::vec_znx_big_add_noise(self, base2k, k, res, res_col, noise, source.new_seed());
     }
 }

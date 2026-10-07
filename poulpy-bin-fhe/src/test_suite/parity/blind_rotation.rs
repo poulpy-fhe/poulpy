@@ -214,7 +214,7 @@ where
         k_aux: 12usize.into(),
         rank: 1usize.into(),
     };
-    let enc = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
     let mut secret_host = host.glwe_secret_alloc_from_infos(&layout);
     for (i, word) in secret_host.data_mut().at_mut(0, 0).iter_mut().enumerate() {
         *word = (i % 3) as i64 - 1;
@@ -250,7 +250,6 @@ where
                 &mut expected,
                 &secret_prepared,
                 &lwe_secret,
-                &enc,
                 &mut Source::new([21; 32]),
                 &mut Source::new([22; 32]),
                 s,
@@ -261,7 +260,6 @@ where
                 &mut actual,
                 &secret_prepared,
                 &lwe_secret,
-                &enc,
                 &mut Source::new([21; 32]),
                 &mut Source::new([22; 32]),
                 s,
@@ -284,7 +282,6 @@ where
                 &secret_prepared,
                 &lwe_secret,
                 [33; 32],
-                &enc,
                 &mut Source::new([34; 32]),
                 s,
             );
@@ -295,7 +292,6 @@ where
                 &secret_prepared,
                 &lwe_secret,
                 [33; 32],
-                &enc,
                 &mut Source::new([34; 32]),
                 s,
             );

@@ -17,7 +17,6 @@ pub unsafe trait BDDKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
         res: &mut BDDKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,

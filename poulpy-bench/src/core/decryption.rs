@@ -1,8 +1,8 @@
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, NoiseInfos,
+    GLWEDecrypt, GLWEEncryptSk,
     layouts::{
         Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling,
-        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 use poulpy_hal::{
@@ -54,15 +54,7 @@ where
             .max(module.glwe_decrypt_tmp_bytes(&infos)),
     );
 
-    let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-    module.glwe_encrypt_zero_sk(
-        &mut ct,
-        &sk_prepared,
-        &enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    module.glwe_encrypt_zero_sk(&mut ct, &sk_prepared, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
     bencher.iter(|| {
         module.glwe_decrypt(&ct, &mut pt, &sk_prepared, &mut scratch.borrow());

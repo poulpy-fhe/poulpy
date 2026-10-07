@@ -69,7 +69,7 @@ A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in
 A *compressed* variant stores only a 32-byte seed for the uniform mask, which it regenerates on decompression, to cut serialized size.
 
 The operations under `api/` cover secret-key and public-key encryption, decryption, the external product, key-switching, Galois automorphisms, the trace (a sum of automorphisms), GLWE arithmetic (add, subtract, normalize, multiply by a plaintext or a constant, rotate), the tensoring and relinearization used by ciphertext-ciphertext products, the baby-step/giant-step engines for polynomial evaluation and linear transformations (matrix-vector products), noise measurement, and conversions such as LWE sample extraction from a GLWE.
-Encryption takes explicit randomness streams through `Source`, one per role, and a `NoiseInfos` carrying the sigma, with `DEFAULT_SIGMA_XE = 3.2` as the default.
+Encryption takes explicit randomness streams through `Source`, one per role, and uses `Noise::ENCRYPTION` at the destination's precision `k`.
 Secret-key encryption takes two, one for the Gaussian error and one for the uniform mask, while public-key encryption takes a third for the public-key randomness.
 No operation allocates on the heap: the caller passes a scratch arena, and every operation has a companion `*_tmp_bytes` method that reports how large that arena must be.
 The crate also ships a generic conformance suite under `test_suite/` that any backend can run to prove it implements the operations correctly.

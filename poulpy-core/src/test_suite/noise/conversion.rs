@@ -13,9 +13,9 @@ use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::test_suite::noise::{glwe_decrypt_checked, glwe_noise_checked};
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE,
-    GLWEMaskFill, GLWENoise, GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE,
-    LWEMatrixDecrypt, LWEToGLWESwitchingKeyEncryptSk,
+    DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
+    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
+    LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
         GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
@@ -113,13 +113,12 @@ where
             let k_in = 4 * bases[0] + 1;
             let k_out = 4 * bases[0] + 1;
 
-            let glwe_infos_in = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let glwe_infos_in = GLWELayout {
                 n: n_glwe,
                 base2k: Base2K(bases[0] as u32),
                 k: TorusPrecision(k_in as u32),
                 rank: Rank(rank as u32),
-            })
-            .unwrap();
+            };
 
             let glwe_infos_out: GLWELayout = GLWELayout {
                 n: n_glwe,
@@ -150,7 +149,6 @@ where
                 &mut ct_in,
                 &pt_in,
                 &sk_prep,
-                &glwe_infos_in,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -204,14 +202,13 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let mut source_xa: Source = Source::new([0u8; 32]);
     let mut source_xe: Source = Source::new([0u8; 32]);
 
-    let lwe_to_glwe_infos = EncryptionLayout::new_from_default_sigma(LWEToGLWEKeyLayout {
+    let lwe_to_glwe_infos = LWEToGLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
         dnum: 2_usize.into(),
         k_aux: (base2k + module.log_n()).into(),
         rank_out: rank,
-    })
-    .unwrap();
+    };
 
     let glwe_infos: GLWELayout = GLWELayout {
         n: n_glwe,
@@ -220,12 +217,11 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         rank,
     };
 
-    let lwe_infos = EncryptionLayout::new_from_default_sigma(LWELayout {
+    let lwe_infos = LWELayout {
         n: n_lwe,
         base2k: Base2K(base2k as u32 - 2),
         k: TorusPrecision(k_lwe as u32),
-    })
-    .unwrap();
+    };
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module).lwe_to_glwe_key_encrypt_sk_tmp_bytes(&lwe_to_glwe_infos)
@@ -252,7 +248,6 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         &mut lwe_ct,
         &lwe_pt,
         &sk_lwe,
-        &lwe_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -264,7 +259,6 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         &mut ksk,
         &sk_lwe,
         &sk_glwe_prepared,
-        &lwe_to_glwe_infos,
         &mut source_xe,
         &mut source_xa,
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -325,22 +319,20 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let rank: Rank = Rank(2);
     let k_lwe_pt: TorusPrecision = TorusPrecision(8);
 
-    let glwe_to_lwe_infos = EncryptionLayout::new_from_default_sigma(GLWEToLWEKeyLayout {
+    let glwe_to_lwe_infos = GLWEToLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
         dnum: 2_usize.into(),
         k_aux: (base2k + module.log_n()).into(),
         rank_in: rank,
-    })
-    .unwrap();
+    };
 
-    let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let glwe_infos = GLWELayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32 - 1),
         k: TorusPrecision(k_glwe as u32),
         rank,
-    })
-    .unwrap();
+    };
 
     let lwe_infos: LWELayout = LWELayout {
         n: n_lwe,
@@ -379,7 +371,6 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         &mut glwe_ct,
         &glwe_pt,
         &sk_glwe_prepared,
-        &glwe_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -391,7 +382,6 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         &mut ksk,
         &sk_lwe,
         &sk_glwe,
-        &glwe_to_lwe_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.arena(),
@@ -451,13 +441,12 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
     let k_pt = TorusPrecision(8);
 
     for rank in [Rank(1), Rank(2)] {
-        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_infos = GLWELayout {
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
             k: TorusPrecision(k as u32),
             rank,
-        })
-        .unwrap();
+        };
 
         let lwe_infos = LWELayout {
             n: Degree(n as u32 * rank.0),
@@ -495,7 +484,6 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
             &mut glwe_ct,
             &glwe_pt,
             &sk_glwe_prep,
-            &glwe_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -599,13 +587,12 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
     let k_pt = TorusPrecision(8);
 
     for rank in [Rank(1), Rank(2)] {
-        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_infos = GLWELayout {
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
             k: TorusPrecision(k as u32),
             rank,
-        })
-        .unwrap();
+        };
 
         let matrix_infos = LWEMatrixLayout {
             rows: n,
@@ -645,7 +632,6 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
             &mut glwe_ct,
             &glwe_pt,
             &sk_glwe_prep,
-            &glwe_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

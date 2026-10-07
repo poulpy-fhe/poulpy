@@ -8,11 +8,12 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
+    GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWELayout, GLWEPublicKey,
+        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -35,15 +36,14 @@ where
             let n: usize = module.n();
             let dnum: usize = (k - di * base2k) / (di * base2k);
 
-            let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_infos = GGSWLayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
@@ -76,7 +76,6 @@ where
                 &mut ct,
                 &pt_scalar,
                 &sk_prepared,
-                &ggsw_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -108,7 +107,8 @@ where
         + GLWEPublicKeyGenerate<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
-        + GGSWNoise<BE>,
+        + GGSWNoise<BE>
+        + GGSWPreparedFactory<BE>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;
@@ -118,22 +118,20 @@ where
             let n: usize = module.n();
             let dnum: usize = (k - di * base2k) / (di * base2k);
 
-            let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_infos = GGSWLayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
-            let pk_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            };
+            let pk_infos = GLWELayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 k: ggsw_infos.k(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
             let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
@@ -153,6 +151,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
                     .ggsw_noise_tmp_bytes(&ggsw_infos)
+                    .max(module.ggsw_prepare_tmp_bytes(&ggsw_infos))
                     .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
                     .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
             );
@@ -164,14 +163,7 @@ where
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
-            module.glwe_public_key_generate(
-                &mut pk,
-                &sk_prepared,
-                &pk_infos,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            module.glwe_public_key_generate(&mut pk, &sk_prepared, &mut source_xe, &mut source_xa, &mut scratch.borrow());
             let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
                 module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
             module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
@@ -180,11 +172,13 @@ where
                 &mut ct,
                 &pt_scalar,
                 &pk_prepared,
-                &ggsw_infos,
                 &mut source_xu,
                 &mut source_xe,
                 &mut enc_scratch.borrow(),
             );
+
+            let mut prepared = module.ggsw_prepared_alloc_from_infos(&ct);
+            module.ggsw_prepare(&mut prepared, &ct, &mut scratch.borrow());
 
             // Sum_l u_l e_l has rank terms, as Sum_j e_j s_j does.
             let noise_want: f64 = ((2.0 * rank as f64 * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2()
@@ -220,22 +214,20 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
     let base2k: usize = params.base2k;
     let n: usize = module.n();
     let rank: usize = 2;
-    let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+    let ggsw_infos = GGSWLayout {
         n: n.into(),
         base2k: base2k.into(),
         dnum: 1_usize.into(),
         k_aux: (base2k + module.log_n()).into(),
         dsize: 1_usize.into(),
         rank: rank.into(),
-    })
-    .unwrap();
-    let pk_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    };
+    let pk_infos = GLWELayout {
         n: n.into(),
         base2k: base2k.into(),
         k: ggsw_infos.k(),
         rank: rank.into(),
-    })
-    .unwrap();
+    };
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -250,7 +242,6 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
     module.glwe_public_key_generate(
         &mut pk,
         &sk_prepared,
-        &pk_infos,
         &mut Source::new([1u8; 32]),
         &mut Source::new([2u8; 32]),
         &mut scratch.borrow(),
@@ -273,7 +264,6 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
             &mut ct,
             pt,
             &pk_prepared,
-            &ggsw_infos,
             &mut Source::new([3u8; 32]),
             &mut Source::new([4u8; 32]),
             &mut enc_scratch.borrow(),
@@ -306,15 +296,14 @@ where
             let n: usize = module.n();
             let dnum: usize = (k - di * base2k) / (di * base2k);
 
-            let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_infos = GGSWLayout {
                 n: n.into(),
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ct_compressed: GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> =
                 module.ggsw_compressed_alloc_from_infos(&ggsw_infos);
@@ -350,7 +339,6 @@ where
                 &pt_scalar,
                 &sk_prepared,
                 seed_xa,
-                &ggsw_infos,
                 &mut source_xe,
                 &mut scratch.borrow(),
             );

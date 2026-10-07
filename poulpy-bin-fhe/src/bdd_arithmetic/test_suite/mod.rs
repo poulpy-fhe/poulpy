@@ -47,7 +47,7 @@ use poulpy_core::layouts::{
 };
 
 use crate::{
-    bdd_arithmetic::{BDDEncryptionInfos, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory},
+    bdd_arithmetic::{BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory},
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, BlindRotationKeyPreparedFactory},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
@@ -122,12 +122,11 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> +
         module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size as usize, &mut source_xs);
         let bdd_key_infos: BDDKeyLayout = TEST_BDD_KEY_LAYOUT;
         let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &bdd_key_infos);
-        let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_key_infos).unwrap();
+
         bdd_key.encrypt_sk(
             &module,
             &sk_lwe,
             &sk_glwe,
-            &bdd_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

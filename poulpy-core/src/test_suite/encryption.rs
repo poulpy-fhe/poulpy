@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use super::decryption::panic_message;
 use crate::{
-    EncryptionLayout, GLWEEncryptSk,
-    layouts::{GLWELayout, GLWESecretPreparedFactory, ModuleCoreAlloc},
+    GLWEEncryptSk,
+    layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
 };
 
 /// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
@@ -19,13 +19,6 @@ where
 {
     let n = 2 * BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
-    let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
-        n: n.into(),
-        base2k: 8usize.into(),
-        k: 8usize.into(),
-        rank: 1usize.into(),
-    })
-    .unwrap();
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     let mut xe = Source::new([1; 32]);
     let mut xa = Source::new([2; 32]);
@@ -46,14 +39,14 @@ where
             let pt = pt_module.glwe_plaintext_alloc(8usize.into(), 8usize.into());
             let sk = sk_module.glwe_secret_prepared_alloc(1usize.into());
             let err = catch_unwind(AssertUnwindSafe(|| {
-                module.glwe_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena());
+                module.glwe_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena());
             }))
             .expect_err("encryption accepted mismatched degrees");
             assert!(panic_message(&*err).contains(message));
 
             if ct_module.n() != n || sk_module.n() != n {
                 let err = catch_unwind(AssertUnwindSafe(|| {
-                    module.glwe_encrypt_zero_sk(&mut ct, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena());
+                    module.glwe_encrypt_zero_sk(&mut ct, &sk, &mut xe, &mut xa, &mut scratch.arena());
                 }))
                 .expect_err("zero encryption accepted mismatched degrees");
                 assert!(panic_message(&*err).contains(message));

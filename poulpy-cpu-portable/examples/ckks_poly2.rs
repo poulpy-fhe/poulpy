@@ -30,7 +30,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
-    EncryptionLayout, GLWETensorKeyEncryptSk,
+    GLWETensorKeyEncryptSk,
     layouts::{
         Base2K, Degree, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
         TorusPrecision,
@@ -118,29 +118,27 @@ struct DecryptionArtifacts {
     have_re: Vec<f64>,
 }
 
-fn glwe_layout() -> EncryptionLayout<GLWELayout> {
-    EncryptionLayout::new_from_default_sigma(GLWELayout {
+fn glwe_layout() -> GLWELayout {
+    GLWELayout {
         n: N.into(),
         base2k: BASE2K.into(),
         k: CT_K.into(),
         rank: Rank(1),
-    })
-    .unwrap()
+    }
 }
 
-fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
+fn tsk_layout() -> GLWETensorKeyLayout {
     let digit_bits = DSIZE * BASE2K;
     let dnum = CT_K.div_ceil(digit_bits);
     let k_aux = digit_bits + N.ilog2() as usize;
-    EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+    GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
         k_aux: k_aux.into(),
         rank: Rank(1),
         dsize: DSIZE.into(),
         dnum: dnum.into(),
-    })
-    .unwrap()
+    }
 }
 
 fn max_err(a: &[f64], b: &[f64]) -> f64 {
@@ -226,14 +224,7 @@ fn setup() -> Result<SetupArtifacts> {
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_tensor_key_encrypt_sk(
-            &mut tsk,
-            &sk_raw,
-            &tsk_layout(),
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch_local,
-        );
+        module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xe, &mut source_xa, &mut scratch_local);
     }
 
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
@@ -297,7 +288,6 @@ fn encryption(setup: &mut SetupArtifacts, encoding: &EncodingArtifacts) -> Resul
             &mut ct_x,
             &encoding.pt_znx,
             &setup.sk,
-            &glwe_layout(),
             &mut source_xe,
             &mut source_xa,
             &mut scratch,

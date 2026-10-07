@@ -493,27 +493,12 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     let mut rotation_keys = HashMap::new();
     for p_el in plan.galois_elements() {
         let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_enc);
-        module.glwe_automorphism_key_encrypt_sk(
-            &mut atk,
-            p_el,
-            &sk_dense_raw,
-            &atk_enc,
-            &mut xe,
-            &mut xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_automorphism_key_encrypt_sk(&mut atk, p_el, &sk_dense_raw, &mut xe, &mut xa, &mut scratch.borrow());
         rotation_keys.insert(p_el, atk);
     }
     let tsk_enc = params.tsk_layout();
     let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_enc);
-    module.glwe_tensor_key_encrypt_sk(
-        &mut tensor_key,
-        &sk_dense_raw,
-        &tsk_enc,
-        &mut xe,
-        &mut xa,
-        &mut scratch.borrow(),
-    );
+    module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense_raw, &mut xe, &mut xa, &mut scratch.borrow());
 
     // The single encapsulation key: dense→PaCo, sized at the SMALL base
     // modulus (the paper's §8.2 security argument — the structured key never
@@ -525,7 +510,6 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         &mut dense_to_paco,
         &sk_dense_raw,
         &sk_paco_raw,
-        &d2p_enc,
         &mut xe,
         &mut xa,
         &mut scratch.borrow(),

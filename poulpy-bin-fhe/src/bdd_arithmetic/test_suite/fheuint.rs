@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionLayout, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
     layouts::{GLWELayout, GLWESecretPrepared},
 };
 use poulpy_hal::layouts::HostDataRef;
@@ -35,22 +35,12 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     for j in 0..3 {
         let a: u32 = 0x8483_8281;
-        a_enc.encrypt_sk(
-            module,
-            a,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         a_enc.sext(module, j, keys, &mut scratch.borrow());
 
@@ -62,15 +52,7 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
 
     for j in 0..3 {
         let a: u32 = 0x4443_4241;
-        a_enc.encrypt_sk(
-            module,
-            a,
-            sk,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         a_enc.sext(module, j, keys, &mut scratch.borrow());
 
@@ -107,8 +89,6 @@ pub fn test_fhe_uint_splice_u8<
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -119,24 +99,8 @@ pub fn test_fhe_uint_splice_u8<
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
 
-    b_enc.encrypt_sk(
-        module,
-        b,
-        sk,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
-    a_enc.encrypt_sk(
-        module,
-        a,
-        sk,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
     for dst in 0..4 {
         for src in 0..4 {
@@ -174,8 +138,6 @@ pub fn test_fhe_uint_splice_u16<
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -186,24 +148,8 @@ pub fn test_fhe_uint_splice_u16<
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
 
-    b_enc.encrypt_sk(
-        module,
-        b,
-        sk,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
-    a_enc.encrypt_sk(
-        module,
-        a,
-        sk,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
     for dst in 0..2 {
         for src in 0..2 {
@@ -238,8 +184,6 @@ pub fn test_fhe_uint_get_bit_glwe<
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -248,15 +192,7 @@ pub fn test_fhe_uint_get_bit_glwe<
     let a: u32 = source_xa.next_u32();
 
     let mut scratch_enc: ScratchOwned<BE> = ScratchOwned::alloc(a_enc.encrypt_sk_tmp_bytes(module));
-    a_enc.encrypt_sk(
-        module,
-        a,
-        sk,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch_enc.borrow(),
-    );
+    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch_enc.borrow());
 
     let mut scratch_dec: ScratchOwned<BE> = ScratchOwned::alloc(c_enc.decrypt_tmp_bytes(module));
 

@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -27,7 +27,7 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
@@ -64,19 +64,17 @@ pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_share_to_enc_share_gen<P, S, E>(
+    fn mhe_glwe_share_to_enc_share_gen<P, S>(
         module: &Module<Self>,
         res: &mut GLWEShareToEncShareOwned<Self>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         P: GLWEToBackendRef<Self> + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
     fn mhe_glwe_share_to_enc_share_aggregate(
         module: &Module<Self>,
@@ -121,7 +119,7 @@ macro_rules! impl_mhe_sharing_reference {
                 secret: &mut P,
                 mask: &C,
                 sk: &S,
-                flood: ::poulpy_core::SmudgingNoise,
+                flood: ::poulpy_core::Noise,
                 source_xm: &mut ::poulpy_hal::source::Source,
                 source_smudge: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
@@ -168,21 +166,19 @@ macro_rules! impl_mhe_sharing_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEShareToEncMHEProtocolReference<$be>>::mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(module, res_infos, secret_infos)
             }
 
-            fn mhe_glwe_share_to_enc_share_gen<P, S, E>(
+            fn mhe_glwe_share_to_enc_share_gen<P, S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut $crate::layouts::GLWEShareToEncShareOwned<$be>,
                 secret: &P,
                 sk: &S,
                 seed: [u8; 32],
-                enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 P: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                E: ::poulpy_core::EncryptionInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEShareToEncMHEProtocolReference<$be>>::mhe_glwe_share_to_enc_share_gen_reference(module, res, secret, sk, seed, enc_infos, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEShareToEncMHEProtocolReference<$be>>::mhe_glwe_share_to_enc_share_gen_reference(module, res, secret, sk, seed, source_xe, scratch)
             }
         }
     };

@@ -1,6 +1,6 @@
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
-    ScratchArenaTakeCore, SmudgingNoise, VecZnxAddSmudging,
+    GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWESub, Noise,
+    ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -23,7 +23,7 @@ pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
         secret: &mut P,
         mask: &C,
         sk: &S,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -59,7 +59,7 @@ where
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
         + VecZnxFillUniformSource<BE>
-        + VecZnxAddSmudging<BE>
+        + VecZnxAddNoise<BE>
         + VecZnxAddAssign<BE>,
 {
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
@@ -78,7 +78,7 @@ where
         secret: &mut P,
         mask: &C,
         sk: &S,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_xm: &mut Source,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -116,7 +116,7 @@ where
             secret.set_canonical(true);
             self.glwe_sub(public, &pt, secret);
             self.glwe_normalize_assign(public, &mut scratch_1);
-            self.vec_znx_add_smudging(
+            self.vec_znx_add_noise(
                 base2k,
                 k,
                 GLWEToBackendMut::<BE>::to_backend_mut(public).data_mut(),
@@ -181,19 +181,17 @@ pub trait GLWEShareToEncMHEProtocolReference<BE: Backend> {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_share_to_enc_share_gen_reference<P, S, E>(
+    fn mhe_glwe_share_to_enc_share_gen_reference<P, S>(
         &self,
         res: &mut GLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEShareToEncMHEProtocolReference<BE> for Module<BE>
@@ -211,19 +209,17 @@ where
                 .max(self.glwe_compressed_encrypt_sk_tmp_bytes(res_infos))
     }
 
-    fn mhe_glwe_share_to_enc_share_gen_reference<P, S, E>(
+    fn mhe_glwe_share_to_enc_share_gen_reference<P, S>(
         &self,
         res: &mut GLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         let res = &mut res.inner;
         assert!(
@@ -239,14 +235,12 @@ where
             "invalid share: additive share must have rank zero"
         );
         let infos = res.glwe_layout();
-        let mut noise_infos = enc_infos.noise_infos();
-        // The share needs noise on the output's grid, down to its low bits.
-        noise_infos.k = infos.k().as_usize();
+        // Encryption samples directly on the output's grid, down to its low bits.
         let tmp_bytes = self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(&infos, secret);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
             self.glwe_copy(&mut pt, secret, &mut scratch_1);
-            self.glwe_compressed_encrypt_sk(res, &pt, sk, seed, &noise_infos, source_xe, &mut scratch_1);
+            self.glwe_compressed_encrypt_sk(res, &pt, sk, seed, source_xe, &mut scratch_1);
         }
         scratch.wipe(tmp_bytes);
     }

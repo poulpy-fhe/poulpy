@@ -3,7 +3,7 @@
 //! larger precision decrypt to their integer sum.
 
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, EncryptionLayout, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
     },
@@ -124,9 +124,8 @@ where
 {
     let in_layout = glwe_layout_at(module, K);
     let out_layout = glwe_layout_at(module, K_OUT);
-    // The output precision must determine the noise scale even with an input-layout descriptor.
-    for noise_layout in [in_layout, out_layout] {
-        let enc_infos = EncryptionLayout::new_from_default_sigma(noise_layout).unwrap();
+    // Encryption noise reaches the output grid even when raising the plaintext precision.
+    {
         let parties = party_secrets(module);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
@@ -147,7 +146,7 @@ where
             // The party's raised share would be left in the scratch.
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(
                 module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout),
-                |scratch| module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &enc_infos, &mut source_xe, scratch),
+                |scratch| module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &mut source_xe, scratch),
             );
             if i > 0 {
                 module.mhe_glwe_share_to_enc_share_aggregate(&mut acc, &share);
@@ -180,7 +179,6 @@ where
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
     let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout));
     module.mhe_glwe_share_to_enc_share_gen(
@@ -188,7 +186,6 @@ where
         &secret,
         &sk,
         SEEDS[0],
-        &enc_infos,
         &mut Source::new(SEED_XE),
         &mut scratch.borrow(),
     );
@@ -287,19 +284,11 @@ where
     });
     let mut pat = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
     super::fixtures::assert_panics_with("invalid share: additive share must have rank zero", || {
-        module.mhe_glwe_share_to_enc_share_gen(
-            &mut pat,
-            &ct,
-            &sk,
-            SEEDS[0],
-            &EncryptionLayout::new_from_default_sigma(layout).unwrap(),
-            &mut Source::new(SEED_XE),
-            &mut scratch.borrow(),
-        );
+        module.mhe_glwe_share_to_enc_share_gen(&mut pat, &ct, &sk, SEEDS[0], &mut Source::new(SEED_XE), &mut scratch.borrow());
     });
 }
 
-/// Reject invalid smudging descriptors before touching the shares.
+/// Reject invalid flood descriptors before touching the shares.
 pub fn test_glwe_enc_to_share_flood_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -316,22 +305,22 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
     for (noise, message) in [
         (
-            poulpy_core::SmudgingNoise::Gaussian {
-                log_sigma: 10,
-                cutoff: 0,
+            poulpy_core::Noise::Gaussian {
+                sigma: 1024.0,
+                cutoff_factor: 0,
             },
-            "invalid smudging: Gaussian cutoff must be positive",
+            "invalid noise: Gaussian cutoff factor must be positive",
         ),
         (
-            poulpy_core::SmudgingNoise::Gaussian {
-                log_sigma: K.as_usize(),
-                cutoff: 6,
+            poulpy_core::Noise::Gaussian {
+                sigma: 2.0f64.powi((K.as_usize()) as i32),
+                cutoff_factor: 6,
             },
-            "invalid smudging: Gaussian bound outside the precision",
+            "invalid noise: Gaussian bound outside the precision",
         ),
         (
-            poulpy_core::SmudgingNoise::Uniform { bits: K.as_usize() },
-            "invalid smudging: uniform width outside the precision",
+            poulpy_core::Noise::Uniform { bits: K.as_usize() },
+            "invalid noise: uniform width outside the precision",
         ),
     ] {
         let mut source_xm = Source::new([60u8; 32]);

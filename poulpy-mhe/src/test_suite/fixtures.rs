@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, SmudgingNoise,
+    Distribution, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, Noise,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
         GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
@@ -148,7 +148,6 @@ where
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_glwe_public_key_share_gen_tmp_bytes(layout)
@@ -160,7 +159,7 @@ where
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);
-        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &enc_infos, &mut source_xe, &mut scratch.borrow());
+        module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
             module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
         }
@@ -221,13 +220,11 @@ where
     Module<BE>: GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
-    let enc_infos = EncryptionLayout::new_from_default_sigma(*layout).unwrap();
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(layout);
     module.glwe_encrypt_sk(
         &mut ct,
         &integer_plaintext(module, layout, data),
         sk,
-        &enc_infos,
         &mut Source::new([31u8; 32]),
         &mut Source::new([32u8; 32]),
         &mut scratch.borrow(),
@@ -259,10 +256,8 @@ pub(crate) fn assert_decrypts_to<BE>(
 }
 
 /// Small functional-test flooding parameters, not a production security margin.
-pub(crate) fn integer_flood_infos(sigma: f64) -> SmudgingNoise {
-    let log_sigma = sigma.log2() as usize;
-    assert_eq!(sigma, 2.0f64.powi(log_sigma as i32));
-    SmudgingNoise::Gaussian { log_sigma, cutoff: 6 }
+pub(crate) fn integer_flood_infos(sigma: f64) -> Noise {
+    Noise::Gaussian { sigma, cutoff_factor: 6 }
 }
 
 /// Checks both correctness and the presence of caller-sized, per-party flooding.

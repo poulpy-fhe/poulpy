@@ -9,7 +9,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
+    GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout,
@@ -52,15 +52,14 @@ where
 
             let dsize_in: usize = 1;
 
-            let ggsw_in_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_in_infos = GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
             let ggsw_out_infos: GGSWLayout = GGSWLayout {
                 n: n.into(),
@@ -71,17 +70,16 @@ where
                 rank: rank.into(),
             };
 
-            let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_infos = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ksk_apply_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+            let ksk_apply_infos = GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -89,8 +87,7 @@ where
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
@@ -128,7 +125,6 @@ where
                 &mut ksk,
                 &sk_in,
                 &sk_out,
-                &ksk_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.arena(),
@@ -136,7 +132,6 @@ where
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
                 &sk_out,
-                &tsk_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -153,7 +148,6 @@ where
                 &mut ggsw_in,
                 &pt_scalar,
                 &sk_in_prepared,
-                &ggsw_in_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
@@ -236,27 +230,25 @@ where
             let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
             let dsize_in: usize = 1;
 
-            let ggsw_out_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
+            let ggsw_out_infos = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
+            let tsk_infos = GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ksk_apply_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+            let ksk_apply_infos = GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
@@ -264,8 +256,7 @@ where
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
             let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_infos);
@@ -302,7 +293,6 @@ where
                 &mut ksk,
                 &sk_in,
                 &sk_out,
-                &ksk_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.arena(),
@@ -310,7 +300,6 @@ where
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
                 &sk_out,
-                &tsk_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -327,7 +316,6 @@ where
                 &mut ggsw_out,
                 &pt_scalar,
                 &sk_in_prepared,
-                &ggsw_out_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

@@ -77,16 +77,17 @@ pub mod api;
 mod delegates;
 mod dist;
 pub mod error;
+mod noise_distribution;
 pub mod oep;
 pub mod reference;
 mod scratch;
-mod smudging;
 mod utils;
 
 pub mod layouts;
 pub use api::*;
 pub use dist::*;
 pub use error::{CoreError, Result};
+pub use noise_distribution::Noise;
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;
 pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
@@ -94,7 +95,6 @@ pub use reference::operations::*;
 #[allow(deprecated)]
 pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use scratch::*;
-pub use smudging::*;
 
 pub(crate) mod decryption {
     pub(crate) use crate::reference::decryption::*;
