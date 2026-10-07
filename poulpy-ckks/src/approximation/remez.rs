@@ -586,18 +586,25 @@ where
     }
     let grid = cache.as_ref().unwrap();
     let mut out: Vec<(F, F)> = Vec::new();
+    let mut es: Vec<F> = Vec::with_capacity(grid_len);
     for samples in &grid.intervals {
-        let xs: Vec<F> = samples.iter().map(|&(x, _)| x).collect();
-        let es: Vec<F> = samples.iter().map(|&(x, value)| value - eval_cheb(coeffs, x)).collect();
+        es.clear();
+        es.extend(samples.iter().map(|&(x, value)| value - eval_cheb(coeffs, x)));
 
-        out.push((xs[0], es[0]));
+        out.push((samples[0].0, es[0]));
         for j in 1..grid_len - 1 {
             let (left, current, right) = (es[j - 1].abs(), es[j].abs(), es[j + 1].abs());
             if current >= left && current >= right {
-                out.push(refine_extremum(g, coeffs, xs[j - 1], xs[j + 1], grid.refinement_ratio));
+                out.push(refine_extremum(
+                    g,
+                    coeffs,
+                    samples[j - 1].0,
+                    samples[j + 1].0,
+                    grid.refinement_ratio,
+                ));
             }
         }
-        out.push((xs[grid_len - 1], es[grid_len - 1]));
+        out.push((samples[grid_len - 1].0, es[grid_len - 1]));
     }
     out
 }
