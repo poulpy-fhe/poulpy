@@ -115,7 +115,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
                 for col in 0..atk.rank().as_usize() {
                     let noise_have = atk
                         .key
-                        .noise(module, row, col, &sk.data().to_ref(), &sk_out_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &sk.data().to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     assert!(
@@ -229,7 +229,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 for col in 0..atk.rank().as_usize() {
                     let noise_have = atk
                         .key
-                        .noise(module, row, col, &sk.data().to_ref(), &sk_out_prepared, &mut scratch.borrow())
+                        .noise_stats(module, row, col, &sk.data().to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
 

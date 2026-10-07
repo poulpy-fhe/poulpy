@@ -176,7 +176,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     for col in 0..ct_gglwe_out.rank_in().as_usize() {
                         let noise_have: f64 = ct_gglwe_out
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
@@ -335,7 +335,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     for col in 0..ct_gglwe.rank_in().as_usize() {
                         let noise_have: f64 = ct_gglwe
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,

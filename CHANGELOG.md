@@ -62,6 +62,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** the measurement methods `GGLWE::noise`, `GGSW::noise`, `FheUint::noise` and `FheUintPreparedDebug::noise` are renamed `noise_stats`.
 - `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
 - **Breaking:** `GLWEExternalProductImpl` selects the DFT-domain execution and scratch query used by `GLWEExternalProductInternal`. Public reference external products use this dispatch for matching and mixed radices. The contiguous-limb reference remains independently callable; custom DFT layouts can override it.
 
