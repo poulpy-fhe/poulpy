@@ -358,12 +358,6 @@ mod tests {
     }
 
     #[test]
-    fn fft64_f64_reuses_ring_plan_family_at_every_dimension() {
-        let module = Module::<FFT64Portable>::new(32);
-        roundtrip_all_dimensions::<FFT64Portable, f64>(&module);
-    }
-
-    #[test]
     fn fft64_precision_families_coexist_in_one_module() {
         let module = Module::<FFT64Portable>::new(32);
         roundtrip_all_dimensions::<FFT64Portable, f64>(&module);
